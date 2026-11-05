@@ -7,6 +7,7 @@ import {
   preparePackageLicense,
   removePackageLicense,
   stagePackageLicenseInputs,
+  verifyPackageLicenseLayout,
 } from './package-license.mjs';
 
 test('prepares and removes the single source license for a package tarball', async () => {
@@ -49,4 +50,29 @@ test('stages license lifecycle inputs beside copied package trees', async () => 
   } finally {
     await rm(root, {force: true, recursive: true});
   }
+});
+
+test('checks public manifests when retired package outputs remain on disk', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'tileflow-package-license-layout-'));
+  t.after(() => rm(root, {force: true, recursive: true}));
+  await writeFile(join(root, 'LICENSE'), 'Apache License\n  Version 2.0, January 2004');
+  const live = join(root, 'packages/current');
+  const retired = join(root, 'packages/retired/dist');
+  await mkdir(live, {recursive: true});
+  await mkdir(retired, {recursive: true});
+  await writeFile(join(retired, 'index.js'), 'export {};');
+  const manifest = {
+    name: '@tileflow/current',
+    license: 'Apache-2.0',
+    files: ['dist', 'LICENSE'],
+    scripts: {
+      prepack: 'node ../../scripts/package-license.mjs --prepare',
+      postpack: 'node ../../scripts/package-license.mjs --clean',
+    },
+  };
+  await writeFile(join(live, 'package.json'), JSON.stringify(manifest));
+  assert.deepEqual((await verifyPackageLicenseLayout({root})).packages, ['current']);
+  manifest.files = ['dist'];
+  await writeFile(join(live, 'package.json'), JSON.stringify(manifest));
+  await assert.rejects(verifyPackageLicenseLayout({root}), /must pack LICENSE/u);
 });

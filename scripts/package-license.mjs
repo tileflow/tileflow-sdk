@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import {copyFile, mkdir, readFile, readdir, rm} from 'node:fs/promises';
-import {join, resolve} from 'node:path';
+import {copyFile, glob, mkdir, readFile, rm} from 'node:fs/promises';
+import {basename, dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const repositoryRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -34,12 +34,9 @@ export async function verifyPackageLicenseLayout({root = repositoryRoot} = {}) {
   assert.match(license, /Apache License\n\s+Version 2\.0, January 2004/u);
 
   const packageDirectories = [];
-  for (const entry of await readdir(join(root, 'packages'), {withFileTypes: true})) {
-    if (!entry.isDirectory()) continue;
-    const manifest = JSON.parse(
-      await readFile(join(root, 'packages', entry.name, 'package.json'), 'utf8'),
-    );
-    if (manifest.private !== true) packageDirectories.push(entry.name);
+  for await (const path of glob('packages/*/package.json', {cwd: root})) {
+    const manifest = JSON.parse(await readFile(join(root, path), 'utf8'));
+    if (manifest.private !== true) packageDirectories.push(basename(dirname(path)));
   }
 
   for (const directory of packageDirectories.sort()) {

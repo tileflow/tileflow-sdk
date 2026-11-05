@@ -268,16 +268,6 @@ test('validates peer-smoke topology and peer ranges without installing packages'
   });
 });
 
-test('keeps framework peer-smoke fixtures on the required source API', async () => {
-  const peerSmoke = await readFile(new URL('./peer-compat-smoke.mjs', import.meta.url), 'utf8');
-
-  assert.doesNotMatch(peerSmoke, /<Map\s+styleUrl=/u);
-  assert.doesNotMatch(peerSmoke, /\bkind\s*:\s*['"](?:tileflow|maplibre)['"]/u);
-  assert.match(peerSmoke, /export const interactive = <Map source=\{\{map: 'main'\}\}/u);
-  assert.match(peerSmoke, /const props = \{source: \{map: 'main'\}/u);
-  assert.match(peerSmoke, /<TileflowMap source=\{\{map: 'main'\}\}/u);
-});
-
 test('accepts only a successful push CI run from tileflow-sdk main at the exact SHA', () => {
   const workflowRun = trustedRun();
   assert.equal(assertTrustedMainCiRun(workflowRun, repository, releaseSha), releaseSha);

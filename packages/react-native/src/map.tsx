@@ -84,7 +84,7 @@ export const MapView = forwardRef<MapViewRef, MapViewProps>(function MapView(pro
     }} : {}),
     eventLevel: props.onCameraChanged ? 'continuous' : 'camera',
   };
-  const appearance = {theme: props.theme, timeOfDay: props.timeOfDay, themeBlend: props.themeBlend, viewMode: props.viewMode};
+  const appearance = {theme: props.theme, timeOfDay: props.timeOfDay, themeBlend: props.themeBlend, themeTransition: props.themeTransition, viewMode: props.viewMode};
   const userLocation: NativeUserLocation = {
     ...locationProps,
     ...(cameraProps?.followUserLocation === undefined ? {} : {followUserLocation: cameraProps.followUserLocation}),

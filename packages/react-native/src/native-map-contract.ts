@@ -1,3 +1,8 @@
+import type {
+  JoinBoundaryRowsOptions,
+  TileflowBoundaryLookupRow,
+  TileflowBoundaryRow,
+} from './generated/boundary-join';
 import type {MapMethod} from './specs/NativeTileflowMapModule';
 
 export type Coordinate = readonly [number, number];
@@ -180,6 +185,12 @@ export type MapCommandPayloads = {
   getClusterExpansionZoom: Readonly<{sourceId: string; clusterId: number}>;
   setImages: Readonly<{images: readonly NativeImage[]}>;
   setBoundaryValues: Readonly<{values: JsonObject | null}>;
+  joinBoundaryRows: Readonly<{
+    rows: readonly TileflowBoundaryRow[];
+    options: Omit<JoinBoundaryRowsOptions, 'lookup'> & {
+      lookup?: {rows: readonly TileflowBoundaryLookupRow[]};
+    };
+  }>;
   setStyleState: Readonly<{state: StyleState}>;
   setEmphasis: Readonly<{emphasis: JsonObject | null; duration?: number}>;
   setSun: Readonly<{sun: JsonObject | null; duration?: number}>;

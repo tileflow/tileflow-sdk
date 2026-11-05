@@ -44,6 +44,8 @@
     "https://tiles.tileflow.test/tiles/bathymetry/dem/2026-10-01/9/10/11.webp",
     "https://api.tileflow.test/tiles/nautical/tiles.json?nauticalReleaseId=2026-10-01",
     "https://api.tileflow.test/tiles/boundaries/tiles.json?boundariesReleaseId=2026-10-01",
+    "https://api.tileflow.test/tiles/boundaries/boundaries-v1-01234567-89ab-cdef-0123-456789abcdef/boundaries-lookup.json",
+    "https://api.tileflow.test/v1/tiles/boundaries/boundaries-v1-01234567-89ab-cdef-0123-456789abcdef/boundaries-lookup-municipality.csv.gz?map=map_0123456789abcdef",
     "https://api.tileflow.test/maps/map_0123456789abcdef/mobile/webview-v1/family/v1.json"
   ],
   "deniedResources": [
@@ -76,6 +78,10 @@
     "https://api.tileflow.test/tiles/bathymetry/dem/tiles.json?nauticalReleaseId=2026-10-01",
     "https://api.tileflow.test/tiles/boundaries/2026-10-01/boundaries-lookup-country.csv.gz",
     "https://api.tileflow.test/tiles/boundaries/2026-10-01/boundaries-lookup.json",
+    "https://api.tileflow.test/tiles/boundaries/boundaries-v1-01234567-89ab-cdef-0123-456789abcdef/boundaries-lookup-planet.csv.gz",
+    "https://api.tileflow.test/tiles/boundaries/boundaries-v1-01234567-89ab-cdef-0123-456789abcdef/boundaries-lookup-country.csv.gz?map=map_1111111111111111",
+    "https://api.tileflow.test/tiles/boundaries/boundaries-v1-01234567-89ab-cdef-0123-456789abcdef/boundaries-lookup-country.csv.gz?boundariesReleaseId=boundaries-v1-01234567-89ab-cdef-0123-456789abcdef",
+    "https://api.tileflow.test/tiles/boundaries/boundaries-v1-01234567-89ab-cdef-0123-456789abcdef/boundaries-lookup-country.csv.gz?archiveVersion=1",
     "https://api.tileflow.test/landmarks/tiles.json",
     "https://api.tileflow.test/team-models/tmd_0123456789abcdef/current.glb",
     "https://api.tileflow.test/maps/map_1111111111111111/mobile/webview-v1/family/v1.json",

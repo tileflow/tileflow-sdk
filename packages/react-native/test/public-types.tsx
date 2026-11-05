@@ -2,6 +2,21 @@ import {createRef} from 'react';
 import type {FeatureCollection} from 'geojson';
 import {Camera, CircleLayer, GeoJSONSource, MapView, UserLocation} from '../src/index';
 import type {CameraRef, GeoJSONSourceRef, MapViewRef} from '../src/index';
+import {createBoundaryLookup, joinBoundaryRows} from '../src/index';
+
+export async function updateBoundaryValues(view: MapViewRef) {
+  const result = await view.joinBoundaryRows([{key: 'ES-MD', value: 8}], {
+    joinBy: 'iso_3166_2',
+    classes: ['region'],
+  });
+  await view.setBoundaryValues(result);
+
+  const prepared = joinBoundaryRows([{key: 'Q5756', value: null}], {
+    joinBy: 'wikidata',
+    lookup: createBoundaryLookup([{id: 41, class: 'region', wikidata: 'Q5756'}]),
+  });
+  await view.setBoundaryValues(prepared);
+}
 
 const points: FeatureCollection = {type: 'FeatureCollection', features: []};
 export const map = createRef<MapViewRef>();

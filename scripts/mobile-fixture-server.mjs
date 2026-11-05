@@ -3,7 +3,7 @@ import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {createRequire} from 'node:module';
 import {dirname, resolve} from 'node:path';
-import {deflateSync} from 'node:zlib';
+import {deflateSync, gzipSync} from 'node:zlib';
 import {createHostedFixture} from './mobile-fixture-hosted.mjs';
 import {createNativeBuildFixture} from './mobile-fixture-native.mjs';
 
@@ -359,6 +359,32 @@ function boundaryTile(z, x, y) {
     ...layer('boundary_label', 1, labelVisible && [9, ...center.flatMap((n) => varint(zigzag(n)))]),
   ]);
 }
+const boundaryLookup = gzipSync(
+  Buffer.from(
+    'id,class,ref,iso_3166_1,iso_3166_2,nuts,wikidata\n' +
+      '41,municipality,fixture-41,ES,ES-MD,ES300,Q2807\n',
+  ),
+);
+const boundaryLookupPath =
+  '/fixture-boundaries/fixture-boundaries-v1/boundaries-lookup-municipality.csv.gz';
+const boundaryLookupManifestPath =
+  '/fixture-boundaries/fixture-boundaries-v1/boundaries-lookup.json';
+const boundaryLookupManifest = Buffer.from(
+  JSON.stringify({
+    schemaVersion: 2,
+    family: 'boundaries',
+    build: 'fixture-boundaries-v1',
+    files: {
+      municipality: {
+        file: 'boundaries-lookup-municipality.csv.gz',
+        rows: 1,
+        bytes: boundaryLookup.length,
+        sha256: createHash('sha256').update(boundaryLookup).digest('hex'),
+      },
+    },
+  }),
+);
+
 // A self-hosted style isolates native rendering from the compiler's admission rules.
 const districtStyle = {
   version: 8,
@@ -536,11 +562,34 @@ const server = createServer((request, response) => {
       JSON.stringify({
         tilejson: '3.0.0',
         tiles: [`${base}/fixture-boundaries/{z}/{x}/{y}.mvt`],
+        tileflow: {
+          boundaries: {
+            releaseId: 'fixture-boundaries-v1',
+            lookup: {
+              classes: {municipality: `${base}${boundaryLookupPath}`},
+              manifest: `${base}${boundaryLookupManifestPath}`,
+            },
+          },
+        },
         bounds: [-3.71, 40.41, -3.69, 40.43],
         minzoom: 12,
         maxzoom: 16,
       }),
     );
+    return;
+  }
+  if (path === boundaryLookupManifestPath) {
+    response.setHeader('Content-Type', 'application/json');
+    response.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    response.end(boundaryLookupManifest);
+    return;
+  }
+  if (path === boundaryLookupPath) {
+    response.setHeader('Content-Type', 'application/gzip');
+    response.setHeader('Content-Length', boundaryLookup.length);
+    response.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    response.setHeader('ETag', `"${createHash('sha256').update(boundaryLookup).digest('hex')}"`);
+    response.end(boundaryLookup);
     return;
   }
   const boundary = /^\/fixture-boundaries\/(\d+)\/(\d+)\/(\d+)\.mvt$/u.exec(path);

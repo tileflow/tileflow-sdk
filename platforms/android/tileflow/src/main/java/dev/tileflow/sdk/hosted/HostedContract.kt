@@ -4,6 +4,7 @@ package dev.tileflow.sdk.hosted
 
 import dev.tileflow.configuration.internal.TileflowInternalApi
 import dev.tileflow.configuration.internal.tileflowApiOrigin
+import dev.tileflow.sdk.TileflowBoundaryClass
 import dev.tileflow.sdk.TileflowErrorCode
 import dev.tileflow.sdk.TileflowErrorContext
 import dev.tileflow.sdk.TileflowMapException
@@ -269,6 +270,9 @@ internal object HostedContract {
                 (style.groupValues[2].ifEmpty { style.groupValues[3] }.toLongOrNull()
                     ?: Long.MAX_VALUE) <= 9_007_199_254_740_991 &&
                 "style" in authority.scopes
+        if (boundariesLookup.matches(path))
+            return@runCatching raw == path && keys.all { it == "map" || it == "mapId" } &&
+                "tile" in authority.scopes && "boundaries" in authority.tilesets
         val tileset =
             when {
                 demTileJson.matches(path) -> "tilejson" to "bathymetry-dem"
@@ -377,6 +381,10 @@ internal object HostedContract {
             "bathymetryReleaseId" to setOf("bathymetry", "bathymetry-dem"),
             "nauticalReleaseId" to setOf("nautical"),
         )
+    private val boundariesLookup = Regex(
+        "^/(?:v1/)?tiles/boundaries/boundaries-v1-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}/" +
+            "boundaries-lookup(?:\\.json|-(?:${TileflowBoundaryClass.entries.joinToString("|") { it.wireName }})\\.csv\\.gz)$"
+    )
     private val tileJson = Regex("^/(?:v1/)?tiles/([A-Za-z0-9_-]{1,128})/tiles\\.json$")
     private val tile =
         Regex(

@@ -4,6 +4,24 @@ import UIKit
 
 /// Converts the React Native contract through the SDK's public value types.
 enum MapBridgeValues {
+  static func boundaryJoin(_ input: BridgeObject) throws
+    -> (rows: [TileflowBoundaryRow], options: JoinBoundaryRowsOptions)
+  {
+    do {
+      let rows = try JSONDecoder().decode([TileflowBoundaryRow].self,
+        from: JSONSerialization.data(withJSONObject: input.array("rows")))
+      let options = try JSONDecoder().decode(JoinBoundaryRowsOptions.self,
+        from: JSONSerialization.data(withJSONObject: input.object("options").values))
+      return (rows, options)
+    } catch {
+      throw BridgeArgumentError(path: "joinBoundaryRows", expected: "boundary rows and join options")
+    }
+  }
+
+  static func boundaryJoinJSON(_ result: TileflowBoundaryJoinResult) throws -> Any {
+    try JSONSerialization.jsonObject(with: JSONEncoder().encode(result))
+  }
+
   static func object(_ text: String) throws -> BridgeObject {
     guard text.utf8.count <= 64 * 1024 * 1024,
       let value = try? JSONSerialization.jsonObject(with: Data(text.utf8))

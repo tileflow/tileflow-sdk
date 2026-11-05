@@ -9,6 +9,27 @@ import XCTest
 final class MapBridgeTests: XCTestCase {
   private var fixture: BridgeObject!
 
+  func testBoundaryJoinBridgePreservesNullKeysReportsAndLookupRows() throws {
+    let input = try BridgeObject([
+      "rows": [["key": " q1 ", "value": 2], ["key": "Q1", "value": NSNull()],
+        ["key": "missing", "value": "category"]],
+      "options": ["joinBy": "wikidata", "lookup": ["rows": [
+        ["id": 1, "class": "region", "wikidata": "Q1"],
+      ]]],
+    ])
+    let request = try MapBridgeValues.boundaryJoin(input)
+    let result = try joinBoundaryRows(request.rows, options: request.options)
+    let actual = try MapBridgeValues.boundaryJoinJSON(result)
+    let expected: [String: Any] = [
+      "joinBy": "id", "rows": [["key": 1, "value": NSNull()]],
+      "duplicates": ["Q1"], "ambiguous": [], "unmatched": ["missing"],
+    ]
+    XCTAssertEqual(Fixtures.canonical(actual), Fixtures.canonical(expected))
+    XCTAssertThrowsError(try MapBridgeValues.boundaryJoin(BridgeObject([
+      "rows": [["key": true, "value": 1]], "options": ["joinBy": "id"],
+    ])))
+  }
+
   override func setUpWithError() throws {
     fixture = try BridgeObject(Fixtures.json("packages/react-native/test/native/map-bridge.json"))
   }

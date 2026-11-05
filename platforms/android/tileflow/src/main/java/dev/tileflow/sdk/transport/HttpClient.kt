@@ -17,6 +17,9 @@ import okhttp3.Request
 /** The device has no usable network, or the SDK was told to act as if it had none. */
 internal class NetworkUnavailableException : IOException("The network is unavailable.")
 
+internal class ResourceTooLargeException(val limitBytes: Long) :
+    IOException("Resource exceeds its byte limit.")
+
 /**
  * A response whose body arrives as it downloads. Headers are the server's, filtered to those the
  * SDK reads; [ResourceLoader] decides what the renderer sees. Closing the body before its end
@@ -160,7 +163,7 @@ internal class NativeHTTPTransport(
             // Redirects are returned, never followed; the resource owner decides on each.
             if (request.method != "HEAD" && body != null && body.contentLength() > maximumBytes) {
                 response.close()
-                throw IOException("Resource exceeds its byte limit.")
+                throw ResourceTooLargeException(maximumBytes.toLong())
             }
             val headers = buildMap {
                 for (name in FORWARDED_HEADERS) response.header(name)?.let { put(name, it) }
@@ -251,7 +254,7 @@ private class BoundedStream(
         if (count > limit) {
             call.cancel()
             finish()
-            throw IOException("Resource exceeds its byte limit.")
+            throw ResourceTooLargeException(limit)
         }
         return read
     }

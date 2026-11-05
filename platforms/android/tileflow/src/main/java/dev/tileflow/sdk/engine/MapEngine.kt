@@ -1,6 +1,9 @@
 package dev.tileflow.sdk.engine
 
 import android.view.View
+import dev.tileflow.sdk.JoinBoundaryRowsOptions
+import dev.tileflow.sdk.TileflowBoundaryJoinResult
+import dev.tileflow.sdk.TileflowBoundaryRow
 import dev.tileflow.sdk.TileflowErrorCode
 import dev.tileflow.sdk.TileflowMapException
 import dev.tileflow.sdk.model.MapContract
@@ -38,6 +41,11 @@ internal class MapEngineCallbacks(
 internal interface MapEngine {
     /** Updates only the pins if this engine can do so independently of scene overlays. */
     suspend fun updateContentAnnotations(annotations: JSONArray): Boolean = false
+
+    suspend fun joinBoundaryRows(
+        rows: List<TileflowBoundaryRow>,
+        options: JoinBoundaryRowsOptions,
+    ): TileflowBoundaryJoinResult = throw TileflowMapException(TileflowErrorCode.NOT_READY)
 
     /** The view that shows the map, placed under the annotation overlay and the controls. */
     val view: View

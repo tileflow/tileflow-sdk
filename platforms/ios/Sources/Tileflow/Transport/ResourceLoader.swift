@@ -20,12 +20,15 @@ struct ResourceResponse: Sendable {
 
 protocol ResourceLoading: Sendable {
   func load(_ request: URLRequest) async throws -> ResourcePayload
+  func loadOnline(_ request: URLRequest) async throws -> ResourcePayload
   /// Returns once the response head is known; a successful body may still be downloading.
   func open(_ request: URLRequest) async throws -> ResourceResponse
   func close()
 }
 
 extension ResourceLoading {
+  func loadOnline(_ request: URLRequest) async throws -> ResourcePayload { try await load(request) }
+
   func open(_ request: URLRequest) async throws -> ResourceResponse {
     let payload = try await load(request)
     return ResourceResponse(
@@ -98,7 +101,14 @@ final class ResourceLoader: ResourceLoading, Sendable {
   func close() { transport.close() }
 
   func load(_ request: URLRequest) async throws -> ResourcePayload {
-    let response = try await open(request)
+    try await collect(open(request))
+  }
+
+  func loadOnline(_ request: URLRequest) async throws -> ResourcePayload {
+    try await collect(open(request, onlineOnly: true))
+  }
+
+  private func collect(_ response: ResourceResponse) async throws -> ResourcePayload {
     switch response.body {
     case .data(let bytes):
       return ResourcePayload(bytes: bytes, status: response.status, headers: response.headers)
@@ -112,6 +122,11 @@ final class ResourceLoader: ResourceLoading, Sendable {
   }
 
   func open(_ request: URLRequest) async throws -> ResourceResponse {
+    try await open(request, onlineOnly: false)
+  }
+
+  private func open(_ request: URLRequest, onlineOnly: Bool) async throws -> ResourceResponse {
+    if onlineOnly, !networkEnabled() || !reachable() { throw URLError(.notConnectedToInternet) }
     guard var url = request.url else { throw ResourceError.invalidAddress }
     guard request.httpMethod == nil || request.httpMethod == "GET" || request.httpMethod == "HEAD"
     else { throw ResourceError.unsupportedRequest }
@@ -124,11 +139,12 @@ final class ResourceLoader: ResourceLoading, Sendable {
     let cacheable = cache != nil && method == "GET" && range == nil
     let protected = hosted != nil && !publicMetadataURLs.contains(url) && !isPublicAPIResource(url)
     guard networkEnabled() else {
+      if onlineOnly { throw URLError(.notConnectedToInternet) }
       return try await storedOnly(url, protected: protected, cacheable: cacheable)
     }
     // A fresh public entry needs neither the network nor a Hosted session.
-    if cacheable, let stored = freshPublicEntry(url) { return Self.response(stored) }
-    if protected, cacheable,
+    if cacheable, let stored = freshPublicEntry(url, ambientOnly: onlineOnly) { return Self.response(stored) }
+    if !onlineOnly, protected, cacheable,
       OfflineServingRule.hostedUsesPacks(networkEnabled: true, reachable: reachable()),
       let packed = await packEntry(url)
     {
@@ -152,7 +168,7 @@ final class ResourceLoader: ResourceLoading, Sendable {
           admission = try await hosted.authorize(url, publicPolicy: policy)
         } catch let error as TileflowMapError where error == .sessionUnavailable {
           // The service cannot be reached: a downloaded region answers instead.
-          if cacheable, let packed = await packEntry(url) { return Self.response(packed) }
+          if !onlineOnly, cacheable, let packed = await packEntry(url) { return Self.response(packed) }
           throw error
         }
         grant = admission.grant
@@ -170,7 +186,7 @@ final class ResourceLoader: ResourceLoading, Sendable {
         : grant == nil
           ? ResourceCacheKey(url: url, scope: .shared)
           : grantScope.map { ResourceCacheKey(url: url, scope: $0) }
-      let stored = key.flatMap(storedEntries)
+      let stored = key.flatMap { storedEntries($0, ambientOnly: onlineOnly) }
       if let fresh = stored?.fresh(at: date()) { return Self.response(fresh.resource) }
       if let candidate = stored?.candidate {
         for (name, value) in ResourceCachePolicy.validators(candidate.resource.metadata.headers) {
@@ -178,7 +194,7 @@ final class ResourceLoader: ResourceLoading, Sendable {
         }
       }
       // A downloaded region's pack entry is revalidated instead of downloaded again.
-      let packed = stored == nil && grant != nil && cacheable ? await packEntry(url) : nil
+      let packed = !onlineOnly && stored == nil && grant != nil && cacheable ? await packEntry(url) : nil
       if let etag = packed?.metadata.headers["ETag"] {
         native.setValue(etag, forHTTPHeaderField: "If-None-Match")
       }
@@ -186,7 +202,7 @@ final class ResourceLoader: ResourceLoading, Sendable {
       do {
         response = try await transport.open(native)
       } catch {
-        if Self.isNetworkFailure(error),
+        if !onlineOnly, Self.isNetworkFailure(error),
           let fallback = stored?.afterFailure(at: date())?.resource ?? packed
         {
           return Self.response(fallback)
@@ -297,19 +313,19 @@ final class ResourceLoader: ResourceLoading, Sendable {
   }
 
   /// A fresh entry in the shared scope for an origin this map may use without a grant.
-  private func freshPublicEntry(_ url: URL) -> StoredResource? {
+  private func freshPublicEntry(_ url: URL, ambientOnly: Bool = false) -> StoredResource? {
     guard (try? policy.validate(url)) != nil, !publicMetadataURLs.contains(url) else { return nil }
     if let apiOrigin, ResourcePolicy.origin(url) == ResourcePolicy.origin(apiOrigin),
       !HostedContract.isPublicAPIResource(url)
     {
       return nil
     }
-    return storedEntries(ResourceCacheKey(url: url, scope: .shared))?.fresh(at: date())?.resource
+    return storedEntries(ResourceCacheKey(url: url, scope: .shared), ambientOnly: ambientOnly)?.fresh(at: date())?.resource
   }
 
-  private func storedEntries(_ key: ResourceCacheKey) -> StoredEntries? {
+  private func storedEntries(_ key: ResourceCacheKey, ambientOnly: Bool = false) -> StoredEntries? {
     guard let cache else { return nil }
-    let pinned = cache.read(key, retention: .pinned)
+    let pinned = ambientOnly ? nil : cache.read(key, retention: .pinned)
     let ambient = cache.read(key, retention: .ambient)
     guard pinned != nil || ambient != nil else { return nil }
     return StoredEntries(pinned: pinned, ambient: ambient)

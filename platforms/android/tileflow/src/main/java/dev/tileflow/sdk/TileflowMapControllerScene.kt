@@ -26,6 +26,12 @@ public suspend fun TileflowMapController.setStyleState(
 /** See [TileflowMapView.routeInks]. */
 public suspend fun TileflowMapController.routeInks(): TileflowRouteInks = attached().routeInks()
 
+/** See [TileflowMapView.joinBoundaryRows]. */
+public suspend fun TileflowMapController.joinBoundaryRows(
+    rows: List<TileflowBoundaryRow>,
+    options: JoinBoundaryRowsOptions,
+): TileflowBoundaryJoinResult = attached().joinBoundaryRows(rows, options)
+
 /** See [TileflowMapView.setBoundaryValues]. */
 public suspend fun TileflowMapController.setBoundaryValues(values: TileflowBoundaryValues?): Unit =
     attached().setBoundaryValues(values)

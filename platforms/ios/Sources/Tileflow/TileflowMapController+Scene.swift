@@ -26,6 +26,13 @@ extension TileflowMapController {
   /// See ``TileflowMapView/routeInks()``.
   public func routeInks() async throws -> TileflowRouteInks { try await attached().routeInks() }
 
+  /// See ``TileflowMapView/joinBoundaryRows(_:options:)``.
+  public func joinBoundaryRows(
+    _ rows: [TileflowBoundaryRow], options: JoinBoundaryRowsOptions
+  ) async throws -> TileflowBoundaryJoinResult {
+    try await attached().joinBoundaryRows(rows, options: options)
+  }
+
   /// See ``TileflowMapView/setBoundaryValues(_:)``.
   public func setBoundaryValues(_ values: TileflowBoundaryValues?) async throws {
     try await attached().setBoundaryValues(values)

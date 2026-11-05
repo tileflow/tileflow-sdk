@@ -340,6 +340,15 @@ public suspend fun TileflowMapView.routeInks(): TileflowRouteInks {
 }
 
 /**
+ * Joins rows using the Boundaries release the map draws. Requires a ready, online map.
+ * A lookup is downloaded only when the keys differ and [options] supplies no lookup.
+ */
+public suspend fun TileflowMapView.joinBoundaryRows(
+    rows: List<TileflowBoundaryRow>,
+    options: JoinBoundaryRowsOptions,
+): TileflowBoundaryJoinResult = requireRenderer().joinBoundaryRows(rows, options)
+
+/**
  * Sets the application's values on the map's Boundaries areas, for a choropleth that reads them;
  * null removes them. Rows travel on the data channel.
  */

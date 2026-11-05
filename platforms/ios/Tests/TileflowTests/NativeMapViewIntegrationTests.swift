@@ -831,14 +831,17 @@ final class NativeMapViewIntegrationTests: XCTestCase {
   }
 
   func testBoundaryFeatureStateChangesRenderedDistrictPixels() async throws {
-    try await checkBoundaryPixels(map: "districts", manifest: FixtureServer.manifest, layer: "district-fill")
+    try await checkBoundaryPixels(map: "districts", manifest: FixtureServer.manifest, layer: "district-fill", join: true)
   }
 
   func testCompiledBoundaryScaleChangesRenderedDistrictPixels() async throws {
     try await checkBoundaryPixels(map: "appearance", manifest: Self.nativeManifest, layer: "score-fill")
   }
 
-  private func checkBoundaryPixels(map name: String, manifest: URL, layer: String) async throws {
+  private func checkBoundaryPixels(map name: String, manifest: URL, layer: String, join: Bool = false) async throws {
+    if join { await TileflowMapCache.clear() }
+    let previousNetwork = TileflowOfflineSwitch.shared.isNetworkEnabled
+    defer { TileflowOfflineSwitch.shared.isNetworkEnabled = previousNetwork }
     let source = TileflowMapSource(map: name, manifestURL: manifest, allowsLoopbackHTTP: true)
     let view = TileflowMapView(source: source)
     let events = NativeMapEvents()
@@ -864,8 +867,33 @@ final class NativeMapViewIntegrationTests: XCTestCase {
       XCTFail("Expected district color \(String(expected, radix:16)), saw \(last)")
     }
     try await waitForColor(0x00ff00)
-    try await view.setBoundaryValues(.init(ids: [41: 1]))
+    if join {
+      let result = try await view.joinBoundaryRows(
+        [.init(key: " q2807 ", value: 2), .init(key: "Q2807", value: 1),
+          .init(key: "Q-missing", value: 3)],
+        options: .init(joinBy: .wikidata, classes: [.municipality]))
+      XCTAssertEqual(result.rows, [.init(key: 41, value: 1)])
+      XCTAssertEqual(result.duplicates, ["Q2807"])
+      XCTAssertEqual(result.unmatched, ["Q-missing"])
+      try await view.setBoundaryValues(result.values())
+      TileflowOfflineSwitch.shared.isNetworkEnabled = false
+      do {
+        _ = try await view.joinBoundaryRows([.init(key: 41, value: 1)], options: .init(joinBy: .id))
+        XCTFail("The map joined while offline")
+      } catch let error as TileflowMapError {
+        XCTAssertEqual(error.context.reason, "boundaryLookupOffline")
+      }
+      TileflowOfflineSwitch.shared.isNetworkEnabled = true
+    } else {
+      try await view.setBoundaryValues(.init(ids: [41: 1]))
+    }
     try await waitForColor(0xff0000)
+    if join {
+      let capture = XCTAttachment(image: NativeOfflineElevationTests.snapshot(window))
+      capture.name = "boundary-join-registry-41-red"
+      capture.lifetime = .keepAlways
+      add(capture)
+    }
     try await view.setBoundaryValues(.init(ids: [41: 2]))
     try await waitForColor(0x0000ff)
     try await view.setBoundaryValues(nil)

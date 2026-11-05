@@ -8,6 +8,7 @@ import androidx.activity.ComponentActivity
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.tileflow.sdk.engine.NativeMapEngine
+import dev.tileflow.sdk.offline.TileflowOfflineSwitch
 import java.io.File
 import java.net.URI
 import java.time.Instant
@@ -174,14 +175,14 @@ public class MapSceneIntegrationTest {
     }
 
     @Test
-    public fun intrinsicBoundaryIdsColorRenderedDistricts() =
-        checkBoundaryPixels("districts", "district-fill")
+    public fun joinedBoundaryRowsColorRenderedDistricts() =
+        checkBoundaryPixels("districts", "district-fill", joinRows = true)
 
     @Test
     public fun compiledBoundaryChoroplethColorsIntrinsicIds() =
         checkBoundaryPixels("appearance", "score-fill")
 
-    private fun checkBoundaryPixels(name: String, layer: String) {
+    private fun checkBoundaryPixels(name: String, layer: String, joinRows: Boolean = false) {
         val activity = show(name)
         try {
             runBlocking {
@@ -232,12 +233,22 @@ public class MapSceneIntegrationTest {
                         }
                         assertEquals("Rendered pixel of district 41 in $layer", expected, last)
                     }
-                    view.setBoundaryValues(
-                        TileflowBoundaryValues.byIds(
-                            mapOf(41L to TileflowBoundaryValue.Number(1.0)),
-                            labels = true,
-                        )
+                    val joinInput = listOf(
+                        TileflowBoundaryRow(TileflowBoundaryKey.Text(" q2807 "), TileflowBoundaryValue.Number(1.0)),
                     )
+                    val joinOptions = JoinBoundaryRowsOptions(
+                        TileflowBoundaryCode.WIKIDATA,
+                        classes = setOf(TileflowBoundaryClass.MUNICIPALITY),
+                    )
+                    val values = if (joinRows) {
+                        val result = view.joinBoundaryRows(joinInput, joinOptions)
+                        assertEquals(TileflowBoundaryKey.Number(41.0), result.rows.single().key)
+                        assertTrue(result.unmatched.isEmpty())
+                        result.values(labels = true)
+                    } else {
+                        TileflowBoundaryValues.byIds(mapOf(41L to TileflowBoundaryValue.Number(1.0)), labels = true)
+                    }
+                    view.setBoundaryValues(values)
                     checkColor(Color.RED)
                     val source =
                         requireNotNull(map.style?.getSourceAs<VectorSource>("tileflow-boundaries"))
@@ -257,6 +268,18 @@ public class MapSceneIntegrationTest {
                     checkColor(Color.BLUE)
                     view.setBoundaryValues(null)
                     checkColor(Color.GREEN)
+                    if (joinRows) {
+                        TileflowOfflineSwitch.isNetworkEnabled = false
+                        try {
+                            val error = runCatching {
+                                view.joinBoundaryRows(joinInput, joinOptions)
+                            }.exceptionOrNull() as? TileflowMapException
+                            assertEquals(TileflowErrorCode.RESOURCE_FAILED, error?.code)
+                            assertEquals("boundaryLookupOffline", error?.context?.reason)
+                        } finally {
+                            TileflowOfflineSwitch.isNetworkEnabled = true
+                        }
+                    }
                 }
             }
         } finally {

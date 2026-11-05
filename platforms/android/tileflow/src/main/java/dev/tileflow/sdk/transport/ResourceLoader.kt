@@ -75,8 +75,18 @@ internal class ResourceLoader(
     // A delivery rate limit applies to every protected request of one renderer generation.
     private val rateLimitedUntil = AtomicLong(0)
 
-    fun load(url: URI, method: String = "GET", range: String? = null): ResourcePayload {
-        val response = open(url, method, range)
+    fun load(url: URI, method: String = "GET", range: String? = null): ResourcePayload =
+        payload(open(url, method, range), method)
+
+    /** An explicit online request may use the HTTP cache, but never offline packs or stale data. */
+    fun loadOnline(url: URI): ResourcePayload =
+        payload(open(url, "GET", null, onlineOnly = true), "GET")
+
+    fun requireOnline() {
+        if (!networkEnabled() || !reachable()) throw NetworkUnavailableException()
+    }
+
+    private fun payload(response: ResourceResponse, method: String): ResourcePayload {
         val bytes = response.body.use { it.readBytes() }
         val headers =
             if (method == "HEAD") response.headers
@@ -84,17 +94,20 @@ internal class ResourceLoader(
         return ResourcePayload(bytes, response.status, headers)
     }
 
-    fun open(url: URI, method: String = "GET", range: String? = null): ResourceResponse {
+    fun open(url: URI, method: String = "GET", range: String? = null): ResourceResponse =
+        open(url, method, range, onlineOnly = false)
+
+    private fun open(url: URI, method: String, range: String?, onlineOnly: Boolean): ResourceResponse {
         require(method == "GET" || method == "HEAD")
         if (range != null) require(Regex("^bytes=[0-9]+-[0-9]*$").matches(range))
         val cacheable = cache != null && method == "GET" && range == null
         val protected = hosted != null && url !in publicMetadataUrls && !isPublicApiResource(url)
-        if (!networkEnabled()) return storedOnly(url, protected, cacheable)
+        if (onlineOnly) requireOnline()
+        else if (!networkEnabled()) return storedOnly(url, protected, cacheable)
         // A fresh public entry needs neither the network nor a Hosted session.
         if (cacheable) freshPublicEntry(url)?.let { return response(it) }
         if (
-            protected &&
-                cacheable &&
+            !onlineOnly && protected && cacheable &&
                 OfflineServingRule.hostedUsesPacks(networkEnabled = true, reachable = reachable())
         )
             packEntry(url)?.let { return response(it) }
@@ -119,7 +132,7 @@ internal class ResourceLoader(
                         hosted.authorize(target, policy)
                     } catch (error: TileflowMapException) {
                         // The service cannot be reached: a downloaded region answers instead.
-                        if (error.code == TileflowErrorCode.SESSION_UNAVAILABLE && cacheable)
+                        if (!onlineOnly && error.code == TileflowErrorCode.SESSION_UNAVAILABLE && cacheable)
                             packEntry(target)?.let { return response(it) }
                         throw error
                     }
@@ -147,14 +160,14 @@ internal class ResourceLoader(
                 }
             }
             // A downloaded region's pack entry is revalidated instead of downloaded again.
-            val packed = if (stored == null && grant != null && cacheable) packEntry(target) else null
+            val packed = if (!onlineOnly && stored == null && grant != null && cacheable) packEntry(target) else null
             packed?.metadata?.headers?.get("ETag")?.let { request.header("If-None-Match", it) }
             val stream =
                 try {
                     transport.open(request.build(), admission?.timeoutMillis ?: 30_000)
                 } catch (error: IOException) {
                     // A closed loader's cancelled requests never fall back to stored responses.
-                    if (closed.count > 0 && isNetworkFailure(error))
+                    if (!onlineOnly && closed.count > 0 && isNetworkFailure(error))
                         (stored?.afterFailure(date())?.resource ?: packed)?.let {
                             return response(it)
                         }
@@ -169,7 +182,7 @@ internal class ResourceLoader(
                 stream.close()
                 return response(packed)
             }
-            if (stream.status in 500..599)
+            if (!onlineOnly && stream.status in 500..599)
                 stored?.afterFailure(date())?.let {
                     stream.close()
                     return response(it.resource)

@@ -10,6 +10,7 @@ import {
 import type {ElementRef} from 'react';
 import {findNodeHandle, Linking} from 'react-native';
 import type {NativeSyntheticEvent} from 'react-native';
+import {boundaryValuesInput} from './boundary-input';
 import type {
   CameraProps,
   CameraState,
@@ -42,7 +43,7 @@ const defaultLocation: NativeUserLocation = {visible: false};
 
 function Appearance({props}: {props: MapViewProps}) {
   useMapCommand('setBoundaryValues', {
-    values: (props.boundaryValues as unknown as JsonObject) ?? null,
+    values: boundaryValuesInput(props.boundaryValues),
   });
   useMapCommand('setStyleState', {state: props.styleState ?? {}});
   useMapCommand('setSun', {sun: (props.sun as JsonObject) ?? null});

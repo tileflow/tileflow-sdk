@@ -31,6 +31,7 @@ enum MapContract {
     case setEmphasis
     case setStyleState
     case getRouteInks
+    case joinBoundaryRows
     case setBoundaryValues
     case setImages
     case setDepthMarkers
@@ -120,6 +121,9 @@ enum MapContract {
     case layerPositionConflict
     case unknownSource
     case featureUnavailable
+    case boundaryLookupOffline
+    case boundaryLookupUnavailable
+    case boundaryLookupInvalid
   }
 
   /// Error codes that can originate in the renderer.

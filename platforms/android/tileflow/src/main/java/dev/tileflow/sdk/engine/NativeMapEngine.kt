@@ -8,6 +8,9 @@ import android.os.Looper
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
+import dev.tileflow.sdk.JoinBoundaryRowsOptions
+import dev.tileflow.sdk.TileflowBoundaryJoinResult
+import dev.tileflow.sdk.TileflowBoundaryRow
 import dev.tileflow.sdk.TileflowCamera
 import dev.tileflow.sdk.TileflowCameraUpdate
 import dev.tileflow.sdk.TileflowCoordinate
@@ -16,6 +19,8 @@ import dev.tileflow.sdk.TileflowErrorContext
 import dev.tileflow.sdk.TileflowMapException
 import dev.tileflow.sdk.TileflowResourceKind
 import dev.tileflow.sdk.attribution.MapAttributionControl
+import dev.tileflow.sdk.boundaries.NativeBoundaryLookup
+import dev.tileflow.sdk.boundaries.needsMapLookup
 import dev.tileflow.sdk.model.MapContract
 import dev.tileflow.sdk.model.MapPayloadStore
 import dev.tileflow.sdk.offline.OfflineReachability
@@ -294,6 +299,25 @@ internal class NativeMapEngine(
                 callbacks.ready(this)
             }
         }
+    }
+
+    override suspend fun joinBoundaryRows(
+        rows: List<TileflowBoundaryRow>,
+        options: JoinBoundaryRowsOptions,
+    ): TileflowBoundaryJoinResult {
+        if (retired) throw TileflowMapException(retiredCode)
+        val descriptor = projection?.boundaryLookup
+        val result = try {
+            withContext(Dispatchers.IO) { NativeBoundaryLookup.join(rows, options, descriptor, loader) }
+        } catch (failure: Exception) {
+            currentCoroutineContext().ensureActive()
+            if (retired) throw TileflowMapException(retiredCode)
+            throw failure
+        }
+        if (retired) throw TileflowMapException(retiredCode)
+        if (options.needsMapLookup && projection?.boundaryLookup != descriptor)
+            throw TileflowMapException(TileflowErrorCode.CANCELLED)
+        return result
     }
 
     override suspend fun updateContentAnnotations(annotations: JSONArray): Boolean {

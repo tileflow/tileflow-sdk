@@ -28,6 +28,7 @@ export type MapMethod =
   | 'getClusterExpansionZoom'
   | 'setImages'
   | 'setBoundaryValues'
+  | 'joinBoundaryRows'
   | 'setStyleState'
   | 'setEmphasis'
   | 'setSun'

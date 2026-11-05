@@ -1,6 +1,7 @@
 package dev.tileflow.reactnative
 
 import dev.tileflow.reactnative.map.MapValues
+import dev.tileflow.reactnative.map.SceneValues
 import dev.tileflow.sdk.*
 import dev.tileflow.sdk.location.TileflowLocation
 import org.json.JSONArray
@@ -50,6 +51,38 @@ class NativeMapValuesTest {
         assertTrue(options.allowOverlap)
         val tap = MapValues.tap(TileflowCoordinate(-3.7038, 40.4168), TileflowPoint(94.5f, 138.75f), 3f)
         assertEquals(31.5, tap.getJSONObject("properties").getDouble("screenPointX"), 0.0)
+    }
+
+    @Test
+    fun boundaryJoinWireRetainsNullValuesAndOriginalDiagnostics() {
+        val (rows, options) = SceneValues.boundaryJoin(JSONObject("""
+            {
+              "rows": [
+                {"key":" q1 ","value":"open"},
+                {"key":"Q1","value":null},
+                {"key":" q2 ","value":4},
+                {"key":12,"value":1}
+              ],
+              "options":{
+                "joinBy":"wikidata",
+                "classes":["region"],
+                "lookup":{"rows":[
+                  {"id":9007199254740991,"class":"region","wikidata":"Q1"},
+                  {"id":2,"class":"region","wikidata":"Q2"},
+                  {"id":3,"class":"region","wikidata":"Q2"}
+                ]}
+              }
+            }
+        """))
+        val result = SceneValues.boundaryJoin(joinBoundaryRows(rows, options))
+        val resolved = result.getJSONArray("rows").getJSONObject(0)
+
+        assertEquals("id", result.getString("joinBy"))
+        assertEquals(9007199254740991L, resolved.getLong("key"))
+        assertTrue(resolved.has("value") && resolved.isNull("value"))
+        assertEquals("Q1", result.getJSONArray("duplicates").getString(0))
+        assertEquals(" q2 ", result.getJSONArray("ambiguous").getString(0))
+        assertEquals(12, result.getJSONArray("unmatched").getInt(0))
     }
 
     @Test

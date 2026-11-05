@@ -58,6 +58,80 @@ internal object SceneValues {
         )
     }
 
+    data class BoundaryJoin(val rows: List<TileflowBoundaryRow>, val options: JoinBoundaryRowsOptions)
+
+    fun boundaryJoin(value: JSONObject): BoundaryJoin {
+        val rows = MapValues.list(value.getJSONArray("rows")) { raw ->
+            val row = raw as? JSONObject ?: MapValues.invalid()
+            val key = when (val key = row.get("key")) {
+                is String -> TileflowBoundaryKey.Text(key)
+                is Number -> TileflowBoundaryKey.Number(MapValues.number(key))
+                else -> MapValues.invalid()
+            }
+            val cell = when (val cell = row.get("value")) {
+                JSONObject.NULL -> null
+                is String -> TileflowBoundaryValue.Category(cell)
+                is Number -> TileflowBoundaryValue.Number(MapValues.number(cell))
+                else -> MapValues.invalid()
+            }
+            TileflowBoundaryRow(key, cell)
+        }
+        val input = value.getJSONObject("options")
+        val code = MapValues.string(input.get("joinBy"))
+        val joinBy = TileflowBoundaryCode.entries.firstOrNull { it.wireName == code } ?: MapValues.invalid()
+        val to = MapValues.optionalString(input, "to") ?: "id"
+        val target = TileflowBoundaryTarget.entries.firstOrNull { it.wireName == to } ?: MapValues.invalid()
+        val classes = MapValues.arrayValue(input, "classes")?.let { array ->
+            MapValues.list(array) { boundaryClass(MapValues.string(it)) }.toSet()
+        }
+        val lookup = MapValues.objectValue(input, "lookup")?.let { lookup ->
+            TileflowBoundaryLookup(MapValues.list(lookup.getJSONArray("rows")) { raw ->
+                val row = raw as? JSONObject ?: MapValues.invalid()
+                TileflowBoundaryLookupRow(
+                    id = MapValues.number(row.get("id")),
+                    boundaryClass = boundaryClass(MapValues.string(row.get("class"))),
+                    adminLevel = MapValues.optionalNumber(row, "admin_level")?.let {
+                        if (it != Math.rint(it) || it !in -9007199254740991.0..9007199254740991.0)
+                            MapValues.invalid()
+                        it.toLong()
+                    },
+                    classTier = MapValues.optionalString(row, "class_tier"),
+                    iso31661 = MapValues.optionalString(row, "iso_3166_1"),
+                    iso31662 = MapValues.optionalString(row, "iso_3166_2"),
+                    name = MapValues.optionalString(row, "name"),
+                    nameEn = MapValues.optionalString(row, "name_en"),
+                    nuts = MapValues.optionalString(row, "nuts"),
+                    ref = MapValues.optionalString(row, "ref"),
+                    wikidata = MapValues.optionalString(row, "wikidata"),
+                )
+            })
+        }
+        return BoundaryJoin(rows, JoinBoundaryRowsOptions(joinBy, target, classes, lookup))
+    }
+
+    fun boundaryJoin(result: TileflowBoundaryJoinResult): JSONObject {
+        fun key(value: TileflowBoundaryKey): Any = when (value) {
+            is TileflowBoundaryKey.Number -> value.value
+            is TileflowBoundaryKey.Text -> value.value
+        }
+        val rows = result.rows.map { row ->
+            val cell = when (val value = row.value) {
+                null -> JSONObject.NULL
+                is TileflowBoundaryValue.Number -> value.value
+                is TileflowBoundaryValue.Category -> value.value
+            }
+            JSONObject().put("key", key(row.key)).put("value", cell)
+        }
+        return JSONObject().put("joinBy", result.joinBy.wireName)
+            .put("rows", JSONArray(rows))
+            .put("ambiguous", JSONArray(result.ambiguous.map(::key)))
+            .put("duplicates", JSONArray(result.duplicates.map(::key)))
+            .put("unmatched", JSONArray(result.unmatched.map(::key)))
+    }
+
+    private fun boundaryClass(value: String): TileflowBoundaryClass =
+        TileflowBoundaryClass.entries.firstOrNull { it.wireName == value } ?: MapValues.invalid()
+
     fun boundaries(value: JSONObject?): TileflowBoundaryValues? {
         if (value == null) return null
         if (value.has("ids") == value.has("refs")) MapValues.invalid()

@@ -1,5 +1,11 @@
 import type {ReactNode} from 'react';
 import type {ViewProps} from 'react-native';
+import type {
+  JoinBoundaryRowsOptions,
+  TileflowBoundaryJoinResult,
+  TileflowBoundaryRow,
+  TileflowBoundaryValues,
+} from './generated/boundary-join';
 import type {MapErrorEvent} from './map-error';
 import type {
   CameraPadding,
@@ -74,6 +80,7 @@ export type FeatureIdentifier = Readonly<{
 export type BoundaryValues = (
   | Readonly<{ids: Readonly<Record<string, number | string>>; refs?: never}>
   | Readonly<{refs: Readonly<Record<string, number | string>>; ids?: never}>
+  | TileflowBoundaryValues
 ) &
   Readonly<{
     labels?: boolean;
@@ -141,6 +148,10 @@ export type MapViewProps = ViewProps &
   };
 
 export interface MapViewRef {
+  joinBoundaryRows(
+    rows: readonly TileflowBoundaryRow[],
+    options: JoinBoundaryRowsOptions,
+  ): Promise<TileflowBoundaryJoinResult>;
   getPointInView(coordinate: Coordinate): Promise<ScreenPoint>;
   getCoordinateFromView(point: ScreenPoint): Promise<Coordinate>;
   getVisibleBounds(): Promise<readonly [Coordinate, Coordinate]>;

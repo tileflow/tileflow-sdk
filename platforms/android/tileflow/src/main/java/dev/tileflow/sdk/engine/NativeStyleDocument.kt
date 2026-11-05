@@ -4,6 +4,7 @@ import dev.tileflow.sdk.TileflowErrorCode
 import dev.tileflow.sdk.TileflowErrorContext
 import dev.tileflow.sdk.TileflowMapException
 import dev.tileflow.sdk.TileflowResourceKind
+import dev.tileflow.sdk.boundaries.BoundaryLookupDescriptor
 import dev.tileflow.sdk.transport.MapResourceAddress
 import dev.tileflow.sdk.transport.ResourcePolicy
 import java.net.URI
@@ -23,6 +24,8 @@ internal class NativeStyleProjection(
     private val kinds: List<Pair<String, TileflowResourceKind>>,
     /** What the style asks for that MapLibre Native cannot draw from it, such as `text`. */
     val omitted: List<String> = emptyList(),
+    /** Lookup resources of the release this style draws, loaded only on request. */
+    val boundaryLookup: BoundaryLookupDescriptor? = null,
 ) {
     /** The kind of the resource [remote] addresses, from the style that referenced it. */
     fun classify(remote: URI): TileflowResourceKind {
@@ -84,6 +87,7 @@ internal object NativeStyleDocument {
             return projected
         }
         val attributions = mutableListOf<String>()
+        var boundaryLookup: BoundaryLookupDescriptor? = null
         out.optJSONObject("sources")?.let { sources ->
             for (id in sources.keys().asSequence().toList()) {
                 val source = sources.optJSONObject(id) ?: continue
@@ -99,6 +103,9 @@ internal object NativeStyleDocument {
                 } else if (url != null && type in setOf("vector", "raster", "raster-dem")) {
                     val resolved = MapResourceAddress.resolve(styleUrl, url)
                     val tileJson = tileJson(resolved, load)
+                    if (id == "tileflow-boundaries" && type == "vector" && !source.has("tiles")) {
+                        boundaryLookup = BoundaryLookupDescriptor.fromTileJson(tileJson, resolved)
+                    }
                     for (key in tileJsonKeys) {
                         if (!source.has(key) && tileJson.has(key))
                             source.put(key, tileJson.get(key))
@@ -192,7 +199,7 @@ internal object NativeStyleDocument {
                 layerSources[layer.optString("id")] = source
             }
         }
-        return NativeStyleProjection(out, attributions, layerSources, kinds, omitted)
+        return NativeStyleProjection(out, attributions, layerSources, kinds, omitted, boundaryLookup)
     }
 
     /** The latitude where Web Mercator ends, north and south. */

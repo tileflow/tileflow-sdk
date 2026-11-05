@@ -304,6 +304,19 @@ extension TileflowMapView {
     return inks
   }
 
+  /// Joins rows using this map release's lookup. Requires a network connection, even when cached.
+  /// Use the global `joinBoundaryRows` function for a join without network access.
+  public func joinBoundaryRows(
+    _ rows: [TileflowBoundaryRow], options: JoinBoundaryRowsOptions
+  ) async throws -> TileflowBoundaryJoinResult {
+    let engine = try requireRenderer()
+    let payload = try JSONValue.encoded(BoundaryJoinRequest(rows: rows, options: options))
+    let result = try await engine.call(.joinBoundaryRows, payload: payload)
+    guard self.engine === engine else { throw TileflowMapError.cancelled }
+    return try JSONDecoder().decode(
+      TileflowBoundaryJoinResult.self, from: JSONEncoder().encode(result))
+  }
+
   /// Sets the application's values on the map's Boundaries areas, for a choropleth that reads
   /// them; nil removes them. Rows travel on the data channel.
   public func setBoundaryValues(_ values: TileflowBoundaryValues?) async throws {

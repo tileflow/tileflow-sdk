@@ -35,6 +35,7 @@ internal object MapContract {
         SET_EMPHASIS("setEmphasis"),
         SET_STYLE_STATE("setStyleState"),
         GET_ROUTE_INKS("getRouteInks"),
+        JOIN_BOUNDARY_ROWS("joinBoundaryRows"),
         SET_BOUNDARY_VALUES("setBoundaryValues"),
         SET_IMAGES("setImages"),
         SET_DEPTH_MARKERS("setDepthMarkers"),
@@ -103,6 +104,9 @@ internal object MapContract {
         LAYER_POSITION_CONFLICT("layerPositionConflict"),
         UNKNOWN_SOURCE("unknownSource"),
         FEATURE_UNAVAILABLE("featureUnavailable"),
+        BOUNDARY_LOOKUP_OFFLINE("boundaryLookupOffline"),
+        BOUNDARY_LOOKUP_UNAVAILABLE("boundaryLookupUnavailable"),
+        BOUNDARY_LOOKUP_INVALID("boundaryLookupInvalid"),
     }
 
     /** Error codes that can originate in the renderer. */

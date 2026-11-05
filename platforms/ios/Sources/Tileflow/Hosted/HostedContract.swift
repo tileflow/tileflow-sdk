@@ -192,6 +192,12 @@ enum HostedContract {
         && (Double(match[2].isEmpty ? match[3] : match[2]) ?? .infinity) <= 9_007_199_254_740_991
         && authority.scopes.contains("style")
     }
+    if matches(path,
+      #"^/(?:v1/)?tiles/boundaries/boundaries-v1-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/boundaries-lookup(?:\.json|-(?:country|dependency|region|province_or_county|municipality|district|neighbourhood)\.csv\.gz)$"#)
+    {
+      return keys.isSubset(of: ["map", "mapId"])
+        && authority.scopes.contains("tile") && authority.tilesets.contains("boundaries")
+    }
     let tileset: (scope: String, id: String)?
     if matches(path, #"^/(?:v1/)?tiles/bathymetry/dem/tiles\.json$"#) {
       tileset = ("tilejson", "bathymetry-dem")

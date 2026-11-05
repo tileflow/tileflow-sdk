@@ -10,6 +10,7 @@ struct ProjectedStyle: Sendable {
   let kinds: [(prefix: String, kind: TileflowResourceKind)]
   /// What the engine cannot draw from this document and the projection left out, such as `text`.
   let omitted: [String]
+  var boundaryLookup: BoundaryLookupDescriptor? = nil
 
   /// The kind of a remote resource the engine requested: the longest literal start it matches.
   func kind(of remote: URL) -> TileflowResourceKind {
@@ -96,6 +97,7 @@ enum NativeStyleDocument {
       return projected
     }
 
+    var boundaryLookup: BoundaryLookupDescriptor?
     var attributions: [String] = []
     if var sources = style["sources"] as? [String: Any] {
       // Sources keep the document's order where it has one; JSON objects do not, so sort.
@@ -113,6 +115,9 @@ enum NativeStyleDocument {
               throw TileflowMapError(.resourceFailed, context: .init(resource: .source))
             }
             let tileJSON = try await load(tileJSONURL, .source)
+            if id == "tileflow-boundaries", type == "vector", source["tiles"] == nil {
+              boundaryLookup = BoundaryLookupDescriptor(tileJSON: tileJSON, sourceURL: tileJSONURL)
+            }
             source.removeValue(forKey: "url")
             for key in [
               "tiles", "minzoom", "maxzoom", "bounds", "scheme", "attribution", "encoding",
@@ -191,6 +196,6 @@ enum NativeStyleDocument {
     let data = try JSONSerialization.data(withJSONObject: style)
     return ProjectedStyle(
       json: String(decoding: data, as: UTF8.self), attributions: attributions, kinds: kinds,
-      omitted: omitted)
+      omitted: omitted, boundaryLookup: boundaryLookup)
   }
 }

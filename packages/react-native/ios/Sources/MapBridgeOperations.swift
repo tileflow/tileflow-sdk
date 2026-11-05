@@ -95,6 +95,11 @@ enum MapBridgeOperations {
       try host.checkGeneration(generation)
       try await host.installImages(images, generation: generation)
     case "setBoundaryValues": try await map.setBoundaryValues(MapBridgeValues.boundaries(input.optionalObject("values")))
+    case "joinBoundaryRows":
+      let request = try MapBridgeValues.boundaryJoin(input)
+      let result = try await map.joinBoundaryRows(request.rows, options: request.options)
+      try host.checkGeneration(generation)
+      return try MapBridgeValues.boundaryJoinJSON(result)
     case "setStyleState":
       for (name, value) in try MapBridgeValues.state(input.object("state")) {
         try host.checkGeneration(generation)

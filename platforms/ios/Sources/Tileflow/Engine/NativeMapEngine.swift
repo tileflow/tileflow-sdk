@@ -74,6 +74,8 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   /// The style document MapLibre loads or shows, with what the engine reads from it.
   private(set) var poiCatalog: NativePoiCatalog?
   var document: NativeStyleDocument.Shown?
+  var boundaryLookup: BoundaryLookupDescriptor?
+  var boundaryLookupRevision = 0
   var appearanceRevision = 0
   var viewMode = "2d"
   var viewModeMotion: Task<Void, Never>?
@@ -183,6 +185,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
       }
     case .setSun: return try await scene.setSun(payload)
     case .setStyleState: return try await scene.setStyleState(payload)
+    case .joinBoundaryRows: return try await joinBoundaries(payload)
     case .setBoundaryValues:
       try scene.setBoundaries(payload, data: self.data)
       return .null
@@ -262,6 +265,10 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
         } else {
           try runtimeStyle.updateSource(source, in: loadedStyle)
         }
+        if request["id"]?.string == "tileflow-boundaries" {
+          boundaryLookup = nil
+          boundaryLookupRevision += 1
+        }
         updateApplicationResources()
       } else {
         guard let value = request["data"], let id = request["id"]?.string else {
@@ -275,6 +282,10 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
       }
     case .removeSource:
       try runtimeStyle.removeSource(request, style: loadedStyle)
+      if request["id"]?.string == "tileflow-boundaries" {
+        boundaryLookup = nil
+        boundaryLookupRevision += 1
+      }
       updateApplicationResources()
     case .addLayer, .updateLayer, .moveLayer, .removeLayer:
       try runtimeStyle.modifyLayer(command, request: request, style: loadedStyle)
@@ -453,6 +464,8 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
 
   /// Gives MapLibre a projected style. What the engine reads from it applies once it loads.
   func show(_ style: [String: Any], projected: ProjectedStyle) {
+    boundaryLookup = projected.boundaryLookup
+    boundaryLookupRevision += 1
     guard let mapView else { return }
     baseResourceKinds = projected.kinds
     baseAttributions = projected.attributions

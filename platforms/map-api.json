@@ -30,6 +30,7 @@
     "setEmphasis",
     "setStyleState",
     "getRouteInks",
+    "joinBoundaryRows",
     "setBoundaryValues",
     "setImages",
     "setDepthMarkers",
@@ -154,7 +155,10 @@
     "invalidLayerPosition": "A layer position combines incompatible options or names an index outside its slot.",
     "layerPositionConflict": "A relative layer position references a layer in a different slot.",
     "unknownSource": "A request names an application source that the map does not hold.",
-    "featureUnavailable": "The map holds something this renderer does not draw; the rest of the map continues. The context's feature names the capability."
+    "featureUnavailable": "The map holds something this renderer does not draw; the rest of the map continues. The context's feature names the capability.",
+    "boundaryLookupOffline": "The map lookup requires an available network, even when previously cached.",
+    "boundaryLookupUnavailable": "The map does not expose the requested Boundaries lookup.",
+    "boundaryLookupInvalid": "The Boundaries lookup could not be decoded or verified."
   },
   "errors": {
     "invalidSource": {

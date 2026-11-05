@@ -1,9 +1,11 @@
+import {boundaryValuesInput} from './boundary-input';
 import type {
   FeatureCollection,
   FeatureIdentifier,
   LocationPermission,
   MapViewRef,
 } from './contract';
+import type {TileflowBoundaryJoinResult} from './generated/boundary-join';
 import type {MapController} from './map-controller';
 import {TileflowMapError} from './map-error';
 import type {
@@ -43,6 +45,13 @@ function collection(value: unknown): FeatureCollection {
 
 export function createMapRef(map: MapController, style: StyleRegistry): MapViewRef {
   return {
+    joinBoundaryRows: async (rows, options) => {
+      const {lookup, ...configuration} = options;
+      return (await map.call('joinBoundaryRows', {
+        rows,
+        options: {...configuration, ...(lookup ? {lookup: {rows: lookup.rows}} : {})},
+      })) as TileflowBoundaryJoinResult;
+    },
     getPointInView: async (coordinate) => (await map.call('project', {coordinate})) as ScreenPoint,
     getCoordinateFromView: async (point) => (await map.call('unproject', {point})) as Coordinate,
     getVisibleBounds: async () => {
@@ -104,7 +113,7 @@ export function createMapRef(map: MapController, style: StyleRegistry): MapViewR
       await map.call('removeFeatureState', {...feature(target), ...(key ? {key} : {})});
     },
     setBoundaryValues: async (values) => {
-      await map.call('setBoundaryValues', {values: values as JsonObject | null});
+      await map.call('setBoundaryValues', {values: boundaryValuesInput(values)});
     },
     setStyleState: async (state) => {
       await map.call('setStyleState', {state});

@@ -317,7 +317,7 @@ for (const kind of ['expo', 'bare']) {
     );
   });
 
-  test(`${kind} iOS adapter discovers the app from build settings and rejects non-Hermes output`, async (t) => {
+  test(`${kind} iOS adapter verifies Hermes and embedded dynamic frameworks`, async (t) => {
     const parent = await fixtureParent(t);
     await withMobileWorkspace(
       async (root) => {
@@ -341,6 +341,9 @@ for (const kind of ['expo', 'bare']) {
         );
         const candidate = await nativeCandidate(root);
         let bundle = bytecode();
+        let embedMapLibre = true;
+        let embedDependency = true;
+        const frameworks = join(productDirectory, wrapper, 'Frameworks');
         const context = await createMobileContext(root, {
           environment: {TILEFLOW_NATIVE_CANDIDATE: candidate},
           run: async (command, args, options) => {
@@ -353,6 +356,17 @@ for (const kind of ['expo', 'bare']) {
                 'TileflowReactNative (0.1.0-alpha.16)\n',
               );
               return output();
+            }
+            if (command === 'xcrun') {
+              assert.deepEqual(args.slice(0, 2), ['otool', '-L']);
+              const dependency = args[2].endsWith('/MapLibre')
+                ? '@rpath/FixtureDependency.framework/FixtureDependency'
+                : args[2].endsWith('/FixtureDependency')
+                  ? '/System/Library/Frameworks/Metal.framework/Metal'
+                  : '@rpath/MapLibre.framework/MapLibre';
+              return output(
+                `${args[2]}:\n\t${dependency} (compatibility version 1.0.0, current version 1.0.0)\n`,
+              );
             }
             assert.equal(command, 'xcodebuild');
             assert.ok(args.includes('CODE_SIGNING_ALLOWED=NO'));
@@ -378,6 +392,14 @@ for (const kind of ['expo', 'bare']) {
               'Mock executable, not a native build.',
             );
             await writeMobileFile(root, join(productDirectory, wrapper, 'main.jsbundle'), bundle);
+            for (const [name, embed] of [
+              ['MapLibre', embedMapLibre],
+              ['FixtureDependency', embedDependency],
+            ]) {
+              const binary = join(frameworks, `${name}.framework`, name);
+              if (embed) await writeMobileFile(root, binary, 'Mock dynamic framework.');
+              else await rm(binary, {force: true});
+            }
             return output();
           },
         });
@@ -392,6 +414,12 @@ for (const kind of ['expo', 'bare']) {
         assert.equal(receipt.files[1].name, `${kind}/${wrapper}/main.jsbundle`);
         assert.equal(JSON.stringify(receipt).includes(root), false);
         bundle = Buffer.from('Plain JavaScript');
+        await assert.rejects(buildMobileIos(context, consumer), {code: 'BINARY_INVALID'});
+        bundle = bytecode();
+        embedMapLibre = false;
+        await assert.rejects(buildMobileIos(context, consumer), {code: 'BINARY_INVALID'});
+        embedMapLibre = true;
+        embedDependency = false;
         await assert.rejects(buildMobileIos(context, consumer), {code: 'BINARY_INVALID'});
       },
       {parent},

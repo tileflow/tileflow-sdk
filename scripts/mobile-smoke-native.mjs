@@ -407,6 +407,12 @@ export async function buildMobileIos(context, consumer) {
     bundlePath,
     `${consumer.kind}/${build.WRAPPER_NAME}/main.jsbundle`,
   );
+  const frameworks = await verifyIosEmbeddedFrameworks(
+    context,
+    app,
+    build.EXECUTABLE_NAME,
+    consumer.kind,
+  );
   return {
     consumer: consumer.kind,
     platform: 'ios',
@@ -414,7 +420,49 @@ export async function buildMobileIos(context, consumer) {
     configuration: 'Release',
     hermes,
     nativeCandidate: candidate.version,
-    files: [executable, bundle],
+    files: [executable, bundle, ...frameworks],
     podsLock: await mobileFileIdentity(context.root, lockPath, `${consumer.kind}-Podfile.lock`),
   };
+}
+
+/** Follow the app's dynamic framework links, including links between embedded frameworks. */
+export async function verifyIosEmbeddedFrameworks(context, app, executable, kind) {
+  const step = `ios-${kind}`;
+  const pending = [join(app, executable)];
+  const visited = new Set(pending);
+  const files = [];
+
+  while (pending.length) {
+    const binary = pending.shift();
+    await assertOwnedPath(context.root, binary);
+    const linked = await context.run('xcrun', ['otool', '-L', binary], {step});
+    const dependencies = [
+      ...linked.stdout.toString().matchAll(/^\s+(@rpath\/\S+\.framework\/\S+)\s+\(/gmu),
+    ];
+
+    for (const [, dependency] of dependencies) {
+      const match = /^@rpath\/([A-Za-z0-9_.-]+)\.framework\/\1$/u.exec(dependency);
+      requireMobile(match, 'BINARY_INVALID', step);
+      const relative = `Frameworks/${match[1]}.framework/${match[1]}`;
+      const path = join(app, relative);
+      if (visited.has(path)) continue;
+      visited.add(path);
+
+      try {
+        files.push(
+          await mobileFileIdentity(
+            context.root,
+            path,
+            `${kind}/${app.split('/').at(-1)}/${relative}`,
+          ),
+        );
+      } catch (error) {
+        if (error.code === 'ENOENT') throw new MobileSmokeError('BINARY_INVALID', step);
+        throw error;
+      }
+      pending.push(path);
+    }
+  }
+
+  return files;
 }

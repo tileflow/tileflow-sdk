@@ -4,7 +4,8 @@ import {resolve} from 'node:path';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {format, resolveConfig} from 'prettier';
-import {constantName, renderProtocol, validateProtocol} from '../../../scripts/mobile-protocol.mjs';
+import {constantName} from '../../../scripts/mobile-codegen.mjs';
+import {renderProtocol, validateProtocol} from '../../../scripts/mobile-protocol.mjs';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const read = (path: string) => readFile(resolve(root, path), 'utf8');

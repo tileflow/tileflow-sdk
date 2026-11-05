@@ -1,8 +1,5 @@
-// Runs the React Native package's JVM unit tests without a React Native application. The package
-// normally builds inside an app next to MapLibre React Native, whose Gradle project needs React
-// Native codegen. The modules generated specs back, and the package registration, are left out
-// here; their compilation remains covered by the application build. The Tileflow Android SDK comes
-// from this repository's sources through the included build (settings.gradle.kts).
+// JVM tests for the SDK-backed React Native mapper. Fabric delegates and TurboModule specs
+// compile in the generated application consumer; the mapper uses the repository's native SDK.
 plugins {
     id("com.android.library") version "8.11.1"
     id("org.jetbrains.kotlin.android") version "2.2.20"
@@ -38,7 +35,9 @@ kotlin { jvmToolchain(17) }
 
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
     exclude(
-        "**/TileflowNativeSurfaceModule.kt",
+        "**/TileflowMapModule.kt",
+        "**/TileflowMapViewManager.kt",
+        "**/TileflowMarkerViewManager.kt",
         "**/TileflowServicesModule.kt",
         "**/TileflowOfflineModule.kt",
         "**/TileflowReactNativePackage.kt",
@@ -47,7 +46,6 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
 
 dependencies {
     implementation("com.facebook.react:react-android:0.83.10")
-    implementation("org.maplibre.gl:android-sdk-opengl:13.6.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("dev.tileflow:tileflow")
     implementation("dev.tileflow:tileflow-services")

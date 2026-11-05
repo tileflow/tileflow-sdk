@@ -122,6 +122,7 @@ public class MapContentHostActivity : ComponentActivity() {
 
 @RunWith(AndroidJUnit4::class)
 public class NativeMapContentIntegrationTest {
+    private val initialEngineKind = TileflowMapView.defaultEngineKind
     @Before
     public fun useNative() {
         TileflowMapView.defaultEngineKind = MapEngineKind.NATIVE
@@ -129,7 +130,7 @@ public class NativeMapContentIntegrationTest {
 
     @After
     public fun restoreDefault() {
-        TileflowMapView.defaultEngineKind = MapEngineKind.WEB_VIEW
+        TileflowMapView.defaultEngineKind = initialEngineKind
     }
 
     private suspend fun until(label: String, condition: suspend () -> Boolean) {

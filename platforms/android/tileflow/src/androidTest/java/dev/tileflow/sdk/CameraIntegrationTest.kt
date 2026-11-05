@@ -42,7 +42,7 @@ public class CameraHostActivity : ComponentActivity() {
         map =
             TileflowMapView(this).apply {
                 id = MAP_ID
-                if (native) engineKind = MapEngineKind.NATIVE
+                engineKind = if (native) MapEngineKind.NATIVE else MapEngineKind.WEB_VIEW
                 // The tests measure the view itself; system bars do not move the camera here.
                 automaticallyAdjustsContentPadding = false
                 onEvent = {

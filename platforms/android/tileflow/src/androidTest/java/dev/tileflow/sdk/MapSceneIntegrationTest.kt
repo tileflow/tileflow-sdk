@@ -52,7 +52,7 @@ public class SceneHostActivity : ComponentActivity() {
             else TileflowViewMode.FLAT
         map =
             TileflowMapView(this).apply {
-                if (intent.getBooleanExtra("nativeEngine", false)) engineKind = MapEngineKind.NATIVE
+                engineKind = if (intent.getBooleanExtra("nativeEngine", false)) MapEngineKind.NATIVE else MapEngineKind.WEB_VIEW
                 onEvent = {
                     events.add(it)
                     if (it == TileflowMapEvent.ContentReady) {

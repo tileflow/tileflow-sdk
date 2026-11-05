@@ -1597,7 +1597,7 @@ constructor(
 
     public companion object {
         /** The engine new map views use. Internal: tests set it for the maps Compose creates. */
-        @Volatile internal var defaultEngineKind: MapEngineKind = MapEngineKind.WEB_VIEW
+        @Volatile internal var defaultEngineKind: MapEngineKind = MapEngineKind.NATIVE
 
         /**
          * Prepares the renderer, device profile, HTTP clients and resource cache before the first

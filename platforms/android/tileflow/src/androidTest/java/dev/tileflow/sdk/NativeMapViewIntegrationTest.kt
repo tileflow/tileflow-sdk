@@ -88,7 +88,7 @@ public class NativeViewHostActivity : ComponentActivity() {
             val events = NativeMapEvents()
             val view =
                 TileflowMapView(this).apply {
-                    engineKind = MapEngineKind.NATIVE
+                    if (!intent.getBooleanExtra("publicRenderer", false)) engineKind = MapEngineKind.NATIVE
                     onEvent = { events.events.add(it) }
                     setSource(source)
                     theme?.let { runBlocking { setTheme(it) } }
@@ -160,9 +160,10 @@ public class NativeMapViewIntegrationTest {
         connection.inputStream.close()
     }
 
-    private fun show(): NativeViewHostActivity {
+    private fun show(publicRenderer: Boolean = false): NativeViewHostActivity {
         val intent =
             Intent(instrumentation.context, NativeViewHostActivity::class.java)
+                .putExtra("publicRenderer", publicRenderer)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         return instrumentation.startActivitySync(intent) as NativeViewHostActivity
     }
@@ -473,7 +474,12 @@ public class NativeMapViewIntegrationTest {
     }
 
     @Test
-    public fun streetsLoadsAtCityZoomWithItsHostedClimateLayer() {
+    public fun streetsLoadsAtCityZoomWithItsHostedClimateLayer() = streetsWithClimate(publicRenderer = false)
+
+    @Test
+    public fun aPublicViewOpensStreetsAtZoom16WithClimate() = streetsWithClimate(publicRenderer = true)
+
+    private fun streetsWithClimate(publicRenderer: Boolean) {
         requireNativeFixture()
         val streets = TileflowMapSource(
             map = "streets",
@@ -481,13 +487,18 @@ public class NativeMapViewIntegrationTest {
             allowsLoopbackHttp = true,
         )
         NativeViewHostActivity.maps = listOf(streets to null)
-        val activity = show()
+        val activity = show(publicRenderer)
         try {
             runBlocking {
                 withContext(Dispatchers.Main) {
                     val events = activity.recorded.single()
-                    events.waitForLoads(1)
                     val map = activity.views.single()
+                    withTimeout(15_000) {
+                        while (map.readyEngine == null && events.failures.isEmpty()) delay(50)
+                    }
+                    assertTrue("Streets must open on MapLibre, selected ${map.engineKind}, errors ${events.failures}", map.readyEngine is NativeMapEngine)
+                    events.waitForLoads(1)
+                    assertEquals(16.0, map.camera().zoom, .01)
                     val style = requireNotNull(activity.engine?.map?.style)
                     val climate = style.getLayer("tileflow-global-landcover-underlay") as RasterLayer
                     assertTrue(map.camera().zoom > climate.maxZoom)

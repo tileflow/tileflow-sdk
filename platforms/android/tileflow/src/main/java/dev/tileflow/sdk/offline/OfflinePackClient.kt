@@ -124,7 +124,7 @@ internal data class OfflinePackRequest(
             themes: List<String>,
             geometry: TileflowOfflineGeometry,
             zooms: OfflineZooms,
-            profile: OfflinePackProfile = OfflinePackProfile.WEB_VIEW,
+            profile: OfflinePackProfile = OfflinePackProfile.NATIVE,
         ): List<OfflinePackRequest> {
             if (!Regex("^map_[A-Za-z0-9_-]{16}$").matches(mapId))
                 throw TileflowOfflineException.options("invalidMapID")

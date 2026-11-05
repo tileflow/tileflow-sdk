@@ -1,5 +1,6 @@
 package dev.tileflow.sdk
 
+import dev.tileflow.sdk.engine.MapEngineKind
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -44,6 +45,7 @@ public class MapHostActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         map =
             TileflowMapView(this).apply {
+                engineKind = MapEngineKind.WEB_VIEW
                 onEvent = {
                     when (it) {
                         TileflowMapEvent.ContentReady -> loaded.countDown()

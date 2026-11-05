@@ -69,6 +69,7 @@ public class CameraStateHostActivity : ComponentActivity() {
  */
 @RunWith(AndroidJUnit4::class)
 public class NativeCameraIntegrationTest {
+    private val initialEngineKind = TileflowMapView.defaultEngineKind
     private val centre = TileflowCoordinate(-3.70, 40.42)
 
     @Before
@@ -80,7 +81,7 @@ public class NativeCameraIntegrationTest {
     @After
     public fun webView() {
         CameraHostActivity.native = false
-        TileflowMapView.defaultEngineKind = MapEngineKind.WEB_VIEW
+        TileflowMapView.defaultEngineKind = initialEngineKind
     }
 
     private fun withMap(block: suspend CoroutineScope.(CameraHostActivity, TileflowMapView) -> Unit) {

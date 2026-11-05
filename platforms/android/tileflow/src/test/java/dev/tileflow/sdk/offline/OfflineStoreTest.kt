@@ -266,6 +266,27 @@ class OfflineStoreTest {
     }
 
     @Test
+    fun aNewHostedRegionRequestsNativePacksByDefault() = runBlocking<Unit> {
+        val service = OfflineServiceStub()
+        val configuration = TileflowConfiguration(
+            apiOrigin = URI(ORIGIN),
+            mapCredential = TileflowCredential("tf_public_" + "a".repeat(48)),
+        )
+        val subscribers = OfflineSubscribers()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO).also(scopes::add)
+        val core = OfflineStoreCore(
+            layout(), cache, service,
+            { OfflinePackClient(configuration, { service }, now = { service.clock.get() }) },
+            { null }, subscribers, runner = { OfflineScopeRunner(it, scope) },
+            now = { service.clock.get() },
+        )
+        val store = TileflowOfflineStore(core, subscribers)
+        store.loadRegion("default", madrid())
+        awaitRegion(store, "default") { it.state == COMPLETE }
+        assertEquals(listOf("native-v1"), service.createdProfiles)
+    }
+
+    @Test
     fun aNativeStoreOffersTheProfileUpdateOnlyAfterAccessIsRevalidated() =
         runBlocking<Unit> {
             val service = OfflineServiceStub()

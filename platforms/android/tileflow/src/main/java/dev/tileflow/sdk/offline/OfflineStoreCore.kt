@@ -90,7 +90,7 @@ internal class OfflineStoreCore(
     private val scheduler: OfflineUpdateScheduler? = null,
     /** Whether the device may update regions by itself now. */
     private val conditions: () -> OfflineUpdateConditions = { OfflineUpdateConditions.UNAVAILABLE },
-    private val profile: OfflinePackProfile = OfflinePackProfile.WEB_VIEW,
+    private val profile: OfflinePackProfile = OfflinePackProfile.NATIVE,
 ) {
     private val runner = runner(this)
     private val lock = Mutex()

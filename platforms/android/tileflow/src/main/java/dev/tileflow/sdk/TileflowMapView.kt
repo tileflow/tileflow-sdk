@@ -1493,9 +1493,14 @@ constructor(
             }
             // An annotation listener that takes a press keeps it from the application's event.
             "tap",
-            "longPress" ->
+            "longPress" -> {
                 if (annotations.dispatchPress(annotationHits(result), long = event == "longPress"))
                     return
+                if (event == "tap") result.optJSONObject("poi")?.let {
+                    receive("poiActivated", it, current)
+                    return
+                }
+            }
         }
         if (event == "animationEnded" || event == "shotCue") {
             animations.receive(event, result)

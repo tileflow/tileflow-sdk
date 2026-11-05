@@ -298,7 +298,7 @@ public class MapIntegrationTest {
                     assertEquals(14.0, changes.last().camera.zoom, 0.01)
 
                     // A 5 MiB layer travels over the data channel and renders.
-                    val (geoJSON, features) = BridgeIntegrationTest.geoJSON(5 * 1024 * 1024)
+                    val (geoJSON, features) = largeFeatureCollection(5 * 1024 * 1024)
                     val started = SystemClock.elapsedRealtime()
                     map.setContent(
                         layers =

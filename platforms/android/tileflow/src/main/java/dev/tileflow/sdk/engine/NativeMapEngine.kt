@@ -90,6 +90,7 @@ internal class NativeMapEngine(
     private var resourceContext: String? = null
     /** The style MapLibre draws, once the map initialized. */
     @Volatile private var projection: NativeStyleProjection? = null
+    private var poi: NativePoiManifest? = null
     /** Whether MapLibre finished loading the current style and its resources. */
     private var loaded = false
     /** Whether MapLibre loaded the map's style. */
@@ -500,6 +501,7 @@ internal class NativeMapEngine(
     /** Gives MapLibre a projected style; what the engine reads from it applies once it loads. */
     private fun show(map: MapLibreMap, style: JSONObject, projected: NativeStyleProjection) {
         projection = projected
+        poi = NativePoiManifest.read(projected.style)
         attribution.setStyle(style, (projected.attributions + runtimeStyle.attributions).distinct())
         read(style, projected.omitted)
         contentStyleLoaded = false
@@ -1176,6 +1178,10 @@ internal class NativeMapEngine(
         map.uiSettings.isCompassEnabled = false
         val emit: (String, JSONObject) -> Unit = { event, value ->
             if (!retired) {
+                if (event == "tap") {
+                    val at = point(value.getJSONObject("point"))
+                    poi?.at(map, at, value.getJSONObject("coordinate"))?.let { value.put("poi", it) }
+                }
                 if (event == "gestureStarted" || (event == "cameraMoveStarted" && value.optString("reason") == "gesture")) {
                     location?.stop("gesture")
                 }
@@ -1284,20 +1290,7 @@ internal class NativeMapEngine(
     private fun query(map: MapLibreMap, point: PointF): JSONArray {
         val result = JSONArray()
         location?.query(point, result)
-        val layers = projection?.layerSources ?: return result
-        val style = map.style
-        for ((layer, source) in layers.entries.reversed()) {
-            if (style?.getLayer(layer)?.visibility?.value == "none") continue
-            for (feature in map.queryRenderedFeatures(point, layer)) {
-                result.put(
-                    JSONObject()
-                        .put("id", feature.id() ?: JSONObject.NULL)
-                        .put("source", source)
-                        .put("layer", layer)
-                )
-            }
-        }
-        return result
+        return NativeFeatureQueries.atPoint(map, point, projection?.layerSources.orEmpty(), result)
     }
 
     /** A point in the view's density-independent pixels, as MapLibre's screen pixels. */

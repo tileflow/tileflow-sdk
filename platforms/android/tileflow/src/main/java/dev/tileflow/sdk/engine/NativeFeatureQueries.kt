@@ -14,8 +14,51 @@ import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.android.style.sources.VectorSource
 import org.maplibre.geojson.Feature
 import org.maplibre.geojson.Point
+import org.maplibre.android.location.LocationComponentConstants
+import org.maplibre.android.style.layers.CircleLayer
+import org.maplibre.android.style.layers.FillExtrusionLayer
+import org.maplibre.android.style.layers.FillLayer
+import org.maplibre.android.style.layers.HeatmapLayer
+import org.maplibre.android.style.layers.LineLayer
+import org.maplibre.android.style.layers.SymbolLayer
 
 internal object NativeFeatureQueries {
+    /** The public point query covers basemap, overlays and runtime layers in paint order. */
+    fun atPoint(
+        map: MapLibreMap,
+        point: PointF,
+        basemap: Map<String, String>,
+        result: JSONArray,
+    ): JSONArray {
+        val style = map.style ?: return result
+        for (layer in style.layers.asReversed()) {
+            if (layer.visibility.value == "none") continue
+            val source = basemap[layer.id] ?: (
+                when (layer) {
+                    is CircleLayer -> layer.sourceId
+                    is SymbolLayer -> layer.sourceId
+                    is FillLayer -> layer.sourceId
+                    is LineLayer -> layer.sourceId
+                    is FillExtrusionLayer -> layer.sourceId
+                    is HeatmapLayer -> layer.sourceId
+                    else -> null
+                }
+            ) ?: continue
+            // The location component exposes public layer names through the map's location owner.
+            if (source == LocationComponentConstants.LOCATION_SOURCE) continue
+            for (feature in map.queryRenderedFeatures(point, layer.id)) {
+                result.put(
+                    JSONObject()
+                        .put("id", feature.id()?.takeIf(String::isNotEmpty) ?: JSONObject.NULL)
+                        .put("source", source)
+                        .put("layer", layer.id)
+                )
+                if (result.length() == 50) return result
+            }
+        }
+        return result
+    }
+
     fun rendered(
         map: MapLibreMap, view: MapView, density: Float, request: JSONObject,
         layers: List<NativeStyleLayer>, sources: Map<String, NativeStyleSource>,

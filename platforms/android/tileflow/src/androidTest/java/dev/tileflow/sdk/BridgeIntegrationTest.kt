@@ -224,7 +224,7 @@ public class BridgeIntegrationTest {
     public fun dataChannelVerifiesAndReleasesLargeGeoJSON(): Unit = withActivity { activity ->
         val stub = stub(activity)
         assertNull(stub.failure)
-        val (geoJSON, features) = geoJSON(5 * 1024 * 1024)
+        val (geoJSON, features) = largeFeatureCollection(5 * 1024 * 1024)
         val timings = mutableMapOf<String, MutableList<Long>>()
         suspend fun measure(label: String, work: suspend () -> Unit) {
             val started = SystemClock.elapsedRealtimeNanos()
@@ -284,23 +284,5 @@ public class BridgeIntegrationTest {
                 .format(geoJSON.length / 1_048_576.0, summary.joinToString(", "))
         )
         stub.bridge.retire()
-    }
-
-    internal companion object {
-        /** A FeatureCollection of points of at least [bytes], and its feature count. */
-        fun geoJSON(bytes: Int): Pair<String, Int> {
-            val text = StringBuilder("""{"type":"FeatureCollection","features":[""")
-            var count = 0
-            while (text.length < bytes) {
-                if (count > 0) text.append(',')
-                val longitude = -3.75 + (count % 1000) / 10_000.0
-                val latitude = 40.40 + (count / 1000) / 1000.0
-                text.append(
-                    """{"type":"Feature","id":$count,"properties":{"name":"Point $count","rank":${count % 7}},"geometry":{"type":"Point","coordinates":[$longitude,$latitude]}}"""
-                )
-                count += 1
-            }
-            return text.append("]}").toString() to count
-        }
     }
 }

@@ -1,8 +1,7 @@
 # Tileflow for iOS
 
 Swift packages for Tileflow maps in UIKit and SwiftUI, and for the Tileflow Search, Routing,
-Elevation and GeoIP services. The map embeds its renderer, workers, stylesheets and dependency
-notices, so applications need no Node.js tooling and download no renderer code at run time.
+Elevation and GeoIP services. The map uses a pinned MapLibre Native framework. Swift Package Manager downloads it when building your app.
 
 This repository is generated for Swift Package Manager. Every tag is a release built from a clean,
 reviewed revision of [tileflow/tileflow-sdk](https://github.com/tileflow/tileflow-sdk), where the
@@ -35,12 +34,11 @@ Configuration and usage are described in the
 
 ## Provenance
 
-`provenance.json` names the source revision, the digest of every source input and the digest of the
-embedded runtime of this release. The same release is published to Maven Central for Android under
+`provenance.json` names the source revision, the source inventory digest and the renderer versions. The same release is published to Maven Central for Android under
 `dev.tileflow` with the same version.
 
 ## License
 
-Apache License 2.0, in `LICENSE`. The embedded dependencies keep their own notices in
-`Sources/Tileflow/EmbeddedRuntime/notices.txt`. "Tileflow" and the Tileflow logo are trademarks of
-Tileflow; see [TRADEMARKS.md](https://github.com/tileflow/tileflow-sdk/blob/main/TRADEMARKS.md).
+The Tileflow SDK uses the Apache License 2.0 in `LICENSE`. Include the MapLibre license and third-party notices in your app’s notices. [MapLibre notices](MapLibreNotices/NOTICE.txt)
+
+“Tileflow” and the Tileflow logo are trademarks of Tileflow. [Trademark policy](https://github.com/tileflow/tileflow-sdk/blob/main/TRADEMARKS.md)

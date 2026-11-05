@@ -23,6 +23,8 @@ android {
         targetSdk = 36
         unitTests.isIncludeAndroidResources = true
     }
+    sourceSets["main"].assets.srcDirs("../../notices/common", "../../notices/android")
+
     // The offline and marine fixtures are shared with the Swift tests.
     sourceSets["test"].resources.srcDir("../../ios/Tests/TileflowTests/Fixtures/Offline")
     sourceSets["test"].resources.srcDir("../../ios/Tests/TileflowTests/Fixtures/Marine")

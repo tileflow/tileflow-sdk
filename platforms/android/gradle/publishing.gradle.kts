@@ -49,6 +49,10 @@ afterEvaluate {
                     name.set(entry["name"] as String)
                     description.set(entry["description"] as String)
                     url.set(sourceUrl)
+                    if (project.name == "tileflow") {
+                        properties.put("tileflow.maplibre.license", "BSD-2-Clause")
+                        properties.put("tileflow.maplibre.notices", "assets/MapLibreNotices/")
+                    }
                     licenses {
                         license {
                             name.set(license["name"] as String)

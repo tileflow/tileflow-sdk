@@ -1,0 +1,7 @@
+Tileflow uses MapLibre Native to render maps. Include the accompanying MapLibre
+license, core notices and platform notices in the notices distributed with your app.
+
+iOS 7.0.0
+https://github.com/maplibre/maplibre-native/tree/aae210591243d057e082ea46929a21ad9ea0df6d
+Android 13.7.1
+https://github.com/maplibre/maplibre-native/tree/4cf121e515d8d065b57cd555a0b231ea27ff0e5d

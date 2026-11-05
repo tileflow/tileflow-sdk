@@ -48,17 +48,11 @@
     "./app.plugin.js": "./plugin/index.cjs",
     "./package.json": "./package.json"
   },
-  "dependencies": {
-    "@tileflow/core": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
-    "@tileflow/interactions": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0"
-  },
   "peerDependencies": {
-    "@maplibre/maplibre-react-native": "11.5.0",
     "react": "19.2.0",
     "react-native": "0.83.10"
   },
   "devDependencies": {
-    "@maplibre/maplibre-react-native": "11.5.0",
     "@types/react": "^19.2.17",
     "react": "19.2.0",
     "react-native": "0.83.10"
@@ -68,7 +62,7 @@
   },
   "codegenConfig": {
     "name": "TileflowReactNativeSpec",
-    "type": "modules",
+    "type": "all",
     "jsSrcsDir": "src/specs",
     "android": {
       "javaPackageName": "dev.tileflow.reactnative"
@@ -76,12 +70,20 @@
     "ios": {
       "modulesProvider": {
         "TileflowServices": "TileflowServices",
-        "TileflowOffline": "TileflowOffline"
+        "TileflowOffline": "TileflowOffline",
+        "TileflowMapModule": "TileflowMapModule"
+      },
+      "componentProvider": {
+        "TileflowMapView": "TFMapComponentView",
+        "TileflowMarkerView": "TFMarkerComponentView"
       }
     }
   },
   "tileflow": {
     "nativeVersion": "0.1.0-alpha.0",
     "swiftPackage": "https://github.com/tileflow/tileflow-swift"
+  },
+  "dependencies": {
+    "@types/geojson": "7946.0.16"
   }
 }

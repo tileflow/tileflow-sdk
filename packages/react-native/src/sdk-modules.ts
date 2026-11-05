@@ -1,3 +1,4 @@
+import nativeTileflowMap, {type Spec as MapSpec} from './specs/NativeTileflowMapModule';
 import nativeTileflowOffline, {type Spec as OfflineSpec} from './specs/NativeTileflowOffline';
 import nativeTileflowServices, {type Spec as ServicesSpec} from './specs/NativeTileflowServices';
 
@@ -24,4 +25,8 @@ export function servicesModule(): ServicesSpec {
 
 export function offlineModule(): OfflineSpec {
   return required(nativeTileflowOffline(), 'TileflowOffline');
+}
+
+export function mapModule(): MapSpec {
+  return required(nativeTileflowMap(), 'TileflowMapModule');
 }

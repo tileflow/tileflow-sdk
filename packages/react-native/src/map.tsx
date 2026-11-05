@@ -1,252 +1,158 @@
-import {
-  Camera as NativeCamera,
-  type CameraProps as NativeCameraProps,
-  type CameraRef as NativeCameraRef,
-  Map as NativeMap,
-  type MapProps as NativeMapProps,
-  type MapRef as NativeMapRef,
-} from '@maplibre/maplibre-react-native';
-import {
-  Fragment,
-  type ReactElement,
-  type ReactNode,
-  useImperativeHandle,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from 'react';
-import {AppState, findNodeHandle, View} from 'react-native';
-import type {TileflowAnnotation} from '@tileflow/interactions';
-import type {MapBoundaryFeatureState, MapProps} from './contract';
-import type {MapMarkerRenderer} from './interaction-contract';
-import {createMapLifecycle} from './map-lifecycle';
-import type {NativeInteractionHost} from './mounted-map-interactions';
-import {NativeBoundaryFeatureState} from './native-boundary-feature-state';
-import {NativeAnnotationMarker} from './native-marker';
-import {createNativeMapOwner, retireNativeMapOwner} from './native-runtime';
+import {forwardRef, useCallback, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState} from 'react';
+import type {ElementRef} from 'react';
+import {findNodeHandle, Linking} from 'react-native';
+import type {NativeSyntheticEvent} from 'react-native';
+import NativeMap from './specs/TileflowMapViewNativeComponent';
+import type {MapEvent} from './specs/TileflowMapViewNativeComponent';
+import {MapController} from './map-controller';
+import {MapCollection, MapContext, useCommittedValue, useMapCommand} from './map-context';
+import type {MapContextValue} from './map-context';
+import {StyleRegistry} from './style-registry';
+import {createMapRef} from './map-ref';
+import {mapModule} from './sdk-modules';
+import {mapError} from './map-error';
+import {padding, sourceJson} from './map-input';
+import type {CameraProps, CameraState, MapPressEvent, MapViewProps, MapViewRef, MapWarningEvent, PoiEvent} from './contract';
+import type {JsonObject, NativeImage, NativeMapOptions, NativePointAnnotation, NativeUserLocation} from './native-map-contract';
 
-type Lifecycle = ReturnType<typeof createMapLifecycle>;
-type Snapshot = ReturnType<Lifecycle['getSnapshot']>;
-type Scene = NonNullable<Snapshot['renderer']>;
-const fill = Object.freeze({flex: 1});
+let nextInstance = 0;
+const defaultLocation: NativeUserLocation = {visible: false};
 
-function NativeScene<TAnnotation extends TileflowAnnotation>({
-  scene,
-  lifecycle,
-  mapOptions,
-  children,
-  interactions,
-  interactionEnabled,
-  renderMarker,
-  boundaryFeatureState,
-}: {
-  scene: Scene;
-  lifecycle: Lifecycle;
-  mapOptions: Snapshot['mapOptions'];
-  children?: ReactNode;
-  interactions: Snapshot['interactions'];
-  interactionEnabled: boolean;
-  renderMarker?: MapMarkerRenderer<TAnnotation>;
-  boundaryFeatureState?: MapBoundaryFeatureState;
-}): ReactElement {
-  const view = useRef<View | null>(null);
-  const camera = useRef<NativeCameraRef | null>(null);
-  const nativeMap = useRef<NativeMapRef | null>(null);
-  const committedHost = useRef<NativeInteractionHost | undefined>(undefined);
-  const tag = useRef<number | null>(null);
-  const laidOut = useRef(false);
-  const styleLoaded = useRef(false);
-  const attachRequested = useRef(false);
-  // The style whose load MapLibre last reported; a newly committed style is loading until then.
-  const latestStyle = useRef(scene.style);
-  latestStyle.current = scene.style;
-  const [loadedStyle, setLoadedStyle] = useState<Scene['style'] | undefined>(undefined);
-  const host = useMemo<NativeInteractionHost>(() => {
-    const value: NativeInteractionHost = Object.freeze({
-      key: scene.key,
-      style: scene.style,
-      current: () => committedHost.current === value && nativeMap.current !== null,
-      query(point, options) {
-        const map = nativeMap.current;
-        if (!map || committedHost.current !== value)
-          return Promise.reject(new Error('Native interaction host is unavailable.'));
-        return map.queryRenderedFeatures(point, options);
-      },
-    });
-    return value;
-  }, [scene.key, scene.style]);
-  useLayoutEffect(() => {
-    committedHost.current = host;
-    lifecycle.bindInteractionHost(host);
-    return () => {
-      if (committedHost.current === host) committedHost.current = undefined;
-      lifecycle.unbindInteractionHost(host);
-    };
-  }, [host, lifecycle]);
-  // Serialized once per style: MapLibre React Native would otherwise serialize an object on every
-  // render, and a blend re-renders the Map whenever its position moves.
-  const mapStyle = useMemo<NativeMapProps['mapStyle']>(
-    () => JSON.stringify(scene.style),
-    [scene.style],
-  );
-  const [initialViewState] = useState<NonNullable<NativeCameraProps['initialViewState']>>(() => {
-    const center: [number, number] = [scene.initialView.center[0], scene.initialView.center[1]];
-    Object.freeze(center);
-    return Object.freeze({
-      center,
-      zoom: scene.initialView.zoom,
-      bearing: scene.initialView.bearing,
-      pitch: scene.initialView.pitch,
-    });
-  });
-  const attach = () => {
-    if (!tag.current || !laidOut.current || !styleLoaded.current || attachRequested.current) return;
-    attachRequested.current = true;
-    lifecycle.nativeStyleLoaded(scene.key, tag.current);
-  };
-  const bind = (node: View | null) => {
-    view.current = node;
-    if (!node) return;
-    const value = findNodeHandle(node);
-    if (!Number.isSafeInteger(value) || !value || value < 1) return;
-    tag.current = value;
-    lifecycle.rootMounted(scene.key, value);
-    attach();
-  };
-  // Stage A owns validation and detached JSON. This restores the consumer's annotation type only.
-  const annotations = interactions?.annotations as readonly TAnnotation[] | undefined;
-  const byId = new globalThis.Map(annotations?.map((annotation) => [annotation.id, annotation]));
-  return (
-    <View
-      ref={bind}
-      collapsable={false}
-      style={fill}
-      onStartShouldSetResponderCapture={() => {
-        lifecycle.beginTouch(scene.key);
-        return false;
-      }}
-      onLayout={(event) => {
-        const {width, height} = event.nativeEvent.layout;
-        laidOut.current =
-          Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0;
-        if (view.current) bind(view.current);
-        lifecycle.layoutChanged(scene.key);
-        attach();
-      }}
-    >
-      <NativeMap
-        {...mapOptions}
-        ref={nativeMap}
-        style={fill}
-        mapStyle={mapStyle}
-        onPress={(event) => {
-          if (!host.current()) return;
-          try {
-            lifecycle.mapPress(scene.key, {
-              inputModality: 'touch',
-              point: event.nativeEvent.point,
-              coordinate: event.nativeEvent.lngLat,
-            });
-          } catch {
-            lifecycle.interactionDiagnostic(scene.key, 'INVALID_DOCUMENT');
-          }
-        }}
-        onDidFinishLoadingStyle={() => {
-          // This wakes the private adapter only. A JS callback is not readiness evidence.
-          styleLoaded.current = true;
-          setLoadedStyle(latestStyle.current);
-          attach();
-        }}
-      >
-        <NativeCamera
-          key="tileflow-camera"
-          ref={camera}
-          initialViewState={initialViewState}
-          minZoom={0}
-          maxZoom={24}
-        />
-        <Fragment key="tileflow-annotations">
-          {interactions?.plan.order.map((id) => {
-            const annotation = byId.get(id);
-            return annotation ? (
-              <NativeAnnotationMarker
-                key={annotation.id}
-                annotation={annotation}
-                enabled={interactionEnabled}
-                sceneKey={scene.key}
-                lifecycle={lifecycle}
-                renderMarker={renderMarker}
-              />
-            ) : null;
-          })}
-        </Fragment>
-        {boundaryFeatureState ? (
-          <NativeBoundaryFeatureState
-            key="tileflow-boundary-feature-state"
-            input={boundaryFeatureState}
-            style={scene.style}
-            loaded={loadedStyle === scene.style}
-          />
-        ) : null}
-        {children}
-      </NativeMap>
-    </View>
-  );
+function Appearance({props}: {props: MapViewProps}) {
+  useMapCommand('setBoundaryValues', {values: props.boundaryValues as JsonObject ?? null});
+  useMapCommand('setStyleState', {state: props.styleState ?? {}});
+  useMapCommand('setSun', {sun: props.sun as JsonObject ?? null});
+  useMapCommand('setEmphasis', {emphasis: props.emphasis as JsonObject ?? null});
+  return null;
 }
 
-/** A Tileflow-only native Map. Its imperative ref exposes safe source state only. */
-export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>(
-  props: MapProps<TAnnotation>,
-): ReactElement {
-  const [lifecycle] = useState(() =>
-    createMapLifecycle(createNativeMapOwner, retireNativeMapOwner),
-  );
-  const snapshot = useSyncExternalStore(
-    lifecycle.subscribe,
-    lifecycle.getSnapshot,
-    lifecycle.getSnapshot,
-  );
-  useImperativeHandle(
-    props.ref,
-    () => Object.freeze({getSourceState: lifecycle.getSourceState, retry: lifecycle.retry}),
-    [lifecycle],
-  );
-
-  useLayoutEffect(() => {
-    const unmount = lifecycle.mount();
-    if (AppState.currentState !== 'active') lifecycle.background();
-    const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') lifecycle.resume();
-      else lifecycle.background();
+export const MapView = forwardRef<MapViewRef, MapViewProps>(function MapView(props, ref) {
+  mapModule();
+  const callbacks = useCommittedValue(props);
+  const source = sourceJson(props.source);
+  const identity = source + '\n' + (props.surfaceId ?? '');
+  const current = useRef<MapController | null>(null);
+  const controller = useMemo(() => {
+    const instanceId = 'tileflow-map-' + (++nextInstance);
+    return new MapController(instanceId, mapModule, (error) => {
+      if (current.current?.instanceId === instanceId) callbacks.current.onMapLoadingError?.(error);
     });
-    return () => {
-      subscription.remove();
-      unmount();
-    };
-  }, [lifecycle]);
-  useLayoutEffect(() => {
-    // This includes the React commit following a gesture callback, even when props are equal.
-    lifecycle.update(props);
-  });
+  }, [identity, callbacks]);
+  const [mountedFor, setMountedFor] = useState<string>();
+  const [camera, setCamera] = useState<{instance: string; owner: symbol; props: CameraProps}>();
+  const [location, setLocation] = useState<{instance: string; owner: symbol; props: NativeUserLocation}>();
+  useLayoutEffect(() => { current.current = controller; setMountedFor(controller.instanceId); }, [controller]);
+  const runtime = useMemo<MapContextValue>(() => ({
+    controller,
+    style: new StyleRegistry(controller),
+    points: new MapCollection<NativePointAnnotation>(controller, (annotations) => controller.call('setPointAnnotations', {annotations})),
+    images: new MapCollection<NativeImage>(controller, (images) => controller.call('setImages', {images})),
+    setCamera: (owner, value) => {
+      setCamera((previous) => value ? {instance: controller.instanceId, owner, props: value}
+        : previous?.owner === owner ? undefined : previous);
+    },
+    setLocation: (owner, value) => {
+      setLocation((previous) => value ? {instance: controller.instanceId, owner, props: value}
+        : previous?.owner === owner ? undefined : previous);
+    },
+  }), [controller]);
+  const cameraProps = camera?.instance === controller.instanceId ? camera.props : undefined;
+  const locationProps = location?.instance === controller.instanceId ? location.props : defaultLocation;
+  const options: NativeMapOptions = {
+    ...(props.surfaceId ? {surfaceId: props.surfaceId} : {}),
+    ...(props.quality ? {quality: props.quality} : {}),
+    ...(props.scrollEnabled === undefined ? {} : {scrollEnabled: props.scrollEnabled}),
+    ...(props.zoomEnabled === undefined ? {} : {zoomEnabled: props.zoomEnabled}),
+    ...(props.rotateEnabled === undefined ? {} : {rotateEnabled: props.rotateEnabled}),
+    ...(props.pitchEnabled === undefined ? {} : {pitchEnabled: props.pitchEnabled}),
+    ...(props.compassEnabled === undefined ? {} : {compassEnabled: props.compassEnabled}),
+    ...(props.scaleBarEnabled === undefined ? {} : {scaleBarEnabled: props.scaleBarEnabled}),
+    ...(props.attributionPosition ? {attributionPosition: props.attributionPosition} : {}),
+    contentInset: cameraProps?.padding ?? padding(props.contentInset) ?? {},
+    cameraLimits: {
+      ...(cameraProps?.minZoomLevel === undefined ? {} : {minZoomLevel: cameraProps.minZoomLevel}),
+      ...(cameraProps?.maxZoomLevel === undefined ? {} : {maxZoomLevel: cameraProps.maxZoomLevel}),
+      ...(cameraProps?.maxBounds ? {maxBounds: cameraProps.maxBounds} : {}),
+    },
+    ...(cameraProps ? {initialCamera: {...cameraProps.defaultSettings,
+      ...(cameraProps.centerCoordinate ? {centerCoordinate: cameraProps.centerCoordinate} : {}),
+      ...(cameraProps.zoomLevel === undefined ? {} : {zoomLevel: cameraProps.zoomLevel}),
+      ...(cameraProps.heading === undefined ? {} : {heading: cameraProps.heading}),
+      ...(cameraProps.pitch === undefined ? {} : {pitch: cameraProps.pitch}),
+      ...(cameraProps.bounds ? {bounds: cameraProps.bounds} : {}),
+      ...(cameraProps.padding ? {padding: cameraProps.padding} : {}),
+    }} : {}),
+    eventLevel: props.onCameraChanged ? 'continuous' : 'camera',
+  };
+  const appearance = {theme: props.theme, timeOfDay: props.timeOfDay, themeBlend: props.themeBlend, viewMode: props.viewMode};
+  const userLocation: NativeUserLocation = {
+    ...locationProps,
+    ...(cameraProps?.followUserLocation === undefined ? {} : {followUserLocation: cameraProps.followUserLocation}),
+    ...(cameraProps?.followUserMode ? {followUserMode: cameraProps.followUserMode} : {}),
+    ...(cameraProps?.followZoomLevel === undefined ? {} : {followZoomLevel: cameraProps.followZoomLevel}),
+    ...(cameraProps?.followPitch === undefined ? {} : {followPitch: cameraProps.followPitch}),
+    ...(cameraProps?.followPadding ? {followPadding: cameraProps.followPadding} : {}),
+  };
+  const nativeRef = useCallback((view: ElementRef<typeof NativeMap> | null) => {
+    controller.attach(view ? findNodeHandle(view) : null);
+  }, [controller]);
+  useImperativeHandle(ref, () => createMapRef(controller, runtime.style), [controller, runtime]);
+  const onMapEvent = useCallback((event: NativeSyntheticEvent<MapEvent>) => {
+    if (current.current !== controller) return;
+    const wire = event.nativeEvent;
+    let payload: unknown;
+    try { payload = JSON.parse(wire.payload); }
+    catch { controller.report(mapError({code: 'rendererFailed', message: 'The native map returned an invalid event.'})); return; }
+    if (!controller.receive(wire.instanceId, wire.type, payload)) return;
+    const handlers = callbacks.current;
+    switch (wire.type) {
+      case 'loading': handlers.onWillStartLoadingMap?.(); break;
+      case 'contentReady': handlers.onDidFinishLoadingMap?.(); break;
+      case 'failed': handlers.onMapLoadingError?.(mapError(payload)); break;
+      case 'tap': case 'longPress': {
+        const touch = payload as {coordinate: readonly [number, number]; point: readonly [number, number]};
+        const press: MapPressEvent = {type: 'Feature', geometry: {type: 'Point', coordinates: touch.coordinate},
+          properties: {screenPointX: touch.point[0], screenPointY: touch.point[1]}};
+        if (wire.type === 'tap') handlers.onPress?.(press); else handlers.onLongPress?.(press);
+        break;
+      }
+      case 'cameraChanged': {
+        const state = payload as CameraState & {phase: string};
+        handlers.onCameraChanged?.(state);
+        if (state.phase === 'ended') handlers.onMapIdle?.(state);
+        break;
+      }
+      case 'poiActivated': handlers.onPoiPress?.(payload as PoiEvent); break;
+      case 'themeChanged': handlers.onThemeChange?.((payload as {theme: string}).theme); break;
+      case 'themeTransition': handlers.onThemeTransition?.(payload as JsonObject); break;
+      case 'followModeChanged': handlers.onUserTrackingModeChange?.(payload as JsonObject); break;
+      case 'warning': {
+        const warning = payload as MapWarningEvent;
+        console.warn('Tileflow map warning', warning.code, warning.context?.feature ?? '');
+        handlers.onWarning?.(warning);
+        break;
+      }
+      case 'externalLinkRequested': {
+        const url = (payload as {url: string}).url;
+        if (handlers.onOpenURL) handlers.onOpenURL(url);
+        else void Linking.openURL(url).catch((error: unknown) => controller.report(mapError(error)));
+        break;
+      }
+    }
+  }, [callbacks, controller]);
+  return <MapContext.Provider value={runtime}>
+    <NativeMap key={controller.instanceId} ref={nativeRef} collapsable={false}
+      style={[{flex: 1}, props.style]} testID={props.testID} accessibilityLabel={props.accessibilityLabel}
+      instanceId={controller.instanceId} sourceJson={mountedFor === controller.instanceId ? source : ''}
+      appearanceJson={JSON.stringify(appearance)} optionsJson={JSON.stringify(options)} onMapEvent={onMapEvent}>
+      <Appearance props={props} />
+      <LocationOptions value={userLocation} />
+      {props.children}
+    </NativeMap>
+  </MapContext.Provider>;
+});
 
-  return (
-    <View style={props.style} testID={props.testID}>
-      {snapshot.renderer ? (
-        <NativeScene
-          key={snapshot.renderer.key}
-          scene={snapshot.renderer}
-          lifecycle={lifecycle}
-          mapOptions={snapshot.mapOptions}
-          interactions={snapshot.interactions}
-          interactionEnabled={snapshot.interactionEnabled === true}
-          renderMarker={props.renderMarker}
-          boundaryFeatureState={props.boundaryFeatureState}
-        >
-          {props.children}
-        </NativeScene>
-      ) : null}
-    </View>
-  );
+function LocationOptions({value}: {value: NativeUserLocation}) {
+  useMapCommand('setUserLocation', value);
+  return null;
 }

@@ -1,221 +1,126 @@
-import type {MapProps as NativeMapProps} from '@maplibre/maplibre-react-native';
-import type {ReactNode, Ref} from 'react';
+import type {ReactNode} from 'react';
 import type {ViewProps} from 'react-native';
 import type {
-  TileflowBoundaryFamily,
-  TileflowBoundaryValues,
-  TileflowNativeInitialView,
-  TileflowNativeInitialViewOptions,
-  TileflowNativeSource,
-  TileflowNativeSourceError,
-  TileflowNativeSourceOptions,
-  TileflowNativeSourceState,
-} from '@tileflow/core/native';
-import type {TileflowAnnotation} from '@tileflow/interactions';
-import type {MapInteractionProps} from './interaction-contract';
+  CameraPadding, CameraState, CameraStop, Coordinate, JsonObject, JsonValue, MapBounds,
+  MapSource, NativeAppearance, NativeImage, NativeMapOptions, NativePointAnnotation,
+  NativeUserLocation, ScreenPoint, StyleState,
+} from './native-map-contract';
+import type {MapErrorEvent} from './map-error';
 
-export type MapSource = TileflowNativeSource;
-export type MapThemeSelection = NonNullable<TileflowNativeSourceOptions['theme']>;
-export type MapColorScheme = NonNullable<TileflowNativeSourceOptions['colorScheme']>;
-export type MapView = TileflowNativeInitialView;
-/** Portable composition inputs, independent from source acquisition. */
-export type MapInitialViewInputs = TileflowNativeInitialViewOptions;
-
-/**
- * How a theme change appears. By default, a snapshot of the current frame covers the map,
- * follows the camera, and fades out once the new theme is drawn. The device's reduce-motion
- * setting changes at once.
- */
-export type MapThemeTransition = Readonly<{
-  /** Cross-fade length in milliseconds, from 0 (immediate) to 5000. Defaults to 450. */
-  duration?: number;
+export type {CameraPadding, CameraState, CameraStop, Coordinate, MapBounds, MapSource, ScreenPoint, StyleState};
+export type {MapErrorEvent};
+export type Expression = readonly JsonValue[];
+export type Feature = import('geojson').Feature;
+export type FeatureCollection = import('geojson').FeatureCollection;
+export type MapPressEvent = Readonly<{
+  type: 'Feature';
+  geometry: Readonly<{type: 'Point'; coordinates: Coordinate}>;
+  properties: Readonly<{screenPointX: number; screenPointY: number}>;
 }>;
-
-/**
- * A continuous blend of two to eight concrete themes of the map, shown instead of `theme`.
- * `position` runs from 0 (the first theme) to `themes.length - 1`; 1.25 is a quarter of the way
- * from the second theme to the third. Ground colours and widths follow the position; labels and
- * icons cross-fade when the nearest theme changes.
- */
-export type MapThemeBlend = Readonly<{
-  themes: readonly string[];
-  position: number;
+export type AnnotationEvent = Readonly<{
+  type: 'Feature';
+  id: string;
+  geometry: Readonly<{type: 'Point'; coordinates: Coordinate}>;
+  properties: Readonly<{id: string}>;
 }>;
-
-export type MapSourceProps = Readonly<{
-  source: MapSource;
-  theme?: MapThemeSelection;
-  timeOfDay?: TileflowNativeSourceOptions['timeOfDay'];
-  /** Cross-fades theme changes, including entering and leaving a blend. */
-  themeTransition?: MapThemeTransition;
-  /**
-   * Shows a blend of themes instead of `theme`. The first blend of a set of themes prepares one
-   * style that holds all of them; moving `position` later changes the map without loading.
-   */
-  themeBlend?: MapThemeBlend;
+export type PoiEvent = Readonly<{id?: string; coordinate: Coordinate; name?: string; category: string}>;
+export type MapWarningEvent = MapErrorEvent & Readonly<{occurrences?: number}>;
+export type LocationPermission = Readonly<{
+  authorization: 'notDetermined' | 'denied' | 'restricted' | 'whenInUse' | 'always';
+  accuracy: 'full' | 'reduced';
 }>;
-
-/**
- * Application values on the map's Boundaries areas, for a choropleth that reads them with
- * `feature-state`. The same rows and options as `useBoundaryFeatureState` on the web: rows keyed by
- * the source's feature ID (`id`, or `ref` when the map promotes it), joined with
- * `joinBoundaryRows` when the data carries other codes. Values survive theme changes; `null`
- * removes them.
- */
-export type MapBoundaryFeatureState = Readonly<{
-  values: TileflowBoundaryValues | null;
-  /** Defaults to `boundaries`. */
-  family?: TileflowBoundaryFamily;
-  /** Also set the values on `boundary_label` points, for labels styled by value. */
+export type LocationEvent = Readonly<{
+  coords: Readonly<{longitude: number; latitude: number; accuracy: number; altitude?: number; heading?: number; speed?: number}>;
+  timestamp: number;
+}>;
+export type FeatureIdentifier = Readonly<{sourceID: string; sourceLayerID?: string; id: string | number}>;
+export type BoundaryValues = Readonly<{
+  ids?: Readonly<Record<string, number | string>>;
+  refs?: Readonly<Record<string, number | string>>;
   labels?: boolean;
-  /** Feature-state key; it must match the choropleth's `state`. Defaults to `value`. */
   state?: string;
 }>;
+export type MapSun = Readonly<{azimuth: number; altitude: number}> | Readonly<{date: number; location?: Coordinate}>;
+export type MapEmphasis = Readonly<{recede?: Readonly<Record<string, number>>; labels?: number; keepArea?: JsonObject}>;
+export type MapShot = Readonly<{
+  keyframes: readonly Readonly<{time: number; camera: CameraStop; blendPosition?: number}>[];
+  themes?: readonly string[];
+  easing?: 'linear' | 'smooth';
+  cues?: readonly Readonly<{time: number; id: string}>[];
+}>;
 
-type AllowedMapOptions =
-  | 'dragPan'
-  | 'touchZoom'
-  | 'doubleTapZoom'
-  | 'doubleTapHoldZoom'
-  | 'touchRotate'
-  | 'touchPitch'
-  | 'compass'
-  | 'compassHiddenFacingNorth'
-  | 'scaleBar';
-
-type OwnedMapOptions =
-  | Exclude<keyof NativeMapProps, AllowedMapOptions>
-  | 'container'
-  | 'styleURL'
-  | 'styleUrl'
-  | 'transformRequest'
-  | 'requestTransform'
-  | 'requestHeaders';
-
-/** A positive allowlist. Style, interception, view and lifecycle remain adapter-owned. */
-export type MapOptions = Readonly<Pick<NativeMapProps, AllowedMapOptions>> & {
-  readonly [Key in OwnedMapOptions]?: never;
+export type MapViewProps = ViewProps & NativeAppearance & Omit<NativeMapOptions, 'cameraLimits' | 'eventLevel' | 'contentInset'> & {
+  source: MapSource;
+  children?: ReactNode;
+  contentInset?: number | readonly number[] | CameraPadding;
+  boundaryValues?: BoundaryValues | null;
+  styleState?: StyleState;
+  sun?: MapSun | null;
+  emphasis?: MapEmphasis | null;
+  onPress?: (event: MapPressEvent) => void;
+  onLongPress?: (event: MapPressEvent) => void;
+  onPoiPress?: (event: PoiEvent) => void;
+  onCameraChanged?: (event: CameraState) => void;
+  onMapIdle?: (event: CameraState) => void;
+  onWillStartLoadingMap?: () => void;
+  onDidFinishLoadingMap?: () => void;
+  onMapLoadingError?: (event: MapErrorEvent) => void;
+  onWarning?: (event: MapWarningEvent) => void;
+  onThemeChange?: (theme: string) => void;
+  onThemeTransition?: (event: JsonObject) => void;
+  onOpenURL?: (url: string) => void;
+  onUserTrackingModeChange?: (event: JsonObject) => void;
 };
 
-export type MapPresentationProps = Readonly<{
-  children?: ReactNode;
-  style?: ViewProps['style'];
-  testID?: ViewProps['testID'];
-  mapOptions?: MapOptions;
-  boundaryFeatureState?: MapBoundaryFeatureState;
-}>;
+export interface MapViewRef {
+  getPointInView(coordinate: Coordinate): Promise<ScreenPoint>;
+  getCoordinateFromView(point: ScreenPoint): Promise<Coordinate>;
+  getVisibleBounds(): Promise<readonly [Coordinate, Coordinate]>;
+  getCenter(): Promise<Coordinate>;
+  getZoom(): Promise<number>;
+  queryRenderedFeaturesAtPoint(point: ScreenPoint, filter?: Expression, layerIDs?: readonly string[]): Promise<FeatureCollection>;
+  queryRenderedFeaturesInRect(box: readonly [number, number, number, number], filter?: Expression, layerIDs?: readonly string[]): Promise<FeatureCollection>;
+  querySourceFeatures(sourceId: string, options?: Readonly<{sourceLayerID?: string; filter?: Expression}>): Promise<FeatureCollection>;
+  setFeatureState(feature: FeatureIdentifier, state: StyleState): Promise<void>;
+  getFeatureState(feature: FeatureIdentifier): Promise<StyleState>;
+  removeFeatureState(feature: FeatureIdentifier, key?: string): Promise<void>;
+  setBoundaryValues(values: BoundaryValues | null): Promise<void>;
+  setStyleState(state: StyleState): Promise<void>;
+  setSun(sun: MapSun | null, duration?: number): Promise<void>;
+  setEmphasis(emphasis: MapEmphasis | null, duration?: number): Promise<void>;
+  getRouteInks(): Promise<JsonObject>;
+  animateLineProgress(layers: readonly string[], to: JsonObject, duration: number): Promise<boolean>;
+  playShot(shot: MapShot): Promise<boolean>;
+  stopAnimation(): Promise<void>;
+  requestLocationPermission(): Promise<LocationPermission>;
+  reload(): Promise<void>;
+}
 
-type TileflowReady = Extract<TileflowNativeSourceState, {status: 'ready'}>;
-export type MapTheme = Readonly<Pick<TileflowReady['theme'], 'name' | 'colorScheme'>>;
-export type MapSourceError = Readonly<Pick<TileflowNativeSourceError, 'code' | 'field' | 'kind'>>;
-
-/** Safe Tileflow identity only: no URL, style body, credentials or native object. */
-export type MapSelection = Readonly<{map: TileflowReady['map']['name']; theme: MapTheme}>;
-
-/** Source readiness is not renderer/frame readiness. */
-export type MapSourceState =
-  | Readonly<{status: 'loading'; generation: number}>
-  | (Readonly<{status: 'ready'; generation: number}> & MapSelection)
-  | Readonly<{status: 'error'; generation: number; error: MapSourceError}>;
-
-/**
- * The Hosted session stopped: its credential, Map or quota was rejected, or Tileflow refused the
- * session for another reason that trying again will not change (`NATIVE_SESSION_REJECTED`). The map
- * keeps what it has drawn and loads nothing new until `ref.retry()` or another source. Service
- * outages and rate limits retry on their own and are not reported.
- */
-export type MapSessionError = Readonly<{
-  code:
-    | 'NATIVE_SESSION_CREDENTIAL_REJECTED'
-    | 'NATIVE_SESSION_MAP_MISMATCH'
-    | 'NATIVE_SESSION_MAP_NOT_FOUND'
-    | 'NATIVE_SESSION_QUOTA_EXCEEDED'
-    | 'NATIVE_SESSION_REJECTED'
-    | 'NATIVE_SESSION_INPUT_INVALID';
-  kind: 'terminal';
-  /**
-   * For `NATIVE_SESSION_REJECTED`, the service's code when its answer carried one, such as
-   * `MOBILE_SESSION_MODE_REQUIRED`. A bounded identifier, never a message or response body.
-   */
-  reason?: string;
-}>;
-
-export type MapRef = Readonly<{
-  /** A synchronous read of the last source snapshot. Does not trigger loading or native commands. */
-  getSourceState(): MapSourceState | undefined;
-  /**
-   * Loads again a map that stopped: after a `session-error` once its cause is resolved, for
-   * example a raised quota, or after a source or renderer error. A shown map is unaffected.
-   */
-  retry(): void;
-}>;
-
-/** The current style was accepted by the renderer; this alone does not establish a rendered frame. */
-export type MapLoadEvent = Readonly<{
-  type: 'load';
-  generation: number;
-  selection: MapSelection;
-}>;
-
-/** Renderer failures expose no native event, message or remote cause. */
-export type MapErrorEvent =
-  | Readonly<{type: 'source-error'; generation: number; error: MapSourceError}>
-  | Readonly<{type: 'renderer-error'; generation: number}>
-  | Readonly<{type: 'session-error'; generation: number; error: MapSessionError}>;
-
-/** The renderer owner must confirm readiness; a ready manifest alone is insufficient. */
-export type MapReadinessChangeEvent = Readonly<{
-  type: 'readiness-change';
-  generation: number;
-}> &
-  (Readonly<{status: 'loading'}> | Readonly<{status: 'ready'}> | Readonly<{status: 'error'}>);
-
-/** Theme transitions retain concrete names; source/renderer error details use onError. */
-export type MapThemeChangeEvent = Readonly<{
-  type: 'theme-change';
-  generation: number;
-  map: TileflowReady['map']['name'];
-}> &
-  (
-    | Readonly<{phase: 'preloading' | 'applying'; targetTheme: MapTheme; currentTheme?: MapTheme}>
-    | Readonly<{phase: 'ready'; currentTheme: MapTheme}>
-    | Readonly<{phase: 'error'; targetTheme?: MapTheme; currentTheme?: MapTheme}>
-  );
-
-export type MapEventHandlers = Readonly<{
-  onLoad?: (event: MapLoadEvent) => void;
-  onError?: (event: MapErrorEvent) => void;
-  onReadinessChange?: (event: MapReadinessChangeEvent) => void;
-  onThemeChange?: (event: MapThemeChangeEvent) => void;
-}>;
-
-/** Common source/presentation/lifecycle pieces; MapProps adds camera ownership. */
-export type MapBaseProps = MapSourceProps &
-  MapPresentationProps &
-  MapEventHandlers &
-  Readonly<{ref?: Ref<MapRef>}>;
-
-/** Canonical user-driven change only. Commands, renderer events and source generations stay private. */
-export type MapViewChangeEvent = Readonly<{
-  type: 'view-change';
-  view: MapView;
-}>;
-
-/** The ownership mode is fixed for one mounted native instance. */
-export type MapCameraProps =
-  | Readonly<{
-      view: MapView;
-      initialView?: never;
-      onViewChange: (event: MapViewChangeEvent) => void;
-    }>
-  | Readonly<{
-      view?: never;
-      initialView?: MapInitialViewInputs['view'];
-      /** Observation alone does not make the camera controlled. */
-      onViewChange?: (event: MapViewChangeEvent) => void;
-    }>;
-
-/** Complete Tileflow source, presentation, mount-stable camera and portable interaction inputs. */
-export type MapProps<TAnnotation extends TileflowAnnotation = TileflowAnnotation> = MapBaseProps &
-  MapCameraProps &
-  MapInteractionProps<TAnnotation>;
+export type CameraProps = CameraStop & Pick<NativeUserLocation, 'followUserLocation' | 'followUserMode' | 'followZoomLevel' | 'followPitch' | 'followPadding'> & {
+  defaultSettings?: CameraStop;
+  minZoomLevel?: number;
+  maxZoomLevel?: number;
+  maxBounds?: MapBounds;
+};
+export interface CameraRef {
+  setCamera(settings: CameraStop): Promise<void>;
+  fitBounds(ne: Coordinate, sw: Coordinate, paddingConfig?: number | readonly number[] | CameraPadding, animationDuration?: number): Promise<void>;
+  flyTo(centerCoordinate: Coordinate, animationDuration?: number): Promise<void>;
+  moveTo(centerCoordinate: Coordinate, animationDuration?: number): Promise<void>;
+  zoomTo(zoomLevel: number, animationDuration?: number): Promise<void>;
+  stop(): Promise<void>;
+}
+export type PointAnnotationProps = NativePointAnnotation & {
+  onSelected?: (event: AnnotationEvent) => void;
+  onDragStart?: (event: AnnotationEvent) => void;
+  onDrag?: (event: AnnotationEvent) => void;
+  onDragEnd?: (event: AnnotationEvent) => void;
+};
+export type UserLocationProps = Partial<Pick<NativeUserLocation, 'visible' | 'showsUserHeadingIndicator'>> & {
+  onUpdate?: (event: LocationEvent) => void;
+};
+export interface UserLocationRef { requestPermission(): Promise<LocationPermission>; }
+export type ImageEntry = Omit<NativeImage, 'id' | 'uri' | 'variants'> & {
+  source: number | Readonly<{uri: string}>;
+  variants?: Readonly<Record<string, number | Readonly<{uri: string}>>>;
+};

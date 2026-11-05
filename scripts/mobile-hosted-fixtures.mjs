@@ -11,7 +11,6 @@ const files = {
   'session-sequences.json': [
     `${ios}/session-sequences.json`,
     `${android}/session-sequences.json`,
-    'packages/react-native/test/fixtures/native-session-sequences.json',
   ],
 };
 const stale = [];

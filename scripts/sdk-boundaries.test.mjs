@@ -24,7 +24,7 @@ const allowedTileflowDependencies = {
   maps: new Set(['core']),
   next: new Set(['dev']),
   react: new Set(['core', 'interactions', 'static']),
-  'react-native': new Set(['core', 'interactions']),
+  'react-native': new Set([]),
   routing: new Set(),
   search: new Set(),
   static: new Set(),

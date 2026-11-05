@@ -1,349 +1,71 @@
 # @tileflow/react-native
 
-`@tileflow/react-native` provides a Tileflow `Map` backed by MapLibre Native on iOS and Android. It is pre-release. Publication requires the repository’s protected release workflow.
-
-The package targets exactly React 19.2.0, React Native 0.83.10 and `@maplibre/maplibre-react-native` 11.5.0, with MapLibre Native Android 13.6.1 and iOS 6.31.0 through the pinned integration below. Expo consumers use Expo 55.0.31 with a native development build; Expo Go does not contain the required native modules.
-
-> Related packages and guides: [documentation index](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/llms.txt).
+Tileflow maps, offline regions and services for React Native. `MapView` wraps the Tileflow Swift
+and Android SDKs through Fabric. The package targets React 19.2.0 and React Native 0.83.10 with the
+New Architecture. Expo 55 requires a development build; Expo Go does not include these modules.
 
 ## Install
 
-Start with an Expo development build or a bare React Native application matching those peers. Once the first alpha is available, install the package and its direct dependencies:
+Install the package version selected for your application and rebuild its native projects:
 
 ```sh
-npm install --save-exact @tileflow/react-native@alpha @tileflow/core@alpha @tileflow/interactions@alpha @maplibre/maplibre-react-native@11.5.0
+npm install @tileflow/react-native
 ```
 
-Keep the lockfile. Complete the [native integration](#native-integration) before building the application. Source on `main` can precede npm; installation or local checks do not establish Hosted availability or physical-device acceptance.
+For Expo, add `@tileflow/react-native` to the app's plugins. Configure credentials through the
+plugin's environment variables or native configuration. Credentials are never component props.
+For a community application, apply `tileflow_post_install(installer)` in the Podfile after
+`react_native_post_install`; the package supplies the hook in `ios/tileflow_post_install.rb`.
+Android resolves the Tileflow native artifacts through Maven Central.
 
-The package exports a mounted `Map` and its public types from the ordinary package root. Importing the package does not install native networking, read application configuration, create a Map, start a session, acquire admission, schedule timers or perform network I/O. Those effects begin only inside a mounted component lifecycle.
+Source changes can precede published packages. Check the selected package version before adopting
+an API. See the [mobile guides](https://tileflow.dev/docs).
 
-Tileflow `Map` is **Tileflow-only**. Its `source` is the existing Tileflow descriptor object:
+## Show a map
 
 <!-- docs:check -->
 
 ```tsx
-import {Map} from '@tileflow/react-native';
+import {Camera, CircleLayer, GeoJSONSource, MapView} from '@tileflow/react-native';
 
 export function StoreMap() {
   return (
-    <Map
-      source={{
-        map: 'stores',
-        manifestUrl: 'https://maps.example.com/tileflow/manifest.json',
-      }}
-      theme="light"
-      style={{flex: 1}}
-      testID="store-map"
-    />
+    <MapView source={{mapId: 'map_0123456789abcdef'}} style={{flex: 1}}>
+      <Camera centerCoordinate={[-3.7038, 40.4168]} zoomLevel={16} />
+      <GeoJSONSource id="stores" shape={{
+        type: 'FeatureCollection',
+        features: [{type: 'Feature', id: 'sol', properties: {},
+          geometry: {type: 'Point', coordinates: [-3.7038, 40.4168]}}],
+      }}>
+        <CircleLayer id="store-points" style={{circleRadius: 7, circleColor: '#e9573f'}} />
+      </GeoJSONSource>
+    </MapView>
   );
 }
 ```
 
-There is no public renderer discriminator, arbitrary `mapStyle`, credential prop, Hosted client, Provider, admission API, native handle or MapLibre ref. An application that needs a wholly unmanaged MapLibre map should use `@maplibre/maplibre-react-native` directly.
-
-## Mounted ownership
-
-One mounted Tileflow `Map` owns one current source generation, one private Hosted binding/session/controller when required, one native admission context and one upstream MapLibre Map. Multiple mounted Maps may share only the acknowledged process-level networking installation; they never share contexts, sessions, grants, generations, abort state, callbacks or renderer ownership.
-
-The upstream native Map is not created until the source is resolved and its private admission context has been acknowledged. Hosted session delivery also requires the application configuration and bootstrap path to be ready. Non-session sources do not read mobile application configuration or acquire Hosted authority.
-
-Changing a theme keeps the same native Map, context and session. Replacing the logical source retires the previous owner before the replacement can open another context. Ordinary changes to callback identity, `children`, `style`, `testID` or unchanged semantic props do not recreate the source/session/native owner.
-
-Application-owned MapLibre children that are valid children of the upstream Map remain composable. Tileflow still owns the Map style, networking, camera lifecycle callbacks and readiness callbacks.
-
-## Source and theme
-
-Native sources keep the explicit shape:
-
-```ts
-{
-  map: 'stores',
-  manifestUrl: 'https://maps.example.com/tileflow/manifest.json',
-}
-```
-
-There is no implicit native manifest discovery. `theme` accepts one concrete published theme or `system`. A `system` selection subscribes to React Native Appearance only while that selection is mounted. Theme application is transactional: a new concrete style is prepared and applied on the same Map, becomes current only after native readiness, and attempts to restore the previous accepted style if the replacement fails.
-
-For the CLI's Native preview, explicitly permit its HTTP origin in the source:
-
-```tsx
-<Map
-  source={{
-    map: 'stores',
-    manifestUrl: 'http://127.0.0.1:3333/native/manifest.json',
-    developmentOrigin: 'http://127.0.0.1:3333',
-  }}
-/>
-```
-
-Use an address reachable from the target device. The exception covers only that exact scheme,
-host and port, including relative styles and resources; other origins still require HTTPS.
-Keep it in development configuration. The application owns any iOS ATS or Android cleartext
-exception. Changing or removing the origin retires the previous source owner. Hosted credentials
-and protected delivery still require HTTPS.
-
-`onThemeChange` reports only the safe public selection shape. It does not expose style URLs, style JSON, configuration, session authority or native error messages.
-
-## Theme transitions and blends
-
-Add `timeOfDay="dusk"` beside `theme` to select a map's optional `day`, `dawn`, `dusk`, or
-`night` preset. For Streets, `theme="light"` with this preset selects the existing `dusk` palette.
-Maps without this capability ignore the option; omitting it keeps the selected theme unchanged.
-Changing it uses the existing theme transition. `themeBlend` takes precedence. See the
-[authoring contract](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/REFERENCE.md#style-with-themes-and-semantic-modules).
-
-Theme and `timeOfDay` changes cross-fade over 450 ms by default: a snapshot of the drawn map covers it, follows the camera and fades out once the new theme is drawn. Use `themeTransition={{duration: 700}}` to customize the duration, or `duration: 0` for an immediate change. `themeBlend={{themes: ['night', 'dusk', 'day'], position}}` shows a continuous blend of the map's themes instead of `theme`; position 0 is the first theme and 1.5 is halfway from the second to the third:
-
-```tsx
-<Map source={source} themeBlend={{themes: ['night', 'dusk', 'day'], position}} style={{flex: 1}} />
-```
-
-The first blend of a set of themes prepares every theme's style and replaces the native style once; moving `position` later changes the map without loading. Removing `themeBlend` returns to `theme`. Both keep the same native Map, context and session, and `ready` events wait for the fade. The device's reduce-motion setting changes at once. See [theme transitions and blends](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md) for what follows the position on native maps.
-
-## Boundary choropleths
-
-A map that declares `boundaryAreas` and a `boundaryChoropleth()` without compiled `values` reads
-its colors from feature-state. `boundaryFeatureState` sets that state from the application, with
-the same rows and options as `useBoundaryFeatureState` on the web: rows keyed by the source's
-feature ID (`id`, or `ref` when the map promotes it), `labels` and `state`:
-
-<!-- docs:check -->
-
-```tsx
-import {Map, type MapSource} from '@tileflow/react-native';
-import {useMemo} from 'react';
-
-export function UnemploymentMap({
-  source,
-  rates,
-}: {
-  source: MapSource;
-  rates: ReadonlyMap<number, number>;
-}) {
-  // Memoize the values: each new object replaces the previous ones.
-  const values = useMemo(
-    () => ({joinBy: 'id' as const, rows: [...rates].map(([key, value]) => ({key, value}))}),
-    [rates],
-  );
-  return <Map source={source} boundaryFeatureState={{values}} style={{flex: 1}} />;
-}
-```
-
-Values survive theme changes: they are set again once the new style has loaded. `values: null`
-removes them. Rows keyed by codes the polygons do not carry are joined before they reach the app,
-on a server or at build time.
-
-## Camera
-
-The existing mount-stable camera contract is preserved. Use either an initial camera seed or complete controlled camera ownership for the lifetime of one mounted Map:
-
-```tsx
-<Map source={source} initialView={{center: [-9.14, 38.72], zoom: 11}} />
-```
-
-or:
-
-```tsx
-<Map
-  source={source}
-  view={{center, zoom, bearing, pitch}}
-  onViewChange={(event) => setView(event.view)}
-/>
-```
-
-Controlled mode requires a complete view and `onViewChange`. Programmatic camera operations are private. Native command receipts are correlated internally and are not inferred from delayed region callbacks. Gesture changes are the only camera changes emitted publicly; their controlled settlement occurs after the subsequent React commit. Theme/style restoration preserves the current camera owner.
-
-No public imperative camera API or raw upstream Map ref is exported.
-
-## Readiness
-
-`onLoad` means that the current native style was accepted for the mounted generation. It is not a rendered-frame receipt.
-
-`onReadinessChange({status: 'ready'})` requires all of the following for the current generation:
-
-- current native style acceptance;
-- a committed positive native layout/view barrier;
-- a fully rendered native map/frame after that barrier;
-- foreground lifecycle state.
-
-Readiness is invalidated by source/style transactions, layout changes, camera gesture/command epochs and backgrounding. Resume requires fresh native evidence; JavaScript animation frames, sleeps and arbitrary timers are not readiness proof.
-
-## Bounded resource preparation
-
-Before native rendering, the mounted owner prepares a bounded closure for the current style. It covers the owned style document, one TileJSON edge per tile source, tile templates, sprite leaves, glyph templates, native-v1 managed font faces and supported base-asset URLs represented by the accepted contracts.
-
-Relative URLs are resolved with Core's native URL policy. Protected resources are appended to the per-Map admission catalog only after native acknowledgement. Resource scope and tileset identity are preserved. Foreign/unowned resources are left unchanged and never receive Tileflow authority. Recursive, ambiguous, oversized or dynamically unbounded protected graphs fail closed.
-
-Glyph templates use a finite set of exact font-stack expansions. A later theme may extend that same template only through an acknowledged append-only finite union; it cannot change the resource scope, origin or identity.
-
-## Hosted mobile application configuration
-
-Hosted native session delivery uses a scoped, revocable, publishable **mobile application credential** configured once in the native application. It authenticates the distributed application, not its end user. The manifest supplies `mapId`, `apiUrl` and `usageMode`; Tileflow requires the manifest API origin to exactly match the configured canonical HTTPS origin before bootstrap.
-
-There is intentionally no credential prop, JS setter, Provider, client object, package-name/bundle-ID authentication or attestation path in this version.
-
-## Map options and presentation
-
-The public `mapOptions` object remains a positive allowlist. It includes the currently supported gesture/control options only. Style inputs, request transformation, headers and upstream lifecycle callbacks remain owned by Tileflow. Runtime validation rejects forged extra keys without reflecting their values.
-
-React Native `style`, `testID` and React children are preserved as presentation/composition inputs and do not become semantic source identity.
-
-## Safe events and ref
-
-The public lifecycle surface remains:
-
-- `onLoad`;
-- `onError`;
-- `onReadinessChange`;
-- `onThemeChange`;
-- controlled `onViewChange`;
-- `ref.getSourceState()`;
-- `ref.retry()`.
-
-`getSourceState()` returns only the last safe projected source snapshot. Errors use existing bounded codes/fields/kinds. No URL, response body, native event, credential, grant, session object, native handle or raw cause enters public callbacks, refs or serializable state.
-
-`onError` reports `source-error`, `renderer-error` and, for Hosted session delivery, `session-error`. A `session-error` means Tileflow refused the session: the mobile credential was rejected (`NATIVE_SESSION_CREDENTIAL_REJECTED`), it does not authorize the Map (`NATIVE_SESSION_MAP_MISMATCH`), the Map was not found (`NATIVE_SESSION_MAP_NOT_FOUND`), its view or spending limit was reached (`NATIVE_SESSION_QUOTA_EXCEEDED`), or the service refused the session for another reason that trying again cannot change (`NATIVE_SESSION_REJECTED`), such as a Map that does not use session delivery. For `NATIVE_SESSION_REJECTED`, `event.error.reason` is the service's code when it sent one, for example `MOBILE_SESSION_MODE_REQUIRED`; it is a bounded identifier, never a message or response body. A `session-error` can arrive after the first load, when a renewal is refused. The map keeps what it has drawn but loads nothing new until you call `ref.retry()` or change the source:
-
-```tsx
-import {Map, type MapRef} from '@tileflow/react-native';
-import {useRef} from 'react';
-
-export function StoreMap() {
-  const map = useRef<MapRef>(null);
-  return (
-    <Map
-      ref={map}
-      source={{map: 'stores', manifestUrl: 'https://maps.example.com/tileflow/manifest.json'}}
-      onError={(event) => {
-        if (
-          event.type === 'session-error' &&
-          event.error.code === 'NATIVE_SESSION_QUOTA_EXCEEDED'
-        ) {
-          // Show your own notice; call map.current?.retry() once the limit is raised.
-        } else if (
-          event.type === 'session-error' &&
-          event.error.code === 'NATIVE_SESSION_REJECTED'
-        ) {
-          // event.error.reason, such as 'MOBILE_SESSION_MODE_REQUIRED', names the cause.
-        }
-      }}
-      style={{flex: 1}}
-    />
-  );
-}
-```
-
-Service outages, timeouts and rate limiting are not session errors. The map keeps using its current grant while it is valid and requests another after an increasing delay, from one second up to one minute, or after the `Retry-After` the service sends. A first load that failed this way prepares again on its own. `ref.retry()` also loads again after a source or renderer error, and changes nothing while the map is shown.
-
-## Native integration
-
-The package needs the Tileflow Swift and Android SDKs, which it pins to one exact version
-(`tileflow.nativeVersion` in its `package.json`). Apps need iOS 16 and Android API 26 or later, and
-the New Architecture, which React Native 0.83 always uses. Expo Go does not contain the native
-code: use a development build. Calls that need the native modules then throw
-`TileflowNativeModuleUnavailableError`.
-
-With Expo, add the config plugin and run prebuild; it writes everything below:
-
-```json
-{
-  "expo": {
-    "plugins": [["@tileflow/react-native", {"offline": {"backgroundUpdates": true}}]]
-  }
-}
-```
-
-Without Expo, call the Podfile hook after React Native's and MapLibre React Native's own hooks. It
-links the pinned Tileflow Swift package and the MapLibre Native product the current `Map` uses:
-
-```ruby
-post_install do |installer|
-  react_native_post_install(installer, config[:reactNativePath])
-  $MLRN.post_install(installer)
-  tileflow_post_install(installer)
-end
-```
-
-Android resolves the Tileflow artifacts from Maven Central. Do not add a second MapLibre Native
-CocoaPod.
-
-## Offline regions and services
-
-`TileflowOfflineStore` and the `TileflowSearch`, `TileflowRouting`, `TileflowElevation` and
-`TileflowGeoIP` clients call the Tileflow Swift and Android SDKs. Credentials never reach
-JavaScript: the native SDKs read the `TileflowAPIOrigin` and `Tileflow*Credential` Info.plist keys
-and the `tileflow_api_origin` and `tileflow_*_credential` Android string resources. The Expo plugin
-writes them at prebuild from `TILEFLOW_*_CREDENTIAL` environment variables, never from props, which
-JavaScript can read. `configuredServices()` reports which credentials are present.
-
-<!-- docs:check -->
-
-```ts
-import {TileflowOfflineStore} from '@tileflow/react-native';
-
-export function downloadMadrid() {
-  return TileflowOfflineStore.loadRegion('madrid', {
-    geometry: {type: 'boundingBox', west: -3.75, south: 40.39, east: -3.65, north: 40.45},
-    content: {type: 'hosted', mapId: 'map_0123456789abcdef', themes: ['day']},
-    maxZoom: 15,
-  });
-}
-```
-
-Loading a stored region again downloads only what changed, and `subscribe` reports its progress.
-Failures reject with `TileflowOfflineError` or `TileflowServiceError`. On iOS, background downloads
-and automatic updates need the Expo plugin's `offline.backgroundUpdates` option, or
-`dev.tileflow.offline.update` in `BGTaskSchedulerPermittedIdentifiers`, `fetch` in
-`UIBackgroundModes` and the `TileflowReactNativeApp` hooks in the `AppDelegate`. Android uses
-WorkManager.
-
-## Source-checkout harness
-
-`harness/AdmissionHarness.tsx` mounts the real public Tileflow `Map` in an existing development host, including two simultaneous Maps under React `StrictMode`. It provides deterministic source-checkout controls for source replacement, theme transactions, controlled camera updates and teardown. The harness is excluded from exports and packed files and creates no service or runner. See [the harness guide](./harness/README.md).
-
-## Interactions and markers
-
-`Map` accepts portable `annotations`, semantic `interactions`, activation and diagnostic callbacks,
-and an optional marker renderer. Annotation data stays typed through a generic `Map`:
-
-```tsx
-<Map
-  source={source}
-  annotations={places}
-  interactions={bindings}
-  onInteractionEvent={(event) => {
-    selectPlace(event.target);
-  }}
-  renderMarker={({annotation}) => <PlaceMarker place={annotation.data} />}
-/>
-```
-
-Tileflow owns each stable native marker host, its coordinate, touch activation and accessibility
-wrapper. A bounded accessible marker is rendered when `renderMarker` is omitted. Large feature sets
-remain in native vector or GeoJSON layers and are selected through semantic rendered-feature
-queries rather than thousands of React marker views.
-
-The application owns persistent selection and its presentation. The SDK emits normalized
-annotation or POI targets but no popup, callout, tooltip, sheet, panel or modal renderer.
-
-## Current boundary
-
-The mounted component does not add location, selection-presentation UI, CLI behavior, deployment
-or publication, and it does not yet draw from offline regions: the offline store and the service
-clients run on the native SDKs, while the `Map` still renders with MapLibre React Native. The
-package remains pre-release.
-
-Native maps do not draw a map's 3D scene. Core's 3D buildings, Tileflow landmarks, Team building
-models, 3D trees and street lights are WebGL layers for MapLibre GL JS, which the web `Map`
-components mount by default; a native map shows the style's 2D layers and the vegetation fallback
-the map declares.
-
-Source and tests describe contracts; they do not establish that a native build, simulator/device run, Hosted service, app-store submission or package publication succeeded. Qualify the exact source revision in the intended host before relying on it.
-
-## Foreground location is application-owned
-
-`Map` does not request location permission, start a provider, track the device or recenter when a
-fix arrives. Applications can compose a validated foreground fix through the existing accessible
-annotation and controlled-camera contracts while keeping permission, provider lifetime, privacy
-policy, status UI and recenter controls outside Tileflow.
+Self-hosted sources use `{map, manifestUrl}`. The native SDK owns loading, resource access,
+theme changes and offline delivery. Runtime sources and layers survive theme changes.
+
+`Camera`, the five source components and ten layer components use declarative props. Layer styles
+accept generated camelCase properties and expression arrays. `MapViewRef` provides projection,
+queries, feature state and scene controls. `GeoJSONSourceRef` updates features by id and queries
+clusters. Coordinates are `[longitude, latitude]`; screen coordinates use layout points and
+durations use milliseconds.
+
+Use `PointAnnotation` for native points, `MarkerView` for React views and `Images` for bundled or
+URI images, including SDF images. An annotation that consumes a touch takes precedence over a POI
+or background event. The application owns any popup or sheet.
+
+`UserLocation` requests no permission on mount. Call `requestPermission()` explicitly after
+configuring the platform's location permission descriptions. `visible={false}` hides the
+indicator; an explicit `onUpdate` still receives fixes. Native lifecycle handling releases the
+provider when it has no consumers.
+
+`TileflowOfflineStore`, `TileflowOfflineSwitch`, `TileflowSearch`, `TileflowRouting`,
+`TileflowElevation` and `TileflowGeoIP` delegate to the native SDKs. The example application covers
+an offline download and remount with the server stopped. Optional background updates require the
+plugin's `offline.backgroundUpdates` setting and the platform's background configuration.
+
+Unsupported visual capabilities report developer diagnostics through `onWarning` and the console.
+The SDK does not add a warning overlay to the application's map.

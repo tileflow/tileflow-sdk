@@ -140,6 +140,74 @@ thin edges of 3D models stay continuous; other context attributes you pass are k
 The obsolete source fields `kind` and `style` are rejected. For a completely unmanaged map, use
 `maplibre-gl` directly rather than a Tileflow component.
 
+## Add runtime sources and layers
+
+This API is unreleased. Use the matching local packed packages until a compatible alpha is
+published. `TileflowMapRef` provides `addSource`, `removeSource`, `addLayer`, `moveLayer`, and
+`removeLayer` in interactive mode.
+
+<!-- docs:check -->
+
+```tsx
+import {Map, type TileflowMapRef} from '@tileflow/react';
+import {useRef} from 'react';
+
+export function RuntimePoints() {
+  const map = useRef<TileflowMapRef>(null);
+
+  async function addPoints() {
+    const current = map.current;
+    if (!current) return;
+    await current.addSource('places', {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            properties: {},
+            geometry: {type: 'Point', coordinates: [-3.7038, 40.4168]},
+          },
+        ],
+      },
+    });
+    await current.addLayer(
+      {
+        id: 'place-points',
+        type: 'circle',
+        source: 'places',
+        slot: 'above-labels',
+        paint: {'circle-radius': 8, 'circle-color': '#e9573f'},
+      },
+      {slotIndex: 0},
+    );
+  }
+
+  return (
+    <Map
+      ref={map}
+      source={{map: 'madrid'}}
+      onLoad={() => {
+        void addPoints().catch(console.error);
+      }}
+    />
+  );
+}
+```
+
+Methods return promises and wait for map/style readiness, including theme transitions. Registered
+resources survive theme changes. Replacing the map or unmounting cancels pending operations and
+releases those resources. Image mode rejects runtime mutations.
+
+`slotIndex` starts at zero and counts only registered application layers in the same slot; an index
+equal to the count appends. Moves exclude the moving layer from that count. Use `aboveLayerId` or
+`belowLayerId` instead to reference a layer in the same slot. Conflicting positions reject without
+mutation. Moving with no `slot` keeps the current slot; `slot: null` explicitly removes it.
+
+Remove dependent layers before removing their source. These methods own only resources registered
+through this reference; the existing `onLoad` callback still receives MapLibre. Typed errors expose
+`code` and actionable `context`. See the [runtime contract](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/REFERENCE.md#runtime-sources-and-layers).
+
 ## Color boundary areas from application data
 
 For a map that declares `boundaryAreas` and a `boundaryChoropleth()` overlay without `values`,

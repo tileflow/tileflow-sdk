@@ -131,6 +131,9 @@ The obsolete source fields `kind` and `style` are rejected. For a completely unm
 
 ## Add sources and layers through a reference
 
+This runtime reference API is unreleased. Use the matching local packed packages until a
+compatible alpha is published.
+
 The component reference exposes `addSource`, `removeSource`, `addLayer`, `moveLayer`, and
 `removeLayer`. Each returns `Promise<void>` and waits for the map and any theme transition.
 Use the worker and CSS setup above:

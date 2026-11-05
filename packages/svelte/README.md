@@ -133,6 +133,9 @@ The obsolete source fields `kind` and `style` are rejected. For a completely unm
 
 ## Add sources and layers through a reference
 
+This runtime reference API is unreleased. Use the matching local packed packages until a
+compatible alpha is published.
+
 The component reference exposes `addSource`, `removeSource`, `addLayer`, `moveLayer`, and
 `removeLayer`. Each returns `Promise<void>` and waits for the map and any theme transition.
 Use the worker and CSS setup above:
@@ -142,11 +145,13 @@ Use the worker and CSS setup above:
   import {TileflowMapError} from '@tileflow/core/browser';
   import {TileflowMap, type TileflowMapRef} from '@tileflow/svelte';
 
-  let map: TileflowMapRef;
+  let map: TileflowMapRef | null = null;
 
   async function addPoints() {
+    const current = map;
+    if (!current) return;
     try {
-      await map.addSource('app-points', {
+      await current.addSource('app-points', {
         type: 'geojson',
         data: {
           type: 'Feature',
@@ -154,7 +159,7 @@ Use the worker and CSS setup above:
           properties: {},
         },
       });
-      await map.addLayer(
+      await current.addLayer(
         {
           id: 'app-points',
           type: 'circle',

@@ -6,6 +6,7 @@ export type {
   TileflowAnnotationRenderer,
   TileflowInteractionRenderer,
   TileflowMapOptions,
+  TileflowMapRef,
   TileflowMapSource,
 } from './map';
 export type {TileflowMapLibreConfiguration} from './maplibre';

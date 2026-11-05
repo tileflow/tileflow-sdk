@@ -1,5 +1,7 @@
+import {createRef} from 'react';
 import type {TileflowAnnotation} from '@tileflow/interactions';
 import {Map} from '../src/index';
+import type {TileflowMapRef} from '../src/index';
 
 type Property = Readonly<{
   price: number;
@@ -27,6 +29,7 @@ export function PropertyCard({close, property}: {close: () => void; property: Pr
 
 const annotationOnlyMap = (
   <Map
+    ref={createRef<TileflowMapRef>()}
     annotations={properties}
     renderPopup={({annotation, close}) => <PropertyCard property={annotation.data} close={close} />}
     source={{map: 'main'}}

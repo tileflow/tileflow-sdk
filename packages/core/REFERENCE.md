@@ -327,3 +327,36 @@ to suspend duplicate flat building fills, outlines and flat shadows in the share
 after its building entrance zoom. Roads then remain visible beneath open landmark structures.
 Returning to 2D or disposing the scene restores their previous visibility; without WebGL2 the
 flat fallback remains. Streets selects this option; other maps keep their authored treatment.
+
+## Runtime sources and layers
+
+The unreleased `@tileflow/core/browser` runtime controller backs the React, Vue and Svelte
+component references. It accepts JSON style-spec definitions and owns only resources registered
+through its methods. Existing raw MapLibre callbacks remain available; mutations through them are
+outside the controller's restoration contract.
+
+| Method                            | Behavior                                                                |
+| --------------------------------- | ----------------------------------------------------------------------- |
+| `addSource(id, definition)`       | Register a new application source; reject existing IDs.                 |
+| `removeSource(id)`                | Remove an owned source after its dependent layers have been removed.    |
+| `addLayer(definition, position?)` | Register an owned layer; non-background layers require an owned source. |
+| `moveLayer(id, position?)`        | Reorder an owned layer, optionally changing its slot explicitly.        |
+| `removeLayer(id)`                 | Remove an owned layer.                                                  |
+
+Operations return promises. They wait for initial readiness and pending style transactions.
+Disposal and initialization failure reject pending work. The controller composes registered
+resources into theme/blend targets before applying them, including rollback; it never adopts base
+resources or resources added outside that controller.
+
+Slots use the map's published overlay-placement manifest: `above-water`, `below-roads`,
+`above-roads`, `above-buildings`, `below-labels`, and `above-labels`. An omitted/null slot on insertion
+places the layer above the map. On a move, omission preserves the slot; null removes it.
+`slotIndex` is a zero-based index among owned layers in the target slot, excluding the moving layer.
+The insertion range is zero through that count, inclusive. Omitting a position appends within the
+slot. `aboveLayerId` and `belowLayerId` are alternative positions; combining them with another
+position, using an unknown reference, or crossing slots rejects before mutation.
+
+`TileflowMapError` exposes `code` and structured `context`. Position conflicts use
+`invalidRequest` with reason `layerPositionConflict`, the affected IDs and slots, the field path,
+and correction codes/messages. This rejection deliberately differs from Mapbox's cross-slot
+reference behavior; `slotIndex` does not claim equivalence to Mapbox `layerIndex`.

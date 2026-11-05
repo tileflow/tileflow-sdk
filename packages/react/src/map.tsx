@@ -2,10 +2,15 @@
 
 import {
   type CSSProperties,
+  type ForwardedRef,
+  forwardRef,
   type ImgHTMLAttributes,
+  type ReactElement,
   type ReactNode,
+  type RefAttributes,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -43,6 +48,7 @@ import {
   subscribeTileflowSystemColorScheme,
   tileflowCanvasContextAttributes,
   type TileflowMap3DAttachment,
+  TileflowMapError,
   tileflowMaxPitch,
   type TileflowThemeController,
   type TileflowThemeTransition,
@@ -93,8 +99,11 @@ import {
 import {imageModeMapInteractionDiagnostic, prepareTileflowReactAnnotations} from './annotations';
 import {prepareTileflowReactInteractionBindings} from './interaction-bindings';
 import {prepareTileflowReactInteractionState} from './interaction-state-input';
+import {createMapControllerOwner, type TileflowMapRef} from './map-controller';
 import {assertTileflowMapStyleInputs, type TileflowMapStyleSourceProps} from './map-style-inputs';
 import {loadTileflowMapLibre} from './maplibre';
+
+export type {TileflowMapRef} from './map-controller';
 
 export type TileflowMapSource = TileflowRuntimeSource;
 export type TileflowMapOptions = Omit<MapLibreMapOptions, 'container' | 'style'>;
@@ -185,8 +194,9 @@ export type MapProps<TAnnotation extends TileflowAnnotation = TileflowAnnotation
 
 const defaultInteractions: readonly TileflowInteractionBinding[] = [];
 
-export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>(
+function MapImplementation<TAnnotation extends TileflowAnnotation = TileflowAnnotation>(
   props: MapProps<TAnnotation>,
+  forwardedRef: ForwardedRef<TileflowMapRef>,
 ) {
   assertTileflowMapStyleInputs(props);
 
@@ -559,6 +569,54 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
   const runtimeMapIdentity = `${manifestUrl}\0${runtimeSource.map}`;
   const runtimeStyleReady =
     runtimeStyle !== null || (themeResolution.error && mapRef.current !== null);
+  const [mapControllerOwner] = useState(createMapControllerOwner);
+  const controllerIdentity = useMemo(
+    () => ({runtimeMapIdentity, isImageMode, resolvedInteractive, stableMapOptions}),
+    [runtimeMapIdentity, isImageMode, resolvedInteractive, stableMapOptions],
+  );
+  const previousControllerIdentity = useRef(controllerIdentity);
+  useLayoutEffect(() => mapControllerOwner.activate(), [mapControllerOwner]);
+  useLayoutEffect(() => {
+    if (previousControllerIdentity.current !== controllerIdentity) {
+      mapControllerOwner.reset();
+      previousControllerIdentity.current = controllerIdentity;
+    }
+    if (isImageMode) {
+      mapControllerOwner.fail(
+        new TileflowMapError('invalidRequest', {
+          reason: 'interactiveMapRequired',
+          message: 'Runtime sources and layers require mode="interactive".',
+        }),
+      );
+    } else if (currentManifestResolution.state === 'error') {
+      mapControllerOwner.fail(
+        new TileflowMapError('resourceFailed', {
+          reason: 'manifestUnavailable',
+          message: 'The map manifest could not be loaded.',
+        }),
+      );
+    } else if (
+      currentManifestResolution.state === 'ready' &&
+      !runtimeStyleReady &&
+      !mapRef.current
+    ) {
+      mapControllerOwner.fail(
+        new TileflowMapError('resourceFailed', {
+          reason: 'styleUnavailable',
+          message: 'The selected map does not have an available interactive style.',
+        }),
+      );
+    } else if (runtimeStyleReady && !mapRef.current) {
+      mapControllerOwner.prepare();
+    }
+  }, [
+    controllerIdentity,
+    currentManifestResolution.state,
+    isImageMode,
+    mapControllerOwner,
+    runtimeStyleReady,
+  ]);
+  useImperativeHandle(forwardedRef, () => mapControllerOwner.ref, [mapControllerOwner]);
 
   const resolvedAnalytics = useMemo(
     () => mergeTileflowAnalytics(analytics, runtimeStyle?.analytics),
@@ -759,6 +817,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
     setActiveRuntimeResource(initialRuntimeStyle);
     setCaptureState('loading');
     const container = containerRef.current;
+    const ownedController = mapControllerOwner.begin();
     let cancelled = false;
     let disposeMap: (() => void) | undefined;
 
@@ -873,6 +932,8 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
         mapRef.current = map;
         setupResources.map = map;
         registerCleanup(() => map.remove());
+        ownedController.attach(map, prepared.style);
+        registerCleanup(() => mapControllerOwner.retire(ownedController));
         registerCleanup(attachTileflowAtmosphere(map));
         registerCleanup(attachTileflowNotices(map));
         registerCleanup(attachTileflowNauticalLights(map));
@@ -1147,6 +1208,15 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
       })
       .catch((error: unknown) => {
         resourceLifetime.abort();
+        if (!cancelled) {
+          mapControllerOwner.fail(
+            new TileflowMapError('resourceFailed', {
+              reason: 'initializationFailed',
+              message: 'The interactive map could not initialize.',
+            }),
+            ownedController,
+          );
+        }
         try {
           disposeMap?.();
         } catch (cleanupError) {
@@ -1163,8 +1233,15 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
       resourceLifetime.abort();
       readinessRunRef.current += 1;
       disposeMap?.();
+      mapControllerOwner.retire(ownedController);
     };
-  }, [resolvedInteractive, runtimeMapIdentity, runtimeStyleReady, stableMapOptions]);
+  }, [
+    mapControllerOwner,
+    resolvedInteractive,
+    runtimeMapIdentity,
+    runtimeStyleReady,
+    stableMapOptions,
+  ]);
 
   useEffect(() => {
     const controller = themeControllerRef.current;
@@ -1327,6 +1404,12 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
     </>
   );
 }
+
+export const Map = forwardRef(MapImplementation) as <
+  TAnnotation extends TileflowAnnotation = TileflowAnnotation,
+>(
+  props: MapProps<TAnnotation> & RefAttributes<TileflowMapRef>,
+) => ReactElement | null;
 
 const mapContainerStyle: CSSProperties = {
   inset: 0,

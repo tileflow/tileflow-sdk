@@ -168,7 +168,7 @@ public class LocationTest {
                 .json()
         assertEquals(
             JSONObject(
-                    """{"enabled":true,"bearing":"course","accuracy":true,"staleAfterMs":10000}"""
+                    """{"enabled":true,"showsPuck":true,"bearing":"course","accuracy":true,"staleAfterMs":10000}"""
                 )
                 .toString(),
             json.toString(),

@@ -632,7 +632,7 @@ test('the native interlock file, when present, is a valid blocker list', async (
 
 test('service consumer checks catch map targets, renderer binaries and unresolved Foundation', () => {
   const dependencies = `+--- dev.tileflow:tileflow-services:${version}
-\--- dev.tileflow:tileflow-foundation:${version}`;
+--- dev.tileflow:tileflow-foundation:${version}`;
   const candidate = {
     android: {
       modules: Object.fromEntries(
@@ -650,7 +650,7 @@ test('service consumer checks catch map targets, renderer binaries and unresolve
   for (const value of [
     `dev.tileflow:tileflow-services:${version}`,
     dependencies.replace(`tileflow-foundation:${version}`, 'tileflow-foundation:0.1.0-alpha.1'),
-    dependencies + `\n\--- dev.tileflow:tileflow-foundation:${version} -> 0.1.0-alpha.4`,
+    dependencies + `\n--- dev.tileflow:tileflow-foundation:${version} -> 0.1.0-alpha.4`,
   ])
     assert.throws(
       () =>

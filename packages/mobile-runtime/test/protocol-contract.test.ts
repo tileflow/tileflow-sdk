@@ -16,8 +16,6 @@ const render = async (value: unknown) =>
         ...(await resolveConfig(resolve(root, 'packages/mobile-runtime/src/contract.ts'))),
         parser: 'typescript',
       }),
-    sessionFixture: await read('test-support/mobile/hosted/native-session.json'),
-    sequenceFixture: await read('test-support/mobile/hosted/session-sequences.json'),
   });
 const clone = () => structuredClone(contract);
 

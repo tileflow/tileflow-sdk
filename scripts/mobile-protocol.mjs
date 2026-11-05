@@ -334,20 +334,15 @@ export function runtimeContract(contract) {
 
 /**
  * Generated files by repository path. `typescript` formats the runtime contract with the
- * repository's Prettier configuration; fixtures are shared byte for byte.
+ * repository's Prettier configuration.
  */
-export async function renderProtocol(contract, {typescript, sessionFixture, sequenceFixture}) {
+export async function renderProtocol(contract, {typescript}) {
   const problems = validateProtocol(contract);
   if (problems.length) throw new Error(`Invalid protocol.json:\n${problems.join('\n')}`);
   return {
-    'platforms/ios/Tests/TileflowTests/Fixtures/session-sequences.json': sequenceFixture,
-    'platforms/android/tileflow/src/test/resources/session-sequences.json': sequenceFixture,
-    'packages/react-native/test/fixtures/native-session-sequences.json': sequenceFixture,
     'packages/mobile-runtime/src/contract.ts': await typescript(
       `${banner}export const protocol = ${JSON.stringify(runtimeContract(contract), null, 2)} as const;\n`,
     ),
-    'platforms/ios/Tests/TileflowTests/Fixtures/native-session.json': sessionFixture,
-    'platforms/android/tileflow/src/test/resources/native-session.json': sessionFixture,
     'platforms/ios/Sources/Tileflow/Bridge/ProtocolContract.swift': swiftContract(contract),
     'platforms/ios/Sources/Tileflow/ProtocolTypes.swift': swiftPublic(contract),
     'platforms/android/tileflow/src/main/java/dev/tileflow/sdk/bridge/ProtocolContract.kt':

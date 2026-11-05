@@ -154,8 +154,13 @@ export async function checkMobilePrerequisites(
   if (mode !== 'packed') tools.nativeCandidate = (await readNativeCandidate(context)).version;
   if (mode === 'android') {
     const javaHome = context.env.JAVA_HOME;
+    const java17Home = context.env.TILEFLOW_JAVA_17_HOME;
     const sdk = context.env.ANDROID_HOME ?? context.env.ANDROID_SDK_ROOT;
     requirePrerequisite(javaHome && resolve(javaHome) === javaHome, 'java-21');
+    requirePrerequisite(
+      java17Home && isAbsolute(java17Home) && resolve(java17Home) === java17Home,
+      'java-17',
+    );
     requirePrerequisite(sdk && resolve(sdk) === sdk, 'android-sdk-36');
     if (context.env.ANDROID_HOME && context.env.ANDROID_SDK_ROOT) {
       try {
@@ -174,6 +179,8 @@ export async function checkMobilePrerequisites(
     const inputs = [
       ['java-21', join(javaHome, 'bin', 'java')],
       ['java-21', join(javaHome, 'bin', 'javac')],
+      ['java-17', join(java17Home, 'bin', 'java')],
+      ['java-17', join(java17Home, 'bin', 'javac')],
       [
         'android-sdk-36',
         join(sdk, 'platforms', `android-${mobileVersions.compileSdk}`, 'android.jar'),
@@ -201,9 +208,21 @@ export async function checkMobilePrerequisites(
       'java-21',
       'TOOLCHAIN_MISMATCH',
     );
+    const java17 = await probe('java-17', join(java17Home, 'bin', 'java'), ['-version']);
+    const javac17 = await probe('java-17', join(java17Home, 'bin', 'javac'), ['-version']);
+    const compilerVersion = Buffer.concat([java17.stdout, java17.stderr])
+      .toString()
+      .match(/version "(17\.[\d.]+)(?:[^"\n]*)"/u)?.[1];
+    requirePrerequisite(
+      compilerVersion &&
+        /^javac 17\./u.test(Buffer.concat([javac17.stdout, javac17.stderr]).toString().trim()),
+      'java-17',
+      'TOOLCHAIN_MISMATCH',
+    );
     await probe('unzip', 'unzip', ['-v']);
     Object.assign(tools, {
       java: javaVersion,
+      javaToolchain17: compilerVersion,
       compileSdk: mobileVersions.compileSdk,
       buildTools: mobileVersions.buildTools,
       ndk: mobileVersions.ndk,
@@ -231,7 +250,14 @@ export async function checkMobilePrerequisites(
   return tools;
 }
 
-export function androidReleaseArguments() {
+export function androidReleaseArguments(javaHome, java17Home) {
+  for (const [home, name] of [
+    [javaHome, 'java-21'],
+    [java17Home, 'java-17'],
+  ]) {
+    if (!home || !isAbsolute(home) || resolve(home) !== home)
+      throw new MobileSmokeError('PREREQUISITE_MISSING', 'prerequisites', name);
+  }
   return [
     ':app:assembleRelease',
     '--no-daemon',
@@ -239,7 +265,8 @@ export function androidReleaseArguments() {
     '--max-workers=2',
     '-PhermesEnabled=true',
     '-Pandroid.builder.sdkDownload=false',
-    '-Dorg.gradle.java.installations.auto-download=false',
+    `-Porg.gradle.java.installations.paths=${java17Home},${javaHome}`,
+    '-Porg.gradle.java.installations.auto-download=false',
     '-Dorg.gradle.internal.http.connectionTimeout=120000',
     '-Dorg.gradle.internal.http.socketTimeout=120000',
   ];
@@ -289,11 +316,15 @@ export async function buildMobileAndroid(context, consumer) {
   );
   await writeMobileFile(context.root, join(directory, 'gradle.properties'), files.properties);
   await writeMobileFile(context.root, join(directory, 'build.gradle'), files.build);
-  await context.run(join(directory, 'gradlew'), androidReleaseArguments(), {
-    cwd: directory,
-    step,
-    timeoutMs: 60 * 60 * 1000,
-  });
+  await context.run(
+    join(directory, 'gradlew'),
+    androidReleaseArguments(context.env.JAVA_HOME, context.env.TILEFLOW_JAVA_17_HOME),
+    {
+      cwd: directory,
+      step,
+      timeoutMs: 60 * 60 * 1000,
+    },
+  );
   const output = join(directory, 'app', 'build', 'outputs', 'apk', 'release');
   const metadata = await readMobileJson(context.root, join(output, 'output-metadata.json'));
   requireMobile(

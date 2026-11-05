@@ -111,7 +111,8 @@ pnpm run smoke:mobile:ios
 ```
 
 Packed checks need Linux/macOS, Node, npm, the repository's
-exact pnpm and `tar`; Android additionally needs JDK 21 and the specified Android SDK components;
+exact pnpm and `tar`; Android additionally needs JDK 21 in `JAVA_HOME`, JDK 17 in
+`TILEFLOW_JAVA_17_HOME` for React Native's compiler toolchain, and the specified Android SDK components;
 iOS needs macOS, Xcode and CocoaPods. Missing or inapplicable prerequisites fail rather than skip.
 These commands are not included in ordinary checks or publication. They verify public compilation,
 autolinking and, only in the platform modes, Release/Hermes binaries. They do not launch an app,

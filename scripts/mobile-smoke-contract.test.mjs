@@ -270,9 +270,9 @@ test('only the documented post-install hooks and Release build entry points are 
   const patched = addIosPostInstallHooks(podfile);
   assert.match(patched, /\)\n[ ]{4}tileflow_post_install\(installer\)/u);
   assert.throws(() => addIosPostInstallHooks(patched), codeIs('TEMPLATE_INVALID'));
-  assert.ok(androidReleaseArguments().includes(':app:assembleRelease'));
-  assert.ok(androidReleaseArguments().includes('--no-daemon'));
-  assert.ok(androidReleaseArguments().includes('-PhermesEnabled=true'));
+  assert.ok(androidReleaseArguments('/java21', '/java17').includes(':app:assembleRelease'));
+  assert.ok(androidReleaseArguments('/java21', '/java17').includes('--no-daemon'));
+  assert.ok(androidReleaseArguments('/java21', '/java17').includes('-PhermesEnabled=true'));
   const args = iosReleaseArguments(
     {directory: '/owned/bare', scheme: 'TileflowBareSmoke'},
     '/owned/derived',

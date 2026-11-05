@@ -138,6 +138,7 @@ test('owned command context ignores ambient credentials, npm config, Node option
         environment: {
           PATH: '/tools',
           JAVA_HOME: '/java',
+          TILEFLOW_JAVA_17_HOME: '/java17',
           TILEFLOW_API_KEY: 'secret',
           NODE_OPTIONS: '--require unsafe',
           npm_config_userconfig: '/unrelated/.npmrc',
@@ -151,6 +152,7 @@ test('owned command context ignores ambient credentials, npm config, Node option
       await context.run('fake', [], {step: 'expo'});
       assert.equal(captured.env.TILEFLOW_API_KEY, undefined);
       assert.equal(captured.env.NODE_OPTIONS, undefined);
+      assert.equal(captured.env.TILEFLOW_JAVA_17_HOME, '/java17');
       assert.equal(captured.env.HOME, join(root, 'home'));
       assert.equal(captured.env.GRADLE_USER_HOME, join(root, 'gradle'));
       assert.equal(captured.env.npm_config_userconfig, join(root, 'npm-user.npmrc'));

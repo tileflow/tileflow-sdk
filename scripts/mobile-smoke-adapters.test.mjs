@@ -4,7 +4,12 @@ import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import test from 'node:test';
 import {mobilePackages, mobileVersions} from './mobile-smoke-contract.mjs';
-import {buildMobileAndroid, buildMobileIos, readNativeCandidate} from './mobile-smoke-native.mjs';
+import {
+  buildMobileAndroid,
+  buildMobileIos,
+  checkMobilePrerequisites,
+  readNativeCandidate,
+} from './mobile-smoke-native.mjs';
 import {packMobilePackages} from './mobile-smoke-pack.mjs';
 import {
   createMobileContext,
@@ -260,6 +265,54 @@ test('native smoke requires all three complete candidate artifacts at the declar
   await assert.rejects(readNativeCandidate(context), {code: 'PREREQUISITE_MISSING'});
 });
 
+test('Android prerequisites verify the local Java 17 compiler independently of the Java 21 runtime', async (t) => {
+  const root = await realpath(await fixtureParent(t));
+  const java21 = join(root, 'java21');
+  const java17 = join(root, 'java17');
+  const sdk = join(root, 'sdk');
+  for (const path of [
+    ...[java21, java17].flatMap((home) => ['java', 'javac'].map((name) => join(home, 'bin', name))),
+    join(sdk, 'platforms', 'android-36', 'android.jar'),
+    join(sdk, 'build-tools', '36.0.0', 'aapt2'),
+    join(sdk, 'ndk', '27.1.12297006', 'source.properties'),
+    join(sdk, 'licenses', 'android-sdk-license'),
+  ])
+    await writeFixture(path, 'fixture');
+  let compilerVersion = '17.0.20';
+  const context = {
+    env: {
+      JAVA_HOME: java21,
+      TILEFLOW_JAVA_17_HOME: java17,
+      ANDROID_HOME: sdk,
+      TILEFLOW_NATIVE_CANDIDATE: await nativeCandidate(root),
+    },
+    run: async (command) => {
+      if (command === 'pnpm') return output('11.13.1');
+      if (command === 'npm') return output('11.6.2');
+      if (command === join(java21, 'bin', 'java')) return output('openjdk version "21.0.9"');
+      if (command === join(java21, 'bin', 'javac')) return output('javac 21.0.9');
+      if (command === join(java17, 'bin', 'java'))
+        return output(`openjdk version "${compilerVersion}"`);
+      if (command === join(java17, 'bin', 'javac')) return output(`javac ${compilerVersion}`);
+      return output();
+    },
+  };
+  const check = () =>
+    checkMobilePrerequisites(
+      context,
+      'android',
+      'pnpm@11.13.1',
+      {command: 'pnpm', prefix: []},
+      'darwin',
+    );
+  assert.equal((await check()).javaToolchain17, '17.0.20');
+  compilerVersion = '21.0.9';
+  await assert.rejects(check(), {code: 'TOOLCHAIN_MISMATCH', prerequisite: 'java-17'});
+  compilerVersion = '17.0.20';
+  delete context.env.TILEFLOW_JAVA_17_HOME;
+  await assert.rejects(check(), {code: 'PREREQUISITE_MISSING', prerequisite: 'java-17'});
+});
+
 for (const kind of ['expo', 'bare']) {
   test(`${kind} Android adapter checks Release APK metadata and embedded Hermes`, async (t) => {
     const parent = await fixtureParent(t);
@@ -280,7 +333,11 @@ for (const kind of ['expo', 'bare']) {
         );
         let bundle = bytecode();
         const context = await createMobileContext(root, {
-          environment: {TILEFLOW_NATIVE_CANDIDATE: await nativeCandidate(root)},
+          environment: {
+            TILEFLOW_NATIVE_CANDIDATE: await nativeCandidate(root),
+            JAVA_HOME: '/java21',
+            TILEFLOW_JAVA_17_HOME: '/java17',
+          },
           run: async (command, args) => {
             if (command === 'unzip') {
               assert.equal(args[2], 'assets/index.android.bundle');
@@ -288,6 +345,8 @@ for (const kind of ['expo', 'bare']) {
             }
             assert.equal(command, join(android, 'gradlew'));
             assert.ok(args.includes(':app:assembleRelease'));
+            assert.ok(args.includes('-Porg.gradle.java.installations.paths=/java17,/java21'));
+            assert.ok(args.includes('-Porg.gradle.java.installations.auto-download=false'));
             const directory = join(android, 'app', 'build', 'outputs', 'apk', 'release');
             await writeMobileJson(root, join(directory, 'output-metadata.json'), {
               variantName: 'release',

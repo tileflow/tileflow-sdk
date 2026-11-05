@@ -175,6 +175,7 @@ export async function createMobileContext(root, options = {}) {
   for (const key of [
     'PATH',
     'JAVA_HOME',
+    'TILEFLOW_JAVA_17_HOME',
     'ANDROID_HOME',
     'ANDROID_SDK_ROOT',
     'DEVELOPER_DIR',

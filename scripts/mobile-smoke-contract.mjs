@@ -34,6 +34,7 @@ const prerequisites = new Set([
   'npm',
   'tar',
   'java-21',
+  'java-17',
   'android-sdk-36',
   'android-build-tools-36.0.0',
   'android-ndk-27.1.12297006',

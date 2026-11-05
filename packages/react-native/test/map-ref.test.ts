@@ -28,3 +28,25 @@ test('feature-state reads wait for the declared source to exist', async () => {
   });
   assert.deepEqual(calls, ['addSource', 'getFeatureState']);
 });
+
+test('unsafe numeric feature identifiers never reach the native map', async () => {
+  const calls: string[] = [];
+  const map = new MapController(
+    'mount',
+    () => ({
+      call: async (_tag, _id, method) => {
+        calls.push(method);
+        return '{}';
+      },
+    }),
+    () => {},
+  );
+  map.attach(1);
+  map.receive('mount', 'contentReady', {});
+  const ref = createMapRef(map, new StyleRegistry(map));
+  await assert.rejects(
+    ref.removeFeatureState({sourceID: 'points', id: Number.MAX_SAFE_INTEGER + 1}),
+    {code: 'invalidRequest'},
+  );
+  assert.deepEqual(calls, []);
+});

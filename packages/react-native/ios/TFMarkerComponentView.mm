@@ -1,5 +1,6 @@
 #import "TFMarkerComponentView.h"
 #import "TFBridgeSwift.h"
+#import <React/RCTConversions.h>
 #import <React/RCTUtils.h>
 #import <react/renderer/components/TileflowReactNativeSpec/ComponentDescriptors.h>
 #import <react/renderer/components/TileflowReactNativeSpec/Props.h>

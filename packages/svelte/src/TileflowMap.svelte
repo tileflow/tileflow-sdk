@@ -460,9 +460,11 @@
         loadedManifestMap = resolvedMap;
         manifestResolutionState = resolvedMap ? 'ready' : 'error';
         if (!resolvedMap) {
-          mapReference.fail(new Error(
-            'The Tileflow manifest could not resolve this map. Check source.map and source.manifestUrl.',
-          ));
+          mapReference.fail(
+            new Error(
+              'The Tileflow manifest could not resolve this map. Check source.map and source.manifestUrl.',
+            ),
+          );
         }
       }
     } catch (error) {
@@ -599,7 +601,9 @@
     activeRuntimeResource = runtimeStyle;
     if (!container || !runtimeStyle) {
       if (runtimeResolutionState === 'error') {
-        mapReference.fail(new Error('No interactive style could be resolved. Check source and theme.'));
+        mapReference.fail(
+          new Error('No interactive style could be resolved. Check source and theme.'),
+        );
       }
       return;
     }

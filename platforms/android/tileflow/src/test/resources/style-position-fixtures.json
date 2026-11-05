@@ -64,10 +64,7 @@
       }
     }
   ],
-  "correctionCodes": [
-    "alignSlot",
-    "referenceSameSlot"
-  ],
+  "correctionCodes": ["alignSlot", "referenceSameSlot"],
   "indexScope": "applicationLayersInSameSlot",
   "slotIndices": [
     {
@@ -98,11 +95,7 @@
       "position": {
         "slotIndex": 0
       },
-      "expectedOrder": [
-        "route",
-        "road-a",
-        "road-b"
-      ]
+      "expectedOrder": ["route", "road-a", "road-b"]
     },
     {
       "name": "add-at-slot-end",
@@ -132,11 +125,7 @@
       "position": {
         "slotIndex": 2
       },
-      "expectedOrder": [
-        "road-a",
-        "road-b",
-        "route"
-      ]
+      "expectedOrder": ["road-a", "road-b", "route"]
     },
     {
       "name": "add-to-empty-slot",
@@ -166,9 +155,7 @@
       "position": {
         "slotIndex": 0
       },
-      "expectedOrder": [
-        "labels"
-      ]
+      "expectedOrder": ["labels"]
     },
     {
       "name": "move-to-slot-start",
@@ -198,10 +185,7 @@
       "position": {
         "slotIndex": 0
       },
-      "expectedOrder": [
-        "road-b",
-        "road-a"
-      ]
+      "expectedOrder": ["road-b", "road-a"]
     },
     {
       "name": "move-to-slot-end",
@@ -231,10 +215,7 @@
       "position": {
         "slotIndex": 1
       },
-      "expectedOrder": [
-        "road-b",
-        "road-a"
-      ]
+      "expectedOrder": ["road-b", "road-a"]
     },
     {
       "name": "unslotted-index-counts-unslotted-peers",
@@ -268,10 +249,7 @@
       "position": {
         "slotIndex": 0
       },
-      "expectedOrder": [
-        "app-b",
-        "app-a"
-      ]
+      "expectedOrder": ["app-b", "app-a"]
     },
     {
       "name": "add-negative-index-rejects",
@@ -304,10 +282,7 @@
       "error": {
         "code": "invalidRequest"
       },
-      "expectedOrder": [
-        "road-a",
-        "road-b"
-      ]
+      "expectedOrder": ["road-a", "road-b"]
     },
     {
       "name": "add-past-slot-end-rejects",
@@ -340,10 +315,7 @@
       "error": {
         "code": "invalidRequest"
       },
-      "expectedOrder": [
-        "road-a",
-        "road-b"
-      ]
+      "expectedOrder": ["road-a", "road-b"]
     },
     {
       "name": "move-index-excludes-moving-layer",
@@ -376,10 +348,7 @@
       "error": {
         "code": "invalidRequest"
       },
-      "expectedOrder": [
-        "road-a",
-        "road-b"
-      ]
+      "expectedOrder": ["road-a", "road-b"]
     }
   ]
 }

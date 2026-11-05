@@ -6,10 +6,11 @@ New Architecture. Expo 55 requires a development build; Expo Go does not include
 
 ## Install
 
-Install the package version selected for your application and rebuild its native projects:
+This implementation is pre-release. When its matching alpha is available, install it and rebuild
+the application's native projects:
 
 ```sh
-npm install @tileflow/react-native
+npm install --save-exact @tileflow/react-native@alpha
 ```
 
 For Expo, add `@tileflow/react-native` to the app's plugins. Configure credentials through the

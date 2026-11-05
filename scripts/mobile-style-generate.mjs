@@ -2,6 +2,7 @@ import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import {createRequire} from 'node:module';
 import {dirname, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {format, resolveConfig} from 'prettier';
 import {readNativeStylePins} from './mobile-native-style.mjs';
 import {renderStyle} from './mobile-style.mjs';
 
@@ -26,7 +27,10 @@ for (const path of [
   'platforms/android/tileflow/src/test/resources/style-position-fixtures.json',
   'platforms/android/tileflow/src/androidTest/assets/style-position-fixtures.json',
 ])
-  outputs[path] = fixtures;
+  outputs[path] = await format(fixtures, {
+    ...(await resolveConfig(resolve(root, path))),
+    filepath: resolve(root, path),
+  });
 for (const [path, content] of Object.entries(outputs)) {
   if (process.argv.includes('--check')) {
     const current = await readFile(resolve(root, path), 'utf8').catch(() => undefined);

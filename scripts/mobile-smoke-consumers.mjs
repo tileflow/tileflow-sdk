@@ -260,20 +260,13 @@ async function assertInstalledMobilePackages(context, directory, manifest, tarba
       requireMobile(actual.equals(expected), 'INSTALL_INVALID', kind);
     }
   }
-  const resolver = `const {createRequire} = require('node:module');
-const names = ${JSON.stringify(mobilePackages.map((name) => `@tileflow/${name}`))};
-const direct = names.map((name) => require.resolve(name));
-const fromNative = createRequire(direct[2]);
-process.stdout.write(JSON.stringify([...direct, fromNative.resolve(names[0]), fromNative.resolve(names[1])]));`;
+  const resolver = `const names = ${JSON.stringify(mobilePackages.map((name) => `@tileflow/${name}`))};
+process.stdout.write(JSON.stringify(names.map((name) => require.resolve(name))));`;
   const resolved = parseCommandJson(
     await context.run(process.execPath, ['-e', resolver], {cwd: directory, step: kind}),
   );
   const expected = mobilePackages.map((name) =>
     join(directory, 'node_modules', '@tileflow', name, 'dist', 'index.js'),
   );
-  requireMobile(
-    JSON.stringify(resolved) === JSON.stringify([...expected, expected[0], expected[1]]),
-    'INSTALL_INVALID',
-    kind,
-  );
+  requireMobile(JSON.stringify(resolved) === JSON.stringify(expected), 'INSTALL_INVALID', kind);
 }

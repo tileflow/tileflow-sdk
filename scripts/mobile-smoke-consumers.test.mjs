@@ -4,6 +4,7 @@ import {join} from 'node:path';
 import test from 'node:test';
 import {createMobileConsumer} from './mobile-smoke-consumers.mjs';
 import {mobileAppSource, mobilePackages, mobileVersions} from './mobile-smoke-contract.mjs';
+import {runMobileCommand} from './mobile-smoke-process.mjs';
 import {
   copyMobileInputs,
   createMobileContext,
@@ -69,6 +70,7 @@ async function consumerFixture(root, kind, defect) {
     await writeMobileJson(root, join(packageDirectory, 'package.json'), {
       name: `@tileflow/${name}`,
       version: mobileVersions.package,
+      main: './dist/index.js',
     });
     for (const file of files.slice(1))
       await writeMobileFile(root, join(packageDirectory, file), 'export {};\n');
@@ -158,10 +160,7 @@ async function consumerFixture(root, kind, defect) {
       assert.equal(command, process.execPath);
       if (args[0] === '-e') {
         calls.push('resolve');
-        const entries = mobilePackages.map((name) =>
-          join(directory, 'node_modules', '@tileflow', name, 'dist', 'index.js'),
-        );
-        return output([...entries, entries[0], entries[1]]);
+        return runMobileCommand(command, args, settings);
       }
       if (args[0].endsWith('/typescript/bin/tsc')) {
         calls.push('typescript');

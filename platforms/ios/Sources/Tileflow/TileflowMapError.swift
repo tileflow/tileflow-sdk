@@ -29,7 +29,7 @@ public struct TileflowMapError: Error, Hashable, Sendable, CustomStringConvertib
 /// Diagnostic detail for a ``TileflowMapError``. It never holds a URL path, query or credential;
 /// a resource is identified by its kind and origin only.
 public struct TileflowErrorContext: Hashable, Sendable, CustomStringConvertible {
-  /// A stable identifier for the cause within the code, for example `protocolVersion`,
+  /// A stable identifier for the cause within the code, for example
   /// `dataTooLarge`, `dataIntegrity`, `invalidGeoJSON`, `graphicsContextLost` or
   /// `featureUnavailable`.
   public var reason: String?
@@ -78,13 +78,13 @@ public struct TileflowErrorContext: Hashable, Sendable, CustomStringConvertible 
 }
 
 extension TileflowMapError {
-  init(_ code: Code, reason: ProtocolContract.ErrorReason, limit: Int? = nil) {
+  init(_ code: Code, reason: MapContract.ErrorReason, limit: Int? = nil) {
     self.init(code, context: .init(reason: reason.rawValue, limit: limit))
   }
 
   /// An error the renderer sent. A code the renderer may not send is itself a renderer fault.
   init(wire value: JSONValue?) {
-    guard let raw = value?["code"]?.string, ProtocolContract.runtimeErrors.contains(raw),
+    guard let raw = value?["code"]?.string, MapContract.rendererErrors.contains(raw),
       let code = Code(rawValue: raw)
     else {
       self.init(.rendererFailed)

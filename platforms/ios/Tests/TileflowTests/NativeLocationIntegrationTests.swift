@@ -21,7 +21,6 @@ final class NativeLocationIntegrationTests: XCTestCase {
         longitude: center.longitude - 0.005, latitude: center.latitude, zoom: zoom),
       options: .init(
         controls: .init(recenterButton: true), events: .init(level: .camera), location: location))
-    view.engineKind = .native
     view.automaticallyAdjustsContentInsets = false
     view.locationProvider = provider
     let window = MountedMap.sceneWindow()

@@ -15,7 +15,7 @@ struct EventSubscriptions: Equatable {
     case annotations
   }
 
-  private var demands: [Owner: [ProtocolContract.Event: Int]] = [:]
+  private var demands: [Owner: [MapContract.Event: Int]] = [:]
 
   init(application options: TileflowEventOptions = .init(), followCamera: Bool = false) {
     set(.application, Self.demand(for: options))
@@ -24,14 +24,14 @@ struct EventSubscriptions: Equatable {
     set(.controls, followCamera ? [.cameraMoved: 0] : [:])
   }
 
-  mutating func set(_ owner: Owner, _ demand: [ProtocolContract.Event: Int]) {
+  mutating func set(_ owner: Owner, _ demand: [MapContract.Event: Int]) {
     demands[owner] = demand.filter { $0.key.level != nil }
   }
 
   /// Every event up to the chosen level; camera updates take the chosen interval.
-  static func demand(for options: TileflowEventOptions) -> [ProtocolContract.Event: Int] {
-    var demand: [ProtocolContract.Event: Int] = [:]
-    for event in ProtocolContract.Event.allCases {
+  static func demand(for options: TileflowEventOptions) -> [MapContract.Event: Int] {
+    var demand: [MapContract.Event: Int] = [:]
+    for event in MapContract.Event.allCases {
       guard let level = event.level, options.level.includes(level) else { continue }
       demand[event] =
         event == .cameraMoved ? Int((options.cameraUpdateInterval * 1000).rounded()) : 0
@@ -39,7 +39,7 @@ struct EventSubscriptions: Equatable {
     return demand
   }
 
-  var events: [ProtocolContract.Event: Int] {
+  var events: [MapContract.Event: Int] {
     demands.values.reduce(into: [:]) { union, demand in
       union.merge(demand) { min($0, $1) }
     }

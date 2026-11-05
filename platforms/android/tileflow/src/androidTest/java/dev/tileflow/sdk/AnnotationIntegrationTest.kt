@@ -24,7 +24,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Annotations through the embedded renderer: taps and drags reach annotation listeners, native
+ * Annotations in MapLibre: taps and drags reach annotation listeners, native
  * views follow a fast pan, and accessibility services read annotations in order. Run with the
  * online fixture server and `adb reverse tcp:18645 tcp:<port>`. The test prints the delay between a
  * rendered frame and the views it moves, for the device it runs on.
@@ -34,12 +34,11 @@ public class AnnotationIntegrationTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val centre = TileflowCoordinate(-3.7, 40.42)
 
-    private fun show(native: Boolean = true): SceneHostActivity {
+    private fun show(): SceneHostActivity {
         val intent =
             Intent(instrumentation.context, SceneHostActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                .putExtra("map", if (native) "appearance" else "fixture")
-                .putExtra("nativeEngine", native)
+                .putExtra("map", "appearance")
         val activity = instrumentation.startActivitySync(intent) as SceneHostActivity
         assertTrue("The map did not load.", activity.loaded.await(30, TimeUnit.SECONDS))
         return activity
@@ -56,13 +55,6 @@ public class AnnotationIntegrationTest {
         withTimeout(30_000) { while (!condition()) delay(50) }
         println("Tileflow: $label")
     }
-
-    private suspend fun suspendJavascript(map: TileflowMapView, script: String): String =
-        kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
-            (map.getChildAt(0) as android.webkit.WebView).evaluateJavascript(script) {
-                if (continuation.isActive) continuation.resumeWith(Result.success(it))
-            }
-        }
 
     /** A person's finger on the map: down, [steps] moves of [dx], [dy] a frame apart, and up. */
     private suspend fun touch(
@@ -89,13 +81,8 @@ public class AnnotationIntegrationTest {
     }
 
     @Test
-    public fun aTapOnAnAnnotationReachesItsListenerAndADragMovesIt() = dragAndReload(native = true)
-
-    @Test
-    public fun aWebViewDragInFlightReplaysItsReleasedGeometry() = dragAndReload(native = false)
-
-    private fun dragAndReload(native: Boolean) {
-        val activity = show(native)
+    public fun aTapOnAnAnnotationReachesItsListenerAndADragMovesIt() {
+        val activity = show()
         onMap(activity) { map ->
             map.jump(TileflowCamera(centre.longitude, centre.latitude, 14.0))
             val circles =
@@ -138,63 +125,33 @@ public class AnnotationIntegrationTest {
             assertEquals(listOf(spot.id), taps)
             delay(300)
             assertEquals("The application did not receive the taken tap.", before, appTaps())
-            if (native) {
-                val held = mutableListOf<String>()
-                circles.addLongClickListener {
-                    held += it.id
-                    true
-                }
-                val down = SystemClock.uptimeMillis()
-                val press =
-                    MotionEvent.obtain(down, down, MotionEvent.ACTION_DOWN, point.x, point.y, 0)
-                map.dispatchTouchEvent(press)
-                press.recycle()
-                delay((android.view.ViewConfiguration.getLongPressTimeout() + 200).toLong())
-                val release =
-                    MotionEvent.obtain(
-                        down,
-                        SystemClock.uptimeMillis(),
-                        MotionEvent.ACTION_UP,
-                        point.x,
-                        point.y,
-                        0,
-                    )
-                map.dispatchTouchEvent(release)
-                release.recycle()
-                until("the annotation owns the long press") { held == listOf(spot.id) }
+            val held = mutableListOf<String>()
+            circles.addLongClickListener {
+                held += it.id
+                true
             }
+            val down = SystemClock.uptimeMillis()
+            val press =
+                MotionEvent.obtain(down, down, MotionEvent.ACTION_DOWN, point.x, point.y, 0)
+            map.dispatchTouchEvent(press)
+            press.recycle()
+            delay((android.view.ViewConfiguration.getLongPressTimeout() + 200).toLong())
+            val release =
+                MotionEvent.obtain(
+                    down,
+                    SystemClock.uptimeMillis(),
+                    MotionEvent.ACTION_UP,
+                    point.x,
+                    point.y,
+                    0,
+                )
+            map.dispatchTouchEvent(release)
+            release.recycle()
+            until("the annotation owns the long press") { held == listOf(spot.id) }
             // A tap beside the annotation reaches the application.
             touch(map, point.x + map.width / 4f, point.y + map.height / 4f)
             until("the application received a tap") { appTaps() > before }
 
-            // Hold the manager's acknowledgement across reload. The old map has applied the
-            // user's drag, but the call to write its final coordinates is still in flight.
-            if (!native)
-                suspendJavascript(
-                    map,
-                    """
-                    (() => {
-                      const receive = window.tileflow.receive;
-                      const channel = window.tileflowNative;
-                      const post = channel.postMessage.bind(channel);
-                      let updateId;
-                      window.tileflow.receive = raw => {
-                        const message = JSON.parse(raw);
-                        if (message.command.method === 'setGeoJSONSourceData' && message.command.payload?.id === 'spots')
-                          updateId = message.requestId;
-                        receive(raw);
-                      };
-                      channel.postMessage = raw => {
-                        if (updateId && JSON.parse(raw).requestId === updateId) {
-                          window.tileflowDragWritePending = true;
-                          return;
-                        }
-                        post(raw);
-                      };
-                    })()
-                    """
-                        .trimIndent(),
-                )
             // A pan that starts on the draggable annotation moves it, not the map.
             val camera = map.currentCamera!!
             val dragX = minOf(150f, map.width / 4f)
@@ -220,10 +177,6 @@ public class AnnotationIntegrationTest {
             assertEquals(target.longitude, moved!!.coordinate.longitude, 1e-4)
             assertEquals(target.latitude, moved!!.coordinate.latitude, 1e-4)
 
-            if (!native)
-                until("the manager's write is still in flight") {
-                    suspendJavascript(map, "window.tileflowDragWritePending === true") == "true"
-                }
             val loads = activity.loads.size
             map.reload()
             until("the replacement renderer is ready") { activity.loads.size > loads }
@@ -247,36 +200,34 @@ public class AnnotationIntegrationTest {
                 restored!!.latitude,
                 1e-4,
             )
-            if (native) {
-                val at = map.project(restored!!)
-                val last = TileflowPoint(at.x + 30, at.y + 24)
-                val released = dropped.size
-                val expected = map.unproject(last)
-                val down = SystemClock.uptimeMillis()
-                fun move(action: Int, x: Float, y: Float) {
-                    MotionEvent.obtain(down, down, action, x, y, 0).also {
-                        map.dispatchTouchEvent(it)
-                        it.recycle()
-                    }
+            val at = map.project(restored!!)
+            val last = TileflowPoint(at.x + 30, at.y + 24)
+            val released = dropped.size
+            val expected = map.unproject(last)
+            val dragStarted = SystemClock.uptimeMillis()
+            fun move(action: Int, x: Float, y: Float) {
+                MotionEvent.obtain(down, down, action, x, y, 0).also {
+                    map.dispatchTouchEvent(it)
+                    it.recycle()
                 }
-                move(MotionEvent.ACTION_DOWN, at.x, at.y)
-                move(MotionEvent.ACTION_MOVE, at.x + 14, at.y + 14)
-                move(MotionEvent.ACTION_MOVE, last.x, last.y)
-                // Replace the renderer before a display frame or a release event can run.
-                val nextLoad = activity.loads.size
-                map.reload()
-                until("an unfinished drag is restored") { activity.loads.size > nextLoad }
-                val actual =
-                    map.querySourceFeatures("spots").single().feature.geometry
-                        as TileflowGeometry.Point
-                assertEquals(expected.longitude, actual.coordinate.longitude, 1e-4)
-                assertEquals(expected.latitude, actual.coordinate.latitude, 1e-4)
-                assertEquals(
-                    "Renderer retirement does not synthesize a release",
-                    released,
-                    dropped.size,
-                )
             }
+            move(MotionEvent.ACTION_DOWN, at.x, at.y)
+            move(MotionEvent.ACTION_MOVE, at.x + 14, at.y + 14)
+            move(MotionEvent.ACTION_MOVE, last.x, last.y)
+            // Replace the renderer before a display frame or a release event can run.
+            val nextLoad = activity.loads.size
+            map.reload()
+            until("an unfinished drag is restored") { activity.loads.size > nextLoad }
+            val actual =
+                map.querySourceFeatures("spots").single().feature.geometry
+                    as TileflowGeometry.Point
+            assertEquals(expected.longitude, actual.coordinate.longitude, 1e-4)
+            assertEquals(expected.latitude, actual.coordinate.latitude, 1e-4)
+            assertEquals(
+                "Renderer retirement does not synthesize a release",
+                released,
+                dropped.size,
+            )
         }
     }
 

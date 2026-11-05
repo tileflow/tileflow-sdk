@@ -9,7 +9,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import dev.tileflow.configuration.TileflowBoundingBox
 import dev.tileflow.configuration.TileflowConfiguration
 import dev.tileflow.configuration.TileflowCredential
-import dev.tileflow.sdk.engine.MapEngineKind
 import dev.tileflow.sdk.engine.NativeMapEngine
 import dev.tileflow.sdk.offline.OfflineHttpFetcher
 import dev.tileflow.sdk.offline.OfflineLayout
@@ -54,7 +53,6 @@ public class NativeMapHostActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         map =
             TileflowMapView(this).apply {
-                engineKind = MapEngineKind.NATIVE
                 onEvent = {
                     when (it) {
                         TileflowMapEvent.ContentReady -> loaded.countDown()

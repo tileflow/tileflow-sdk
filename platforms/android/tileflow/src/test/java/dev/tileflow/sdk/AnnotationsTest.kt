@@ -6,7 +6,7 @@ import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
 import android.view.accessibility.AccessibilityNodeInfo
-import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.model.MapContract
 import dev.tileflow.sdk.model.EventSubscriptions
 import org.json.JSONArray
 import org.json.JSONObject
@@ -132,33 +132,6 @@ class AnnotationsTest {
     }
 
     @Test
-    fun positionsApplyByTheRevisionThatNamedTheirPoints() {
-        val positions = TrackedPositions()
-        positions.sent(1, listOf("a", "b"))
-        positions.sent(2, listOf("b", "c"))
-        assertTrue(positions.receive(1, JSONArray("[1,2,3,4]"), 2f))
-        assertEquals(listOf(6f, 8f), positions.positions["b"]?.toList())
-        assertTrue(positions.receive(2, JSONArray("[10,20,null,null]"), 2f))
-        assertEquals(listOf(20f, 40f), positions.positions["b"]?.toList())
-        assertNull(positions.positions["c"])
-        assertTrue(positions.positions.containsKey("c"))
-        // Once a later set reports, earlier ones are gone; a report of the wrong length is refused.
-        assertFalse(positions.receive(1, JSONArray("[1,2,3,4]"), 1f))
-        assertFalse(positions.receive(2, JSONArray("[1,2]"), 1f))
-        positions.forget(setOf("b"))
-        assertEquals(setOf<Any>("b"), positions.positions.keys)
-    }
-
-    @Test
-    fun lagKeepsRecentSamples() {
-        val lag = TrackingLag(capacity = 3)
-        listOf(40.0, 10.0, 20.0, 30.0).forEach(lag::record)
-        assertEquals(3, lag.count)
-        assertEquals(20.0, lag.percentile(0.5))
-        assertEquals(30.0, lag.maximum)
-    }
-
-    @Test
     fun managersDrawInTheirOwnSourceAndLayerAndSendWhatChanged() = map { _, view ->
         val manager =
             view.annotations.createPointAnnotationManager(
@@ -260,20 +233,13 @@ class AnnotationsTest {
     }
 
     @Test
-    fun annotationsAskTheRendererForPressesDragsAndTrackedPoints() = map { _, view ->
-        fun demand() =
-            EventSubscriptions(TileflowEventOptions(TileflowEventLevel.ESSENTIAL)).events.keys
+    fun annotationManagersSubscribeToPressesAndDrags() = map { _, view ->
         val subscriptions = view.javaClass.getDeclaredField("subscriptions").also {
             it.isAccessible = true
         }
-        fun events() = (subscriptions.get(view) as EventSubscriptions).events.keys
-        assertFalse(ProtocolContract.Event.TRACKED_POINTS_MOVED in events())
         view.annotations.createPolygonAnnotationManager()
-        assertTrue(events().containsAll(demand()))
-        view.viewAnnotationManager.addViewAnnotation(View(view.context), TileflowViewAnnotationOptions(madrid))
-        assertTrue(ProtocolContract.Event.TRACKED_POINTS_MOVED in events())
-        view.viewAnnotationManager.removeAllViewAnnotations()
-        assertFalse(ProtocolContract.Event.TRACKED_POINTS_MOVED in events())
+        val events = (subscriptions.get(view) as EventSubscriptions).events.keys
+        assertTrue(events.containsAll(setOf(MapContract.Event.TAP, MapContract.Event.LONG_PRESS, MapContract.Event.ANNOTATION_DRAGGED)))
     }
 
     @Test
@@ -364,17 +330,9 @@ class AnnotationsTest {
             true
         }
         idle()
-        // The renderer reports the callout, then the two labelled pins.
-        overlay.tracked.sent(
-            7,
-            listOf(callout, "pins" to lower.id, "pins" to upper.id),
-        )
-        overlay.receive(
-            JSONObject()
-                .put("revision", 7)
-                .put("time", System.currentTimeMillis().toDouble())
-                .put("positions", JSONArray("[100,200,50,300,300,40]")),
-        )
+        overlay.positions[callout] = floatArrayOf(100f, 200f)
+        overlay.positions["pins" to lower.id] = floatArrayOf(50f, 300f)
+        overlay.positions["pins" to upper.id] = floatArrayOf(300f, 40f)
         overlay.measure(
             View.MeasureSpec.makeMeasureSpec(400, View.MeasureSpec.EXACTLY),
             View.MeasureSpec.makeMeasureSpec(800, View.MeasureSpec.EXACTLY),
@@ -386,7 +344,6 @@ class AnnotationsTest {
             listOf("Upper", "Callout", "Lower"),
             order.map { it.contentDescription.toString() },
         )
-        assertEquals(1, overlay.lag.count)
         val target = overlay.accessibilityTarget("pins", lower.id)!!
         val info = target.createAccessibilityNodeInfo()
         assertTrue(info.isClickable)

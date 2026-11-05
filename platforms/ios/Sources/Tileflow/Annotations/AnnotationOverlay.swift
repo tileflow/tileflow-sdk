@@ -2,33 +2,6 @@ import Foundation
 import QuartzCore
 import UIKit
 
-/// How far view annotations trail the renderer: the time from the frame the renderer drew to the
-/// display refresh that placed the views at its positions, in milliseconds.
-struct LagStatistics {
-  private(set) var samples: [Double] = []
-  private var next = 0
-  let capacity = 1000
-
-  mutating func add(_ milliseconds: Double) {
-    if samples.count < capacity {
-      samples.append(milliseconds)
-    } else {
-      samples[next] = milliseconds
-      next = (next + 1) % capacity
-    }
-  }
-  mutating func reset() {
-    samples = []
-    next = 0
-  }
-  func percentile(_ share: Double) -> Double? {
-    guard !samples.isEmpty else { return nil }
-    let sorted = samples.sorted()
-    return sorted[min(sorted.count - 1, Int((share * Double(sorted.count - 1)).rounded()))]
-  }
-  var maximum: Double? { samples.max() }
-}
-
 /// The renderer's positions for one set of tracked points, keyed by what each point belongs to.
 struct TrackedPositions {
   enum Key: Hashable {
@@ -47,20 +20,10 @@ struct TrackedPositions {
     return revision
   }
 
-  /// Applies the renderer's positions for a set; null pairs hide their point. Older sets are
-  /// dropped, and points of the set that are gone are forgotten.
-  @discardableResult
-  mutating func apply(revision: Int, positions flat: [Double?]) -> Bool {
-    guard flat.count.isMultiple(of: 2) else { return false }
-    return apply(revision: revision, count: flat.count / 2) { i in
-      guard let x = flat[i * 2], let y = flat[i * 2 + 1] else { return nil }
-      return CGPoint(x: x, y: y)
-    }
-  }
-
-  mutating func apply(revision: Int, count: Int, point: (Int) -> CGPoint?) -> Bool {
-    guard let keys = sets[revision], keys.count == count else { return false }
-    for (i, key) in keys.enumerated() { positions[key] = point(i) }
+  /// Applies one frame to its tracked set. A nil position hides its view.
+  mutating func apply(revision: Int, points: [CGPoint?]) -> Bool {
+    guard let keys = sets[revision], keys.count == points.count else { return false }
+    for (key, point) in zip(keys, points) { positions[key] = point }
     sets = sets.filter { $0.key >= revision }
     let live = Set(sets.values.joined())
     positions = positions.filter { live.contains($0.key) }
@@ -86,14 +49,10 @@ final class AnnotationAccessibilityElement: UIAccessibilityElement {
 final class AnnotationOverlay: UIView {
   weak var map: TileflowMapView?
   private(set) var tracked = TrackedPositions()
-  private(set) var lag = LagStatistics()
-  /// Display refreshes that placed views from a new renderer frame.
-  private(set) var appliedFrames = 0
   /// Tracks annotations for assistive technologies even when none runs; tests set it.
   var forcesAccessibilityTracking = false { didSet { trackingChanged() } }
 
   private var displayLink: CADisplayLink?
-  private var sample: (revision: Int, time: Double, positions: [Double?])?
   private var idleRefreshes = 0
   private var needsPlacement = false
   private var trackingScheduled = false
@@ -166,7 +125,7 @@ final class AnnotationOverlay: UIView {
       keys.append(.annotation(entry.key))
       points.append([entry.coordinate.longitude, entry.coordinate.latitude])
     }
-    let limit = ProtocolContract.maximumTrackedPoints
+    let limit = MapContract.maximumTrackedPoints
     return (Array(keys.prefix(limit)), Array(points.prefix(limit)))
   }
 
@@ -174,7 +133,6 @@ final class AnnotationOverlay: UIView {
   private func sendTracking() async {
     guard let map, !sending else { return }
     let (keys, points) = desiredTracking()
-    map.setTrackingDemand(!keys.isEmpty)
     guard let engine = map.readyEngine, points != sentPoints || keys != sentKeys else { return }
     sending = true
     let revision = tracked.begin(keys)
@@ -193,26 +151,15 @@ final class AnnotationOverlay: UIView {
   /// A new renderer follows nothing until it receives the set again.
   func rendererReplaced() {
     tracked.rendererReplaced()
-    sample = nil
     sentPoints = nil
     sentKeys = []
     setNeedsPlacement()
   }
 
-  /// Positions the renderer reported for the frame it drew; they apply at the next refresh.
-  func receive(_ value: JSONValue) {
-    guard let revision = value["revision"]?.number.flatMap({ Int(exactly: $0) }),
-      let time = value["time"]?.number, case .array(let items) = value["positions"]
-    else { return }
-    sample = (revision, time, items.map(\.number))
-    startRefreshes()
-  }
-
   /// MapLibre and its UIKit overlays are committed together for the frame it just rendered.
   func receiveNativeFrame(revision: Int, points: [CGPoint?]) {
-    guard tracked.apply(revision: revision, count: points.count, point: { points[$0] }) else { return }
+    guard tracked.apply(revision: revision, points: points) else { return }
     needsPlacement = false
-    appliedFrames += 1
     place()
   }
 
@@ -238,16 +185,8 @@ final class AnnotationOverlay: UIView {
     displayLink = nil
   }
 
-  /// One display refresh: the newest positions, then placement.
+  /// Places installed views when their anchors or visibility change between map frames.
   func refresh() {
-    if let sample {
-      self.sample = nil
-      if tracked.apply(revision: sample.revision, positions: sample.positions) {
-        lag.add(Date().timeIntervalSince1970 * 1000 - sample.time)
-        appliedFrames += 1
-        needsPlacement = true
-      }
-    }
     guard needsPlacement else {
       idleRefreshes += 1
       if idleRefreshes > 2 { displayLink?.isPaused = true }
@@ -256,11 +195,6 @@ final class AnnotationOverlay: UIView {
     idleRefreshes = 0
     needsPlacement = false
     place()
-  }
-
-  func resetLag() {
-    lag.reset()
-    appliedFrames = 0
   }
 
   // MARK: Placement

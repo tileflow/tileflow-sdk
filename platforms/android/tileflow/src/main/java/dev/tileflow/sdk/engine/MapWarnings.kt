@@ -1,7 +1,7 @@
 package dev.tileflow.sdk.engine
 
 import dev.tileflow.sdk.TileflowResourceKind
-import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.model.MapContract
 import dev.tileflow.sdk.transport.MapResourceOutcome
 import org.json.JSONObject
 
@@ -16,7 +16,7 @@ internal class MapWarnings(
     private val report: (JSONObject) -> Unit,
     /** Runs a block after a delay in milliseconds, on the main thread. */
     private val schedule: (Long, () -> Unit) -> Unit,
-    private val windowMillis: Long = ProtocolContract.WARNING_WINDOW_MILLIS,
+    private val windowMillis: Long = MapContract.WARNING_WINDOW_MILLIS,
 ) {
     private class Window(var warning: JSONObject, var repeats: Int = 0)
 
@@ -85,7 +85,7 @@ internal class MapWarnings(
             null,
             null,
             null,
-            reason = ProtocolContract.ErrorReason.FEATURE_UNAVAILABLE.wireName,
+            reason = MapContract.ErrorReason.FEATURE_UNAVAILABLE.wireName,
             feature = feature,
         )
 

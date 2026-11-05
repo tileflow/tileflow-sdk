@@ -63,7 +63,6 @@ public class NativeLocationIntegrationTest {
                 Intent(instrumentation.targetContext, SceneHostActivity::class.java)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     .putExtra("map", "appearance")
-                    .putExtra("nativeEngine", true)
             ) as SceneHostActivity
         try {
             assertTrue(activity.loaded.await(30, TimeUnit.SECONDS))

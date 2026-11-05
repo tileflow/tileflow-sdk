@@ -3,17 +3,17 @@ import Foundation
 /// A scene request the view keeps, so a new renderer receives it again. Its data is registered on
 /// the renderer's data channel each time it is sent.
 struct SceneCommand {
-  let method: ProtocolContract.Method
+  let method: MapContract.Method
   /// The payload and the data it carries; `replaying` applies it at once, without a transition.
   let build: @MainActor (MapPayloadStore, _ replaying: Bool) throws -> (JSONValue, [MapPayloadStore.Reference])
 
-  init(_ method: ProtocolContract.Method, payload: JSONValue) {
+  init(_ method: MapContract.Method, payload: JSONValue) {
     self.method = method
     self.build = { _, replaying in (replaying ? Self.immediate(payload) : payload, []) }
   }
 
   init(
-    _ method: ProtocolContract.Method,
+    _ method: MapContract.Method,
     build: @escaping @MainActor (MapPayloadStore, Bool) throws -> (JSONValue, [MapPayloadStore.Reference])
   ) {
     self.method = method
@@ -32,7 +32,7 @@ struct SceneCommand {
 @MainActor
 final class SceneState {
   fileprivate enum Destination: Hashable {
-    case property(ProtocolContract.Method)
+    case property(MapContract.Method)
     case styleState(String)
   }
 
@@ -89,7 +89,7 @@ final class SceneState {
   var editableImages: [TileflowMapImage] { edits.last { $0.images != nil }?.images ?? [] }
 
   var replay: [Edit] {
-    let methods: [ProtocolContract.Method] = [
+    let methods: [MapContract.Method] = [
       .setImages, .setDepthMarkers, .setSun, .setEmphasis, .setStyleState, .setBoundaryValues,
     ]
     var seen = Set<Destination>()
@@ -243,7 +243,7 @@ extension TileflowMapView {
           && (0...1).contains($0.value)
       }),
       emphasis.labels.map({ (0...1).contains($0) }) ?? true,
-      emphasis.keepArea.map({ !$0.isEmpty && $0.count <= ProtocolContract.maximumDataBytes })
+      emphasis.keepArea.map({ !$0.isEmpty && $0.count <= MapContract.maximumDataBytes })
         ?? true
     else { throw TileflowMapError.invalidRequest }
     var request: [String: JSONValue] = [:]
@@ -313,9 +313,9 @@ extension TileflowMapView {
       return
     }
     let (joinBy, rows) = try values.rowsJSON()
-    guard rows.count <= ProtocolContract.maximumDataBytes else {
+    guard rows.count <= MapContract.maximumDataBytes else {
       throw TileflowMapError(
-        .invalidRequest, reason: .dataTooLarge, limit: ProtocolContract.maximumDataBytes)
+        .invalidRequest, reason: .dataTooLarge, limit: MapContract.maximumDataBytes)
     }
     let digest = ResourceDigest.sha256(rows)
     try await sendScene(
@@ -339,11 +339,11 @@ extension TileflowMapView {
     let payloads = images.flatMap { [$0.data] + $0.variants.values }
     let total = Dictionary(payloads.map { (ResourceDigest.sha256($0), $0.count) }, uniquingKeysWith: { a, _ in a })
       .values.reduce(0, +)
-    guard total <= ProtocolContract.maximumDataTotalBytes,
-      Set(payloads.map(ResourceDigest.sha256)).count <= ProtocolContract.maximumDataReferences
+    guard total <= MapContract.maximumDataTotalBytes,
+      Set(payloads.map(ResourceDigest.sha256)).count <= MapContract.maximumDataReferences
     else {
       throw TileflowMapError(
-        .invalidRequest, reason: .dataTooLarge, limit: ProtocolContract.maximumDataTotalBytes)
+        .invalidRequest, reason: .dataTooLarge, limit: MapContract.maximumDataTotalBytes)
     }
     try await sendScene(
         SceneCommand(.setImages) { channel, _ in

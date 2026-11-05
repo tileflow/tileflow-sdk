@@ -109,7 +109,7 @@ public class TileflowAnnotations internal constructor() {
 
     private companion object {
         val MANAGER_ID = Regex("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
-        val ANNOTATION_LAYER_LIMIT = dev.tileflow.sdk.bridge.ProtocolContract.MAXIMUM_ANNOTATION_LAYERS
+        val ANNOTATION_LAYER_LIMIT = dev.tileflow.sdk.model.MapContract.MAXIMUM_ANNOTATION_LAYERS
     }
 }
 

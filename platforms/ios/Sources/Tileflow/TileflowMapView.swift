@@ -24,16 +24,6 @@ public final class TileflowMapView: UIView {
 
   /// The current generation's engine, while one is loaded.
   private(set) var engine: (any MapEngine)?
-  /// The engine new map views use. Internal: tests set it for the maps SwiftUI creates.
-  static var defaultEngineKind: MapEngineKind = .native
-  /// Which engine draws the next generation. Changing it replaces the current one.
-  var engineKind: MapEngineKind = TileflowMapView.defaultEngineKind {
-    didSet {
-      guard engineKind != oldValue, engine != nil, !destroyed else { return }
-      remount()
-    }
-  }
-  private let instanceID = UUID().uuidString
   private var generation = 0
   private(set) var destroyed = false
   /// Whether the current renderer accepted `initialize`; commands before it are not sent.
@@ -56,7 +46,7 @@ public final class TileflowMapView: UIView {
   /// The current source with its configuration read, kept with its Hosted session.
   private var loadable: LoadableMapSource?
   private var hostedSession: HostedSession?
-  private var appearance: (method: ProtocolContract.Method, payload: JSONValue)?
+  private var appearance: (method: MapContract.Method, payload: JSONValue)?
   var content = MapContent()
   private var contentRevision = 0
   private var subscriptions = EventSubscriptions()
@@ -102,7 +92,6 @@ public final class TileflowMapView: UIView {
   public internal(set) lazy var viewAnnotations = TileflowViewAnnotationManager(view: self)
   /// Whether annotation layers exist, and whether the renderer tracks points for annotations.
   private var annotationInteraction = false
-  private var annotationTracking = false
 
   public init(
     source: TileflowMapSource, theme: String? = nil, initialCamera: TileflowCamera? = nil,
@@ -287,14 +276,13 @@ public final class TileflowMapView: UIView {
     try await sendOptions(events: subscriptions != previousSubscriptions)
   }
 
-  private var annotationDemand: [ProtocolContract.Event: Int] {
-    var demand: [ProtocolContract.Event: Int] = [:]
+  private var annotationDemand: [MapContract.Event: Int] {
+    var demand: [MapContract.Event: Int] = [:]
     if annotationInteraction {
       demand[.tap] = 0
       demand[.longPress] = 0
       demand[.annotationDragged] = 0
     }
-    if annotationTracking { demand[.trackedPointsMoved] = 0 }
     return demand
   }
 
@@ -302,13 +290,6 @@ public final class TileflowMapView: UIView {
   func setAnnotationInteraction(_ needed: Bool) {
     guard needed != annotationInteraction else { return }
     annotationInteraction = needed
-    updateAnnotationSubscriptions()
-  }
-
-  /// Tracked points need their positions after every frame.
-  func setTrackingDemand(_ needed: Bool) {
-    guard needed != annotationTracking else { return }
-    annotationTracking = needed
     updateAnnotationSubscriptions()
   }
 
@@ -523,8 +504,6 @@ public final class TileflowMapView: UIView {
     // A failed read is not kept, so `reload()` reads a corrected configuration.
     let loadable = try self.loadable ?? source.loadable()
     self.loadable = loadable
-    // The receipt is read once per process; the files are verified once, off the main thread.
-    let runtime = engineKind == .webView ? try WebViewMapEngine.prepare() : nil
     TileflowDeviceProfile.prepare()
     generation += 1
     let current = generation
@@ -536,14 +515,7 @@ public final class TileflowMapView: UIView {
     let loader = loadable.makeLoader(session: hostedSession) { [weak self] in
       await self?.deploymentSuperseded(generation: current) ?? false
     }
-    let engine: any MapEngine
-    if let runtime {
-      engine = try WebViewMapEngine(
-        runtime: runtime, instanceID: instanceID, generation: current, loader: loader,
-        frame: bounds)
-    } else {
-      engine = NativeMapEngine(frame: bounds, loader: loader, grantScope: loadable.grantScope)
-    }
+    let engine = NativeMapEngine(frame: bounds, loader: loader, grantScope: loadable.grantScope)
     engine.onFailure = { [weak self] error in
       self?.report(error, generation: current)
     }
@@ -737,7 +709,6 @@ public final class TileflowMapView: UIView {
         emit(.longPress(touch))
       }
     case "annotationDragged": receiveAnnotationDrag(value)
-    case "trackedPointsMoved": annotationOverlay.receive(value)
     case "gestureStarted", "gestureEnded":
       if options.events.level.includes(.camera),
         let gesture = value["gesture"]?.string.flatMap(TileflowGesture.init(rawValue:))
@@ -839,7 +810,7 @@ public final class TileflowMapView: UIView {
   /// The system may end a hidden renderer to reclaim memory, or a renderer may lose its graphics
   /// context. Replace it when the view is next visible; a renderer that ends again before its
   /// content loads is reported instead.
-  private func rendererTerminated(_ reason: ProtocolContract.ErrorReason) {
+  private func rendererTerminated(_ reason: MapContract.ErrorReason) {
     guard !destroyed else { return }
     guard recoveryCount < 1 else {
       retireGeneration()

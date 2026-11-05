@@ -5,52 +5,6 @@ import XCTest
 
 @MainActor
 final class ProtocolTests: XCTestCase {
-  private func hello(version: Int, selected: Int?, hash: String = "runtime-hash") -> String {
-    let protocolValue: JSONValue = .object([
-      "minimum": .number(Double(version)), "maximum": .number(Double(version)),
-      "selected": selected.map { .number(Double($0)) } ?? .null,
-    ])
-    let envelope = MapBridge.Envelope(
-      protocolVersion: version, instanceId: "view", generation: 1, event: "hello",
-      result: .object(["runtimeHash": .string(hash), "protocol": protocolValue]))
-    return String(decoding: try! JSONEncoder().encode(envelope), as: UTF8.self)
-  }
-
-  private func handshake(_ message: String) -> (ready: Bool, failure: TileflowMapError?) {
-    let bridge = MapBridge(instanceID: "view", generation: 1, runtimeHash: "runtime-hash")
-    var ready = false
-    var failure: TileflowMapError?
-    bridge.onHello = { ready = true }
-    bridge.onFailure = { failure = $0 }
-    bridge.receive(message)
-    return (ready, failure)
-  }
-
-  func testHandshakeAcceptsOnlyTheEmbeddedRendererAtASharedVersion() {
-    let version = ProtocolContract.version
-    XCTAssertTrue(handshake(hello(version: version, selected: version)).ready)
-    // A renderer of another version is a typed incompatibility, never a silent timeout.
-    for message in [
-      hello(version: version + 1, selected: version + 1),
-      hello(version: version, selected: nil),
-      hello(version: version, selected: version + 1),
-    ] {
-      let result = handshake(message)
-      XCTAssertFalse(result.ready)
-      XCTAssertEqual(result.failure, .incompatibleRuntime)
-      XCTAssertEqual(result.failure?.context.reason, "protocolVersion")
-      XCTAssertFalse(result.failure?.isRecoverable ?? true)
-    }
-    let foreign = handshake(hello(version: version, selected: version, hash: "other"))
-    XCTAssertEqual(foreign.failure?.context.reason, "runtimeHash")
-    // Messages for another view or generation are not this bridge's handshake.
-    let bridge = MapBridge(instanceID: "other", generation: 1, runtimeHash: "runtime-hash")
-    var failed = false
-    bridge.onFailure = { _ in failed = true }
-    bridge.receive(hello(version: version + 1, selected: nil))
-    XCTAssertFalse(failed)
-  }
-
   func testRendererErrorsCarryTheSharedTaxonomyAndContext() {
     let error = TileflowMapError(
       wire: .object([
@@ -77,13 +31,12 @@ final class ProtocolTests: XCTestCase {
     default: XCTFail("A code did not match its static value.")
     }
     XCTAssertEqual(
-      Set(TileflowMapError.Code.allCases.filter { !$0.isRecoverable }),
+      Set(TileflowMapError.Code.allCases.filter { !$0.isRecoverable }.map(\.rawValue)),
       [
-        .invalidSource, .missingRuntime, .incompatibleRuntime, .invalidRequest, .disposed,
-        .credentialRejected, .accessDenied, .quotaExceeded, .sessionRejected, .missingCredential,
-        .invalidConfiguration,
+        "invalidSource", "unsupportedDevice", "invalidRequest", "disposed", "credentialRejected",
+        "accessDenied", "quotaExceeded", "sessionRejected", "missingCredential", "invalidConfiguration",
       ])
-    for code in ProtocolContract.runtimeErrors {
+    for code in MapContract.rendererErrors {
       XCTAssertNotNil(TileflowMapError.Code(rawValue: code), code)
     }
   }
@@ -99,7 +52,6 @@ final class ProtocolTests: XCTestCase {
     XCTAssertEqual(essential["cameraMoveEnded"], 0)
     XCTAssertNil(essential["cameraMoveStarted"])
     XCTAssertNil(essential["cameraMoved"])
-    XCTAssertNil(essential["hello"])
     XCTAssertNil(essential["error"])
     let camera = requested(.init(level: .camera))
     XCTAssertEqual(camera["cameraMoveStarted"], 0)
@@ -120,9 +72,9 @@ final class ProtocolTests: XCTestCase {
     XCTAssertEqual(shared.events[.cameraMoved], 0)
     shared.set(.controls, [:])
     XCTAssertEqual(shared.events[.cameraMoved], 1000)
-    shared.set(.application, [.cameraMoved: 50, .hello: 0])
+    shared.set(.application, [.cameraMoved: 50, .error: 0])
     XCTAssertEqual(shared.events[.cameraMoved], 50)
-    XCTAssertNil(shared.events[.hello])
+    XCTAssertNil(shared.events[.error])
     XCTAssertThrowsError(try TileflowEventOptions(cameraUpdateInterval: -1).validate())
     XCTAssertThrowsError(try TileflowEventOptions(cameraUpdateInterval: 61).validate())
   }
@@ -169,7 +121,7 @@ final class ProtocolTests: XCTestCase {
       { try TileflowGeoJSONLayer(id: "a", geoJSON: Data(), kind: .fill) },
       {
         try TileflowGeoJSONLayer(
-          id: "a", geoJSON: Data(count: ProtocolContract.maximumDataBytes + 1), kind: .fill)
+          id: "a", geoJSON: Data(count: MapContract.maximumDataBytes + 1), kind: .fill)
       },
     ] {
       XCTAssertThrowsError(try invalid()) {

@@ -359,7 +359,7 @@ final class ResourceLoader: ResourceLoading, Sendable {
       body: .data(stored.body))
   }
 
-  /// The headers the renderer sees. The WebView must never cache: the native cache is the only one.
+  /// The renderer must leave response caching to the SDK.
   static func rendererHeaders(_ headers: [String: String], method: String, length: Int?)
     -> [String: String]
   {

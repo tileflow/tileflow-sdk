@@ -10,7 +10,6 @@ import dev.tileflow.configuration.TileflowCredential
 import dev.tileflow.sdk.attribution.MapAttributionControl
 import dev.tileflow.sdk.attribution.MapAttributionEntry
 import dev.tileflow.sdk.attribution.MapAttributionStrip
-import dev.tileflow.sdk.engine.MapEngineKind
 import dev.tileflow.sdk.engine.NativeMapEngine
 import dev.tileflow.sdk.engine.NativeRepresentation
 import dev.tileflow.sdk.offline.OfflineHttpFetcher
@@ -64,7 +63,6 @@ public class NativeAttributionIntegrationTest {
 
     @After
     public fun tearDown() {
-        OfflineMapHostActivity.kind = MapEngineKind.WEB_VIEW
         OfflineMapHostActivity.theme = null
         OfflineMapHostActivity.camera = null
         TileflowOfflineSwitch.isNetworkEnabled = true
@@ -76,7 +74,6 @@ public class NativeAttributionIntegrationTest {
     }
 
     private fun show(source: TileflowMapSource, theme: String? = null): OfflineMapHostActivity {
-        OfflineMapHostActivity.kind = MapEngineKind.NATIVE
         OfflineMapHostActivity.requested = source
         OfflineMapHostActivity.theme = theme
         val intent =
@@ -280,12 +277,9 @@ public class NativeAttributionIntegrationTest {
                 runBlocking {
                     withContext(Dispatchers.Main) {
                         val engine = requireNotNull(activity.map.readyEngine as? NativeMapEngine)
-                        // Online the map reads its native representation in a session; offline,
-                        // the WebView profile its regions hold, without one.
                         assertEquals(
                             mode,
-                            if (online) NativeRepresentation.NATIVE
-                            else NativeRepresentation.WEB_VIEW,
+                            NativeRepresentation.NATIVE,
                             engine.manifest?.representation,
                         )
                         val control = engine.attribution

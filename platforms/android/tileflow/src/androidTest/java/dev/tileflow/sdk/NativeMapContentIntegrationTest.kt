@@ -14,8 +14,7 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import dev.tileflow.sdk.bridge.ProtocolContract.Method
-import dev.tileflow.sdk.engine.MapEngineKind
+import dev.tileflow.sdk.model.MapContract.Method
 import dev.tileflow.sdk.engine.NativeMapEngine
 import dev.tileflow.sdk.location.TileflowLocationOptions
 import java.util.concurrent.CopyOnWriteArrayList
@@ -29,12 +28,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
-import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.maplibre.android.style.layers.CircleLayer
@@ -122,17 +119,6 @@ public class MapContentHostActivity : ComponentActivity() {
 
 @RunWith(AndroidJUnit4::class)
 public class NativeMapContentIntegrationTest {
-    private val initialEngineKind = TileflowMapView.defaultEngineKind
-    @Before
-    public fun useNative() {
-        TileflowMapView.defaultEngineKind = MapEngineKind.NATIVE
-    }
-
-    @After
-    public fun restoreDefault() {
-        TileflowMapView.defaultEngineKind = initialEngineKind
-    }
-
     private suspend fun until(label: String, condition: suspend () -> Boolean) {
         val completed =
             withTimeoutOrNull(12_000) {

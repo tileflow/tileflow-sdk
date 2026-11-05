@@ -18,7 +18,7 @@ const marineCredits = JSON.parse(
 ).cases;
 
 /**
- * A minimal Hosted map for the mobile fixture server: session start, discovery and the WebView
+ * A minimal Hosted map for the mobile fixture server: session start, discovery and the web
  * profile manifest, two versioned themes (`day`, and `terrain` over a constant 650 m elevation
  * model) with their TileJSONs, gzip vector tiles and elevation tiles, Hosted offline downloads in
  * pack format 2 (creation, grant-authorized pack downloads, revalidation) and counters tests read.
@@ -207,7 +207,7 @@ export function createHostedFixture({base, tile, center}) {
       attribution: 'Fixture World',
     },
   };
-  // Native styles: the WebView styles prepared as `native-v1` prepares them, with a night theme.
+  // The native representation also includes a night theme.
   const sceneDegradation = {
     id: 'scene3d',
     feature: 'scene3d',

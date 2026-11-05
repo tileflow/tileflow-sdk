@@ -6,10 +6,13 @@ plugins {
     id("maven-publish")
 }
 
+val mapLibre = "org.maplibre.gl:android-sdk-opengl:13.7.1"
+
 android {
     namespace = "dev.tileflow.sdk"
     compileSdk = 36
     defaultConfig {
+        buildConfigField("String", "MAPLIBRE_VERSION", "\"${mapLibre.substringAfterLast(':')}\"")
         minSdk = 26
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
@@ -18,7 +21,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    buildFeatures { compose = true }
+    buildFeatures {
+        buildConfig = true
+        compose = true
+    }
     testOptions {
         targetSdk = 36
         unitTests.isIncludeAndroidResources = true
@@ -29,6 +35,7 @@ android {
     sourceSets["test"].resources.srcDir("../../ios/Tests/TileflowTests/Fixtures/Offline")
     sourceSets["test"].resources.srcDir("../../ios/Tests/TileflowTests/Fixtures/Marine")
     sourceSets["test"].resources.srcDir("../../ios/Tests/TileflowTests/Fixtures/Native")
+    androidResources.ignoreAssetsPatterns += "<dir>tileflow"
     sourceSets["androidTest"].assets.srcDir("../../ios/Tests/TileflowTests/Fixtures/Offline")
     sourceSets["androidTest"].assets.srcDir("../../ios/Tests/TileflowTests/Fixtures/Marine")
     publishing { singleVariant("release") { withSourcesJar() } }
@@ -38,10 +45,9 @@ kotlin { jvmToolchain(17) }
 
 dependencies {
     api(project(":tileflow-configuration"))
-    implementation("androidx.webkit:webkit:1.14.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     // MapLibre Native with OpenGL ES, pinned exactly: every upgrade is a reviewed change.
-    implementation("org.maplibre.gl:android-sdk-opengl:13.7.1")
+    implementation(mapLibre)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     api(platform("androidx.compose:compose-bom:2025.08.01"))
     api("androidx.compose.ui:ui")

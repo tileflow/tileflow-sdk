@@ -7,5 +7,4 @@ enum ResourceError: Error, Equatable {
   case responseTooLarge
   case invalidResponse
   case disposed
-  case missingRuntime
 }

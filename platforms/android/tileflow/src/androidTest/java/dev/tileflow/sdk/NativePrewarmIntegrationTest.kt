@@ -2,7 +2,6 @@ package dev.tileflow.sdk
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import dev.tileflow.sdk.engine.MapEngineKind
 import dev.tileflow.sdk.transport.MapLibreModuleProvider
 import dev.tileflow.sdk.transport.MapResourceContexts
 import java.util.concurrent.TimeUnit
@@ -21,25 +20,19 @@ public class NativePrewarmIntegrationTest {
         val context = instrumentation.targetContext
         val routes = MapResourceContexts.activeCount
         instrumentation.runOnMainSync {
-            val old = TileflowMapView.defaultEngineKind
-            try {
-                TileflowMapView.defaultEngineKind = MapEngineKind.NATIVE
-                TileflowMapView.prewarm(context)
-                val provider = MapLibre.getModuleProvider()
-                assertTrue(
-                    "Prewarm installed the native resource adapter",
-                    provider is MapLibreModuleProvider,
-                )
-                TileflowMapView.prewarm(context)
-                assertSame(provider, MapLibre.getModuleProvider())
-            } finally {
-                TileflowMapView.defaultEngineKind = old
-            }
+            TileflowMapView.prewarm(context)
+            val provider = MapLibre.getModuleProvider()
+            assertTrue(
+                "Prewarm installed the native resource adapter",
+                provider is MapLibreModuleProvider,
+            )
+            TileflowMapView.prewarm(context)
+            assertSame(provider, MapLibre.getModuleProvider())
         }
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
         while (
             (TileflowDeviceProfile.known() == null || TileflowMapCache.existing() == null) &&
-                System.nanoTime() < deadline
+            System.nanoTime() < deadline
         ) Thread.sleep(10)
         assertTrue(TileflowDeviceProfile.known() != null && TileflowMapCache.existing() != null)
         assertEquals(routes, MapResourceContexts.activeCount)

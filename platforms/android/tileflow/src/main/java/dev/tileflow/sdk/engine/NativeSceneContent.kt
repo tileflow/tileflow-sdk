@@ -5,7 +5,7 @@ import android.util.DisplayMetrics
 import dev.tileflow.sdk.TileflowErrorCode
 import dev.tileflow.sdk.TileflowErrorContext
 import dev.tileflow.sdk.TileflowMapException
-import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.model.MapContract
 import dev.tileflow.sdk.model.MapPayloadStore
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
@@ -192,7 +192,7 @@ internal class NativeSceneContent(
                     overlays.firstOrNull { it.name == name && it.metrics }
                         ?: throw TileflowMapException(
                             TileflowErrorCode.INVALID_REQUEST,
-                            TileflowErrorContext.of(ProtocolContract.ErrorReason.UNKNOWN_LAYER),
+                            TileflowErrorContext.of(MapContract.ErrorReason.UNKNOWN_LAYER),
                         )
                 item to (item.shown ?: JSONObject())
             }

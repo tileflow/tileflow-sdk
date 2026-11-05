@@ -192,7 +192,7 @@ extension TileflowMapView {
   func insertStyleSource(_ record: RuntimeStyle.Source) async throws {
     try Self.validateIdentifier(record.id)
     guard !sourceExists(record.id) else { throw TileflowMapError.invalidRequest }
-    if styleEngine == nil { try engineKind.validateQueued(record) }
+    if styleEngine == nil { try NativeRuntimeStyle.validateQueuedSource(record) }
     try await changeStyle({ $0.sources.append(record) }) { engine in
       try await self.sendAddSource(record, through: engine)
     }
@@ -290,9 +290,9 @@ extension TileflowMapView {
     let bytes =
       add.isEmpty
       ? nil : try JSONEncoder().encode(JSONValue.array(add.map(\.wireValue)))
-    guard (bytes?.count ?? 0) <= ProtocolContract.maximumDataBytes else {
+    guard (bytes?.count ?? 0) <= MapContract.maximumDataBytes else {
       throw TileflowMapError(
-        .invalidRequest, reason: .dataTooLarge, limit: ProtocolContract.maximumDataBytes)
+        .invalidRequest, reason: .dataTooLarge, limit: MapContract.maximumDataBytes)
     }
     let update = GeoJSONLog.Update(add: bytes, remove: remove)
     try await changeStyle({ style in
@@ -366,7 +366,7 @@ extension TileflowMapView {
     var record = layer
     let at = try insertionIndex(for: position, slot: &record.slot)
     let fixed = record
-    if styleEngine == nil { try engineKind.validateQueued(fixed) }
+    if styleEngine == nil { try NativeRuntimeStyle.validateQueuedLayer(fixed) }
     try await changeStyle({ $0.layers.insert(fixed, at: at) }) { engine in
       var payload: [String: JSONValue] = ["layer": json]
       if let slot = fixed.slot, position == .default { payload["slot"] = .string(slot.rawValue) }
@@ -398,7 +398,7 @@ extension TileflowMapView {
     if let source = layer.json["source"]?.string, !sourceExists(source) {
       throw TileflowMapError(.invalidRequest, reason: .unknownSource)
     }
-    if styleEngine == nil { try engineKind.validateQueued(layer) }
+    if styleEngine == nil { try NativeRuntimeStyle.validateQueuedLayer(layer) }
     try await changeStyle({ $0.layers[index] = layer }) { engine in
       var payload: [String: JSONValue] = ["layer": layer.json]
       if let slot = layer.slot { payload["slot"] = .string(slot.rawValue) }
@@ -750,9 +750,9 @@ extension TileflowMapView {
           "type": .string("FeatureCollection"), "features": .array(features.map(\.wireValue)),
         ]))
     }
-    guard !bytes.isEmpty, bytes.count <= ProtocolContract.maximumDataBytes else {
+    guard !bytes.isEmpty, bytes.count <= MapContract.maximumDataBytes else {
       throw TileflowMapError(
-        .invalidRequest, reason: .dataTooLarge, limit: ProtocolContract.maximumDataBytes)
+        .invalidRequest, reason: .dataTooLarge, limit: MapContract.maximumDataBytes)
     }
     return (.bytes(bytes, digest: ResourceDigest.sha256(bytes)), bytes.count)
   }
@@ -836,7 +836,7 @@ extension TileflowMapView {
       else { return }
       current.compacting = false
       if current.revision == revision, current.updates.count >= updates.count,
-        let compacted, compacted.count <= ProtocolContract.maximumDataBytes
+        let compacted, compacted.count <= MapContract.maximumDataBytes
       {
         current.base = .bytes(compacted, digest: ResourceDigest.sha256(compacted))
         current.updates.removeFirst(updates.count)

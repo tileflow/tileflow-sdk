@@ -5,10 +5,29 @@ import XCTest
 
 @MainActor
 final class MapPrewarmTests: XCTestCase {
+  func testUnavailableMetalOrAnUnexpectedFrameworkFailsBeforeTheRendererStarts() async throws {
+    let privateVersion = "unexpected-private-framework-path"
+    let incompatible: [MapLibreRuntime.Capabilities] = [
+      .init(metalAvailable: false, version: "7.0.0"),
+      .init(metalAvailable: true, version: nil),
+      .init(metalAvailable: true, version: privateVersion),
+    ]
+    let contexts = MapResourceContexts.shared.activeCount
+    for capabilities in incompatible {
+      do {
+        try await MapLibreRuntime.prepare(capabilities)
+        XCTFail("An unsupported renderer completed startup")
+      } catch let error as TileflowMapError {
+        XCTAssertEqual(error, .unsupportedDevice)
+        XCTAssertFalse(error.isRecoverable)
+        XCTAssertFalse(error.description.contains(privateVersion))
+      }
+    }
+    XCTAssertEqual(MapResourceContexts.shared.activeCount, contexts)
+    try await MapLibreRuntime.prepare()
+  }
+
   func testNativePrewarmInstallsTheMapTransportWithoutMountingAMap() async throws {
-    let original = TileflowMapView.defaultEngineKind
-    TileflowMapView.defaultEngineKind = .native
-    defer { TileflowMapView.defaultEngineKind = original }
     let manager = MLNNetworkConfiguration.sharedManager
     let existing = manager.sessionConfiguration.protocolClasses ?? []
     let contexts = MapResourceContexts.shared.activeCount

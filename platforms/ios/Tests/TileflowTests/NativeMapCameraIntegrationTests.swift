@@ -44,7 +44,6 @@ final class NativeMapCameraIntegrationTests: XCTestCase {
           map: "city", manifestURL: NativeMapViewIntegrationTests.nativeManifest,
           allowsLoopbackHTTP: true),
         options: options)
-      view.engineKind = .native
       view.automaticallyAdjustsContentInsets = false
       view.contentInsets = insets
       view.frame = window.bounds
@@ -410,10 +409,6 @@ final class NativeMapCameraIntegrationTests: XCTestCase {
         )
       }
     }
-    // SwiftUI creates the map view; new views use the native engine meanwhile.
-    let previous = TileflowMapView.defaultEngineKind
-    TileflowMapView.defaultEngineKind = .native
-    defer { TileflowMapView.defaultEngineKind = previous }
     let window = MountedMap.sceneWindow()
     window.rootViewController = UIHostingController(rootView: Screen(model: model, controller: controller))
     window.layoutIfNeeded()

@@ -27,7 +27,7 @@ final class MapPayloadStoreTests: XCTestCase {
     channel.release([third, third])
     XCTAssertTrue(channel.isEmpty)
 
-    let large = Data(count: ProtocolContract.maximumDataBytes)
+    let large = Data(count: MapContract.maximumDataBytes)
     let held = try channel.register(large, digest: "a", contentType: "application/octet-stream")
     _ = try channel.register(large, digest: "b", contentType: "application/octet-stream")
     XCTAssertThrowsError(
@@ -36,12 +36,12 @@ final class MapPayloadStoreTests: XCTestCase {
       XCTAssertEqual(error as? TileflowMapError, .invalidRequest)
       XCTAssertEqual((error as? TileflowMapError)?.context.reason, "dataTooLarge")
       XCTAssertEqual(
-        (error as? TileflowMapError)?.context.limit, ProtocolContract.maximumDataTotalBytes)
+        (error as? TileflowMapError)?.context.limit, MapContract.maximumDataTotalBytes)
     }
     channel.release([held])
     XCTAssertThrowsError(
       try channel.register(
-        Data(count: ProtocolContract.maximumDataBytes + 1), digest: "c", contentType: "x"))
+        Data(count: MapContract.maximumDataBytes + 1), digest: "c", contentType: "x"))
     channel.retire()
     XCTAssertTrue(channel.isEmpty)
     XCTAssertThrowsError(try channel.register(bytes, digest: digest, contentType: "x")) {
@@ -52,7 +52,7 @@ final class MapPayloadStoreTests: XCTestCase {
   func testReferencesAreLimitedAndBelongToOneRenderer() throws {
     let store = MapPayloadStore()
     var refs: [MapPayloadStore.Reference] = []
-    for i in 0..<ProtocolContract.maximumDataReferences {
+    for i in 0..<MapContract.maximumDataReferences {
       let bytes = Data("point \(i)".utf8)
       refs.append(
         try store.register(
@@ -63,7 +63,7 @@ final class MapPayloadStoreTests: XCTestCase {
     XCTAssertThrowsError(try store.register(extra, digest: digest, contentType: "application/json"))
     {
       XCTAssertEqual(
-        ($0 as? TileflowMapError)?.context.limit, ProtocolContract.maximumDataReferences)
+        ($0 as? TileflowMapError)?.context.limit, MapContract.maximumDataReferences)
     }
     store.release([refs[0]])
     let held = try store.register(extra, digest: digest, contentType: "application/json")

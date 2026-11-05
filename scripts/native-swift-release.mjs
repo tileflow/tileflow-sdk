@@ -117,7 +117,7 @@ export async function prepareSwiftRelease({candidate, output, remote}) {
       `Tileflow ${version}`,
       '',
       `Generated from ${manifest.sourceRepository ?? 'https://github.com/tileflow/tileflow-sdk'}/commit/${manifest.sourceRevision}.`,
-      `Embedded runtime ${manifest.runtime.runtimeHash}.`,
+      `MapLibre Native for iOS ${manifest.engines.ios}.`,
       '',
     ].join('\n');
     const commit = await git(
@@ -157,7 +157,7 @@ export async function prepareSwiftRelease({candidate, output, remote}) {
       commit,
       tree,
       sourceRevision: manifest.sourceRevision,
-      runtimeHash: manifest.runtime.runtimeHash,
+      engines: manifest.engines,
     };
     await writeFile(join(output, 'swift-release.json'), `${JSON.stringify(release, null, 2)}\n`);
     return release;

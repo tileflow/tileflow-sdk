@@ -581,7 +581,7 @@ extension NativeMapEngine {
       .object([
         "code": .string("rendererFailed"), "message": .string(message),
         "context": .object([
-          "reason": .string(ProtocolContract.ErrorReason.featureUnavailable.rawValue),
+          "reason": .string(MapContract.ErrorReason.featureUnavailable.rawValue),
           "feature": .string(feature),
         ]),
       ]))

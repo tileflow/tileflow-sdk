@@ -48,7 +48,6 @@ final class NativeAttributionIntegrationTests: XCTestCase {
     let view = TileflowMapView(
       source: TileflowMapSource(map: "city", manifestURL: Self.nativeManifest, allowsLoopbackHTTP: true),
       options: .init(controls: .init(scaleBar: true, recenterButton: true)))
-    view.engineKind = .native
     view.automaticallyAdjustsContentInsets = false
     let events = NativeMapEvents()
     let window = MountedMap.sceneWindow()
@@ -93,7 +92,6 @@ final class NativeAttributionIntegrationTests: XCTestCase {
     for (map, theme) in [("fixture", "dark"), ("nautical", "night")] {
       let view = TileflowMapView(
         source: TileflowMapSource(map: map, manifestURL: Self.manifest, allowsLoopbackHTTP: true))
-      view.engineKind = .native
       let events = NativeMapEvents()
       let window = MountedMap.sceneWindow()
       view.onEvent = events.receive
@@ -160,7 +158,7 @@ final class NativeAttributionIntegrationTests: XCTestCase {
     let fixture = try MarineCredits()
     let bounds = try XCTUnwrap(fixture.bounds[place])
     let configuration = try fixtureConfiguration()
-    let store = offlineMapStore(client: { try OfflinePackClient(configuration: configuration) })
+    let store = offlineMapStore(profile: .webView, client: { try OfflinePackClient(configuration: configuration) })
     try await downloadRegion(
       store, id: "marine-\(place)",
       options: TileflowOfflineRegionLoadOptions(
@@ -177,8 +175,7 @@ final class NativeAttributionIntegrationTests: XCTestCase {
       let mode = online ? "\(place) online" : "\(place) offline"
       let map = try await mountMap(
         .hosted(mapID: Self.hostedFixtureMapID, configuration: configuration), theme: "marine",
-        camera: TileflowCamera(longitude: center.longitude, latitude: center.latitude, zoom: 10),
-        engine: .native)
+        camera: TileflowCamera(longitude: center.longitude, latitude: center.latitude, zoom: 10))
       defer { map.close() }
       let control = try attribution(map.view)
       // Online the map reads its native representation in a session; offline, the WebView

@@ -38,7 +38,6 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     try await requireNativeFixture()
     let events = NativeMapEvents()
     let view = TileflowMapView(source: citySource)
-    view.engineKind = .native
     let window = mount(view, events: events)
     defer {
       view.destroy()
@@ -65,7 +64,6 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     try await requireNativeFixture()
     let events = NativeMapEvents()
     let view = TileflowMapView(source: citySource)
-    view.engineKind = .native
 
     do {
       try await view.addSource(
@@ -132,7 +130,6 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     let events = NativeMapEvents()
     let view = TileflowMapView(
       source: citySource, initialCamera: .init(longitude: -3.7, latitude: 40.42, zoom: 9))
-    view.engineKind = .native
     let window = mount(view, events: events)
     defer { view.destroy(); window.isHidden = true }
     try await events.waitForLoads(1)
@@ -232,7 +229,6 @@ final class NativeMapViewIntegrationTests: XCTestCase {
   func testNativeSourceAndLayerKindsUseTheMapTransport() async throws {
     try await requireNativeFixture()
     let view = TileflowMapView(source: citySource)
-    view.engineKind = .native
     let events = NativeMapEvents()
     let window = mount(view, events: events)
     defer { view.destroy(); window.isHidden = true }
@@ -308,7 +304,6 @@ final class NativeMapViewIntegrationTests: XCTestCase {
   func testNativeFeatureUpdatesAndPolygonQueries() async throws {
     try await requireNativeFixture()
     let view = TileflowMapView(source: citySource)
-    view.engineKind = .native
     let events = NativeMapEvents()
     let window = mount(view, events: events)
     defer { view.destroy(); window.isHidden = true }
@@ -371,7 +366,6 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     try await requireNativeFixture()
     let events = NativeMapEvents()
     let view = TileflowMapView(source: citySource)
-    view.engineKind = .native
     let window = mount(view, events: events)
     defer {
       view.destroy()
@@ -410,7 +404,6 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     try await requireNativeFixture()
     let events = NativeMapEvents()
     let view = TileflowMapView(source: citySource)
-    view.engineKind = .native
     let window = mount(view, events: events)
     defer {
       view.destroy()
@@ -439,7 +432,6 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     try await requireNativeFixture()
     let events = NativeMapEvents()
     let view = TileflowMapView(source: citySource)
-    view.engineKind = .native
     let window = mount(view, events: events)
     defer {
       view.destroy()
@@ -476,7 +468,6 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     try await requireNativeFixture()
     let events = NativeMapEvents()
     let view = TileflowMapView(source: citySource)
-    view.engineKind = .native
     let window = mount(view, events: events)
     defer {
       view.destroy()
@@ -521,7 +512,6 @@ final class NativeMapViewIntegrationTests: XCTestCase {
       map: "appearance", manifestURL: Self.nativeManifest, allowsLoopbackHTTP: true)
     let events = NativeMapEvents()
     let view = TileflowMapView(source: source)
-    view.engineKind = .native
     let window = mount(view, events: events)
     defer { view.destroy(); window.isHidden = true }
     try await events.waitForLoads(1)
@@ -593,7 +583,6 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     let source = TileflowMapSource(
       map: "appearance", manifestURL: Self.nativeManifest, allowsLoopbackHTTP: true)
     let view = TileflowMapView(source: source)
-    view.engineKind = .native
     let events = NativeMapEvents()
     let window = mount(view, events: events)
     defer { view.destroy(); window.isHidden = true }
@@ -633,7 +622,6 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     let view = TileflowMapView(
       source: TileflowMapSource(
         map: "scene", manifestURL: FixtureServer.manifest, allowsLoopbackHTTP: true))
-    view.engineKind = .native
     let events = NativeMapEvents()
     let window = mount(view, events: events)
     defer { view.destroy(); window.isHidden = true }
@@ -671,7 +659,6 @@ final class NativeMapViewIntegrationTests: XCTestCase {
   private func checkBoundaryPixels(map name: String, manifest: URL, layer: String) async throws {
     let source = TileflowMapSource(map: name, manifestURL: manifest, allowsLoopbackHTTP: true)
     let view = TileflowMapView(source: source)
-    view.engineKind = .native
     let events = NativeMapEvents()
     let window = mount(view, events: events)
     defer { view.destroy(); window.isHidden = true }
@@ -707,7 +694,6 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     try await requireNativeFixture()
     let events = NativeMapEvents()
     let view = TileflowMapView(source: citySource)
-    view.engineKind = .native
     let window = mount(view, events: events)
     defer { view.destroy(); window.isHidden = true }
     try await events.waitForLoads(1)
@@ -797,7 +783,6 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     try await requireNativeFixture()
     let events = NativeMapEvents()
     let view = TileflowMapView(source: citySource)
-    view.engineKind = .native
     let window = mount(view, events: events)
     defer {
       view.destroy()
@@ -911,7 +896,6 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     try await requireNativeFixture()
     let events = NativeMapEvents()
     let view = TileflowMapView(source: citySource)
-    view.engineKind = .native
     let window = mount(view, events: events)
     defer {
       view.destroy()
@@ -951,7 +935,6 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     try await requireNativeFixture()
     let events = NativeMapEvents()
     let view = TileflowMapView(source: citySource)
-    view.engineKind = .native
     let window = mount(view, events: events)
     defer {
       view.destroy()
@@ -1002,7 +985,6 @@ final class NativeMapViewIntegrationTests: XCTestCase {
       source: source,
       initialCamera: .init(
         longitude: Self.center.longitude, latitude: Self.center.latitude, zoom: 14))
-    view.engineKind = .native
     let events = NativeMapEvents(), window = mount(view, events: events)
     defer { view.destroy(); window.isHidden = true }
     try await events.waitForLoads(1)
@@ -1047,7 +1029,6 @@ final class NativeMapViewIntegrationTests: XCTestCase {
       source: .init(map: "fixture", manifestURL: FixtureServer.manifest, allowsLoopbackHTTP: true),
       initialCamera: .init(
         longitude: Self.center.longitude, latitude: Self.center.latitude, zoom: 14))
-    view.engineKind = .native
     let events = NativeMapEvents(), window = mount(view, events: events)
     defer { view.destroy(); window.isHidden = true }
     try await events.waitForLoads(1)
@@ -1087,7 +1068,6 @@ final class NativeMapViewIntegrationTests: XCTestCase {
       source: .init(map: "fixture", manifestURL: FixtureServer.manifest, allowsLoopbackHTTP: true),
       initialCamera: .init(
         longitude: Self.center.longitude, latitude: Self.center.latitude, zoom: 14))
-    view.engineKind = .native
     let events = NativeMapEvents(), window = mount(view, events: events)
     defer { view.destroy(); window.isHidden = true }
     var selections: [TileflowPoiSelection] = [], taps: [TileflowMapTouch] = [],
@@ -1153,7 +1133,6 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     try await requireNativeFixture()
     let events = NativeMapEvents()
     let view = TileflowMapView(source: citySource)
-    view.engineKind = .native
     let window = mount(view, events: events)
     defer {
       view.destroy()
@@ -1204,7 +1183,6 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     let events = NativeMapEvents()
     let view = TileflowMapView(
       source: .hosted(mapID: Self.hostedFixtureMapID, configuration: try fixtureConfiguration()))
-    view.engineKind = .native
     view.automaticallyAdjustsContentInsets = false
     let window = mount(view, events: events)
     defer {
@@ -1250,7 +1228,6 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     for (index, theme) in ["light", "dark"].enumerated() {
       let events = NativeMapEvents()
       let view = TileflowMapView(source: citySource, theme: theme)
-      view.engineKind = .native
       view.automaticallyAdjustsContentInsets = false
       view.onEvent = events.receive
       view.frame = CGRect(x: 0, y: CGFloat(index) * 422, width: 390, height: 422)
@@ -1284,7 +1261,6 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     try await requireNativeFixture()
     let events = NativeMapEvents()
     let view = TileflowMapView(source: citySource)
-    view.engineKind = .native
     let window = mount(view, events: events)
     defer {
       view.destroy()
@@ -1366,5 +1342,31 @@ final class NativeMapEvents {
       try await Task.sleep(for: .milliseconds(50))
     }
     XCTFail("The map loaded \(loads) times, expected \(count): \(failures)")
+  }
+}
+
+extension NativeMapViewIntegrationTests {
+  func testReloadInterruptsAnActiveCameraShot() async throws {
+    try await requireMapFixture(Self.nativeManifest)
+    let source = TileflowMapSource(map: "city", manifestURL: Self.nativeManifest, allowsLoopbackHTTP: true)
+    let mounted = try await mountMap(source)
+    defer { mounted.close() }
+
+    let start = try await mounted.view.camera()
+    let end = TileflowCamera(longitude: -3.69, latitude: 40.42, zoom: 13)
+    let started = expectation(description: "The camera shot reached its first cue")
+    let playing = Task {
+      try await mounted.view.play(
+        TileflowShot(
+          keyframes: [.init(time: 0, camera: start), .init(time: 60, camera: end)],
+          cues: [.init(time: 0, id: "start")])
+      ) { cue in
+        if cue == "start" { started.fulfill() }
+      }
+    }
+    await fulfillment(of: [started], timeout: 5)
+    try mounted.view.reload()
+    let finished = try await playing.value
+    XCTAssertFalse(finished)
   }
 }

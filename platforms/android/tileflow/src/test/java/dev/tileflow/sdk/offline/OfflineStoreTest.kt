@@ -1353,6 +1353,7 @@ class OfflineStoreTest {
                     { OfflineScopeRunner(it, scope) },
                     reserveBytes = 4096,
                     now = { OfflinePlatformFixture.NOW },
+                    profile = OfflinePackProfile.WEB_VIEW,
                 ),
                 subscribers,
             )

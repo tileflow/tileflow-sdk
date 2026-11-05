@@ -57,7 +57,7 @@ extension NativeMapEngine {
   /// The view follows the camera frame by frame only when it subscribes to `cameraMoved`.
   func setEvents(_ events: JSONValue?) {
     guard case .object(let subscribed)? = events else { return }
-    camera?.followsFrames = subscribed[ProtocolContract.Event.cameraMoved.rawValue] != nil
+    camera?.followsFrames = subscribed[MapContract.Event.cameraMoved.rawValue] != nil
   }
 
   /// The commands ``cameraCommand(_:payload:)`` answers.

@@ -71,7 +71,7 @@ final class NativeSceneContent {
           Self.validCollection(geometry)
         else {
           throw TileflowMapError(.invalidRequest, context: .init(
-            reason: ProtocolContract.ErrorReason.invalidGeoJSON.rawValue, resource: .data))
+            reason: MapContract.ErrorReason.invalidGeoJSON.rawValue, resource: .data))
         }
         source = try NativeRuntimeStyle.inlineSource(
           id, bytes: payload.bytes, lineMetrics: measured)

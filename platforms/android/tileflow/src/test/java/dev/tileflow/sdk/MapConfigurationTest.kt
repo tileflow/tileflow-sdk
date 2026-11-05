@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.res.Resources
 import android.os.Looper
-import android.webkit.WebView
 import dev.tileflow.configuration.Tileflow
 import dev.tileflow.configuration.TileflowConfiguration
 import dev.tileflow.configuration.TileflowConfigurationException
@@ -326,7 +325,7 @@ class MapConfigurationTest {
         activity.setContentView(view)
         try {
             assertEquals(listOf(TileflowErrorCode.MISSING_CREDENTIAL), failures)
-            assertTrue((0 until view.childCount).none { view.getChildAt(it) is WebView })
+            assertEquals(null, view.readyEngine)
             view.reload()
             assertEquals(List(2) { TileflowErrorCode.MISSING_CREDENTIAL }, failures)
         } finally {

@@ -3,7 +3,7 @@ package dev.tileflow.sdk
 import android.app.Activity
 import android.graphics.Bitmap
 import android.graphics.Color
-import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.model.MapContract
 import dev.tileflow.sdk.engine.MapEngine
 import dev.tileflow.sdk.model.EventSubscriptions
 import dev.tileflow.sdk.model.MapPayloadStore
@@ -41,14 +41,10 @@ class SceneTest {
     @Test
     fun rendererOptionsStayOutOfTheLiveOptionsAndVegetationFollowsTheMap() {
         val options =
-            TileflowMapOptions(vegetation = false, antialias = false, validatesStyle = true)
+            TileflowMapOptions(vegetation = false, antialias = false)
         assertEquals(false, options.json().get("vegetation"))
         assertFalse(options.json().has("antialias"))
         assertEquals(JSONObject.NULL, TileflowMapOptions().json().get("vegetation"))
-        assertEquals(
-            """{"antialias":false,"validateStyle":true}""",
-            options.rendererJson().toString(),
-        )
     }
 
     @Test
@@ -230,9 +226,9 @@ class SceneTest {
         val events = EventSubscriptions(TileflowEventOptions(TileflowEventLevel.ESSENTIAL)).events
         for (event in
             listOf(
-                ProtocolContract.Event.THEME_TRANSITION,
-                ProtocolContract.Event.ANIMATION_ENDED,
-                ProtocolContract.Event.SHOT_CUE,
+                MapContract.Event.THEME_TRANSITION,
+                MapContract.Event.ANIMATION_ENDED,
+                MapContract.Event.SHOT_CUE,
             )) {
             assertEquals(0L, events[event])
         }
@@ -241,28 +237,28 @@ class SceneTest {
     @Test
     fun aNewRendererReceivesTheSceneAtOnceAndInOrder() {
         val state = SceneState()
-        fun keep(method: ProtocolContract.Method, payload: JSONObject, name: String? = null) {
+        fun keep(method: MapContract.Method, payload: JSONObject, name: String? = null) {
             state.finish(state.begin(SceneCommand(method, payload), name), accepted = true)
         }
-        keep(ProtocolContract.Method.SET_DEPTH_MARKERS, JSONObject().put("markers", 0))
-        keep(ProtocolContract.Method.SET_IMAGES, JSONObject())
-        keep(ProtocolContract.Method.SET_SUN, JSONObject().put("duration", 450))
-        keep(ProtocolContract.Method.SET_STYLE_STATE, JSONObject(), "traffic")
-        keep(ProtocolContract.Method.SET_STYLE_STATE, JSONObject(), "night")
-        keep(ProtocolContract.Method.SET_STYLE_STATE, JSONObject(), "traffic")
+        keep(MapContract.Method.SET_DEPTH_MARKERS, JSONObject().put("markers", 0))
+        keep(MapContract.Method.SET_IMAGES, JSONObject())
+        keep(MapContract.Method.SET_SUN, JSONObject().put("duration", 450))
+        keep(MapContract.Method.SET_STYLE_STATE, JSONObject(), "traffic")
+        keep(MapContract.Method.SET_STYLE_STATE, JSONObject(), "night")
+        keep(MapContract.Method.SET_STYLE_STATE, JSONObject(), "traffic")
         assertEquals(
             listOf(
-                ProtocolContract.Method.SET_IMAGES,
-                ProtocolContract.Method.SET_DEPTH_MARKERS,
-                ProtocolContract.Method.SET_SUN,
-                ProtocolContract.Method.SET_STYLE_STATE,
-                ProtocolContract.Method.SET_STYLE_STATE,
+                MapContract.Method.SET_IMAGES,
+                MapContract.Method.SET_DEPTH_MARKERS,
+                MapContract.Method.SET_SUN,
+                MapContract.Method.SET_STYLE_STATE,
+                MapContract.Method.SET_STYLE_STATE,
             ),
             state.replay.map { it.command.method },
         )
         assertEquals(listOf("night", "traffic"), state.replay.mapNotNull { it.stateName })
         val channel = MapPayloadStore()
-        val sun = state.replay.single { it.command.method == ProtocolContract.Method.SET_SUN }.command
+        val sun = state.replay.single { it.command.method == MapContract.Method.SET_SUN }.command
         assertEquals(0, sun.build(channel, true).first.getInt("duration"))
         assertEquals(450, sun.build(channel, false).first.getInt("duration"))
     }
@@ -270,7 +266,7 @@ class SceneTest {
     @Test
     fun pendingImagesCanBeEditedButOnlyAcceptedImagesReplay() {
         val state = SceneState()
-        val command = SceneCommand(ProtocolContract.Method.SET_IMAGES, JSONObject())
+        val command = SceneCommand(MapContract.Method.SET_IMAGES, JSONObject())
         val pin = TileflowMapImage("pin", byteArrayOf(1))
         val arrow = TileflowMapImage("arrow", byteArrayOf(2))
         val first = state.begin(command, images = listOf(pin))
@@ -312,7 +308,7 @@ class SceneTest {
     /** An application-facing map whose renderer acknowledgements can be delivered out of order. */
     private class SceneReplyEngine(
         activity: Activity,
-        private val respond: ((ProtocolContract.Method, Any) -> Any)? = null,
+        private val respond: ((MapContract.Method, Any) -> Any)? = null,
     ) : MapEngine {
         val replies = Channel<CompletableDeferred<Any>>(Channel.UNLIMITED)
         override val view = android.view.View(activity)
@@ -322,7 +318,7 @@ class SceneTest {
         override fun retire(code: TileflowErrorCode) {}
 
         override suspend fun call(
-            method: ProtocolContract.Method,
+            method: MapContract.Method,
             payload: Any,
             references: List<MapPayloadStore.Reference>,
         ): Any {
@@ -361,13 +357,13 @@ class SceneTest {
             val replacement = SceneReplyEngine(activity) { method, payload ->
                 val value = payload as JSONObject
                 when (method) {
-                    ProtocolContract.Method.SET_IMAGES -> drawn += "images"
-                    ProtocolContract.Method.SET_DEPTH_MARKERS -> {
+                    MapContract.Method.SET_IMAGES -> drawn += "images"
+                    MapContract.Method.SET_DEPTH_MARKERS -> {
                         val image = value.getJSONArray("markers").getJSONObject(0).getString("image")
                         if (image != "pin") throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
                         drawn += image
                     }
-                    ProtocolContract.Method.SET_STYLE_STATE -> drawn += value.getString("name")
+                    MapContract.Method.SET_STYLE_STATE -> drawn += value.getString("name")
                     else -> Unit
                 }
                 JSONObject.NULL

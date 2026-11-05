@@ -112,7 +112,7 @@ await writeFile(
     {
       candidate,
       version: receipt.version,
-      runtimeHash: receipt.runtime.runtimeHash,
+      engines: receipt.engines,
       coordinate: receipt.android.coordinate,
       swiftPackage: options.get('--swift-url') ?? swiftPackage,
       mavenRepository,

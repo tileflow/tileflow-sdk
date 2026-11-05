@@ -83,10 +83,7 @@ internal class NativeMapManifest(
  * Reads a map's manifest. A self-hosted source's address is its manifest, normally the
  * `manifest.json` that `tileflow build --renderer native` writes. A Hosted source's address is its
  * mobile discovery document, whose `native-v1` representation names the native manifest and the
- * deployment's family document. While Hosted deployments and downloaded regions may still hold only
- * the WebView profile, the reader takes `webview-v1` when discovery announces no native
- * representation, or when a map that opens from its downloaded regions finds no native manifest
- * there.
+ * deployment's family document. Only downloaded regions may read the older `webview-v1` representation.
  */
 internal object NativeManifest {
     /**
@@ -143,6 +140,8 @@ internal object NativeManifest {
                 if (!fromPacks || profile(NativeRepresentation.WEB_VIEW) == null) throw error
             }
         }
+        if (!fromPacks)
+            throw failure(manifestUrl, message = "This Map has no native representation.")
         val webView =
             profile(NativeRepresentation.WEB_VIEW)
                 ?: throw failure(manifestUrl, message = "This Map has no native representation.")

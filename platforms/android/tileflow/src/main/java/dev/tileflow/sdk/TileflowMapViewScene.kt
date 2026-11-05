@@ -1,6 +1,6 @@
 package dev.tileflow.sdk
 
-import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.model.MapContract
 import dev.tileflow.sdk.engine.MapEngine
 import dev.tileflow.sdk.model.MapPayloadStore
 import dev.tileflow.sdk.transport.ResourceDigest
@@ -20,11 +20,11 @@ import org.json.JSONObject
  * transition.
  */
 internal class SceneCommand(
-    val method: ProtocolContract.Method,
+    val method: MapContract.Method,
     val build: (MapPayloadStore, replaying: Boolean) -> Pair<JSONObject, List<MapPayloadStore.Reference>>,
 ) {
     constructor(
-        method: ProtocolContract.Method,
+        method: MapContract.Method,
         payload: JSONObject,
     ) : this(
         method,
@@ -124,9 +124,9 @@ internal class SceneState {
 
     private companion object {
         val replayOrder = listOf(
-            ProtocolContract.Method.SET_IMAGES, ProtocolContract.Method.SET_DEPTH_MARKERS,
-            ProtocolContract.Method.SET_SUN, ProtocolContract.Method.SET_EMPHASIS,
-            ProtocolContract.Method.SET_STYLE_STATE, ProtocolContract.Method.SET_BOUNDARY_VALUES,
+            MapContract.Method.SET_IMAGES, MapContract.Method.SET_DEPTH_MARKERS,
+            MapContract.Method.SET_SUN, MapContract.Method.SET_EMPHASIS,
+            MapContract.Method.SET_STYLE_STATE, MapContract.Method.SET_BOUNDARY_VALUES,
         )
     }
 }
@@ -240,7 +240,7 @@ public suspend fun TileflowMapView.setViewMode(mode: TileflowViewMode, durationM
     // The view mode is kept with the options, so a new renderer starts in it.
     keepOptions(options.copy(viewMode = mode))
     readyEngine?.call(
-        ProtocolContract.Method.SET_VIEW_MODE,
+        MapContract.Method.SET_VIEW_MODE,
         JSONObject().put("viewMode", mode.wireName).put("duration", durationMillis),
     )
 }
@@ -252,7 +252,7 @@ public suspend fun TileflowMapView.setViewMode(mode: TileflowViewMode, durationM
 public suspend fun TileflowMapView.setSun(sun: TileflowSun?, durationMillis: Long = 0) {
     val payload =
         JSONObject().put("sun", TileflowSun.json(sun)).put("duration", transition(durationMillis))
-    sendScene(SceneCommand(ProtocolContract.Method.SET_SUN, payload))
+    sendScene(SceneCommand(MapContract.Method.SET_SUN, payload))
 }
 
 /**
@@ -267,7 +267,7 @@ public suspend fun TileflowMapView.setEmphasis(
     if (emphasis == null) {
         sendScene(
             SceneCommand(
-                ProtocolContract.Method.SET_EMPHASIS,
+                MapContract.Method.SET_EMPHASIS,
                 JSONObject().put("emphasis", JSONObject.NULL).put("duration", duration),
             )
         )
@@ -280,7 +280,7 @@ public suspend fun TileflowMapView.setEmphasis(
                 !Regex("^[a-z][a-z0-9-]{0,63}$").matches(module.name) || amount !in 0.0..1.0
             } ||
             (emphasis.labels != null && emphasis.labels !in 0.0..1.0) ||
-            (keep != null && (keep.isEmpty() || keep.size > ProtocolContract.MAXIMUM_DATA_BYTES))
+            (keep != null && (keep.isEmpty() || keep.size > MapContract.MAXIMUM_DATA_BYTES))
     )
         invalid()
     val digest = keep?.let(ResourceDigest::sha256)
@@ -294,7 +294,7 @@ public suspend fun TileflowMapView.setEmphasis(
         )
     emphasis.labels?.let { fixed.put("labels", it) }
     sendScene(
-        SceneCommand(ProtocolContract.Method.SET_EMPHASIS) { channel, replaying ->
+        SceneCommand(MapContract.Method.SET_EMPHASIS) { channel, replaying ->
             val value = JSONObject(fixed.toString())
             val references = mutableListOf<MapPayloadStore.Reference>()
             if (keep != null && digest != null) {
@@ -323,7 +323,7 @@ public suspend fun TileflowMapView.setStyleState(
             .put("name", name)
             .put("value", TileflowStyleValue.json(value))
             .put("duration", transition(durationMillis))
-    sendScene(SceneCommand(ProtocolContract.Method.SET_STYLE_STATE, payload), stateName = name)
+    sendScene(SceneCommand(MapContract.Method.SET_STYLE_STATE, payload), stateName = name)
 }
 
 /**
@@ -331,7 +331,7 @@ public suspend fun TileflowMapView.setStyleState(
  * [TileflowRouteInk] follow them without this call.
  */
 public suspend fun TileflowMapView.routeInks(): TileflowRouteInks {
-    val result = requireRenderer().call(ProtocolContract.Method.GET_ROUTE_INKS) as? JSONObject
+    val result = requireRenderer().call(MapContract.Method.GET_ROUTE_INKS) as? JSONObject
     return try {
         TileflowRouteInks.from(result ?: throw IllegalArgumentException())
     } catch (_: Exception) {
@@ -347,24 +347,24 @@ public suspend fun TileflowMapView.setBoundaryValues(values: TileflowBoundaryVal
     if (values == null) {
         sendScene(
             SceneCommand(
-                ProtocolContract.Method.SET_BOUNDARY_VALUES,
+                MapContract.Method.SET_BOUNDARY_VALUES,
                 JSONObject().put("values", JSONObject.NULL),
             )
         )
         return
     }
     val (joinBy, rows) = values.rows()
-    if (rows.size > ProtocolContract.MAXIMUM_DATA_BYTES)
+    if (rows.size > MapContract.MAXIMUM_DATA_BYTES)
         throw TileflowMapException(
             TileflowErrorCode.INVALID_REQUEST,
             TileflowErrorContext.of(
-                ProtocolContract.ErrorReason.DATA_TOO_LARGE,
-                ProtocolContract.MAXIMUM_DATA_BYTES,
+                MapContract.ErrorReason.DATA_TOO_LARGE,
+                MapContract.MAXIMUM_DATA_BYTES,
             ),
         )
     val digest = ResourceDigest.sha256(rows)
     sendScene(
-        SceneCommand(ProtocolContract.Method.SET_BOUNDARY_VALUES) { channel, _ ->
+        SceneCommand(MapContract.Method.SET_BOUNDARY_VALUES) { channel, _ ->
             val reference = channel.register(rows, digest, "application/json")
             JSONObject()
                 .put("values", JSONObject().put("joinBy", joinBy).put("rows", reference.json()))
@@ -380,19 +380,19 @@ public suspend fun TileflowMapView.setImages(images: List<TileflowMapImage>) {
     val payloads = images.flatMap { listOf(it.data) + it.variants.values }
     val distinct = payloads.associateBy(ResourceDigest::sha256)
     if (
-        distinct.values.sumOf { it.size.toLong() } > ProtocolContract.MAXIMUM_DATA_TOTAL_BYTES ||
-            distinct.size > ProtocolContract.MAXIMUM_DATA_REFERENCES
+        distinct.values.sumOf { it.size.toLong() } > MapContract.MAXIMUM_DATA_TOTAL_BYTES ||
+            distinct.size > MapContract.MAXIMUM_DATA_REFERENCES
     )
         throw TileflowMapException(
             TileflowErrorCode.INVALID_REQUEST,
             TileflowErrorContext.of(
-                ProtocolContract.ErrorReason.DATA_TOO_LARGE,
-                ProtocolContract.MAXIMUM_DATA_TOTAL_BYTES,
+                MapContract.ErrorReason.DATA_TOO_LARGE,
+                MapContract.MAXIMUM_DATA_TOTAL_BYTES,
             ),
         )
     val kept = images.toList()
     sendScene(
-        SceneCommand(ProtocolContract.Method.SET_IMAGES) { channel, _ ->
+        SceneCommand(MapContract.Method.SET_IMAGES) { channel, _ ->
             val references = mutableListOf<MapPayloadStore.Reference>()
             try {
                 fun register(bytes: ByteArray): JSONObject =
@@ -437,7 +437,7 @@ public suspend fun TileflowMapView.setImages(images: List<TileflowMapImage>) {
 public suspend fun TileflowMapView.setDepthMarkers(markers: List<TileflowDepthMarker>) {
     if (markers.size > 128 || markers.map { it.id }.toSet().size != markers.size) invalid()
     val payload = JSONObject().put("markers", JSONArray(markers.map { it.json() }))
-    sendScene(SceneCommand(ProtocolContract.Method.SET_DEPTH_MARKERS, payload))
+    sendScene(SceneCommand(MapContract.Method.SET_DEPTH_MARKERS, payload))
 }
 
 /**
@@ -460,7 +460,7 @@ public suspend fun TileflowMapView.animateLineProgress(
         invalid()
     val engine = requireRenderer()
     return runAnimation(
-        ProtocolContract.Method.ANIMATE_LINE_PROGRESS,
+        MapContract.Method.ANIMATE_LINE_PROGRESS,
         JSONObject()
             .put("layers", JSONArray(layers))
             .put("to", to.stateJson())
@@ -482,11 +482,11 @@ public suspend fun TileflowMapView.play(
     val payload = shot.json()
     val engine = requireRenderer()
     endFollowing(dev.tileflow.sdk.location.TileflowFollowModeChangeReason.API)
-    return runAnimation(ProtocolContract.Method.PLAY_SHOT, payload, engine, onCue)
+    return runAnimation(MapContract.Method.PLAY_SHOT, payload, engine, onCue)
 }
 
 private suspend fun TileflowMapView.runAnimation(
-    method: ProtocolContract.Method,
+    method: MapContract.Method,
     payload: JSONObject,
     engine: MapEngine,
     onCue: ((String) -> Unit)?,
@@ -516,7 +516,7 @@ private suspend fun TileflowMapView.runAnimation(
         launchOnView {
             try {
                 engine.call(
-                    ProtocolContract.Method.STOP_ANIMATION,
+                    MapContract.Method.STOP_ANIMATION,
                     JSONObject().put("animation", id),
                 )
             } catch (_: Exception) {

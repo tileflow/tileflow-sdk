@@ -1,6 +1,6 @@
 package dev.tileflow.sdk
 
-import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.model.MapContract
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -127,7 +127,7 @@ private fun TileflowMapView.validateOwners(
     ) {
         throw TileflowMapException(
             TileflowErrorCode.INVALID_REQUEST,
-            TileflowErrorContext.of(ProtocolContract.ErrorReason.UNKNOWN_SOURCE),
+            TileflowErrorContext.of(MapContract.ErrorReason.UNKNOWN_SOURCE),
         )
     }
 }
@@ -206,7 +206,7 @@ private suspend fun TileflowMapView.restoreSource(
                     state.forEach { (name, value) -> put(name, TileflowStyleValue.json(value)) }
                 }
             engine.call(
-                ProtocolContract.Method.SET_FEATURE_STATE,
+                MapContract.Method.SET_FEATURE_STATE,
                 featureTarget(id, layer.ifEmpty { null }, feature).put("state", wire),
             )
         }

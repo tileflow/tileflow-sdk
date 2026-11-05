@@ -1,12 +1,10 @@
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 
-// Mobile jobs run on simulators, emulators and desktop engines. A pull request pays for them only
-// when it changes something that reaches the embedded runtime, a native host or the React Native
-// native modules; pushes and manual runs always run every job.
+// Pull requests select the affected native hosts. Pushes and manual runs exercise them all.
 const hostedSessionFixtures = 'test-support/mobile/hosted/';
 const mapApi = 'platforms/map-api.json';
-const runtimeInputs = [
+const nativeInputs = [
   '.github/workflows/ci.yml',
   'LICENSE',
   'package.json',
@@ -15,20 +13,19 @@ const runtimeInputs = [
   'turbo.json',
   'packages/core/',
   'packages/interactions/',
-  'packages/mobile-runtime/',
   'scripts/mobile-',
+  'scripts/native-golden-generate.mjs',
   hostedSessionFixtures,
   mapApi,
 ];
 // The fixture server builds its native map with @tileflow/dev from an official map.
 const nativeFixtureInputs = ['packages/dev/', 'packages/maps/'];
 const areaInputs = {
-  runtime: runtimeInputs,
-  ios: [...runtimeInputs, ...nativeFixtureInputs, 'platforms/ios/'],
+  ios: [...nativeInputs, ...nativeFixtureInputs, 'platforms/ios/'],
   // The Maven publication reads its coordinates and POM metadata from the native release catalog.
   // The Kotlin tests read the offline, marine and native evaluator fixtures the Swift tests own.
   android: [
-    ...runtimeInputs,
+    ...nativeInputs,
     ...nativeFixtureInputs,
     'platforms/android/',
     'platforms/native-release.json',

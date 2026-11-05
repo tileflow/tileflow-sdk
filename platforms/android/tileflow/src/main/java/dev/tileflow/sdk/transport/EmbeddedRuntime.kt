@@ -1,14 +1,8 @@
 package dev.tileflow.sdk.transport
 
-import android.content.Context
 import android.content.res.AssetManager
-import android.os.Handler
-import android.os.Looper
-import android.webkit.WebView
-import dev.tileflow.sdk.TileflowDeviceProfile
 import dev.tileflow.sdk.TileflowErrorCode
 import dev.tileflow.sdk.TileflowErrorContext
-import dev.tileflow.sdk.TileflowMapCache
 import dev.tileflow.sdk.TileflowMapException
 import dev.tileflow.sdk.bridge.ProtocolContract
 import java.security.MessageDigest
@@ -101,35 +95,5 @@ internal object EmbeddedRuntime {
             if (digest.digest().joinToString("") { "%02x".format(it) } != expected)
                 throw TileflowMapException(TileflowErrorCode.INCOMPATIBLE_RUNTIME)
         }
-    }
-}
-
-/** Prepares what every map needs before the first one is shown. */
-internal object MapPrewarmer {
-    private var started = false
-
-    fun start(context: Context) {
-        check(Looper.myLooper() == Looper.getMainLooper()) { "Call prewarm on the main thread." }
-        val application = context.applicationContext ?: context
-        EmbeddedRuntime.verification(application.assets)
-        Thread(
-                {
-                    TileflowDeviceProfile.current(application)
-                    TileflowMapCache.get(application)
-                    TileflowHttpClient.resources
-                    TileflowHttpClient.sessions
-                },
-                "tileflow-prewarm",
-            )
-            .apply { isDaemon = true }
-            .start()
-        if (started) return
-        started = true
-        // Creating a WebView loads the WebView provider; a blank page starts its renderer. Only
-        // the delayed release holds it, so nothing static keeps it alive.
-        val view = runCatching { WebView(application) }.getOrNull() ?: return
-        view.settings.javaScriptEnabled = false
-        view.loadUrl("about:blank")
-        Handler(Looper.getMainLooper()).postDelayed({ view.destroy() }, 10_000)
     }
 }

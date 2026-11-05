@@ -2,6 +2,8 @@ package dev.tileflow.sdk.engine
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.view.ViewGroup
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -151,6 +153,18 @@ internal class WebViewMapEngine(
 
     companion object {
         private const val LISTENER = "tileflowNative"
+
+        private var prewarmed = false
+
+        fun prewarm(context: Context) {
+            EmbeddedRuntime.verification(context.assets)
+            if (prewarmed) return
+            val view = runCatching { WebView(context) }.getOrNull() ?: return
+            prewarmed = true
+            view.settings.javaScriptEnabled = false
+            view.loadUrl("about:blank")
+            Handler(Looper.getMainLooper()).postDelayed({ view.destroy() }, 10_000)
+        }
 
         /**
          * Checks that the system WebView can run the embedded runtime and reads the runtime's

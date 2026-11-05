@@ -75,6 +75,12 @@ internal object MapResourceContexts {
     private var installing = false
     private val waiting = mutableListOf<(Throwable?) -> Unit>()
 
+    /** The map or snapshotter retries initialization if early preparation did not succeed. */
+    @MainThread
+    fun prewarm(context: Context) {
+        if (!installed && !installing) install(context) {}
+    }
+
     /**
      * Prepares MapLibre once per process, before the first Tileflow map draws: its module provider
      * answers Tileflow addresses through the SDK's transport, and its ambient cache is turned off,

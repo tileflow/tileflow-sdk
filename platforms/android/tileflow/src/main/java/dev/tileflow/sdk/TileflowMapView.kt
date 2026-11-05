@@ -34,7 +34,7 @@ import dev.tileflow.sdk.location.TileflowLocationProvider
 import dev.tileflow.sdk.offline.OfflineReachability
 import dev.tileflow.sdk.offline.OfflineServingIndex
 import dev.tileflow.sdk.offline.OfflineServingRule
-import dev.tileflow.sdk.transport.MapPrewarmer
+import dev.tileflow.sdk.engine.MapPrewarmer
 import dev.tileflow.sdk.transport.ResourceLoader
 import dev.tileflow.sdk.transport.TileflowHttpClient
 import dev.tileflow.sdk.transport.grantScope
@@ -1600,17 +1600,14 @@ constructor(
         @Volatile internal var defaultEngineKind: MapEngineKind = MapEngineKind.WEB_VIEW
 
         /**
-         * Prepares what every map needs before the first one is shown: verifies the embedded
-         * renderer, reads the device profile, opens the shared HTTP client and resource cache, and
-         * loads the WebView provider. Call it on the main thread early, for example in
-         * `Application.onCreate` or before navigating to a screen with a map; calling it again only
-         * repeats the cheap checks. Maps work without it, but the first one then pays these costs
-         * while it loads.
+         * Prepares the renderer, device profile, HTTP clients and resource cache before the first
+         * map opens. Call it on the main thread, for example in `Application.onCreate` or before
+         * navigating to a screen with a map. Calls share the same preparation.
          */
         @JvmStatic
         @MainThread
         public fun prewarm(context: Context) {
-            MapPrewarmer.start(context)
+            MapPrewarmer.start(context, defaultEngineKind)
         }
     }
 

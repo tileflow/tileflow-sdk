@@ -217,7 +217,9 @@ final class ResourceLoader: ResourceLoading, Sendable {
         response.cancel()
         return Self.response(packed)
       }
-      if (500...599).contains(response.status), let fallback = stored?.afterFailure(at: date()) {
+      if !onlineOnly, (500...599).contains(response.status),
+        let fallback = stored?.afterFailure(at: date())
+      {
         response.cancel()
         return Self.response(fallback.resource)
       }

@@ -78,7 +78,7 @@ internal class ResourceLoader(
     fun load(url: URI, method: String = "GET", range: String? = null): ResourcePayload =
         payload(open(url, method, range), method)
 
-    /** An explicit online request may use the HTTP cache, but never offline packs or stale data. */
+    /** An explicit online request may use the ambient HTTP cache and revalidate its entries. */
     fun loadOnline(url: URI): ResourcePayload =
         payload(open(url, "GET", null, onlineOnly = true), "GET")
 
@@ -105,7 +105,7 @@ internal class ResourceLoader(
         if (onlineOnly) requireOnline()
         else if (!networkEnabled()) return storedOnly(url, protected, cacheable)
         // A fresh public entry needs neither the network nor a Hosted session.
-        if (cacheable) freshPublicEntry(url)?.let { return response(it) }
+        if (cacheable) freshPublicEntry(url, includePinned = !onlineOnly)?.let { return response(it) }
         if (
             !onlineOnly && protected && cacheable &&
                 OfflineServingRule.hostedUsesPacks(networkEnabled = true, reachable = reachable())
@@ -149,7 +149,7 @@ internal class ResourceLoader(
                     grant == null -> ResourceCacheKey(target, ResourceCacheScope.Shared)
                     else -> grantScope?.let { ResourceCacheKey(target, it) }
                 }
-            val stored = key?.let(::storedEntries)
+            val stored = key?.let { storedEntries(it, includePinned = !onlineOnly) }
             stored?.fresh(date())?.let {
                 return response(it.resource)
             }
@@ -292,7 +292,7 @@ internal class ResourceLoader(
             HostedContract.isPublicApiResource(url)
 
     /** A fresh entry in the shared scope for an origin this map may use without a grant. */
-    private fun freshPublicEntry(url: URI): StoredResource? {
+    private fun freshPublicEntry(url: URI, includePinned: Boolean): StoredResource? {
         if (runCatching { policy.validate(url) }.isFailure || url in publicMetadataUrls) return null
         if (
             apiOrigin != null &&
@@ -300,14 +300,14 @@ internal class ResourceLoader(
                 !HostedContract.isPublicApiResource(url)
         )
             return null
-        return storedEntries(ResourceCacheKey(url, ResourceCacheScope.Shared))
+        return storedEntries(ResourceCacheKey(url, ResourceCacheScope.Shared), includePinned)
             ?.fresh(date())
             ?.resource
     }
 
-    private fun storedEntries(key: ResourceCacheKey): StoredEntries? {
+    private fun storedEntries(key: ResourceCacheKey, includePinned: Boolean = true): StoredEntries? {
         val cache = cache ?: return null
-        val pinned = cache.read(key, ResourceCacheRetention.PINNED)
+        val pinned = if (includePinned) cache.read(key, ResourceCacheRetention.PINNED) else null
         val ambient = cache.read(key, ResourceCacheRetention.AMBIENT)
         if (pinned == null && ambient == null) return null
         return StoredEntries(pinned, ambient)

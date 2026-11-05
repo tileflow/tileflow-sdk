@@ -228,6 +228,29 @@ class ResourceCacheTest {
     }
 
     @Test
+    fun explicitOnlineLoadsIgnorePinnedEntriesAndReuseAmbientResponses() {
+        val cache = store()
+        val key = ResourceCacheKey(url("/boundaries-lookup-region.csv.gz"), ResourceCacheScope.Shared)
+        val pinnedHeaders = mapOf("Cache-Control" to "max-age=60", "ETag" to "\"pinned\"")
+        assertTrue(write(cache, key, 8, ResourceCacheRetention.PINNED, pinnedHeaders))
+        val transport = RecordingTransport {
+            payload("ambient", headers = mapOf("Cache-Control" to "max-age=60"))
+        }
+
+        loader(cache, transport).use { resources ->
+            assertEquals(8, resources.load(key.url).bytes.size)
+            assertTrue(transport.requests.isEmpty())
+
+            assertEquals("ambient", resources.loadOnline(key.url).bytes.decodeToString())
+            assertNull(transport.requests.single().header("If-None-Match"))
+            assertEquals("ambient", resources.loadOnline(key.url).bytes.decodeToString())
+            assertEquals(1, transport.requests.size)
+
+            assertEquals(8, resources.load(key.url).bytes.size)
+        }
+    }
+
+    @Test
     fun corruptedAndMisplacedEntriesAreDropped() {
         val cache = store()
         val keys = (0 until 3).map { ResourceCacheKey(url("/glyphs/Noto/$it.pbf"), ResourceCacheScope.Shared) }

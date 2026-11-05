@@ -108,6 +108,32 @@ final class ResourceCacheTests: XCTestCase {
     XCTAssertEqual(transport.requests.count, 3)
   }
 
+  func testOnlineOnlyReturnsServerFailureWhileNormalLoadsMayUseStaleCache() async throws {
+    let failing = LockedValue(false)
+    let transport = RecordingTransport { _ in
+      if failing.withLock({ $0 }) {
+        return ResourcePayload(bytes: Data("failed".utf8), status: 500, headers: [:])
+      }
+      return ResourcePayload(bytes: Data("cached".utf8), status: 200,
+        headers: ["Cache-Control": "max-age=10, stale-if-error=3600"])
+    }
+    let resources = ResourceLoader(policy: .init(origins: [origin]), transport: transport,
+      cache: store(), networkEnabled: { true }, reachable: { true }, date: { [clock] in clock.now })
+    let request = URLRequest(url: url("/lookup.csv.gz"))
+    _ = try await resources.load(request)
+    clock.advance(20)
+    failing.withLock { $0 = true }
+
+    let online = try await resources.loadOnline(request)
+    XCTAssertEqual(online.status, 500)
+    XCTAssertEqual(online.bytes, Data("failed".utf8))
+
+    let normal = try await resources.load(request)
+    XCTAssertEqual(normal.status, 200)
+    XCTAssertEqual(normal.bytes, Data("cached".utf8))
+    XCTAssertEqual(transport.requests.count, 3)
+  }
+
   func testChangedResponsesReplaceTheStoredOne() async throws {
     let cache = store()
     let version = LockedValue(1)

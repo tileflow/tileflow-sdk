@@ -251,8 +251,9 @@ or `--any-website`. It prints the Map ID to use for later deploys;
 credential or the portable `id` in your config. CI always deploys an existing Map with a deploy key
 for that destination. `logout` removes the saved personal session.
 
-Deploy publishes the compiled themes for web and native apps; the server compiles no TypeScript.
-It reports native differences, resumes interrupted runs and reuses unchanged versions. Build
+Deploy publishes the compiled web themes. Add `platforms: ["web", "native"],` to the map
+configuration to publish native themes too. The server compiles no TypeScript. The CLI reports
+native differences, resumes interrupted runs and reuses unchanged versions. Build
 writers refuse to overwrite hosted manifests by default, and deploy refuses to replace a
 self-hosted manifest without explicit authorization. Keep separate outputs, or use the documented overwrite
 option only for an intentional migration.

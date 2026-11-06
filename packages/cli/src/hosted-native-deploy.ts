@@ -122,7 +122,7 @@ export type PreparedHostedDeploy = Readonly<{
   /** The glTF binaries each placed building model was prepared from, for the server to compare. */
   teamModelSources?: TeamModelSources;
   /**
-   * Both renderer families bound to the uploaded sprite and font files. The frozen compiled styles
+   * The selected renderer families bound to the hosted sprite and font files. The frozen compiled styles
    * are reused: the config is not evaluated again and only these asset addresses change.
    */
   retarget(assets: Readonly<{sprite?: string; fontBaseUrl?: string}>): Promise<HostedArtifact>;
@@ -130,8 +130,8 @@ export type PreparedHostedDeploy = Readonly<{
 }>;
 
 /**
- * Compile one map for Hosted publication and prepare both renderer families from it: the web
- * family and the native family MapLibre Native draws on iOS and Android. Native preparation leaves
+ * Compile one map for Hosted publication. Prepare the web family and, when selected, the
+ * native family for MapLibre Native. Native preparation leaves
  * out and records what native maps cannot draw; it fails only for a theme it cannot prepare at all.
  * Nothing here authenticates or touches the network.
  */
@@ -294,7 +294,7 @@ export type HostedDeployEvent =
       contentHash: string;
       changed: boolean;
     }>
-  | Readonly<{kind: 'publishing'; mapName: string; themes: number; bytes: number}>
+  | Readonly<{kind: 'publishing'; mapName: string; themes: number; bytes: number; native: boolean}>
   | HostedRendererDeploymentEvent;
 
 export type HostedDeployOptions = Readonly<{
@@ -348,7 +348,7 @@ export type HostedDeployResult = Readonly<{
 }>;
 
 /**
- * Publish a prepared map to its managed Map with both renderer families, then write the frontend
+ * Publish the prepared renderer families to their managed Map, then write the frontend
  * manifest. Existing-manifest checks run before the target is resolved, uploads run only after
  * it, and a failure leaves the previous manifest in place. Repeating the same deploy resumes an
  * interrupted publication.
@@ -491,6 +491,7 @@ export async function runHostedDeploy(
     const names = Object.keys(webArtifact(artifact).styles).sort();
     ports.progress?.({
       kind: 'publishing',
+      native: split !== undefined,
       mapName: prepared.mapName,
       themes: names.length,
       bytes: new TextEncoder().encode(serializeCanonicalJson(body)).byteLength,

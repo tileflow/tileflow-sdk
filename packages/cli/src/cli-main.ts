@@ -975,7 +975,7 @@ addMapSetupOptions(
       if (!validateDeployManifestMapNames(mapNames)) return;
       const mapName = mapNames[0]!;
 
-      // Both renderer families are prepared before any authentication or remote write, so an
+      // The selected renderer families are prepared before any authentication or remote write, so an
       // invalid map always fails without network access.
       let prepared: PreparedHostedDeploy;
       try {
@@ -2142,7 +2142,7 @@ function printHostedDeployProgress(event: HostedDeployEvent) {
       return;
     case 'publishing':
       logInfo(
-        `Publishing ${pc.bold(event.mapName)} for web and native apps (${plural(event.themes, 'theme')}, ${formatBytes(event.bytes)} web request).`,
+        `Publishing ${pc.bold(event.mapName)} for ${event.native ? 'web and native apps' : 'web'} (${plural(event.themes, 'theme')}, ${formatBytes(event.bytes)} web request).`,
       );
       return;
     case 'reserved':

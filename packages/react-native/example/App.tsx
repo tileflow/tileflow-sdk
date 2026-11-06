@@ -12,6 +12,7 @@ import {
 } from '@tileflow/react-native';
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {Button, SafeAreaView, StyleSheet, Text, View} from 'react-native';
+import {OfflineMadridPanel} from './OfflineMadridPanel';
 
 const fixtureOrigin = process.env.EXPO_PUBLIC_TILEFLOW_FIXTURE_ORIGIN ?? 'http://127.0.0.1:18645';
 const selfTest = process.env.EXPO_PUBLIC_TILEFLOW_SELF_TEST === '1';
@@ -141,6 +142,8 @@ export default function App() {
     setMounted({id, stage});
     return ready.then(() => id);
   }, []);
+
+  const openDownloaded = useCallback(() => mount('offline'), [mount]);
 
   const inspect = useCallback(async (expectedCluster?: boolean) => {
     const deadline = Date.now() + 15_000;
@@ -339,15 +342,20 @@ export default function App() {
       </Text>
       <View style={styles.buttons}>
         <Button title="Run offline check" disabled={busy} onPress={() => void run()} />
-        <Button
-          title="Enable network"
-          disabled={busy}
-          onPress={() => {
-            restoreNetwork.current = null;
-            TileflowOfflineSwitch.setNetworkEnabled(true);
-          }}
-        />
+        {selfTest && (
+          <Button
+            title="Enable network"
+            disabled={busy}
+            onPress={() => {
+              restoreNetwork.current = null;
+              TileflowOfflineSwitch.setNetworkEnabled(true);
+            }}
+          />
+        )}
       </View>
+      {!selfTest && (
+        <OfflineMadridPanel mapId={fixtureMap} disabled={busy} onOpen={openDownloaded} />
+      )}
       {status.stage === 'ready-to-stop-server' && (
         <Text>Stop the fixture server. The map will reopen automatically.</Text>
       )}

@@ -4,6 +4,8 @@ import TileflowServices
 
 @main
 struct TileflowExampleApp: App {
+  @UIApplicationDelegateAdaptor(OfflineExampleAppDelegate.self) private var appDelegate
+
   init() { configureExample() }
 
   var body: some Scene { WindowGroup { MapScreen() } }
@@ -15,10 +17,13 @@ struct MapScreen: View {
   private static let start = TileflowCamera(longitude: -3.70, latitude: 40.42, zoom: 13)
   private let source = exampleSource()
   private let servicesAvailable = servicesConfigured()
+  private let theme = launchArgument("--theme") ?? "light"
+  private let alternateTheme = launchArgument("--alternate-theme")
   @State private var controller = TileflowMapController()
   @State private var camera = MapScreen.start
   @State private var dark = false
   @State private var expanded = false
+  @State private var showsOffline = false
   @State private var status = "Loading Tileflow…"
   @State private var panelHeight: CGFloat = 0
   @State private var showsLocation = false
@@ -28,7 +33,7 @@ struct MapScreen: View {
   var body: some View {
     ZStack(alignment: .bottom) {
       TileflowMap(
-        source: source, camera: $camera, theme: dark ? "dark" : "light",
+        source: source, camera: $camera, theme: dark ? (alternateTheme ?? "dark") : theme,
         options: .init(
           controls: .init(scaleBar: true, recenterButton: true),
           location: .init(enabled: showsLocation, puckBearing: .heading)),
@@ -57,6 +62,11 @@ struct MapScreen: View {
       .locationProvider(locationProvider)
       .ignoresSafeArea()
       panel.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { panelHeight = $0 }
+    }
+    .sheet(isPresented: $showsOffline) {
+      OfflineExample(
+        source: source, theme: theme,
+        alternateTheme: alternateTheme ?? (source.mapID == nil ? "dark" : nil))
     }
   }
 
@@ -115,6 +125,7 @@ struct MapScreen: View {
           ) { status = $0 }
           status = "Tap or drag a pin"
         }
+        Button("Offline map") { showsOffline = true }
         Button("Tilt to the street") {
           Task { try? await controller.ease(to: TileflowCameraUpdate(zoom: 17, pitch: 75)) }
         }

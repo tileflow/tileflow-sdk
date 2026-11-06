@@ -59,6 +59,8 @@ import dev.tileflow.sdk.location.TileflowLocationProvider
 import dev.tileflow.sdk.location.TileflowPuckBearing
 import dev.tileflow.sdk.location.TileflowSimulatedLocationProvider
 import dev.tileflow.sdk.location.rememberTileflowLocationState
+import dev.tileflow.sdk.offline.TileflowOfflineStore
+import dev.tileflow.sdk.offline.TileflowOfflineSwitch
 import dev.tileflow.sdk.TileflowPoint
 import dev.tileflow.sdk.rememberTileflowCameraState
 import dev.tileflow.sdk.rememberTileflowMapController
@@ -254,9 +256,19 @@ class ComposeExample : ComponentActivity() {
         intent.configureTileflow()
         val source = intent.mapSource()
         val locationProvider = intent.locationProvider()
+        val preferences = getPreferences(MODE_PRIVATE)
+        val networkEnabled = preferences.getBoolean("tileflowNetworkEnabled", true)
+        TileflowOfflineSwitch.isNetworkEnabled = networkEnabled
+        val store = TileflowOfflineStore.get(this)
+        val region = intent.offlineMadridRegion(source)
+        val lightTheme =
+            intent.getStringExtra("lightTheme") ?: if (source.mapId == null) "light" else null
+        val darkTheme = intent.getStringExtra("darkTheme") ?: "dark"
         setContent {
             var dark by remember { mutableStateOf(false) }
             var expanded by remember { mutableStateOf(false) }
+            var showOffline by rememberSaveable { mutableStateOf(false) }
+            var usesNetwork by remember { mutableStateOf(networkEnabled) }
             var status by remember { mutableStateOf("Loading Tileflow…") }
             // The camera survives rotation and process recreation.
             val camera = rememberTileflowCameraState(startCamera)
@@ -294,7 +306,7 @@ class ComposeExample : ComponentActivity() {
                     TileflowMap(
                         source,
                         Modifier.fillMaxSize(),
-                        theme = if (dark) "dark" else "light",
+                        theme = if (dark) darkTheme else lightTheme,
                         options =
                             if (showsLocation) exampleOptions.copy(location = showLocation)
                             else exampleOptions,
@@ -365,6 +377,15 @@ class ComposeExample : ComponentActivity() {
                                 Text("Show 100,000 places")
                             }
                             Button(onClick = { pins.show() }) { Text("Show annotations") }
+                            Button(onClick = { showOffline = true }) { Text("Offline Madrid") }
+                        }
+                    }
+                    if (showOffline) {
+                        OfflineMadridPanel(store, region, usesNetwork, { showOffline = false }) { enabled ->
+                            TileflowOfflineSwitch.isNetworkEnabled = enabled
+                            preferences.edit().putBoolean("tileflowNetworkEnabled", enabled).apply()
+                            usesNetwork = enabled
+                            controller.reload()
                         }
                     }
                 }

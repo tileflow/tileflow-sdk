@@ -22,6 +22,7 @@
 		A4DE029E8369482F521CB934 /* ClusterExample.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FA9D9A8F6DF7DAD4049BFF8 /* ClusterExample.swift */; };
 		C5CE93FEC86CF77DF5E34AA1 /* ServicesExample.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FE24C0D071BCF62B55DA15B /* ServicesExample.swift */; };
 		CF5DB2B9F1B02AFC0B3E6E27 /* AnnotationsExample.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDC66C875F6044DD189AC5F6 /* AnnotationsExample.swift */; };
+		DC3546C8D6906BD4276A9E6E /* OfflineExample.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56E44BFFF3D75091462B97E0 /* OfflineExample.swift */; };
 		E8801F7E367FC9EF127B1BA8 /* Tileflow in Frameworks */ = {isa = PBXBuildFile; productRef = 2660A6566B3ED55AB8EBAE7C /* Tileflow */; };
 /* End PBXBuildFile section */
 
@@ -29,6 +30,7 @@
 		1D211D65A453C900BFB07BCA /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
 		1E8E3D18DC0A2CF02C1F86E5 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		534A245A6CD0F455E58B820B /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
+		56E44BFFF3D75091462B97E0 /* OfflineExample.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineExample.swift; sourceTree = "<group>"; };
 		6FE24C0D071BCF62B55DA15B /* ServicesExample.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServicesExample.swift; sourceTree = "<group>"; };
 		82EA1E3E7E4C71573D04A877 /* SwiftUIExample.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SwiftUIExample.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8858DEE244160C92E8A47A12 /* MyLocation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyLocation.swift; sourceTree = "<group>"; };
@@ -65,6 +67,7 @@
 			isa = PBXGroup;
 			children = (
 				534A245A6CD0F455E58B820B /* App.swift */,
+				56E44BFFF3D75091462B97E0 /* OfflineExample.swift */,
 			);
 			path = SwiftUI;
 			sourceTree = "<group>";
@@ -211,6 +214,7 @@
 				877A3218C2AB81E772E7BB3D /* ClusterExample.swift in Sources */,
 				47BA81FF43F801C507256086 /* ExampleSource.swift in Sources */,
 				A08C1ED831B88A20A35DDACD /* MyLocation.swift in Sources */,
+				DC3546C8D6906BD4276A9E6E /* OfflineExample.swift in Sources */,
 				72241A85A3E145B9E8A4CC23 /* ServicesExample.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

@@ -23,6 +23,18 @@ Credentials belong in the `TILEFLOW_*_CREDENTIAL` prebuild environment variables
 
 Start the repository's `scripts/mobile-fixture-server.mjs` and forward the configured port when using an Android emulator. The server supplies synthetic Hosted data and the Streets map with its climate image.
 
-Tap **Run offline check**. The app loads Streets, checks the declared points through source and rendered queries, changes their clustering radius, verifies feature-state and rollback after an invalid update, downloads a region and opens the Hosted map. When it displays **Stop the fixture server**, stop that process. The app then remounts the Hosted map with SDK networking disabled and reports `TILEFLOW_SELF_TEST` with its result. **Enable network** restores SDK networking.
+Tap **Run offline check**. The app loads Streets, checks the declared points through source and rendered queries, changes their clustering radius, verifies feature-state and rollback after an invalid update, downloads a region and opens the Hosted map. When it displays **Stop the fixture server**, stop that process. The app then remounts the Hosted map with SDK networking disabled and reports `TILEFLOW_SELF_TEST` with its result. Use **SDK network** in the manual panel to restore networking, or **Enable network** in self-test mode.
 
 Set `EXPO_PUBLIC_TILEFLOW_SELF_TEST=1` before bundling to start the same check automatically. Use a loopback fixture origin for this mode.
+
+For a manual download, expand **Offline Madrid** and tap **Download**. It saves the Hosted
+fixture's day and night themes for central Madrid (−3.715, 40.41 to −3.685, 40.43), z13–15.
+These fixture themes contain no terrain. The panel shows resource progress, downloaded bytes and expiry;
+**Pause**, **Resume** and **Delete** control this region only. **Open downloaded map** opens its day theme.
+A stored region also opens when the app restarts.
+
+Turn off **SDK network** to restrict Tileflow to stored data. For a real disconnection, turn on
+airplane mode, turn Wi-Fi off and reopen the app. The SDK switch applies to the running process;
+airplane mode remains the device's responsibility. Keep the app's native configuration and
+fixture origin unchanged when reopening. For a physical iPhone, use an HTTPS fixture origin
+reachable from the phone with a trusted certificate; loopback addresses refer to the phone.

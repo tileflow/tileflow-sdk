@@ -111,31 +111,33 @@ export async function requestHostedJson(
   init: RequestInit = {},
   options: HostedRequestOptions = {},
 ): Promise<HostedJsonResponse> {
-  return withHostedResponse(apiUrl, path, init, options, async (response) => {
-    const retryAfter = response.headers.get('retry-after');
-    const retryAfterMs =
-      retryAfter === null
-        ? undefined
-        : /^\d+$/u.test(retryAfter)
-          ? Number(retryAfter) * 1000
-          : Math.max(0, Date.parse(retryAfter) - Date.now());
-    const metadata = {
-      ok: response.ok,
-      status: response.status,
-      ...(Number.isFinite(retryAfterMs) ? {retryAfterMs} : {}),
+  return withHostedResponse(apiUrl, path, init, options, readHostedJsonResponse);
+}
+
+async function readHostedJsonResponse(response: Response): Promise<HostedJsonResponse> {
+  const retryAfter = response.headers.get('retry-after');
+  const retryAfterMs =
+    retryAfter === null
+      ? undefined
+      : /^\d+$/u.test(retryAfter)
+        ? Number(retryAfter) * 1000
+        : Math.max(0, Date.parse(retryAfter) - Date.now());
+  const metadata = {
+    ok: response.ok,
+    status: response.status,
+    ...(Number.isFinite(retryAfterMs) ? {retryAfterMs} : {}),
+  };
+  const source = await readBoundedResponseText(response, 'Hosted API');
+  if (!source) return {body: null, json: true, ...metadata};
+  try {
+    return {
+      body: JSON.parse(source) as unknown,
+      json: true,
+      ...metadata,
     };
-    const source = await readBoundedResponseText(response, 'Hosted API');
-    if (!source) return {body: null, json: true, ...metadata};
-    try {
-      return {
-        body: JSON.parse(source) as unknown,
-        json: true,
-        ...metadata,
-      };
-    } catch {
-      return {body: null, json: false, ...metadata};
-    }
-  });
+  } catch {
+    return {body: null, json: false, ...metadata};
+  }
 }
 
 export async function startDeviceAuthorization(
@@ -751,19 +753,13 @@ export async function publishHostedRendererDeployment(
   let lastVersion: number | undefined;
   for (let round = 0; round < maximumDeploymentRounds; round += 1) {
     if (lastVersion !== undefined) options.onProgress?.({kind: 'activating', version: lastVersion});
-    let response: HostedJsonResponse;
-    try {
-      response = await requestHostedJson(
-        origin,
-        '/v1/styles',
-        {body, headers, method: 'POST'},
-        request,
-      );
-    } catch {
-      throw new HostedDeploymentError('The deployment request did not complete.', {
-        resumable: true,
-      });
-    }
+    const response = await requestHostedPublication(
+      origin,
+      '/v1/styles',
+      {body, headers, method: 'POST'},
+      request,
+      {step: lastVersion === undefined ? 'reservation' : 'activation', bytes},
+    );
     if (response.status === 200) {
       const parsed = response.json
         ? tileflowRendererDeploymentResponseSchema.safeParse(response.body)
@@ -858,16 +854,22 @@ async function uploadNativeDocument(
     if (attempt > 0) await sleep(500 * attempt);
     let response: HostedJsonResponse;
     try {
-      response = await requestHostedJson(
+      response = await requestHostedPublication(
         origin,
         document.path,
         {body, headers, method: 'PUT'},
         request,
+        {
+          step:
+            document.document === 'family'
+              ? 'family document upload'
+              : `native style ${document.theme} upload`,
+          bytes: document.bytes,
+        },
       );
-    } catch {
-      failure = new HostedDeploymentError(`The upload of ${label} did not complete.`, {
-        resumable: true,
-      });
+    } catch (error) {
+      if (!(error instanceof HostedDeploymentError)) throw error;
+      failure = error;
       continue;
     }
     const code = failureCode(response);
@@ -899,6 +901,47 @@ async function uploadNativeDocument(
     throw deploymentFailure(response, `The upload of ${label} failed`);
   }
   throw failure!;
+}
+
+async function requestHostedPublication(
+  origin: string,
+  path: string,
+  init: RequestInit,
+  request: HostedRequestOptions,
+  {step, bytes}: Readonly<{step: string; bytes: number}>,
+): Promise<HostedJsonResponse> {
+  let status: number | undefined;
+  let requestId: string | undefined;
+  const opaqueFailure = () =>
+    new HostedDeploymentError(
+      `The server could not process the publication during ${step} (${bytes} bytes uncompressed).` +
+        (requestId ? ` Request ID: ${requestId}.` : '') +
+        ' Contact support.',
+      {resumable: true, ...(status !== undefined ? {status} : {})},
+    );
+
+  let response: HostedJsonResponse;
+  try {
+    response = await withHostedResponse(origin, path, init, request, (raw) => {
+      status = raw.status;
+      requestId = [raw.headers.get('x-request-id'), raw.headers.get('cf-ray')].find(
+        isPublicationRequestId,
+      );
+      return readHostedJsonResponse(raw);
+    });
+  } catch {
+    throw opaqueFailure();
+  }
+  if (response.status >= 500 && !failureCode(response)) {
+    const bodyId = asRecord(response.body).requestId;
+    if (!requestId && isPublicationRequestId(bodyId)) requestId = bodyId;
+    throw opaqueFailure();
+  }
+  return response;
+}
+
+function isPublicationRequestId(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9._:-]{1,128}$/u.test(value);
 }
 
 const deploymentFailureDetails = new Map([

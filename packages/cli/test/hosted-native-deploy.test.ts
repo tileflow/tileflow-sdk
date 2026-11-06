@@ -298,6 +298,83 @@ test('a pending reply that does not match the local documents or origin uploads 
   }
 });
 
+test('opaque publication failures identify the step, decoded size and available request ID', async (t) => {
+  const input = await body(await rendererDeployment());
+  const postBytes = Buffer.byteLength(serializeCanonicalJson(input.body));
+  const index = input.split.artifact.renderers.native.documents;
+  const cases = [
+    {step: 'reservation', bytes: postBytes, requestId: 'ray-reserve-LIS'},
+    {step: 'native style dark upload', bytes: index.styles.dark!.bytes, requestId: 'req-style'},
+    {step: 'family document upload', bytes: index.family.bytes, requestId: undefined},
+    {step: 'activation', bytes: postBytes, requestId: 'req-activate'},
+  ];
+
+  for (const {step, bytes, requestId} of cases) {
+    await t.test(step, async (t) => {
+      let fail = true;
+      const platform = await startFakePlatform(t, {
+        mapId,
+        intercept(request, fake) {
+          if (!fail) return undefined;
+          if (request.path.endsWith('/styles/dark.json') && step === 'native style dark upload')
+            return {status: 502, body: '', raw: true, headers: {'X-Request-ID': 'req-style'}};
+          if (request.path.endsWith('/family.json') && step === 'family document upload')
+            return {disconnect: true};
+          if (request.path !== '/v1/styles') return undefined;
+          if (step === 'reservation')
+            return {
+              status: 503,
+              body: '<html>Error 1102: Worker exceeded resource limits</html>',
+              raw: true,
+              headers: {'CF-Ray': 'ray-reserve-LIS'},
+            };
+          if (step === 'activation' && fake.uploads.length === 3)
+            return {
+              status: 500,
+              body: {error: 'Internal Server Error', requestId: 'req-activate'},
+            };
+          return undefined;
+        },
+      });
+      const api = {apiKey, apiUrl: platform.url, mapId};
+      await assert.rejects(
+        publishHostedRendererDeployment(api, input, {sleep: immediately}),
+        (error: unknown) => {
+          assert.ok(error instanceof HostedDeploymentError);
+          assert.match(error.message, /server could not process the publication/i);
+          assert.match(error.message, /contact support/i);
+          assert.ok(error.message.includes(step));
+          assert.ok(error.message.includes(`${bytes} bytes`));
+          if (requestId) assert.ok(error.message.includes(requestId));
+          else assert.doesNotMatch(error.message, /request id/i);
+          assert.doesNotMatch(error.message, /<html>|Internal Server Error/);
+          assert.equal(error.resumable, true);
+          return true;
+        },
+      );
+      assert.equal(platform.activeVersion(), undefined);
+      fail = false;
+      const resumed = await publishHostedRendererDeployment(api, input, {sleep: immediately});
+      assert.equal(resumed.version, 1);
+    });
+  }
+});
+
+test('a recognized server error keeps its actionable message', async (t) => {
+  const input = await body(await rendererDeployment());
+  const platform = await startFakePlatform(t, {
+    mapId,
+    intercept: () => failure(503, 'TF_STYLE_STORAGE_UNAVAILABLE'),
+  });
+  await assert.rejects(
+    publishHostedRendererDeployment({apiKey, apiUrl: platform.url, mapId}, input),
+    {
+      message:
+        'Deploy failed (503 TF_STYLE_STORAGE_UNAVAILABLE): Hosted could not store the style. Retry the deployment.',
+    },
+  );
+});
+
 test('a rejected document stops the deployment with the server code', async (t) => {
   const platform = await startFakePlatform(t, {
     mapId,

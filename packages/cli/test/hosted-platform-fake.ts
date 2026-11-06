@@ -31,7 +31,13 @@ export type FakePlatformRequest = Readonly<{
   /** The decoded body: gzip on the wire is undone, as the platform does before any limit. */
   body: Buffer;
 }>;
-export type FakePlatformReply = Readonly<{status: number; body: unknown}>;
+export type FakePlatformReply = Readonly<{
+  status: number;
+  body: unknown;
+  raw?: boolean;
+  headers?: Record<string, string>;
+}>;
+type InterceptReply = FakePlatformReply | Readonly<{disconnect: true}>;
 
 type Reservation = {
   id: string;
@@ -67,7 +73,7 @@ export type FakePlatformOptions = Readonly<{
   intercept?(
     request: FakePlatformRequest,
     platform: FakePlatform,
-  ): FakePlatformReply | undefined | Promise<FakePlatformReply | undefined>;
+  ): InterceptReply | undefined | Promise<InterceptReply | undefined>;
 }>;
 
 export async function startFakePlatform(
@@ -438,7 +444,14 @@ async function formData(request: FakePlatformRequest): Promise<FormData> {
   }).formData();
 }
 
-function reply(response: ServerResponse, value: FakePlatformReply) {
-  response.writeHead(value.status, {'Content-Type': 'application/json'});
-  response.end(JSON.stringify(value.body));
+function reply(response: ServerResponse, value: InterceptReply) {
+  if ('disconnect' in value) {
+    response.destroy();
+    return;
+  }
+  response.writeHead(value.status, {
+    'Content-Type': value.raw ? 'text/html' : 'application/json',
+    ...value.headers,
+  });
+  response.end(value.raw ? String(value.body) : JSON.stringify(value.body));
 }

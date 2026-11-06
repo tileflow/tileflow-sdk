@@ -3,9 +3,7 @@ import MapLibre
 
 /// Answers MapLibre Native's requests for ``MapResourceAddress`` addresses with the SDK's
 /// transport: the loader of the map whose context the address names applies its resource policy,
-/// credentials, Hosted session, cache, downloaded regions and the network switch. Every other
-/// request is left to MapLibre's own session, so other MapLibre maps in the application keep
-/// working.
+/// credentials, Hosted session, cache, downloaded regions and the network switch.
 final class MapLibreResourceProtocol: URLProtocol, @unchecked Sendable {
   /// Called with each request MapLibre's session makes that is not the SDK's. Tests use it to
   /// prove that a map reaches no network of its own.
@@ -14,11 +12,19 @@ final class MapLibreResourceProtocol: URLProtocol, @unchecked Sendable {
   /// when it failed. Tests use it to see what the engine asked for.
   nonisolated(unsafe) static var answerObserver: (@Sendable (URL, Int?) -> Void)?
 
+  fileprivate static let startupProbeScheme = "tileflow-transport-check"
+  fileprivate static let startupProbe = LockedValue<
+    (
+      url: URL, receipt: AsyncStream<Void>.Continuation
+    )?
+  >(nil)
+
   private let state = LockedValue<(stopped: Bool, task: Task<Void, Never>?)>((false, nil))
 
   override class func canInit(with request: URLRequest) -> Bool {
     guard let url = request.url else { return false }
     if url.host == MapResourceAddress.host, url.scheme == "https" { return true }
+    if url.scheme == startupProbeScheme, startupProbe.withLock({ $0?.url == url }) { return true }
     foreignRequestObserver?(url)
     return false
   }
@@ -26,6 +32,23 @@ final class MapLibreResourceProtocol: URLProtocol, @unchecked Sendable {
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
   override func startLoading() {
+    if request.url?.scheme == Self.startupProbeScheme,
+      let probe = Self.startupProbe.withLock({ $0 }), request.url == probe.url
+    {
+      guard
+        let response = HTTPURLResponse(
+          url: probe.url, statusCode: 200, httpVersion: "HTTP/1.1",
+          headerFields: ["Content-Type": "application/json", "Cache-Control": "no-store"])
+      else {
+        client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+        return
+      }
+      client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+      client?.urlProtocol(self, didLoad: Data(#"{"version":8,"sources":{},"layers":[]}"#.utf8))
+      client?.urlProtocolDidFinishLoading(self)
+      probe.receipt.yield(())
+      return
+    }
     guard let url = request.url, let decoded = MapResourceAddress.decode(url) else {
       client?.urlProtocol(self, didFailWithError: URLError(.badURL))
       return
@@ -113,19 +136,13 @@ final class MapLibreResourceProtocol: URLProtocol, @unchecked Sendable {
 
 /// MapLibre Native's process-wide network setup for Tileflow maps.
 ///
-/// Before the first native map, ``MapLibreResourceProtocol`` joins the protocols of
-/// `MLNNetworkConfiguration`'s session configuration, keeping the application's own, and
-/// MapLibre's ambient cache is turned off: MapLibre stores responses whatever their
-/// `Cache-Control`, and the SDK's cache (``TileflowMapCache``) is the only one. Both settings are
-/// global to the process. An application that replaces MapLibre's session afterwards, or supplies
-/// its own with `sessionForNetworkConfiguration:`, takes the requests away from the SDK; maps then
-/// fail with `invalidConfiguration` rather than load without their credentials.
+/// Configures the session before the first native map and verifies that MapLibre's file source
+/// uses it. Disables the process-wide ambient cache so the SDK owns resource caching.
 @MainActor
 enum MapLibreNetwork {
   private static var installation: Task<Void, any Error>?
 
-  /// Installs the SDK's protocol and turns the ambient cache off, once per process, then checks
-  /// that MapLibre still sends its requests through them.
+  /// Installs and verifies the transport once per process, then checks for configuration changes.
   static func prepare() async throws {
     let installation =
       self.installation
@@ -139,32 +156,84 @@ enum MapLibreNetwork {
           configuration.protocolClasses = [MapLibreResourceProtocol.self] + protocols
           manager.sessionConfiguration = configuration
         }
-        try await withCheckedThrowingContinuation {
-          (continuation: CheckedContinuation<Void, any Error>) in
-          MLNOfflineStorage.shared.setMaximumAmbientCacheSize(0) { error in
-            if let error { continuation.resume(throwing: error) } else { continuation.resume() }
+        do {
+          try checkConfiguration()
+        } catch {
+          // No file source was started: a corrected host configuration may try again.
+          self.installation = nil
+          throw error
+        }
+        guard await verifyTransport() else {
+          throw invalid(
+            "MapLibre's active network session did not reach the Tileflow SDK. "
+              + "Configure Tileflow before MapLibre initializes.")
+        }
+
+        do {
+          try await withCheckedThrowingContinuation {
+            (continuation: CheckedContinuation<Void, any Error>) in
+            MLNOfflineStorage.shared.setMaximumAmbientCacheSize(0) { error in
+              if let error { continuation.resume(throwing: error) } else { continuation.resume() }
+            }
           }
+        } catch {
+          self.installation = nil
+          throw invalid("MapLibre's ambient cache could not be turned off.")
         }
       }
     self.installation = installation
-    do {
-      try await installation.value
-    } catch let error as TileflowMapError {
-      throw error
-    } catch {
-      self.installation = nil
-      throw invalid("MapLibre's ambient cache could not be turned off.")
-    }
+    try await installation.value
+    try checkConfiguration()
+  }
+
+  private static func checkConfiguration() throws {
     let manager = MLNNetworkConfiguration.sharedManager
     let protocols = manager.sessionConfiguration.protocolClasses ?? []
     guard protocols.contains(where: { $0 == MapLibreResourceProtocol.self }),
       manager.sessionConfiguration.identifier == nil,
       manager.delegate?.responds(
-        to: Selector(("sessionForNetworkConfiguration:"))) != true
+        to: #selector(MLNNetworkConfigurationDelegate.session(for:))) != true
     else {
       throw invalid(
         "MapLibre's network session no longer sends requests through the Tileflow SDK.")
     }
+  }
+
+  private static func verifyTransport() async -> Bool {
+    // In MapLibre 7, snapshots and views use the same resource options and file source.
+    // The probe's scheme has no system handler, so a stale session cannot send it off device.
+    let scheme = MapLibreResourceProtocol.startupProbeScheme
+    let url = URL(string: "\(scheme)://\(MapResourceAddress.host)/\(UUID())")!
+    let (receipts, receipt) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingOldest(1))
+    MapLibreResourceProtocol.startupProbe.withLock { $0 = (url, receipt) }
+
+    let camera = MLNMapCamera(
+      lookingAtCenter: .init(latitude: 0, longitude: 0), altitude: 0,
+      pitch: 0, heading: 0)
+    let options = MLNMapSnapshotOptions(
+      styleURL: url, camera: camera, size: .init(width: 8, height: 8))
+    options.scale = 1
+    options.showsLogo = false
+    options.showsAttribution = false
+    let snapshotter = MLNMapSnapshotter(options: options)
+    // Cancellation discards the callback, so use the completion API without awaiting it.
+    let start = snapshotter.start(completionHandler:)
+    start { snapshot, _ in
+      if snapshot == nil { receipt.finish() }
+    }
+    let timeout = Task {
+      try await Task.sleep(for: .seconds(5))
+      receipt.finish()
+    }
+    defer {
+      timeout.cancel()
+      receipt.finish()
+      MapLibreResourceProtocol.startupProbe.withLock { $0 = nil }
+      snapshotter.cancel()
+    }
+
+    var observations = receipts.makeAsyncIterator()
+    return await observations.next() != nil
   }
 
   private static func invalid(_ message: String) -> TileflowMapError {

@@ -313,8 +313,23 @@ jobs:
       - name: Test on iOS Simulator
         run: |
           set -euo pipefail
-          xcodebuild test -project platforms/ios/IntegrationTests/TileflowIntegration.xcodeproj -scheme TileflowIntegration -destination "platform=iOS Simulator,id=$SIMULATOR_UDID,arch=arm64" -resultBundlePath "$RUNNER_TEMP/TileflowSimulator.xcresult" | tee "$RUNNER_TEMP/swift-simulator-tests.log"
+          xcodebuild test -project platforms/ios/IntegrationTests/TileflowIntegration.xcodeproj -scheme TileflowIntegration -destination "platform=iOS Simulator,id=$SIMULATOR_UDID,arch=arm64" -skip-testing:TileflowTests/MapLibreStartupTests/testTileflowFailsWhenMapLibreAlreadyOwnsTheTransport -skip-testing:TileflowTests/OfflineBackgroundRedirectTests -resultBundlePath "$RUNNER_TEMP/TileflowSimulator.xcresult" | tee "$RUNNER_TEMP/swift-simulator-tests.log"
           ! grep -E "Test Case .* skipped" "$RUNNER_TEMP/swift-simulator-tests.log"
+      - name: Test late MapLibre startup in a fresh host
+        env:
+          TEST_RUNNER_TILEFLOW_TEST_STALE_MAPLIBRE: '1'
+        run: |
+          set -euo pipefail
+          xcodebuild test -project platforms/ios/IntegrationTests/TileflowIntegration.xcodeproj -scheme TileflowIntegration -destination "platform=iOS Simulator,id=$SIMULATOR_UDID,arch=arm64" -parallel-testing-enabled NO -only-testing:TileflowTests/MapLibreStartupTests/testTileflowFailsWhenMapLibreAlreadyOwnsTheTransport -resultBundlePath "$RUNNER_TEMP/TileflowSimulatorMapLibreStartup.xcresult" | tee "$RUNNER_TEMP/swift-maplibre-startup-tests.log"
+          ! grep -E "Test Case .* skipped" "$RUNNER_TEMP/swift-maplibre-startup-tests.log"
+      - name: Test real background redirects
+        env:
+          TEST_RUNNER_TILEFLOW_REDIRECT_PROBE_URL: http://127.0.0.1:18645/test/background-redirect
+        run: |
+          set -euo pipefail
+          python3 -c 'import os, plistlib; plistlib.dump({"application-identifier": "TEAMTEST01.dev.tileflow.tests.TileflowTestHost", "com.apple.developer.team-identifier": "TEAMTEST01"}, open(os.path.join(os.environ["RUNNER_TEMP"], "background.entitlements"), "wb"))'
+          xcodebuild test -project platforms/ios/IntegrationTests/TileflowIntegration.xcodeproj -scheme TileflowIntegration -destination "platform=iOS Simulator,id=$SIMULATOR_UDID,arch=arm64" -parallel-testing-enabled NO -only-testing:TileflowTests/OfflineBackgroundRedirectTests CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=- CODE_SIGN_ENTITLEMENTS="$RUNNER_TEMP/background.entitlements" -resultBundlePath "$RUNNER_TEMP/TileflowSimulatorBackground.xcresult" | tee "$RUNNER_TEMP/swift-background-tests.log"
+          ! grep -E "Test Case .* skipped" "$RUNNER_TEMP/swift-background-tests.log"
       - name: Test the service clients on iOS Simulator
         working-directory: platforms/ios
         run: |
@@ -328,7 +343,7 @@ jobs:
         with:
           name: swift-integration-results
           path: |
-            ${{ runner.temp }}/TileflowSimulator.xcresult
+            ${{ runner.temp }}/TileflowSimulator*.xcresult
             ${{ runner.temp }}/swift-*-tests.log
             ${{ runner.temp }}/map-fixture.log
           retention-days: 7

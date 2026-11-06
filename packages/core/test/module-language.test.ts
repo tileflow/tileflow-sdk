@@ -298,6 +298,7 @@ test('publishes AI-reference constraints that match exact assets and capture aut
     modules: 'modules',
     name: 'identity',
     overlays: 'keyed-resources',
+    platforms: 'leaf',
     projection: 'atomic',
     scenes: 'leaf',
     shots: 'leaf',

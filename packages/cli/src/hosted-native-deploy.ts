@@ -2,11 +2,14 @@ import {dirname} from 'node:path';
 import {
   getTileflowStyleFontFaces,
   type MapLibreStyle,
+  type TileflowViewConfig,
   parseResolvedTileflowMap,
   serializeCanonicalJson,
 } from '@tileflow/core';
 import {
+  compactTileflowDeploymentArtifact,
   createTileflowMapBuildManifest,
+  type TileflowMapBuildManifestV1,
   splitTileflowRendererDeployment,
   type TileflowBuildCatalog,
   type TileflowRendererDeploymentArtifact,
@@ -45,6 +48,7 @@ import {
   type HostedRendererDeploymentEvent,
   type HostedRequestOptions,
   publishHostedRendererDeployment,
+  publishHostedWebDeployment,
   uploadHostedFontBundle,
   uploadHostedIconPackage,
 } from './hosted-client';
@@ -93,11 +97,24 @@ export type HostedDeployPreparationInput = Readonly<{
   icons?: TileflowIconResolutionOptions;
 }>;
 
+type HostedWebArtifact = Readonly<{
+  kind: 'tileflow-map-deployment';
+  schemaVersion: 1;
+  mapId: string;
+  buildManifest: TileflowMapBuildManifestV1;
+  styles: Record<string, MapLibreStyle>;
+  teamSources: Readonly<Record<string, {tileset: string; type: 'raster' | 'vector'}>>;
+  view?: TileflowViewConfig;
+}>;
+type HostedArtifact = HostedWebArtifact | TileflowRendererDeploymentArtifact;
+const webArtifact = (artifact: HostedArtifact) =>
+  artifact.schemaVersion === 1 ? artifact : artifact.renderers.web;
+
 /** Everything a Hosted deploy prepares before any credential or network request. */
 export type PreparedHostedDeploy = Readonly<{
   mapName: string;
-  /** Both renderer families with preflight asset addresses. It is never published. */
-  preflight: TileflowRendererDeploymentArtifact;
+  /** The selected renderer families with preflight asset addresses. */
+  preflight: HostedArtifact;
   packages: readonly CompiledTileflowIconPackage[];
   iconBinding?: IconCompilation['bindings'][number];
   iconComposition?: IconCompilation['compositions'][string];
@@ -108,9 +125,7 @@ export type PreparedHostedDeploy = Readonly<{
    * Both renderer families bound to the uploaded sprite and font files. The frozen compiled styles
    * are reused: the config is not evaluated again and only these asset addresses change.
    */
-  retarget(
-    assets: Readonly<{sprite?: string; fontBaseUrl?: string}>,
-  ): Promise<TileflowRendererDeploymentArtifact>;
+  retarget(assets: Readonly<{sprite?: string; fontBaseUrl?: string}>): Promise<HostedArtifact>;
   dispose(): Promise<void>;
 }>;
 
@@ -217,6 +232,18 @@ export async function prepareHostedDeploy(
         },
         {provenance},
       );
+      if (!resolved.platforms?.some((platform) => platform === 'native')) {
+        return {
+          kind: 'tileflow-map-deployment' as const,
+          schemaVersion: 1 as const,
+          mapId: mapName,
+          buildManifest,
+          styles: family.styles,
+          teamSources: family.teamSources,
+          ...(resolved.view ? {view: resolved.view} : {}),
+        };
+      }
+
       return prepareTileflowHostedNativeDeployment({
         mapId: mapName,
         buildManifest,
@@ -315,7 +342,7 @@ export type HostedDeployResult = Readonly<{
   version: number;
   changed: boolean;
   entry: TileflowRuntimeManifestMapEntry;
-  nativeManifestUrl: string;
+  nativeManifestUrl?: string;
   nativeDifferences: readonly NativeDifference[];
   teamModels: NonNullable<TileflowRendererDeploymentResponse['teamModels']>;
 }>;
@@ -366,7 +393,7 @@ export async function runHostedDeploy(
     for (const icon of prepared.packages) {
       if (sprites.has(icon.contentHash)) continue;
       const uploaded = await transferred('Icon package upload', () =>
-        (ports.uploadIcon ?? uploadHostedIconPackage)(api, icon, ports.request),
+        (ports.uploadIcon ?? uploadHostedIconPackage)(api, icon, ports.request, true),
       );
       if (!uploaded.ok)
         throw new HostedDeploymentError(`Icon package upload failed: ${uploaded.status}.`, {
@@ -395,7 +422,7 @@ export async function runHostedDeploy(
     if (prepared.fontBundle) {
       const bundle = prepared.fontBundle;
       const uploaded = await transferred('Font bundle upload', () =>
-        (ports.uploadFont ?? uploadHostedFontBundle)(api, bundle, ports.request),
+        (ports.uploadFont ?? uploadHostedFontBundle)(api, bundle, ports.request, true),
       );
       if (!uploaded.ok)
         throw new HostedDeploymentError(`Font bundle upload failed: ${uploaded.status}.`, {
@@ -424,8 +451,8 @@ export async function runHostedDeploy(
       ...(sprite ? {sprite} : {}),
       ...(fontBaseUrl ? {fontBaseUrl} : {}),
     });
-    const preflightMap = prepared.preflight.renderers.web.buildManifest.maps[prepared.mapName];
-    const build = artifact.renderers.web.buildManifest.maps[artifact.mapId];
+    const preflightMap = webArtifact(prepared.preflight).buildManifest.maps[prepared.mapName];
+    const build = webArtifact(artifact).buildManifest.maps[artifact.mapId];
     if (
       artifact.mapId !== prepared.mapName ||
       !build ||
@@ -441,14 +468,15 @@ export async function runHostedDeploy(
       );
     let split;
     try {
-      split = await splitTileflowRendererDeployment(artifact);
+      split =
+        artifact.schemaVersion === 1 ? undefined : await splitTileflowRendererDeployment(artifact);
     } catch {
       throw new HostedDeploymentError(
         'The map exceeds a Hosted deployment budget: 16 MiB for the web request, 8 MiB for each native document or 32 MiB for the native family.',
       );
     }
     const body = {
-      artifact: split.artifact,
+      artifact: split?.artifact ?? compactTileflowDeploymentArtifact(artifact),
       environment: prepared.mapName,
       managedMapId: mapId,
       usageMode: 'session',
@@ -460,34 +488,48 @@ export async function runHostedDeploy(
       ...(prepared.fontBundle ? {fontBundle: {contentHash: prepared.fontBundle.contentHash}} : {}),
       ...(prepared.teamModelSources ? {teamModelSources: prepared.teamModelSources} : {}),
     };
-    const names = Object.keys(artifact.renderers.web.styles).sort();
+    const names = Object.keys(webArtifact(artifact).styles).sort();
     ports.progress?.({
       kind: 'publishing',
       mapName: prepared.mapName,
       themes: names.length,
       bytes: new TextEncoder().encode(serializeCanonicalJson(body)).byteLength,
     });
-    const result = await publishHostedRendererDeployment(
-      api,
-      {body, split},
-      {
-        ...(ports.request ? {request: ports.request} : {}),
-        ...(ports.progress ? {onProgress: ports.progress} : {}),
-        ...(ports.sleep ? {sleep: ports.sleep} : {}),
-      },
-    );
-
-    const nativeManifestUrl = `${apiOrigin}/maps/${mapId}/native/manifest.json`;
+    const publishOptions = {
+      check: true,
+      ...(ports.request ? {request: ports.request} : {}),
+      ...(ports.progress ? {onProgress: ports.progress} : {}),
+      ...(ports.sleep ? {sleep: ports.sleep} : {}),
+    };
+    const expectedNativeUrl = `${apiOrigin}/maps/${mapId}/native/manifest.json`;
+    const result: Awaited<ReturnType<typeof publishHostedWebDeployment>> & {
+      nativeManifestUrl?: string;
+      teamModels?: TileflowRendererDeploymentResponse['teamModels'];
+    } = split
+      ? await publishHostedRendererDeployment(api, {body, split}, publishOptions).then(
+          (published) => ({
+            ...published,
+            ...published.renderers.web,
+            nativeManifestUrl: published.renderers.native.manifestUrl,
+          }),
+        )
+      : await publishHostedWebDeployment(api, body, publishOptions);
+    const {nativeManifestUrl} = result;
     if (
       result.mapId !== mapId ||
-      result.renderers.native.manifestUrl !== nativeManifestUrl ||
-      names.join('\0') !== Object.keys(result.renderers.web.themes).sort().join('\0')
+      nativeManifestUrl !== (split ? expectedNativeUrl : undefined) ||
+      names.join('\0') !== Object.keys(result.themes).sort().join('\0')
     )
       throw new HostedDeploymentError(
         'The deployment did not confirm the requested Map and its complete theme family.',
       );
+    if (
+      result.familyUrl &&
+      result.familyUrl !== `${apiOrigin}/maps/${mapId}/family/v${result.version}.json`
+    )
+      throw new HostedDeploymentError('The deployment returned an unexpected family route.');
     for (const name of names) {
-      if (result.renderers.web.themes[name]!.styleUrl !== `${apiOrigin}/maps/${mapId}/${name}.json`)
+      if (result.themes[name]!.styleUrl !== `${apiOrigin}/maps/${mapId}/${name}.json`)
         throw new HostedDeploymentError('The deployment returned an unexpected delivery route.');
     }
 
@@ -495,20 +537,20 @@ export async function runHostedDeploy(
       defaultTheme: build.defaultTheme,
       environment: prepared.mapName,
       mapId,
-      ...(result.renderers.web.familyUrl ? {familyUrl: result.renderers.web.familyUrl} : {}),
+      ...(result.familyUrl ? {familyUrl: result.familyUrl} : {}),
       ...(build.systemThemes ? {systemThemes: build.systemThemes} : {}),
       ...(build.timeOfDay && Object.keys(build.timeOfDay).length
         ? {timeOfDay: build.timeOfDay}
         : {}),
       themes: Object.fromEntries(
         names.map((name) => {
-          const deployed = result.renderers.web.themes[name]!;
+          const deployed = result.themes[name]!;
           return [
             name,
             {
               colorScheme: build.themes[name]!.colorScheme,
               fontFaces: getTileflowStyleFontFaces(
-                artifact.renderers.web.styles[name] as MapLibreStyle,
+                webArtifact(artifact).styles[name] as MapLibreStyle,
               ),
               revision: build.themes[name]!.styleSha256,
               ...(deployed.styleId ? {styleId: deployed.styleId} : {}),
@@ -540,8 +582,11 @@ export async function runHostedDeploy(
       version: result.version,
       changed: result.changed,
       entry,
-      nativeManifestUrl,
-      nativeDifferences: summarizeNativeDifferences(artifact.renderers.native.family),
+      ...(nativeManifestUrl ? {nativeManifestUrl} : {}),
+      nativeDifferences:
+        artifact.schemaVersion === 1
+          ? []
+          : summarizeNativeDifferences(artifact.renderers.native.family),
       teamModels: result.teamModels ?? [],
     });
   } finally {

@@ -17,7 +17,13 @@ import {
   requestJson,
   startFakePlatform,
 } from './hosted-platform-fake';
-import {tileflowMapFixture} from './map-fixture';
+import {tileflowMapFixture as mapFixture} from './map-fixture';
+
+const tileflowMapFixture = (input: Parameters<typeof mapFixture>[0]) =>
+  mapFixture({
+    ...input,
+    fields: ['platforms: ["web", "native"]', input.fields].filter(Boolean).join(',\n'),
+  });
 
 const fakeApiKey = `tf_live_${'a'.repeat(48)}`;
 const accountSessionToken = `tf_session_${'b'.repeat(64)}`;
@@ -555,7 +561,7 @@ test("deploy uploads a map's own fonts as a font bundle that both renderer famil
   const fixture = await createFixture(t);
   await writeFile(
     fixture.configPath,
-    "import {defineMap} from '@tileflow/core'; import {baedeker} from '@tileflow/maps'; export default defineMap({id:'night',name:'Night',version:1,extends:baedeker});\n",
+    "import {defineMap} from '@tileflow/core'; import {baedeker} from '@tileflow/maps'; export default defineMap({id:'night',name:'Night',version:1,platforms:['web','native'],extends:baedeker});\n",
   );
   const api = await startFakePlatform(t, {mapId: managedMapId});
   const result = await runCli(fixture.directory, deployArguments(fixture, api.url), {
@@ -1306,6 +1312,12 @@ async function createSharedIconFixture(t: TestContext) {
   const directory = await mkdtemp(join(tmpdir(), 'tileflow-shared-icons-'));
   t.after(() => rm(directory, {force: true, recursive: true}));
   await createTileflowIconSetProject(directory, {mapId: 'madrid'});
+  const configPath = join(directory, 'tileflow.config.ts');
+  const config = await readFile(configPath, 'utf8');
+  await writeFile(
+    configPath,
+    config.replace('defineMap({', 'defineMap({platforms: ["web", "native"],'),
+  );
   return {
     configPath: join(directory, 'tileflow.config.ts'),
     directory,
@@ -1368,3 +1380,66 @@ function runCli(
     child.on('close', (code) => resolve({code, stderr, stdout}));
   });
 }
+
+test('native CI does not re-upload when only lockfiles and build receipts change', async (t) => {
+  const fixture = await createFixture(t);
+  const lock = join(fixture.directory, 'pnpm-lock.yaml');
+  const api = await startFakePlatform(t, {mapId: managedMapId, preflight: true});
+  const run = (sha: string) =>
+    runCli(fixture.directory, [...deployArguments(fixture, api.url), '--map-id', managedMapId], {
+      TILEFLOW_API_KEY: fakeApiKey,
+      GITHUB_ACTIONS: 'true',
+      GITHUB_SHA: sha,
+    });
+  await writeFile(lock, 'lockfileVersion: 9.0\n');
+  const first = await run('first');
+  assert.equal(first.code, 0, `${first.stdout}\n${first.stderr}`);
+  assert.ok(api.uploads.length > 0);
+  const before = api.requests.length;
+  await writeFile(lock, 'lockfileVersion: 9.0\n# unrelated change\n');
+  const second = await run('second');
+  assert.equal(second.code, 0, `${second.stdout}\n${second.stderr}`);
+  assert.match(second.stdout, /Unchanged madrid \(v1\)/u);
+  assert.deepEqual(
+    api.requests.slice(before).map(({path}) => path),
+    ['/v1/styles/publications/check'],
+  );
+});
+
+test('web-only CI publishes without native uploads and a new lockfile needs only a check', async (t) => {
+  const fixture = await createFixture(t);
+  await writeFile(fixture.configPath, mapFixture({id: 'madrid'}));
+  await writeFile(
+    join(fixture.directory, 'package.json'),
+    JSON.stringify({
+      dependencies: {'@tileflow/react-native': '1.0.0'},
+    }),
+  );
+  const lock = join(fixture.directory, 'pnpm-lock.yaml');
+  await writeFile(lock, 'lockfileVersion: 9.0\n');
+  const api = await startFakePlatform(t, {mapId: managedMapId, preflight: true});
+  const run = (sha: string) =>
+    runCli(fixture.directory, [...deployArguments(fixture, api.url), '--map-id', managedMapId], {
+      TILEFLOW_API_KEY: fakeApiKey,
+      GITHUB_ACTIONS: 'true',
+      GITHUB_SHA: sha,
+    });
+  const first = await run('first');
+  assert.equal(first.code, 0, `${first.stdout}\n${first.stderr}`);
+  assert.match(first.stdout, /platforms: \["web", "native"\],/u);
+  assert.match(first.stdout, /Published madrid \(v1\) for web\./u);
+  assert.equal(api.deployments[0]!.body.artifact?.schemaVersion, 3);
+  assert.equal(api.uploads.length, 0);
+
+  await writeFile(lock, 'lockfileVersion: 9.0\n# unrelated change\n');
+  const second = await run('second');
+  assert.equal(second.code, 0, `${second.stdout}\n${second.stderr}`);
+  assert.match(second.stdout, /Unchanged madrid \(v1\)/u);
+  assert.equal(api.deployments.length, 1);
+  const checks = api.requests.filter(({path}) => path === '/v1/styles/publications/check');
+  assert.equal(checks.length, 2);
+  assert.notEqual(
+    requestJson(checks[0]!).builds[0].lockfile.sha256,
+    requestJson(checks[1]!).builds[0].lockfile.sha256,
+  );
+});

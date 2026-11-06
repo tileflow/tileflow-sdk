@@ -35,6 +35,11 @@ public enum class TileflowErrorCode(
     TIMEOUT("timeout", true),
     /** A map resource or application data could not be loaded or verified. */
     RESOURCE_FAILED("resourceFailed", true),
+    /**
+     * The Hosted map has no native publication. Enable native in its map configuration and deploy
+     * again.
+     */
+    NATIVE_PUBLICATION_REQUIRED("nativePublicationRequired", false),
     /** The renderer stopped or could not complete an operation. Reloading starts a new renderer. */
     RENDERER_FAILED("rendererFailed", true),
     /** The Hosted credential was rejected. */

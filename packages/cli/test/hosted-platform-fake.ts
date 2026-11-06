@@ -9,6 +9,9 @@ import {
 import {gunzipSync} from 'node:zlib';
 import {serializeCanonicalJson} from '@tileflow/core';
 import {
+  expandTileflowDeploymentArtifact,
+  hashHostedPublicationContent,
+  hostedPublicationContentParts,
   type TileflowRendererDeploymentRequestArtifact,
   tileflowRendererDeploymentRequestArtifactSchema,
 } from '@tileflow/core/build';
@@ -67,6 +70,7 @@ export type FakePlatform = {
 
 export type FakePlatformOptions = Readonly<{
   mapId?: string;
+  preflight?: boolean;
   /** A credential profile for `/v1/me`; `false` answers 404. */
   profile?: Record<string, unknown> | false;
   /** Answer a request before the platform does; `undefined` lets the platform answer it. */
@@ -86,6 +90,7 @@ export async function startFakePlatform(
   const fontBundles = new Set<string>();
   let accepted = 0;
   let origin = '';
+  let activeWeb: {hash: string; value: Record<string, unknown>} | undefined;
   const platform: FakePlatform = {
     get url() {
       return origin;
@@ -94,7 +99,9 @@ export async function startFakePlatform(
     requests: [],
     deployments: [],
     uploads: [],
-    activeVersion: () => reservations.find((reservation) => reservation.active)?.version,
+    activeVersion: () =>
+      reservations.find((reservation) => reservation.active)?.version ??
+      (activeWeb?.value.version as number | undefined),
   };
 
   const result = (reservation: Reservation, changed: boolean) => {
@@ -145,7 +152,7 @@ export async function startFakePlatform(
     ...(reservation.documents.has('family') ? [] : [{document: 'family' as const}]),
   ];
 
-  const deploy = (request: FakePlatformRequest): FakePlatformReply => {
+  const deploy = async (request: FakePlatformRequest): Promise<FakePlatformReply> => {
     let body: Record<string, any>;
     try {
       body = JSON.parse(request.body.toString('utf8')) as Record<string, any>;
@@ -156,6 +163,33 @@ export async function startFakePlatform(
       platform.deployments.push({body, status: reply.status});
       return reply;
     };
+    if (body.artifact?.schemaVersion === 3 && request.headers['x-tileflow-publication'] === 'web') {
+      const {styles} = expandTileflowDeploymentArtifact(body.artifact) as {
+        styles: Record<string, unknown>;
+      };
+      const hash = await hashHostedPublicationContent(
+        hostedPublicationContentParts(request.body, () => true),
+      );
+      const version = (platform.activeVersion() ?? 0) + 1;
+      activeWeb = {
+        hash,
+        value: {
+          mapId,
+          version,
+          changed: true,
+          deploymentId: `dep_web${version}`,
+          themes: Object.fromEntries(
+            Object.keys(styles).map((theme) => [
+              theme,
+              {
+                styleUrl: `${origin}/maps/${mapId}/${theme}.json`,
+              },
+            ]),
+          ),
+        },
+      };
+      return answer({status: 200, body: activeWeb.value});
+    }
     if ([2, 4].includes(body.artifact?.schemaVersion))
       return answer(failure(400, 'TF_RENDERER_DEPLOYMENT_RETIRED'));
     if (body.artifact?.schemaVersion !== 5)
@@ -164,8 +198,9 @@ export async function startFakePlatform(
       return answer(failure(403, 'TF_MAP_FORBIDDEN'));
     const parsed = tileflowRendererDeploymentRequestArtifactSchema.safeParse(body.artifact);
     if (!parsed.success) return answer(failure(400, 'TF_RENDERER_DEPLOYMENT_INVALID'));
-    const {source: _source, ...content} = body;
-    const key = sha256(serializeCanonicalJson(content));
+    const key = await hashHostedPublicationContent(
+      hostedPublicationContentParts(request.body, () => true),
+    );
     const active = reservations.find((reservation) => reservation.active);
     if (active?.key === key) return answer({status: 200, body: result(active, false)});
     let reservation = reservations.find((value) => !value.active && value.key === key);
@@ -361,6 +396,18 @@ export async function startFakePlatform(
         headers: incoming.headers,
         body: incoming.headers['content-encoding'] === 'gzip' ? gunzipSync(raw) : raw,
       };
+      if (path === '/v1/styles/publications/check' && !options.preflight) {
+        reply(response, failure(404, 'TF_NOT_FOUND'));
+        return;
+      }
+      if (
+        request.method === 'GET' &&
+        /^\/v1\/(?:icon-packages|font-bundles)\/[a-f0-9]{64}$/u.test(path) &&
+        !options.preflight
+      ) {
+        reply(response, failure(404, 'TF_NOT_FOUND'));
+        return;
+      }
       platform.requests.push(request);
       const intercepted = await options.intercept?.(request, platform);
       if (intercepted) {
@@ -373,8 +420,22 @@ export async function startFakePlatform(
         );
       const icon = /^\/v1\/icon-packages\/([a-f0-9]{64})$/u.exec(path);
       const font = /^\/v1\/font-bundles\/([a-f0-9]{64})$/u.exec(path);
-      if (request.method === 'POST' && path === '/v1/styles') reply(response, deploy(request));
-      else if (request.method === 'PUT' && styleUpload)
+      if (request.method === 'POST' && path === '/v1/styles')
+        reply(response, await deploy(request));
+      else if (request.method === 'POST' && path === '/v1/styles/publications/check') {
+        const input = requestJson(request);
+        if (activeWeb && input.contentHash === activeWeb.hash)
+          reply(response, {status: 200, body: {...activeWeb.value, changed: false}});
+        else {
+          const active = reservations.find((reservation) => reservation.active);
+          reply(
+            response,
+            active?.key === input.contentHash
+              ? {status: 200, body: result(active!, false)}
+              : {status: 204, body: null},
+          );
+        }
+      } else if (request.method === 'PUT' && styleUpload)
         reply(response, upload(request, styleUpload));
       else if (request.method === 'PUT' && icon)
         reply(response, await iconPackage(request, icon[1]!));

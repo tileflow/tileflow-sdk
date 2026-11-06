@@ -7,6 +7,7 @@ import dev.tileflow.sdk.TileflowResourceKind
 import java.net.URI
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -65,7 +66,8 @@ class NativeManifestTest {
             NativeManifest.read(hostedSource(), read)
             fail("An online map without a native representation opened")
         } catch (error: TileflowMapException) {
-            assertEquals(TileflowErrorCode.RESOURCE_FAILED, error.code)
+            assertEquals("nativePublicationRequired", error.code.wireName)
+            assertTrue(error.message.orEmpty().contains("platforms: [\"web\", \"native\"]"))
             assertEquals(TileflowResourceKind.MANIFEST, error.context.resource)
         }
         assertEquals(listOf(URI(discovery)), requests)

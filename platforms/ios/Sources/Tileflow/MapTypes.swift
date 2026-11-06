@@ -21,6 +21,9 @@ extension TileflowMapError {
     case timeout
     /// A map resource or application data could not be loaded or verified.
     case resourceFailed
+    /// The Hosted map has no native publication. Enable native in its map configuration and deploy
+    /// again.
+    case nativePublicationRequired
     /// The renderer stopped or could not complete an operation. Reloading starts a new renderer.
     case rendererFailed
     /// The Hosted credential was rejected.
@@ -61,6 +64,7 @@ extension TileflowMapError {
       case .disposed: false
       case .timeout: true
       case .resourceFailed: true
+      case .nativePublicationRequired: false
       case .rendererFailed: true
       case .credentialRejected: false
       case .accessDenied: false
@@ -93,6 +97,9 @@ extension TileflowMapError {
   public static let timeout = TileflowMapError(.timeout)
   /// A map resource or application data could not be loaded or verified.
   public static let resourceFailed = TileflowMapError(.resourceFailed)
+  /// The Hosted map has no native publication. Enable native in its map configuration and deploy
+  /// again.
+  public static let nativePublicationRequired = TileflowMapError(.nativePublicationRequired)
   /// The renderer stopped or could not complete an operation. Reloading starts a new renderer.
   public static let rendererFailed = TileflowMapError(.rendererFailed)
   /// The Hosted credential was rejected.

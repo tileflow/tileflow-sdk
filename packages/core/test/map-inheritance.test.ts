@@ -614,3 +614,18 @@ const forbiddenRootEnabledPatch: TileflowModulePatch<SyntheticModuleWithHomonymo
 };
 
 void [nestedHomonymousPatch, forbiddenRootTypePatch, forbiddenRootEnabledPatch];
+
+test('Hosted platforms default to web and belong to the leaf map', () => {
+  const base = defineMap({
+    id: 'base',
+    version: 1,
+    defaultTheme: 'light',
+    themes: {light: testLightTheme},
+    platforms: ['web', 'native'],
+  });
+  assert.deepEqual(parseTileflowMap(base).platforms, ['web', 'native']);
+  assert.deepEqual(parseTileflowMap({id: 'child', version: 1, extends: base}).platforms, ['web']);
+  for (const platforms of [[], ['native'], ['web', 'web'], ['web', 'ios'], null]) {
+    assert.throws(() => parseTileflowMap({...base, platforms} as TileflowMap), /platforms/u);
+  }
+});

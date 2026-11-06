@@ -201,6 +201,11 @@
       "sources": ["host", "renderer"],
       "description": "A map resource or application data could not be loaded or verified."
     },
+    "nativePublicationRequired": {
+      "recoverable": false,
+      "sources": ["host"],
+      "description": "The Hosted map has no native publication. Enable native in its map configuration and deploy again."
+    },
     "rendererFailed": {
       "recoverable": true,
       "sources": ["host", "renderer"],

@@ -102,7 +102,8 @@ final class NativeStyleDocumentTests: XCTestCase {
       _ = try await NativeManifest.load(map: map, manifestURL: discovery, discoveryMapID: map, read: read)
       XCTFail("Online discovery must announce a native profile")
     } catch let error as TileflowMapError {
-      XCTAssertEqual(error, .resourceFailed)
+      XCTAssertEqual(error.code.rawValue, "nativePublicationRequired")
+      XCTAssertTrue(error.description.contains(#"platforms: ["web", "native"]"#))
       XCTAssertEqual(error.context.resource, .manifest)
     }
     XCTAssertEqual(requests, [discovery])

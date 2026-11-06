@@ -232,7 +232,10 @@ test('deploy without --map-id creates the Map after local preflight and deploys 
   await linkWorkspacePackages(directory);
   const configPath = join(directory, 'tileflow.config.ts');
   const manifestPath = join(directory, 'manifest.json');
-  await writeFile(configPath, tileflowMapFixture({id: 'madrid', fields: `name: 'Madrid'`}));
+  await writeFile(
+    configPath,
+    tileflowMapFixture({id: 'madrid', fields: `name: 'Madrid', platforms: ['web','native']`}),
+  );
   const capability = `tf_cap_${'c'.repeat(96)}`;
   const api = await startFakePlatform(t, {
     mapId: createdMapId,

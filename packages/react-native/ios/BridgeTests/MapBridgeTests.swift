@@ -165,6 +165,24 @@ final class MapBridgeTests: XCTestCase {
     await fulfillment(of: [rejected], timeout: 1)
   }
 
+  func testWebOnlyHostedMapReportsHowToEnableNative() async throws {
+    let map = "map_offlinefixture01"
+    let discovery = URL(string: "https://maps.example.test/maps/\(map)/mobile/manifest.json")!
+    do {
+      _ = try await NativeManifest.load(map: "city", manifestURL: discovery, discoveryMapID: map) { _, _ in
+        ["mapId": map, "representations": [
+          "webview-v1": ["manifestUrl": "https://maps.example.test/mobile/webview-v1/manifest.json"],
+        ]]
+      }
+      XCTFail("An online web-only map must fail in the native renderer")
+    } catch {
+      let failure = MapBridgeValues.failure(error)
+      XCTAssertEqual(failure.code, "nativePublicationRequired")
+      XCTAssertTrue(failure.message.contains(#"platforms: ["web", "native"]"#))
+      XCTAssertEqual(failure.info["recoverable"] as? Bool, false)
+    }
+  }
+
   func testInconsistentFamilyWarnsAndSwitchesThroughTheBridge() async throws {
     let port = ProcessInfo.processInfo.environment["TILEFLOW_FIXTURE_PORT"] ?? "18645"
     let url = URL(string: "http://127.0.0.1:\(port)/native-inconsistent/manifest.json")!

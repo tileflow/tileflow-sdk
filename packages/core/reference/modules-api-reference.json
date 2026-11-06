@@ -25,6 +25,7 @@
       "modules": "modules",
       "name": "identity",
       "overlays": "keyed-resources",
+      "platforms": "leaf",
       "projection": "atomic",
       "scenes": "leaf",
       "shots": "leaf",
@@ -287,32 +288,35 @@
         "overlays": {
           "$ref": "#/$defs/TileflowOverlayCollectionAuthoring"
         },
-        "projection": {
+        "platforms": {
           "$ref": "#/$defs/__schema279"
         },
-        "sky": {
+        "projection": {
           "$ref": "#/$defs/__schema280"
+        },
+        "sky": {
+          "$ref": "#/$defs/__schema281"
         },
         "sources": {
           "$ref": "#/$defs/TileflowHostedSourceCollectionAuthoring"
         },
         "systemThemes": {
-          "$ref": "#/$defs/__schema290"
-        },
-        "terrain": {
           "$ref": "#/$defs/__schema291"
         },
+        "terrain": {
+          "$ref": "#/$defs/__schema292"
+        },
         "themes": {
-          "$ref": "#/$defs/__schema332"
+          "$ref": "#/$defs/__schema333"
         },
         "timeOfDay": {
-          "$ref": "#/$defs/__schema340"
-        },
-        "version": {
           "$ref": "#/$defs/__schema341"
         },
-        "view": {
+        "version": {
           "$ref": "#/$defs/__schema342"
+        },
+        "view": {
+          "$ref": "#/$defs/__schema343"
         },
         "scenes": {
           "type": "object",
@@ -389,32 +393,35 @@
         "overlays": {
           "$ref": "#/$defs/TileflowOverlayCollectionAuthoring"
         },
-        "projection": {
+        "platforms": {
           "$ref": "#/$defs/__schema279"
         },
-        "sky": {
+        "projection": {
           "$ref": "#/$defs/__schema280"
+        },
+        "sky": {
+          "$ref": "#/$defs/__schema281"
         },
         "sources": {
           "$ref": "#/$defs/TileflowHostedSourceCollectionAuthoring"
         },
         "systemThemes": {
-          "$ref": "#/$defs/__schema290"
-        },
-        "terrain": {
           "$ref": "#/$defs/__schema291"
         },
+        "terrain": {
+          "$ref": "#/$defs/__schema292"
+        },
         "themes": {
-          "$ref": "#/$defs/__schema332"
+          "$ref": "#/$defs/__schema333"
         },
         "timeOfDay": {
-          "$ref": "#/$defs/__schema340"
-        },
-        "version": {
           "$ref": "#/$defs/__schema341"
         },
-        "view": {
+        "version": {
           "$ref": "#/$defs/__schema342"
+        },
+        "view": {
+          "$ref": "#/$defs/__schema343"
         },
         "scenes": {
           "type": "object",
@@ -1157,32 +1164,35 @@
         "overlays": {
           "$ref": "#/$defs/__schema275"
         },
-        "projection": {
+        "platforms": {
           "$ref": "#/$defs/__schema279"
         },
-        "sky": {
+        "projection": {
           "$ref": "#/$defs/__schema280"
         },
+        "sky": {
+          "$ref": "#/$defs/__schema281"
+        },
         "sources": {
-          "$ref": "#/$defs/__schema282"
+          "$ref": "#/$defs/__schema283"
         },
         "systemThemes": {
-          "$ref": "#/$defs/__schema290"
-        },
-        "terrain": {
           "$ref": "#/$defs/__schema291"
         },
+        "terrain": {
+          "$ref": "#/$defs/__schema292"
+        },
         "themes": {
-          "$ref": "#/$defs/__schema332"
+          "$ref": "#/$defs/__schema333"
         },
         "timeOfDay": {
-          "$ref": "#/$defs/__schema340"
-        },
-        "version": {
           "$ref": "#/$defs/__schema341"
         },
-        "view": {
+        "version": {
           "$ref": "#/$defs/__schema342"
+        },
+        "view": {
+          "$ref": "#/$defs/__schema343"
         }
       },
       "required": ["defaultTheme", "id", "name", "themes", "version"],
@@ -10354,10 +10364,59 @@
     },
     "__schema278": {},
     "__schema279": {
+      "default": ["web"],
+      "anyOf": [
+        {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "string",
+              "const": "web"
+            }
+          ],
+          "items": false,
+          "minItems": 1,
+          "maxItems": 1
+        },
+        {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "string",
+              "const": "web"
+            },
+            {
+              "type": "string",
+              "const": "native"
+            }
+          ],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2
+        },
+        {
+          "type": "array",
+          "prefixItems": [
+            {
+              "type": "string",
+              "const": "native"
+            },
+            {
+              "type": "string",
+              "const": "web"
+            }
+          ],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2
+        }
+      ]
+    },
+    "__schema280": {
       "type": "string",
       "enum": ["globe", "mercator"]
     },
-    "__schema280": {
+    "__schema281": {
       "anyOf": [
         {
           "type": "boolean"
@@ -10372,20 +10431,20 @@
               "$ref": "#/$defs/__schema1"
             },
             "horizonBlend": {
-              "$ref": "#/$defs/__schema281"
+              "$ref": "#/$defs/__schema282"
             },
             "glowColor": {
               "$ref": "#/$defs/__schema1"
             },
             "starIntensity": {
-              "$ref": "#/$defs/__schema281"
+              "$ref": "#/$defs/__schema282"
             }
           },
           "additionalProperties": false
         }
       ]
     },
-    "__schema281": {
+    "__schema282": {
       "anyOf": [
         {
           "type": "number",
@@ -10415,57 +10474,57 @@
         }
       ]
     },
-    "__schema282": {
+    "__schema283": {
       "type": "object",
       "propertyNames": {
         "$ref": "#/$defs/__schema28"
       },
       "additionalProperties": {
-        "$ref": "#/$defs/__schema283"
+        "$ref": "#/$defs/__schema284"
       }
     },
-    "__schema283": {
+    "__schema284": {
       "type": "object",
       "properties": {
         "attribution": {
-          "$ref": "#/$defs/__schema284"
-        },
-        "kind": {
           "$ref": "#/$defs/__schema285"
         },
-        "local": {
+        "kind": {
           "$ref": "#/$defs/__schema286"
         },
-        "tileset": {
+        "local": {
           "$ref": "#/$defs/__schema287"
         },
-        "tileSize": {
+        "tileset": {
           "$ref": "#/$defs/__schema288"
         },
-        "type": {
+        "tileSize": {
           "$ref": "#/$defs/__schema289"
+        },
+        "type": {
+          "$ref": "#/$defs/__schema290"
         }
       },
       "required": ["attribution", "kind", "local", "tileset", "type"],
       "additionalProperties": false
     },
-    "__schema284": {
+    "__schema285": {
       "type": "string",
       "minLength": 1,
       "maxLength": 4096
     },
-    "__schema285": {
+    "__schema286": {
       "type": "string",
       "const": "hosted-tileset"
     },
-    "__schema286": {
+    "__schema287": {
       "type": "string"
     },
-    "__schema287": {
+    "__schema288": {
       "type": "string",
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
     },
-    "__schema288": {
+    "__schema289": {
       "anyOf": [
         {
           "type": "number",
@@ -10477,11 +10536,11 @@
         }
       ]
     },
-    "__schema289": {
+    "__schema290": {
       "type": "string",
       "enum": ["raster", "vector"]
     },
-    "__schema290": {
+    "__schema291": {
       "type": "object",
       "properties": {
         "dark": {
@@ -10494,7 +10553,7 @@
       "required": ["dark", "light"],
       "additionalProperties": false
     },
-    "__schema291": {
+    "__schema292": {
       "anyOf": [
         {
           "type": "string",
@@ -10504,84 +10563,84 @@
           "type": "object",
           "properties": {
             "attribution": {
-              "$ref": "#/$defs/__schema292"
-            },
-            "contours": {
               "$ref": "#/$defs/__schema293"
             },
-            "encoding": {
-              "$ref": "#/$defs/__schema319"
+            "contours": {
+              "$ref": "#/$defs/__schema294"
             },
-            "exaggeration": {
+            "encoding": {
               "$ref": "#/$defs/__schema320"
             },
-            "hillshade": {
+            "exaggeration": {
               "$ref": "#/$defs/__schema321"
             },
+            "hillshade": {
+              "$ref": "#/$defs/__schema322"
+            },
             "tiles": {
-              "$ref": "#/$defs/__schema324"
+              "$ref": "#/$defs/__schema325"
             },
             "tileSize": {
-              "$ref": "#/$defs/__schema326"
-            },
-            "minZoom": {
               "$ref": "#/$defs/__schema327"
             },
-            "maxZoom": {
+            "minZoom": {
               "$ref": "#/$defs/__schema328"
             },
-            "mode": {
+            "maxZoom": {
               "$ref": "#/$defs/__schema329"
             },
-            "sourceId": {
+            "mode": {
               "$ref": "#/$defs/__schema330"
             },
-            "url": {
+            "sourceId": {
               "$ref": "#/$defs/__schema331"
+            },
+            "url": {
+              "$ref": "#/$defs/__schema332"
             }
           },
           "additionalProperties": false
         }
       ]
     },
-    "__schema292": {
+    "__schema293": {
       "type": "string"
     },
-    "__schema293": {
+    "__schema294": {
       "type": "object",
       "properties": {
         "demMaxZoom": {
-          "$ref": "#/$defs/__schema294"
-        },
-        "demUrl": {
           "$ref": "#/$defs/__schema295"
         },
-        "index": {
+        "demUrl": {
           "$ref": "#/$defs/__schema296"
         },
+        "index": {
+          "$ref": "#/$defs/__schema297"
+        },
         "labels": {
-          "$ref": "#/$defs/__schema303"
+          "$ref": "#/$defs/__schema304"
         },
         "maxZoom": {
-          "$ref": "#/$defs/__schema308"
-        },
-        "minZoom": {
           "$ref": "#/$defs/__schema309"
         },
-        "minor": {
+        "minZoom": {
           "$ref": "#/$defs/__schema310"
         },
-        "multiplier": {
+        "minor": {
           "$ref": "#/$defs/__schema311"
         },
-        "overzoom": {
+        "multiplier": {
           "$ref": "#/$defs/__schema312"
         },
-        "sourceId": {
+        "overzoom": {
           "$ref": "#/$defs/__schema313"
         },
-        "thresholds": {
+        "sourceId": {
           "$ref": "#/$defs/__schema314"
+        },
+        "thresholds": {
+          "$ref": "#/$defs/__schema315"
         }
       },
       "required": ["demMaxZoom", "thresholds"],
@@ -10609,63 +10668,37 @@
         }
       ]
     },
-    "__schema294": {
+    "__schema295": {
       "type": "integer",
       "minimum": 0,
       "maximum": 24
     },
-    "__schema295": {
+    "__schema296": {
       "type": "string",
       "minLength": 1,
       "maxLength": 2048,
       "description": "Safe HTTP(S) DEM tile template containing each of {z}, {x}, and {y} exactly once; credentials, fragments, protocol-relative URLs, backslashes, controls, and non-loopback plain HTTP are forbidden.",
       "x-tileflow-refinement": "Must pass the exact Core DEM-template parser, including WHATWG URL and loopback checks."
     },
-    "__schema296": {
-      "$ref": "#/$defs/__schema297"
-    },
     "__schema297": {
+      "$ref": "#/$defs/__schema298"
+    },
+    "__schema298": {
       "type": "object",
       "properties": {
         "maxZoom": {
-          "$ref": "#/$defs/__schema298"
-        },
-        "minZoom": {
           "$ref": "#/$defs/__schema299"
         },
-        "visible": {
+        "minZoom": {
           "$ref": "#/$defs/__schema300"
+        },
+        "visible": {
+          "$ref": "#/$defs/__schema301"
         },
         "color": {
           "$ref": "#/$defs/__schema146"
         },
         "opacity": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/__schema301"
-            },
-            {
-              "type": "object",
-              "properties": {
-                "kind": {
-                  "$ref": "#/$defs/__schema11"
-                },
-                "reason": {
-                  "$ref": "#/$defs/__schema12"
-                },
-                "value": {
-                  "$ref": "#/$defs/__schema301"
-                }
-              },
-              "required": ["kind", "reason", "value"],
-              "additionalProperties": false
-            },
-            {
-              "$ref": "#/$defs/__schema13"
-            }
-          ]
-        },
-        "width": {
           "anyOf": [
             {
               "$ref": "#/$defs/__schema302"
@@ -10690,54 +10723,11 @@
               "$ref": "#/$defs/__schema13"
             }
           ]
-        }
-      },
-      "additionalProperties": false
-    },
-    "__schema298": {
-      "$ref": "#/$defs/__schema45"
-    },
-    "__schema299": {
-      "$ref": "#/$defs/__schema45"
-    },
-    "__schema300": {
-      "type": "boolean"
-    },
-    "__schema301": {
-      "type": "number",
-      "minimum": 0,
-      "maximum": 1
-    },
-    "__schema302": {
-      "type": "number",
-      "minimum": 0,
-      "maximum": 32
-    },
-    "__schema303": {
-      "type": "object",
-      "properties": {
-        "maxZoom": {
-          "$ref": "#/$defs/__schema298"
         },
-        "minZoom": {
-          "$ref": "#/$defs/__schema299"
-        },
-        "visible": {
-          "$ref": "#/$defs/__schema300"
-        },
-        "color": {
-          "$ref": "#/$defs/__schema146"
-        },
-        "font": {
-          "$ref": "#/$defs/__schema141"
-        },
-        "haloColor": {
-          "$ref": "#/$defs/__schema146"
-        },
-        "haloWidth": {
+        "width": {
           "anyOf": [
             {
-              "$ref": "#/$defs/__schema304"
+              "$ref": "#/$defs/__schema303"
             },
             {
               "type": "object",
@@ -10749,7 +10739,7 @@
                   "$ref": "#/$defs/__schema12"
                 },
                 "value": {
-                  "$ref": "#/$defs/__schema304"
+                  "$ref": "#/$defs/__schema303"
                 }
               },
               "required": ["kind", "reason", "value"],
@@ -10759,8 +10749,51 @@
               "$ref": "#/$defs/__schema13"
             }
           ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "__schema299": {
+      "$ref": "#/$defs/__schema45"
+    },
+    "__schema300": {
+      "$ref": "#/$defs/__schema45"
+    },
+    "__schema301": {
+      "type": "boolean"
+    },
+    "__schema302": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "__schema303": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 32
+    },
+    "__schema304": {
+      "type": "object",
+      "properties": {
+        "maxZoom": {
+          "$ref": "#/$defs/__schema299"
         },
-        "opacity": {
+        "minZoom": {
+          "$ref": "#/$defs/__schema300"
+        },
+        "visible": {
+          "$ref": "#/$defs/__schema301"
+        },
+        "color": {
+          "$ref": "#/$defs/__schema146"
+        },
+        "font": {
+          "$ref": "#/$defs/__schema141"
+        },
+        "haloColor": {
+          "$ref": "#/$defs/__schema146"
+        },
+        "haloWidth": {
           "anyOf": [
             {
               "$ref": "#/$defs/__schema305"
@@ -10786,7 +10819,7 @@
             }
           ]
         },
-        "size": {
+        "opacity": {
           "anyOf": [
             {
               "$ref": "#/$defs/__schema306"
@@ -10812,7 +10845,7 @@
             }
           ]
         },
-        "spacing": {
+        "size": {
           "anyOf": [
             {
               "$ref": "#/$defs/__schema307"
@@ -10837,61 +10870,87 @@
               "$ref": "#/$defs/__schema13"
             }
           ]
+        },
+        "spacing": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/__schema308"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "$ref": "#/$defs/__schema11"
+                },
+                "reason": {
+                  "$ref": "#/$defs/__schema12"
+                },
+                "value": {
+                  "$ref": "#/$defs/__schema308"
+                }
+              },
+              "required": ["kind", "reason", "value"],
+              "additionalProperties": false
+            },
+            {
+              "$ref": "#/$defs/__schema13"
+            }
+          ]
         }
       },
       "additionalProperties": false
     },
-    "__schema304": {
+    "__schema305": {
       "type": "number",
       "minimum": 0,
       "maximum": 16
     },
-    "__schema305": {
+    "__schema306": {
       "type": "number",
       "minimum": 0,
       "maximum": 1
     },
-    "__schema306": {
+    "__schema307": {
       "type": "number",
       "minimum": 1,
       "maximum": 64
     },
-    "__schema307": {
+    "__schema308": {
       "type": "number",
       "minimum": 1,
       "maximum": 1000
     },
-    "__schema308": {
+    "__schema309": {
       "type": "integer",
       "minimum": 0,
       "maximum": 24
     },
-    "__schema309": {
+    "__schema310": {
       "$ref": "#/$defs/__schema45"
     },
-    "__schema310": {
-      "$ref": "#/$defs/__schema297"
-    },
     "__schema311": {
+      "$ref": "#/$defs/__schema298"
+    },
+    "__schema312": {
       "type": "number",
       "minimum": 0.001,
       "maximum": 100
     },
-    "__schema312": {
+    "__schema313": {
       "type": "integer",
       "minimum": 0,
       "maximum": 8
     },
-    "__schema313": {
+    "__schema314": {
       "$ref": "#/$defs/__schema41"
     },
-    "__schema314": {
+    "__schema315": {
       "type": "object",
       "propertyNames": {
-        "$ref": "#/$defs/__schema315"
+        "$ref": "#/$defs/__schema316"
       },
       "additionalProperties": {
-        "$ref": "#/$defs/__schema316"
+        "$ref": "#/$defs/__schema317"
       },
       "minProperties": 1,
       "maxProperties": 25,
@@ -10907,28 +10966,23 @@
         }
       ]
     },
-    "__schema315": {
+    "__schema316": {
       "type": "string",
       "pattern": "^(?:0|[1-9]|1\\d|2[0-4])$"
     },
-    "__schema316": {
+    "__schema317": {
       "type": "array",
       "prefixItems": [
         {
-          "$ref": "#/$defs/__schema317"
+          "$ref": "#/$defs/__schema318"
         },
         {
-          "$ref": "#/$defs/__schema318"
+          "$ref": "#/$defs/__schema319"
         }
       ],
       "items": false,
       "minItems": 2,
       "maxItems": 2
-    },
-    "__schema317": {
-      "type": "number",
-      "minimum": 0.001,
-      "maximum": 100000
     },
     "__schema318": {
       "type": "number",
@@ -10936,63 +10990,35 @@
       "maximum": 100000
     },
     "__schema319": {
+      "type": "number",
+      "minimum": 0.001,
+      "maximum": 100000
+    },
+    "__schema320": {
       "type": "string",
       "enum": ["mapbox", "terrarium"]
     },
-    "__schema320": {
+    "__schema321": {
       "type": "number",
       "minimum": 0,
       "maximum": 10
     },
-    "__schema321": {
+    "__schema322": {
       "type": "object",
       "properties": {
         "maxZoom": {
-          "$ref": "#/$defs/__schema298"
-        },
-        "minZoom": {
           "$ref": "#/$defs/__schema299"
         },
-        "visible": {
+        "minZoom": {
           "$ref": "#/$defs/__schema300"
+        },
+        "visible": {
+          "$ref": "#/$defs/__schema301"
         },
         "accentColor": {
           "$ref": "#/$defs/__schema146"
         },
         "exaggeration": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/__schema322"
-            },
-            {
-              "type": "object",
-              "properties": {
-                "kind": {
-                  "$ref": "#/$defs/__schema11"
-                },
-                "reason": {
-                  "$ref": "#/$defs/__schema12"
-                },
-                "value": {
-                  "$ref": "#/$defs/__schema322"
-                }
-              },
-              "required": ["kind", "reason", "value"],
-              "additionalProperties": false
-            },
-            {
-              "$ref": "#/$defs/__schema13"
-            }
-          ]
-        },
-        "highlightColor": {
-          "$ref": "#/$defs/__schema146"
-        },
-        "illuminationAnchor": {
-          "type": "string",
-          "enum": ["map", "viewport"]
-        },
-        "illuminationDirection": {
           "anyOf": [
             {
               "$ref": "#/$defs/__schema323"
@@ -11018,34 +11044,67 @@
             }
           ]
         },
+        "highlightColor": {
+          "$ref": "#/$defs/__schema146"
+        },
+        "illuminationAnchor": {
+          "type": "string",
+          "enum": ["map", "viewport"]
+        },
+        "illuminationDirection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/__schema324"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "$ref": "#/$defs/__schema11"
+                },
+                "reason": {
+                  "$ref": "#/$defs/__schema12"
+                },
+                "value": {
+                  "$ref": "#/$defs/__schema324"
+                }
+              },
+              "required": ["kind", "reason", "value"],
+              "additionalProperties": false
+            },
+            {
+              "$ref": "#/$defs/__schema13"
+            }
+          ]
+        },
         "shadowColor": {
           "$ref": "#/$defs/__schema146"
         }
       },
       "additionalProperties": false
     },
-    "__schema322": {
+    "__schema323": {
       "type": "number",
       "minimum": 0,
       "maximum": 1
     },
-    "__schema323": {
+    "__schema324": {
       "type": "number",
       "minimum": 0,
       "maximum": 359
     },
-    "__schema324": {
+    "__schema325": {
       "minItems": 1,
       "maxItems": 8,
       "type": "array",
       "items": {
-        "$ref": "#/$defs/__schema325"
+        "$ref": "#/$defs/__schema326"
       }
     },
-    "__schema325": {
+    "__schema326": {
       "type": "string"
     },
-    "__schema326": {
+    "__schema327": {
       "anyOf": [
         {
           "type": "number",
@@ -11057,41 +11116,41 @@
         }
       ]
     },
-    "__schema327": {
-      "type": "integer",
-      "minimum": 0,
-      "maximum": 24
-    },
     "__schema328": {
       "type": "integer",
       "minimum": 0,
       "maximum": 24
     },
     "__schema329": {
-      "type": "string",
-      "enum": ["none", "hillshade", "3d"]
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 24
     },
     "__schema330": {
       "type": "string",
-      "minLength": 1
+      "enum": ["none", "hillshade", "3d"]
     },
     "__schema331": {
       "type": "string",
       "minLength": 1
     },
     "__schema332": {
+      "type": "string",
+      "minLength": 1
+    },
+    "__schema333": {
       "type": "object",
       "propertyNames": {
         "$ref": "#/$defs/__schema27"
       },
       "additionalProperties": {
-        "$ref": "#/$defs/__schema333"
+        "$ref": "#/$defs/__schema334"
       },
       "description": "Between one and 64 concrete named themes.",
       "minProperties": 1,
       "maxProperties": 64
     },
-    "__schema333": {
+    "__schema334": {
       "type": "object",
       "properties": {
         "colorScheme": {
@@ -11185,7 +11244,7 @@
                 "$ref": "#/$defs/__schema6"
               },
               "additionalProperties": {
-                "$ref": "#/$defs/__schema334"
+                "$ref": "#/$defs/__schema335"
               }
             },
             "image": {
@@ -11214,28 +11273,28 @@
           "type": "object",
           "properties": {
             "fallbacks": {
-              "$ref": "#/$defs/__schema335"
-            },
-            "font": {
               "$ref": "#/$defs/__schema336"
             },
-            "letterSpacing": {
+            "font": {
               "$ref": "#/$defs/__schema337"
             },
-            "transform": {
+            "letterSpacing": {
               "$ref": "#/$defs/__schema338"
             },
-            "places": {
+            "transform": {
               "$ref": "#/$defs/__schema339"
+            },
+            "places": {
+              "$ref": "#/$defs/__schema340"
             },
             "poi": {
-              "$ref": "#/$defs/__schema339"
+              "$ref": "#/$defs/__schema340"
             },
             "roads": {
-              "$ref": "#/$defs/__schema339"
+              "$ref": "#/$defs/__schema340"
             },
             "water": {
-              "$ref": "#/$defs/__schema339"
+              "$ref": "#/$defs/__schema340"
             }
           },
           "additionalProperties": false
@@ -11249,7 +11308,7 @@
       "required": ["colorScheme", "id", "lighting", "tokens", "typography", "version"],
       "additionalProperties": false
     },
-    "__schema334": {
+    "__schema335": {
       "anyOf": [
         {
           "type": "string",
@@ -11280,44 +11339,44 @@
       "description": "Exact NFC OpenType full name, exact glyph stack ID, or CSS generic; no surrounding whitespace, controls, or backslash.",
       "x-tileflow-normalization": "NFC"
     },
-    "__schema335": {
+    "__schema336": {
       "maxItems": 8,
       "type": "array",
       "items": {
-        "$ref": "#/$defs/__schema334"
+        "$ref": "#/$defs/__schema335"
       },
       "uniqueItems": true,
       "description": "Unique exact fallback face names or CSS generic families."
     },
-    "__schema336": {
-      "$ref": "#/$defs/__schema334"
-    },
     "__schema337": {
-      "$ref": "#/$defs/__schema10"
+      "$ref": "#/$defs/__schema335"
     },
     "__schema338": {
+      "$ref": "#/$defs/__schema10"
+    },
+    "__schema339": {
       "type": "string",
       "enum": ["lowercase", "none", "uppercase"]
     },
-    "__schema339": {
+    "__schema340": {
       "type": "object",
       "properties": {
         "fallbacks": {
-          "$ref": "#/$defs/__schema335"
-        },
-        "font": {
           "$ref": "#/$defs/__schema336"
         },
-        "letterSpacing": {
+        "font": {
           "$ref": "#/$defs/__schema337"
         },
-        "transform": {
+        "letterSpacing": {
           "$ref": "#/$defs/__schema338"
+        },
+        "transform": {
+          "$ref": "#/$defs/__schema339"
         }
       },
       "additionalProperties": false
     },
-    "__schema340": {
+    "__schema341": {
       "type": "object",
       "propertyNames": {
         "$ref": "#/$defs/__schema27"
@@ -11341,12 +11400,12 @@
         "additionalProperties": false
       }
     },
-    "__schema341": {
+    "__schema342": {
       "type": "integer",
       "exclusiveMinimum": 0,
       "maximum": 9007199254740991
     },
-    "__schema342": {
+    "__schema343": {
       "type": "object",
       "properties": {
         "bearing": {
@@ -41733,7 +41792,7 @@
       "additionalProperties": {
         "oneOf": [
           {
-            "$ref": "#/$defs/__schema283"
+            "$ref": "#/$defs/__schema284"
           },
           {
             "$ref": "#/$defs/TileflowRemove"

@@ -1,7 +1,9 @@
 import {gzipSync} from 'node:zlib';
-import type {z} from 'zod';
+import {z} from 'zod';
 import {serializeCanonicalJson, serializeTileflowFontBundleManifest} from '@tileflow/core';
 import {
+  hashHostedPublicationContent,
+  hostedPublicationContentParts,
   tileflowDeploymentWebBytes,
   tileflowNativeDocumentReceiptSchema,
   tileflowNativeDocumentUploadPath,
@@ -708,6 +710,119 @@ const deploymentRequestTimeoutMs = 60_000;
 const maximumDeploymentRounds = 4;
 const maximumDocumentAttempts = 3;
 
+type HostedPublicationOptions = Readonly<{
+  check?: boolean;
+  request?: HostedRequestOptions;
+  onProgress?(event: HostedRendererDeploymentEvent): void;
+  sleep?(milliseconds: number): Promise<unknown>;
+}>;
+
+function prepareHostedPublication(
+  api: HostedApi,
+  input: Readonly<Record<string, unknown>>,
+  mode: 'async' | 'web',
+  options: HostedPublicationOptions,
+) {
+  const origin = normalizeApiOrigin(api.apiUrl);
+  const mapId = api.mapId;
+  if (!mapId) throw new HostedDeploymentError('Hosted deploy requires a managed Map.');
+  const headers = {
+    ...authorizationHeaders(api.apiKey, mapId),
+    'Content-Encoding': 'gzip',
+    'Content-Type': 'application/json',
+    'X-Tileflow-Publication': mode,
+  };
+  const request: HostedRequestOptions = {
+    ...options.request,
+    timeoutMs: options.request?.timeoutMs ?? deploymentRequestTimeoutMs,
+  };
+  const sleep =
+    options.sleep ??
+    ((milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
+  const text = serializeCanonicalJson(input);
+  const bytes = new TextEncoder().encode(text).byteLength;
+  if (bytes > tileflowRendererDeploymentLimits.maximumWebRequestBytes)
+    throw new HostedDeploymentError(
+      `The deployment request is ${formatMegabytes(bytes)}; Hosted accepts at most ${formatMegabytes(tileflowRendererDeploymentLimits.maximumWebRequestBytes)}.`,
+    );
+  const webBytes = tileflowDeploymentWebBytes(input);
+  if (webBytes > tileflowRendererDeploymentLimits.maximumWebBytes)
+    throw new HostedDeploymentError(
+      `The compact web styles use ${webBytes} bytes; Hosted accepts at most ${tileflowRendererDeploymentLimits.maximumWebBytes}.`,
+    );
+  return {origin, mapId, headers, request, sleep, bytes, text};
+}
+
+async function checkHostedPublication(
+  api: HostedApi,
+  publication: ReturnType<typeof prepareHostedPublication>,
+  source: unknown,
+): Promise<HostedJsonResponse | undefined> {
+  const bytes = new TextEncoder().encode(publication.text);
+  const builds: unknown[] = [];
+  const parts = hostedPublicationContentParts(bytes, (path, value) => {
+    if (path.endsWith('/provenance')) builds.push(JSON.parse(new TextDecoder().decode(value)));
+    return true;
+  });
+  const contentHash = await hashHostedPublicationContent(parts);
+  const check = jsonRequest('POST', {contentHash, source, builds});
+  const response = await requestHostedPublication(
+    publication.origin,
+    '/v1/styles/publications/check',
+    {
+      ...check,
+      headers: {...check.headers, ...authorizationHeaders(api.apiKey, publication.mapId)},
+    },
+    publication.request,
+    {step: 'checking the active publication', bytes: 0},
+  );
+  // A compatible CLI can be installed before the platform adds the check route.
+  if (response.status === 204 || response.status === 404 || response.status === 405) return;
+  if (response.status !== 200) throw deploymentFailure(response);
+  return response;
+}
+
+const webPublicationResponse = z.object({
+  changed: z.boolean(),
+  mapId: z.string(),
+  deploymentId: z.string().min(1),
+  version: z.number().int().positive(),
+  familyUrl: z.string().url().optional(),
+  themes: z.record(
+    z.string(),
+    z.object({styleUrl: z.string().url(), styleId: z.string().optional()}),
+  ),
+});
+
+export async function publishHostedWebDeployment(
+  api: HostedApi,
+  input: Readonly<Record<string, unknown>>,
+  options: HostedPublicationOptions = {},
+) {
+  const publication = prepareHostedPublication(api, input, 'web', options);
+  const {origin, mapId, headers, request, sleep, bytes, text} = publication;
+  const checked = options.check
+    ? await checkHostedPublication(api, publication, input.source)
+    : undefined;
+  const initial =
+    checked ??
+    (await requestHostedPublication(
+      origin,
+      '/v1/styles',
+      {body: gzipSync(text), headers, method: 'POST'},
+      request,
+      {step: 'reservation', bytes},
+    ));
+  const response = await waitForHostedPublication(origin, mapId, api.apiKey, initial, {
+    request,
+    sleep,
+    bytes,
+    onProgress: options.onProgress,
+  });
+  if (response.status !== 200) throw deploymentFailure(response);
+  return parseResponse(response, webPublicationResponse, 'Deployment');
+}
+
 /**
  * Publish a renderer deployment: post its request, upload every native document the server still
  * lacks (each theme style, then the family document), and post the request again to activate it.
@@ -720,40 +835,15 @@ export async function publishHostedRendererDeployment(
     body: Readonly<Record<string, unknown>>;
     split: TileflowSplitRendererDeployment;
   }>,
-  options: Readonly<{
-    request?: HostedRequestOptions;
-    onProgress?(event: HostedRendererDeploymentEvent): void;
-    /** Waits between attempts at one document; tests make it immediate. */
-    sleep?(milliseconds: number): Promise<unknown>;
-  }> = {},
+  options: HostedPublicationOptions = {},
 ): Promise<TileflowRendererDeploymentResponse> {
-  const origin = normalizeApiOrigin(api.apiUrl);
-  const mapId = api.mapId;
-  if (!mapId) throw new HostedDeploymentError('Hosted deploy requires a managed Map.');
-  const headers = {
-    ...authorizationHeaders(api.apiKey, mapId),
-    'Content-Encoding': 'gzip',
-    'Content-Type': 'application/json',
-    'X-Tileflow-Publication': 'async',
-  };
-  const request: HostedRequestOptions = {
-    ...options.request,
-    timeoutMs: options.request?.timeoutMs ?? deploymentRequestTimeoutMs,
-  };
-  const sleep =
-    options.sleep ??
-    ((milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
-  const text = serializeCanonicalJson(input.body);
-  const bytes = new TextEncoder().encode(text).byteLength;
-  if (bytes > tileflowRendererDeploymentLimits.maximumWebRequestBytes)
-    throw new HostedDeploymentError(
-      `The deployment request is ${formatMegabytes(bytes)}; Hosted accepts at most ${formatMegabytes(tileflowRendererDeploymentLimits.maximumWebRequestBytes)}.`,
-    );
-  const webBytes = tileflowDeploymentWebBytes(input.body);
-  if (webBytes > tileflowRendererDeploymentLimits.maximumWebBytes)
-    throw new HostedDeploymentError(
-      `The compact web styles use ${webBytes} bytes; Hosted accepts at most ${tileflowRendererDeploymentLimits.maximumWebBytes}.`,
-    );
+  const publication = prepareHostedPublication(api, input.body, 'async', options);
+  const {origin, mapId, headers, request, sleep, bytes, text} = publication;
+  const checked = options.check
+    ? await checkHostedPublication(api, publication, input.body.source)
+    : undefined;
+  if (checked)
+    return parseResponse(checked, tileflowRendererDeploymentResponseSchema, 'Deployment');
   const body = gzipSync(text);
   const index = input.split.artifact.renderers.native.documents;
   const total = Object.keys(index.styles).length + 1;
@@ -1027,6 +1117,7 @@ const deploymentFailureDetails = new Map([
     'TF_HOSTED_PUBLICATION_FAILED',
     'Hosted could not verify or activate this publication. Contact support with the publication ID.',
   ],
+  ['TF_PUBLICATION_EXPIRED', 'The reservation expired. Run tileflow deploy again.'],
   ['TF_NATIVE_FAMILY_REQUIRED', 'The deployment is missing its native family.'],
   ['TF_NATIVE_FAMILY_TOO_LARGE', 'The native family exceeds the Hosted size limit.'],
   ['TF_NATIVE_FAMILY_INVALID', 'The native family document did not match the deployment.'],
@@ -1052,10 +1143,11 @@ function deploymentFailure(
 ): HostedDeploymentError {
   if (response.status === 429) {
     const seconds = Math.ceil((response.retryAfterMs ?? 0) / 1000);
+    const teamQuota = asRecord(response.body).code === 'TF_PUBLICATION_RATE_LIMIT';
     const retry =
       seconds > 0 ? `Retry in ${seconds} ${seconds === 1 ? 'second' : 'seconds'}.` : 'Retry later.';
     return new HostedDeploymentError(
-      `${prefix} (429): Hosted publication is rate limited. ${retry}`,
+      `${prefix} (429): ${teamQuota ? 'This Team reached its hourly limit for changed map publications.' : 'Hosted publication is rate limited.'} ${retry}`,
       {resumable: true, status: 429},
     );
   }
@@ -1087,29 +1179,35 @@ export async function uploadHostedIconPackage(
   api: HostedApi,
   iconPackage: CompiledTileflowIconPackage,
   options: HostedRequestOptions = {},
+  reuse = false,
 ): Promise<
   {ok: false; status: number} | {ok: true; value: z.infer<typeof hostedIconPackageResponseSchema>}
 > {
-  const formData = new FormData();
-  const fieldNames: Record<string, string> = {
-    'sprite.json': 'spriteJson',
-    'sprite.png': 'spritePng',
-    'sprite@2x.json': 'sprite2xJson',
-    'sprite@2x.png': 'sprite2xPng',
-  };
-  for (const file of iconPackage.files) {
-    const fieldName = fieldNames[file.fileName];
-    if (!fieldName) throw new Error(`Unknown generated icon package file: ${file.fileName}`);
-    const bytes = new Uint8Array(file.source.byteLength);
-    bytes.set(file.source);
-    formData.append(fieldName, new Blob([bytes.buffer], {type: file.contentType}), file.fileName);
+  const path = `/v1/icon-packages/${encodeURIComponent(iconPackage.contentHash)}`;
+  const headers = authorizationHeaders(api.apiKey, api.mapId);
+  let response = reuse ? await requestHostedJson(api.apiUrl, path, {headers}, options) : undefined;
+  if (!response || response.status === 404 || response.status === 405) {
+    const formData = new FormData();
+    const fieldNames: Record<string, string> = {
+      'sprite.json': 'spriteJson',
+      'sprite.png': 'spritePng',
+      'sprite@2x.json': 'sprite2xJson',
+      'sprite@2x.png': 'sprite2xPng',
+    };
+    for (const file of iconPackage.files) {
+      const fieldName = fieldNames[file.fileName];
+      if (!fieldName) throw new Error(`Unknown generated icon package file: ${file.fileName}`);
+      const bytes = new Uint8Array(file.source.byteLength);
+      bytes.set(file.source);
+      formData.append(fieldName, new Blob([bytes.buffer], {type: file.contentType}), file.fileName);
+    }
+    response = await requestHostedJson(
+      api.apiUrl,
+      path,
+      {body: formData, headers, method: 'PUT'},
+      options,
+    );
   }
-  const response = await requestHostedJson(
-    api.apiUrl,
-    `/v1/icon-packages/${encodeURIComponent(iconPackage.contentHash)}`,
-    {body: formData, headers: authorizationHeaders(api.apiKey, api.mapId), method: 'PUT'},
-    options,
-  );
   if (!response.ok) return {ok: false, status: response.status};
   const value = parseResponse(
     response,
@@ -1134,34 +1232,40 @@ export async function uploadHostedFontBundle(
   api: HostedApi,
   bundle: CompiledTileflowFontBundle,
   options: HostedRequestOptions = {},
+  reuse = false,
 ): Promise<
   {ok: false; status: number} | {ok: true; value: z.infer<typeof hostedFontBundleResponseSchema>}
 > {
-  const formData = new FormData();
-  formData.append(
-    'manifest',
-    new Blob([serializeTileflowFontBundleManifest(bundle.manifest)], {
-      type: 'application/json',
-    }),
-    'manifest.json',
-  );
-  for (const file of bundle.files) {
-    const source =
-      typeof file.source === 'string' ? new TextEncoder().encode(file.source) : file.source;
-    const bytes = new Uint8Array(source.byteLength);
-    bytes.set(source);
+  const path = `/v1/font-bundles/${encodeURIComponent(bundle.contentHash)}`;
+  const headers = authorizationHeaders(api.apiKey, api.mapId);
+  let response = reuse ? await requestHostedJson(api.apiUrl, path, {headers}, options) : undefined;
+  if (!response || response.status === 404 || response.status === 405) {
+    const formData = new FormData();
     formData.append(
-      `file:${encodeURIComponent(file.fileName)}`,
-      new Blob([bytes.buffer], {type: file.contentType}),
-      file.fileName.split('/').at(-1)!,
+      'manifest',
+      new Blob([serializeTileflowFontBundleManifest(bundle.manifest)], {
+        type: 'application/json',
+      }),
+      'manifest.json',
+    );
+    for (const file of bundle.files) {
+      const source =
+        typeof file.source === 'string' ? new TextEncoder().encode(file.source) : file.source;
+      const bytes = new Uint8Array(source.byteLength);
+      bytes.set(source);
+      formData.append(
+        `file:${encodeURIComponent(file.fileName)}`,
+        new Blob([bytes.buffer], {type: file.contentType}),
+        file.fileName.split('/').at(-1)!,
+      );
+    }
+    response = await requestHostedJson(
+      api.apiUrl,
+      path,
+      {body: formData, headers, method: 'PUT'},
+      options,
     );
   }
-  const response = await requestHostedJson(
-    api.apiUrl,
-    `/v1/font-bundles/${encodeURIComponent(bundle.contentHash)}`,
-    {body: formData, headers: authorizationHeaders(api.apiKey, api.mapId), method: 'PUT'},
-    options,
-  );
   if (!response.ok) return {ok: false, status: response.status};
   const value = parseResponse(
     response,

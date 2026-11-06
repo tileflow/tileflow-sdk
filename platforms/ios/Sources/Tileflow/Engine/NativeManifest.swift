@@ -96,7 +96,9 @@ struct NativeManifest: Sendable {
       }
     }
     guard fromPacks, let webView = profileURL(.webView) else {
-      throw failure("This Map has no native representation.", .manifest)
+      throw TileflowMapError(.nativePublicationRequired, context: .init(
+        resource: .manifest,
+        message: #"This Map is published for web only. Add platforms: ["web", "native"] to its configuration and run tileflow deploy again."#))
     }
     return try parse(
       try await read(webView, .manifest), map: map, url: webView, representation: .webView,

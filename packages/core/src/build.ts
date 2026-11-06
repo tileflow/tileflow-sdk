@@ -315,3 +315,8 @@ export type {
   TileflowRendererDeploymentResponse,
   TileflowSplitRendererDeployment,
 } from './renderer-deployment';
+
+export {
+  hashHostedPublicationContent,
+  hostedPublicationContentParts,
+} from './hosted-publication-identity';

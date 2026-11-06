@@ -104,3 +104,20 @@ test('non-finite arguments are rejected without turning them into null', async (
   }
   assert.deepEqual(calls, []);
 });
+
+test('web-only Hosted maps surface the native publication error and its correction', async () => {
+  const {controller} = harness();
+  controller.attach(12);
+  const message = 'Add platforms: ["web", "native"] to the map configuration and deploy again.';
+  const pending = assert.rejects(controller.call('getCamera', {}), {
+    code: 'nativePublicationRequired',
+    recoverable: false,
+    message,
+  });
+  controller.receive('mount-a', 'failed', {
+    code: 'nativePublicationRequired',
+    recoverable: false,
+    message,
+  });
+  await pending;
+});

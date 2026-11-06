@@ -2616,6 +2616,13 @@ export const resolvedTileflowMapSchema: z.ZodType<TileflowCompilerConfig> = z
     modules: modulesSchema.optional(),
     name: z.string().trim().min(1),
     overlays: overlaysSchema.optional(),
+    platforms: z
+      .union([
+        z.tuple([z.literal('web')]),
+        z.tuple([z.literal('web'), z.literal('native')]),
+        z.tuple([z.literal('native'), z.literal('web')]),
+      ])
+      .default(['web']),
     projection: z.enum(['globe', 'mercator']).optional(),
     sky: skySchema.optional(),
     sources: hostedSourcesSchema.optional(),

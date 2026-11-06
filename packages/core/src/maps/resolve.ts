@@ -57,6 +57,7 @@ export const tileflowMapMergeStrategies = {
   modules: 'modules',
   name: 'identity',
   overlays: 'keyed-resources',
+  platforms: 'leaf',
   projection: 'atomic',
   scenes: 'leaf',
   shots: 'leaf',
@@ -178,6 +179,7 @@ export function resolveMap(map: TileflowMap, options: ResolveMapOptions = {}): R
     id,
     name: leaf.name ?? id,
     version: leaf.version,
+    platforms: leaf.platforms === undefined ? ['web'] : cloneDesign(leaf.platforms),
     ...design,
     ...(modules === undefined ? {} : {modules}),
   } as ResolvedTileflowMap;

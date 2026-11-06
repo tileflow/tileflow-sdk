@@ -47,11 +47,11 @@ async function fixture(t: {after(callback: () => Promise<void>): void}) {
   return cwd;
 }
 
-test('deploy always publishes both renderer families, with no opt-in flag', async (t) => {
+test('deploy keeps platforms in the map configuration', async (t) => {
   const cwd = await fixture(t);
   const result = await command(cwd, ['deploy', '--help']);
   assert.equal(result.code, 0);
-  assert.match(result.output, /web and native apps/u);
+  assert.match(result.output, /Deploy a map to Tileflow/u);
   assert.match(result.output, /--map-id/u);
   assert.doesNotMatch(
     result.output,
@@ -83,7 +83,7 @@ test('a theme native apps cannot draw stops the deploy before credential discove
     join(cwd, 'tileflow.config.ts'),
     `import {defineMap} from '@tileflow/core';
 import {streets} from '@tileflow/maps';
-export default defineMap({id:'main', version:1, extends:streets,
+export default defineMap({id:'main', version:1, extends:streets, platforms:['web','native'],
   glyphs: {kind:'url', url:'http://fonts.example.test/{fontstack}/{range}.pbf',
     fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic',
       'DINish Medium,Noto Sans Regular', 'DINish Bold,Noto Sans Regular']}

@@ -142,10 +142,10 @@ internal object NativeManifest {
             }
         }
         if (!fromPacks)
-            throw failure(manifestUrl, message = "This Map has no native representation.")
+            throw nativePublicationRequired()
         val webView =
             profile(NativeRepresentation.WEB_VIEW)
-                ?: throw failure(manifestUrl, message = "This Map has no native representation.")
+                ?: throw nativePublicationRequired()
         return parse(document(webView, load), map, webView, NativeRepresentation.WEB_VIEW,
             mapId = discoveryMapId)
     }
@@ -248,6 +248,15 @@ internal object NativeManifest {
             it.longitude in -180.0..180.0 && it.latitude in -90.0..90.0 && it.zoom in 0.0..24.0
         }
     }
+
+    private fun nativePublicationRequired() =
+        TileflowMapException(
+            TileflowErrorCode.NATIVE_PUBLICATION_REQUIRED,
+            TileflowErrorContext(
+                resource = TileflowResourceKind.MANIFEST,
+                message = """This Map is published for web only. Add platforms: ["web", "native"] to its configuration and run tileflow deploy again.""",
+            ),
+        )
 
     fun failure(
         url: String,

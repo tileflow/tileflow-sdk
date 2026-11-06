@@ -40,6 +40,8 @@ export type TileflowMapShot = Omit<TileflowCaptureShot, 'map'>;
 
 /** Tooling metadata belongs to the leaf definition and is never inherited. */
 export type TileflowMapTooling = {
+  /** Hosted publication targets. Web is always included; omission publishes web only. */
+  platforms?: readonly ['web'] | readonly ['web', 'native'] | readonly ['native', 'web'];
   scenes?: Record<string, TileflowMapScene>;
   shots?: Record<string, TileflowMapShot>;
 };
@@ -127,6 +129,7 @@ export type ResolvedTileflowMap = Omit<TileflowMapIdentity, 'name'> &
     extends?: never;
     modules?: TileflowResolvedSemanticModuleOverrides;
     name: string;
+    platforms?: TileflowMapTooling['platforms'];
     overlays?: Readonly<Record<string, TileflowMapLibreOverlay>>;
     sources?: Readonly<Record<string, TileflowHostedTilesetSource>>;
     themes: Readonly<Record<TileflowThemeName, TileflowTheme>>;

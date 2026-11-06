@@ -9,6 +9,7 @@ import {hostname} from 'node:os';
 import {dirname, isAbsolute, relative, resolve, sep} from 'node:path';
 import {createInterface} from 'node:readline/promises';
 import pc from 'picocolors';
+import {enableNativePlatforms, usesTileflowNativeSdk} from './native-sdk-detection';
 import {createLocalCoordinates, setupCoordinates} from '@tileflow/coordinates-runtime';
 import {auditTileflowMapThemeValues, tileflowMapIdSchema} from '@tileflow/core';
 import {
@@ -152,7 +153,9 @@ program
   .command('init')
   .description('Create a starter tileflow.config.ts')
   .option('-f, --force', 'overwrite an existing config')
-  .action(async (options: {force?: boolean}) => {
+  .option('--native', 'publish for web and native apps')
+  .option('--no-native', 'publish for web only')
+  .action(async (options: {force?: boolean; native?: boolean}) => {
     const configPath = resolve(process.cwd(), defaultConfigPath);
     const ignorePath = resolve(process.cwd(), '.gitignore');
 
@@ -162,7 +165,17 @@ program
       return;
     }
 
-    await writeFile(configPath, starterConfig(), 'utf8');
+    let native = options.native;
+    if (native === undefined && process.stdin.isTTY) {
+      const input = createInterface({input: process.stdin, output: process.stdout});
+      try {
+        const answer = await input.question('Publish for web and native apps? [y/N] ');
+        native = /^y(?:es)?$/iu.test(answer.trim());
+      } finally {
+        input.close();
+      }
+    }
+    await writeFile(configPath, starterConfig(native === true), 'utf8');
     if (!existsSync(ignorePath)) {
       await writeFile(
         ignorePath,
@@ -908,7 +921,7 @@ addMapSetupOptions(
   program
     .command('deploy')
     .description(
-      'Deploy a map to Tileflow for web and native apps and write the frontend manifest; without --map-id, create the Map first',
+      'Deploy a map to Tileflow and write the frontend manifest; without --map-id, create the Map first',
     ),
 )
   .option('-c, --config <path>', 'config path', defaultConfigPath)
@@ -980,6 +993,13 @@ addMapSetupOptions(
       }
 
       let createdMapId: string | null = null;
+      if (
+        prepared.preflight.schemaVersion === 1 &&
+        (await usesTileflowNativeSdk(loaded.configFile))
+      )
+        logWarning(
+          `This repository uses a Tileflow native SDK. To publish this map for native apps, add: ${enableNativePlatforms}`,
+        );
       let result: Awaited<ReturnType<typeof runHostedDeploy>>;
       try {
         result = await runHostedDeploy(
@@ -1037,7 +1057,7 @@ addMapSetupOptions(
       const versionLabel = ` (v${result.version})`;
       logSuccess(
         result.changed
-          ? `Published ${pc.bold(result.mapName)}${versionLabel} for web and native apps.`
+          ? `Published ${pc.bold(result.mapName)}${versionLabel} for ${result.nativeManifestUrl ? 'web and native apps' : 'web'}.`
           : `Unchanged ${pc.bold(result.mapName)}${versionLabel}.`,
       );
       printNativeDifferences(result.mapName, result.nativeDifferences);
@@ -1049,7 +1069,7 @@ addMapSetupOptions(
         );
       }
       printKeyValue('Manifest', pathLabel(result.manifestPath));
-      printKeyValue('Native', link(result.nativeManifestUrl));
+      if (result.nativeManifestUrl) printKeyValue('Native', link(result.nativeManifestUrl));
       printDeployedMaps({[result.mapName]: result.entry});
       printNextSteps([
         ...(createdMapId
@@ -2062,7 +2082,7 @@ function pathLabel(value: string) {
   return pc.cyan(value);
 }
 
-function starterConfig(): string {
+function starterConfig(native: boolean): string {
   return `import { defineMap, defineTheme, labels, poi } from "@tileflow/core";
 import { streets, streetsThemes } from "@tileflow/maps";
 
@@ -2084,6 +2104,7 @@ export default defineMap({
   name: "Madrid",
   version: 1,
   extends: streets,
+  ${native ? enableNativePlatforms : 'platforms: ["web"],'}
   themes: { light: streetsThemes.light, dark: madridDark },
   defaultTheme: "light",
   systemThemes: { light: "light", dark: "dark" },

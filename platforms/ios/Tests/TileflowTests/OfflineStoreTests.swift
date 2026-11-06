@@ -434,6 +434,76 @@ final class OfflineStoreTests: XCTestCase {
     XCTAssertEqual(expiries.withLock { Array($0.suffix(4)) }, reported)
   }
 
+  func testMetadataChangeAtGraceEndStopsServingTheRegion() async throws {
+    let service = OfflineServiceStub()
+    let index = OfflineServingIndex()
+    let store = makeStore(service, index: index)
+    let style = service.key(service.styleURL)
+    try await store.loadRegion(id: "madrid", options: madrid())
+    _ = try await waitFor(store, "madrid") { $0.state == .complete }
+    let available = await index.resource(style, cache: cache)
+    XCTAssertNotNil(available)
+
+    service.isOnline = false
+    service.clock.withLock { $0 += 37 * 86_400 }
+    try await store.updateRegionMetadata(id: "madrid", metadata: ["name": "Sol"])
+    let region = try await XCTUnwrapAsync(await store.region(id: "madrid"))
+    XCTAssertEqual(region.expiryState, .expired)
+    let expired = await index.resource(style, cache: cache)
+    XCTAssertNil(expired)
+  }
+
+  func testReopeningWithADifferentAPIOriginDoesNotSendStoredGrants() async throws {
+    let service = OfflineServiceStub()
+    let store = makeStore(service)
+    try await store.loadRegion(id: "madrid", options: madrid())
+    let downloaded = try await waitFor(store, "madrid") { $0.state == .complete }
+
+    service.clock.withLock { $0 += 86_401 }
+    let other = makeStore(service, apiOrigin: { "https://other.tileflow.test" })
+    await other.core.checkForUpdates()
+    let unchanged = try await XCTUnwrapAsync(await other.region(id: "madrid"))
+    XCTAssertEqual(service.revalidations, 0)
+    XCTAssertEqual(unchanged.expiresAt, downloaded.expiresAt)
+
+    let original = makeStore(service, apiOrigin: { "https://API.TILEFLOW.TEST:443/" })
+    await original.core.checkForUpdates()
+    XCTAssertEqual(service.revalidations, 1)
+  }
+
+  func testEstimateIsNotReusedAfterChangingAPIOrigin() async throws {
+    let service = OfflineServiceStub()
+    let origin = LockedValue(OfflineServiceStub.origin)
+    let store = makeStore(service, apiOrigin: { origin.withLock { $0 } })
+    _ = try await store.estimateRegion(madrid())
+    XCTAssertEqual(service.creations, 1)
+
+    origin.withLock { $0 = "https://other.tileflow.test" }
+    try await store.loadRegion(id: "madrid", options: madrid())
+    _ = try await waitFor(store, "madrid") { $0.state == .complete }
+    XCTAssertEqual(service.creations, 2)
+  }
+
+  func testPendingDownloadCannotRenewAtAnotherAPIOrigin() async throws {
+    let service = OfflineServiceStub()
+    let first = makeStore(service, fetcher: OfflineFreezingFetcher(service, after: 0))
+    try await first.loadRegion(id: "madrid", options: madrid())
+    try await first.pauseRegion(id: "madrid")
+    service.clock.withLock { $0 += 86_400 }
+
+    let origin = LockedValue("https://other.tileflow.test")
+    let other = makeStore(service, apiOrigin: { origin.withLock { $0 } })
+    try await other.resumeRegion(id: "madrid")
+    let stopped = try await waitFor(other, "madrid") { $0.state == .failed || $0.state == .complete }
+    XCTAssertEqual(service.creations, 1)
+    XCTAssertEqual(stopped.error?.code, .invalidConfiguration)
+
+    origin.withLock { $0 = OfflineServiceStub.origin }
+    try await other.resumeRegion(id: "madrid")
+    _ = try await waitFor(other, "madrid") { $0.state == .complete }
+    XCTAssertEqual(service.creations, 2)
+  }
+
   func testTheStoreWakesWhenARegionIsDueExpiresOrEndsItsGracePeriod() async throws {
     let service = OfflineServiceStub()
     let store = makeStore(service)
@@ -650,6 +720,29 @@ final class OfflineStoreTests: XCTestCase {
     }
     let unchanged = await store.automaticUpdatesEnabled
     XCTAssertFalse(unchanged)
+  }
+
+  func testAnAutomaticUpdateCannotUseAnOfferFromAnotherAPIOrigin() async throws {
+    let service = OfflineServiceStub()
+    let store = makeStore(service)
+    try await store.loadRegion(id: "madrid", options: madrid())
+    _ = try await waitFor(store, "madrid") { $0.state == .complete }
+    try await store.setAutomaticUpdates(true)
+
+    service.clock.withLock { $0 += 86_401 }
+    service.revalidationState = "update_available"
+    await store.core.checkForUpdates()
+    let before = try await XCTUnwrapAsync(await store.region(id: "madrid"))
+    XCTAssertEqual(before.updateState, .updateAvailable)
+
+    let other = makeStore(service, apiOrigin: { "https://other.tileflow.test" })
+    let started = await other.core.updateAutomatically(.init(isUnmetered: true, isLowPower: false))
+    let unchanged = try await XCTUnwrapAsync(await other.region(id: "madrid"))
+    XCTAssertTrue(started.isEmpty)
+    XCTAssertEqual(service.creations, 1)
+    XCTAssertEqual(unchanged.updateState, .updateAvailable)
+    XCTAssertEqual(unchanged.state, .complete)
+    XCTAssertEqual(unchanged.completedAt, before.completedAt)
   }
 
   func testAutomaticUpdatesDownloadOnlyOnUnmeteredNetworksAndSwapAtomically() async throws {
@@ -1060,7 +1153,8 @@ final class OfflineStoreTests: XCTestCase {
     sleeps: LockedValue<[TimeInterval]>? = nil, concurrency: Int = 8,
     fetcher: (any OfflineResourceFetching)? = nil, index: OfflineServingIndex? = nil,
     available: (@Sendable () -> Int64?)? = nil, scheduler: OfflineSchedulerStub? = nil,
-    conditions: LockedValue<OfflineUpdateConditions>? = nil, profile: OfflinePackProfile? = nil
+    conditions: LockedValue<OfflineUpdateConditions>? = nil, profile: OfflinePackProfile? = nil,
+    apiOrigin: @escaping @Sendable () -> String = { OfflineServiceStub.origin }
   ) -> TileflowOfflineStore {
     let cache =
       root == "offline"
@@ -1069,15 +1163,15 @@ final class OfflineStoreTests: XCTestCase {
         ambientRoot: directory.appendingPathComponent("\(root)-ambient", isDirectory: true),
         durableRoot: directory.appendingPathComponent("\(root)-durable", isDirectory: true),
         maximumBytes: 64 * 1024 * 1024)
-    let configuration = try! TileflowConfiguration(
-      apiOrigin: URL(string: "https://api.tileflow.test")!,
-      mapCredential: TileflowCredential("tf_public_" + String(repeating: "a", count: 48)))
     let clock = service.clock
     var dependencies = OfflineStoreCore.Dependencies(
       layout: OfflineLayout(root: directory.appendingPathComponent(root, isDirectory: true)),
       cache: cache, fetcher: fetcher ?? service,
       client: {
-        try OfflinePackClient(
+        let configuration = try TileflowConfiguration(
+          apiOrigin: URL(string: apiOrigin())!,
+          mapCredential: TileflowCredential("tf_public_" + String(repeating: "a", count: 48)))
+        return try OfflinePackClient(
           configuration: configuration, transport: service,
           now: { Date(timeIntervalSince1970: clock.withLock { $0 }) })
       },

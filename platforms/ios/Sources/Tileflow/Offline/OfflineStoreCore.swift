@@ -71,6 +71,11 @@ actor OfflineStoreCore {
   static let maximumBackoff: TimeInterval = 300
   static let maximumRenewals = 3
 
+  private struct EstimateKey: Hashable {
+    let apiOrigin: URL
+    let request: OfflinePackRequest
+  }
+
   let dependencies: Dependencies
   let subscribers: OfflineSubscribers
   private var layout: OfflineLayout { dependencies.layout }
@@ -89,7 +94,7 @@ actor OfflineStoreCore {
   private var digestSets: [String: Set<String>] = [:]
   private var servedSets: [String: [String: OfflineServedPacks]] = [:]
   private var creditSets: [String: [String: OfflineSourceCredits]] = [:]
-  private var created: [OfflinePackRequest: OfflineDownload] = [:]
+  private var created: [EstimateKey: OfflineDownload] = [:]
   private var settings = OfflineSettings()
   /// Each Hosted region's expiry phase as last reported, so a change is reported once.
   private var phases: [String: OfflineExpiryPhase] = [:]
@@ -365,8 +370,13 @@ actor OfflineStoreCore {
     var apiOrigin: URL?
     switch options.content {
     case .hosted:
-      let hosted = try await hostedPlan(options, consuming: true, reuseEstimate: !needsNewGrant)
-      if automatic, !canStartAutomaticUpdate(id) { throw CancellationError() }
+      let expectedApiOrigin = automatic ? records[id]?.active?.apiOrigin : nil
+      if automatic, expectedApiOrigin == nil { throw CancellationError() }
+      let hosted = try await hostedPlan(
+        options, consuming: true, reuseEstimate: !needsNewGrant, expectedApiOrigin: expectedApiOrigin)
+      if automatic,
+        !canStartAutomaticUpdate(id) || records[id]?.active?.apiOrigin != expectedApiOrigin
+      { throw CancellationError() }
       plan = hosted.plan
       apiOrigin = hosted.apiOrigin
       try checkDeviceLimit(id, plan)
@@ -505,7 +515,7 @@ actor OfflineStoreCore {
     let now = dependencies.now()
     for id in records.keys.sorted() {
       guard revalidations[id] == nil, let record = records[id], !record.removing, let active = record.active,
-        active.downloads > 0
+        active.downloads > 0, active.apiOrigin == client.apiOrigin.absoluteString
       else { continue }
       if let check = record.check {
         guard check.state != "not_updatable",
@@ -609,7 +619,7 @@ actor OfflineStoreCore {
     }
     guard !changed.isEmpty else { return }
     publishServing()
-    for id in changed { emitChanged(id) }
+    for id in changed { emitChanged(id, servingPublished: true) }
   }
 
   /// How long until the store should look again: when a region is due for revalidation, expires
@@ -888,6 +898,9 @@ actor OfflineStoreCore {
     }
     do {
       let client = try dependencies.client()
+      guard pending.apiOrigin == client.apiOrigin.absoluteString else {
+        throw TileflowOfflineError(.invalidConfiguration, context: .init(reason: "apiOriginChanged"))
+      }
       var plan = try self.plan(id, pending)
       let download = try await client.create(plan.requests[index])
       guard !Task.isCancelled, let current = records[id]?.pending, current.number == pending.number else {
@@ -1120,29 +1133,33 @@ actor OfflineStoreCore {
 
   /// The downloads of `options`: those an estimate created, or new ones. A load consumes what
   /// an estimate created, so loading again later sees the Map as it is then.
-  private func hostedPlan(_ options: TileflowOfflineRegionLoadOptions, consuming: Bool = false,
-    reuseEstimate: Bool = true)
-    async throws -> (plan: OfflineVersionPlan, apiOrigin: URL)
-  {
+  private func hostedPlan(
+    _ options: TileflowOfflineRegionLoadOptions, consuming: Bool = false,
+    reuseEstimate: Bool = true, expectedApiOrigin: String? = nil
+  ) async throws -> (plan: OfflineVersionPlan, apiOrigin: URL) {
     guard case .hosted(let mapID, let themes) = options.content else {
       throw TileflowOfflineError.options("invalidContent")
     }
     let client = try dependencies.client()
+    if let expectedApiOrigin, client.apiOrigin.absoluteString != expectedApiOrigin {
+      throw CancellationError()
+    }
     let requests = try OfflinePackRequest.requests(
       mapID: mapID, themes: themes, geometry: options.geometry, zooms: options.zooms,
       profile: dependencies.profile)
     var downloads: [OfflineDownload] = []
     for request in requests {
       let now = dependencies.now()
-      if reuseEstimate, let download = created[request],
+      let key = EstimateKey(apiOrigin: client.apiOrigin, request: request)
+      if reuseEstimate, let download = created[key],
         download.manifest.downloadExpiresAt.timeIntervalSince(now) > Self.reuseWindow
       {
-        if consuming { created.removeValue(forKey: request) }
+        if consuming { created.removeValue(forKey: key) }
         downloads.append(download)
         continue
       }
       let download = try await client.create(request)
-      if !consuming { created[request] = download }
+      if !consuming { created[key] = download }
       downloads.append(download)
     }
     return (.hosted(downloads: downloads, requests: requests), client.apiOrigin)
@@ -1315,9 +1332,14 @@ actor OfflineStoreCore {
     emitChanged(id)
   }
 
-  private func emitChanged(_ id: String) {
+  private func emitChanged(_ id: String, servingPublished: Bool = false) {
     guard let record = records[id], let region = snapshot(record) else { return }
-    phases[id] = expiryPhase(record, at: dependencies.now())
+    let phase = expiryPhase(record, at: dependencies.now())
+    let wasExpired = phases[id] == .expired
+    let expired = phase == .expired
+    // Progress or metadata can report expiry before the periodic check sees it.
+    if !servingPublished, expired != wasExpired { publishServing() }
+    phases[id] = phase
     subscribers.emit(.changed(region))
   }
 

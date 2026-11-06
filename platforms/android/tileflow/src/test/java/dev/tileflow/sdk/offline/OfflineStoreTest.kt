@@ -479,6 +479,40 @@ class OfflineStoreTest {
         }
 
     @Test
+    fun anEarlierApprovalCannotUndoAConcurrentDenial() = runBlocking<Unit> {
+        val service = OfflineServiceStub()
+        val store = store(service)
+        store.loadRegion("madrid", madrid())
+        val downloaded = waitFor(store, "madrid") { it.state == COMPLETE }
+        service.clock.addAndGet(DAY + 1_000)
+
+        val entered = CompletableDeferred<Unit>()
+        val release = java.util.concurrent.CountDownLatch(1)
+        service.onRevalidation = {
+            if (service.revalidations.get() == 1) {
+                entered.complete(Unit)
+                check(release.await(10, TimeUnit.SECONDS))
+            }
+        }
+        val earlier = async(Dispatchers.Default) { store.core.checkForUpdates() }
+        val denied = TileflowOfflineRegion.UpdateState.NotUpdatable("credential_revoked")
+        try {
+            withTimeout(10_000) { entered.await() }
+            service.clock.addAndGet(1_000)
+            service.revalidationState = "not_updatable"
+            store.core.checkForUpdates()
+            assertEquals(denied, store.region("madrid")!!.updateState)
+        } finally {
+            release.countDown()
+            earlier.await()
+        }
+
+        val region = store.region("madrid")!!
+        assertEquals(denied, region.updateState)
+        assertEquals(downloaded.expiresAtMillis, region.expiresAtMillis)
+    }
+
+    @Test
     fun aPausedWebRequestRenewsWithItsOriginalProfileAfterReopening() =
         runBlocking<Unit> {
             val service = OfflineServiceStub()
@@ -866,6 +900,76 @@ class OfflineStoreTest {
     }
 
     @Test
+    fun metadataChangeAtGraceEndStopsServingTheRegion() = runBlocking<Unit> {
+        val service = OfflineServiceStub()
+        val index = OfflineServingIndex()
+        val store = store(service, index = index)
+        val style = service.key(service.styleUrl)
+        store.loadRegion("madrid", madrid())
+        waitFor(store, "madrid") { it.state == COMPLETE }
+        assertNotNull(index.resource(style, cache))
+
+        service.online = false
+        service.clock.addAndGet(37 * DAY)
+        store.updateRegionMetadata("madrid", mapOf("name" to "Sol"))
+        assertEquals(TileflowOfflineRegion.ExpiryState.Expired, store.region("madrid")!!.expiryState)
+        assertNull(index.resource(style, cache))
+    }
+
+    @Test
+    fun reopeningWithADifferentApiOriginDoesNotSendStoredGrants() = runBlocking<Unit> {
+        val service = OfflineServiceStub()
+        val store = store(service)
+        store.loadRegion("madrid", madrid())
+        val downloaded = waitFor(store, "madrid") { it.state == COMPLETE }
+
+        service.clock.addAndGet(DAY + 1_000)
+        val other = store(service, apiOrigin = { "https://other.tileflow.test" })
+        other.core.checkForUpdates()
+        assertEquals(0, service.revalidations.get())
+        assertEquals(downloaded.expiresAtMillis, other.region("madrid")!!.expiresAtMillis)
+
+        val original = store(service, apiOrigin = { "https://API.TILEFLOW.TEST:443/" })
+        original.core.checkForUpdates()
+        assertEquals(1, service.revalidations.get())
+    }
+
+    @Test
+    fun estimateIsNotReusedAfterChangingApiOrigin() = runBlocking<Unit> {
+        val service = OfflineServiceStub()
+        val origin = AtomicReference(ORIGIN)
+        val store = store(service, apiOrigin = origin::get)
+        store.estimateRegion(madrid())
+        assertEquals(1, service.creations.get())
+
+        origin.set("https://other.tileflow.test")
+        store.loadRegion("madrid", madrid())
+        waitFor(store, "madrid") { it.state == COMPLETE }
+        assertEquals(2, service.creations.get())
+    }
+
+    @Test
+    fun pendingDownloadCannotRenewAtAnotherApiOrigin() = runBlocking<Unit> {
+        val service = OfflineServiceStub()
+        val first = store(service, fetcher = FreezingFetcher(service, 0))
+        first.loadRegion("madrid", madrid())
+        first.pauseRegion("madrid")
+        service.clock.addAndGet(DAY)
+
+        val origin = AtomicReference("https://other.tileflow.test")
+        val other = store(service, apiOrigin = origin::get)
+        other.resumeRegion("madrid")
+        val stopped = waitFor(other, "madrid") { it.state == FAILED || it.state == COMPLETE }
+        assertEquals(1, service.creations.get())
+        assertEquals(TileflowOfflineErrorCode.INVALID_CONFIGURATION, stopped.error?.code)
+
+        origin.set(ORIGIN)
+        other.resumeRegion("madrid")
+        waitFor(other, "madrid") { it.state == COMPLETE }
+        assertEquals(2, service.creations.get())
+    }
+
+    @Test
     fun theStoreWakesWhenARegionIsDueExpiresOrEndsItsGracePeriod() = runBlocking<Unit> {
         val service = OfflineServiceStub()
         val store = store(service)
@@ -1038,6 +1142,32 @@ class OfflineStoreTest {
         store.setAutomaticUpdates(false)
         assertFalse(store.isAutomaticUpdatesEnabled())
         assertEquals(WorkInfo.State.CANCELLED, work().single().state)
+    }
+
+    @Test
+    fun anAutomaticUpdateCannotUseAnOfferFromAnotherApiOrigin() = runBlocking<Unit> {
+        val service = OfflineServiceStub()
+        val store = store(service)
+        store.loadRegion("madrid", madrid())
+        waitFor(store, "madrid") { it.state == COMPLETE }
+        store.setAutomaticUpdates(true)
+
+        service.clock.addAndGet(DAY + 1_000)
+        service.revalidationState = "update_available"
+        store.core.checkForUpdates()
+        val before = store.region("madrid")!!
+        assertEquals(TileflowOfflineRegion.UpdateState.UpdateAvailable, before.updateState)
+
+        val other = store(service, apiOrigin = { "https://other.tileflow.test" })
+        val started = other.core.updateAutomatically(
+            OfflineUpdateConditions(isUnmetered = true, isLowPower = false),
+        )
+        val unchanged = other.region("madrid")!!
+        assertTrue(started.isEmpty())
+        assertEquals(1, service.creations.get())
+        assertEquals(TileflowOfflineRegion.UpdateState.UpdateAvailable, unchanged.updateState)
+        assertEquals(COMPLETE, unchanged.state)
+        assertEquals(before.completedAtMillis, unchanged.completedAtMillis)
     }
 
     @Test
@@ -1482,21 +1612,24 @@ class OfflineStoreTest {
         scheduler: OfflineUpdateScheduler? = null,
         conditions: AtomicReference<OfflineUpdateConditions>? = null,
         profile: OfflinePackProfile = OfflinePackProfile.WEB_VIEW,
+        apiOrigin: () -> String = { ORIGIN },
     ): OfflineStoreCore {
         val cache =
             if (root == "offline") cache
             else ResourceCacheStore(File(directory, "$root-ambient"), File(directory, "$root-durable"), 64L shl 20)
-        val configuration =
-            TileflowConfiguration(
-                apiOrigin = URI(ORIGIN),
-                mapCredential = TileflowCredential("tf_public_" + "a".repeat(48)),
-            )
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO).also(scopes::add)
         return OfflineStoreCore(
             layout(root),
             cache,
             fetcher ?: service,
-            { OfflinePackClient(configuration, { service }, now = { service.clock.get() }) },
+            {
+                val configuration =
+                    TileflowConfiguration(
+                        apiOrigin = URI(apiOrigin()),
+                        mapCredential = TileflowCredential("tf_public_" + "a".repeat(48)),
+                    )
+                OfflinePackClient(configuration, { service }, now = { service.clock.get() })
+            },
             available ?: { space?.get() },
             subscribers,
             index,
@@ -1524,6 +1657,7 @@ class OfflineStoreTest {
         conditions: AtomicReference<OfflineUpdateConditions>? = null,
         runner: ((OfflineStoreCore) -> OfflineRunner)? = null,
         profile: OfflinePackProfile = OfflinePackProfile.WEB_VIEW,
+        apiOrigin: () -> String = { ORIGIN },
     ): TileflowOfflineStore {
         val subscribers = OfflineSubscribers()
         return TileflowOfflineStore(
@@ -1541,6 +1675,7 @@ class OfflineStoreTest {
                 scheduler = scheduler,
                 conditions = conditions,
                 profile = profile,
+                apiOrigin = apiOrigin,
             ),
             subscribers,
         )

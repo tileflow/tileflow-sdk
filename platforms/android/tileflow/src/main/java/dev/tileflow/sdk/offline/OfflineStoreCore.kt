@@ -103,7 +103,9 @@ internal class OfflineStoreCore(
     private val digestSets = HashMap<String, Set<String>>()
     private val servedSets = HashMap<String, Map<String, OfflineServedPacks>>()
     private val creditSets = HashMap<String, Map<String, OfflineSourceCredits>>()
-    private val created = HashMap<OfflinePackRequest, OfflineDownload>()
+    private data class EstimateKey(val apiOrigin: URI, val request: OfflinePackRequest)
+
+    private val created = HashMap<EstimateKey, OfflineDownload>()
     /** Packs an earlier pass of a pending version held before its download was created again. */
     private val candidates = HashMap<String, Map<String, OfflinePreviousPack>>()
     private var settings = OfflineSettings()
@@ -406,17 +408,25 @@ internal class OfflineStoreCore(
         }
 
         // A new version: the plan first, so a refusal changes nothing.
-        val (number, requiresFreshGrant) =
-            lock.withLock {
-                val current = records[id]
-                (current?.nextVersion ?: 1) to (current?.check?.state == "not_updatable")
-            }
+        val current = lock.withLock { records[id] }
+        val number = current?.nextVersion ?: 1
+        val requiresFreshGrant = current?.check?.state == "not_updatable"
+        val expectedApiOrigin =
+            if (automatic)
+                current?.active?.apiOrigin
+                    ?: throw TileflowOfflineException(TileflowOfflineErrorCode.GRANT_REJECTED)
+            else null
         val plan: OfflineVersionPlan
         var apiOrigin: URI? = null
         when (val content = options.content) {
             is TileflowOfflineContent.Hosted -> {
                 val hosted =
-                    hostedPlan(options, consuming = true, requiresFreshGrant = requiresFreshGrant)
+                    hostedPlan(
+                        options,
+                        consuming = true,
+                        requiresFreshGrant = requiresFreshGrant,
+                        expectedApiOrigin = expectedApiOrigin,
+                    )
                 plan = hosted.first
                 apiOrigin = hosted.second
                 lock.withLock { checkDeviceLimit(id, plan) }
@@ -446,8 +456,11 @@ internal class OfflineStoreCore(
         if (!automatic && lock.withLock { records[id]?.pending?.also { runner.stop(id) } != null })
             settle(id)
         return lock.withLock {
-            if (automatic && records[id]?.let { canStartAutomaticUpdate(it, now()) } != true) {
-                throw TileflowOfflineException(TileflowOfflineErrorCode.GRANT_REJECTED)
+            if (automatic) {
+                val record = records[id]
+                if (record == null || record.active?.apiOrigin != expectedApiOrigin ||
+                    !canStartAutomaticUpdate(record, now())
+                ) throw TileflowOfflineException(TileflowOfflineErrorCode.GRANT_REJECTED)
             }
             if (records[id]?.pending != null) discardPending(id)
             val time = now()
@@ -615,6 +628,7 @@ internal class OfflineStoreCore(
                         !record.removing &&
                             active != null &&
                             active.downloads > 0 &&
+                            active.apiOrigin == client.apiOrigin.toString() &&
                             (check == null ||
                                 (check.state != "not_updatable" &&
                                     time >= check.checkedAt + check.intervalMillis))
@@ -681,6 +695,8 @@ internal class OfflineStoreCore(
             val stopped =
                 lock.withLock {
                     val current = records[id]?.takeIf { !it.removing } ?: return@withLock null
+                    // A concurrent check already ended access to this version.
+                    if (current.check?.state == "not_updatable") return@withLock null
                     val active = current.active ?: return@withLock null
                     if (active !== record.active) {
                         if (
@@ -751,7 +767,7 @@ internal class OfflineStoreCore(
             }
         if (changed.isEmpty()) return
         publishServing()
-        for (id in changed) emitChanged(id)
+        for (id in changed) emitChanged(id, servingPublished = true)
     }
 
     /**
@@ -1095,6 +1111,12 @@ internal class OfflineStoreCore(
         }
         try {
             val client = client()
+            if (pending.apiOrigin != client.apiOrigin.toString()) {
+                throw TileflowOfflineException(
+                    TileflowOfflineErrorCode.INVALID_CONFIGURATION,
+                    TileflowErrorContext(reason = "apiOriginChanged"),
+                )
+            }
             val previousPlan = lock.withLock { plan(id, pending) }
             val download = client.create(previousPlan.requests[index])
             return lock.withLock {
@@ -1344,11 +1366,14 @@ internal class OfflineStoreCore(
         options: TileflowOfflineRegionLoadOptions,
         consuming: Boolean = false,
         requiresFreshGrant: Boolean = false,
+        expectedApiOrigin: String? = null,
     ): Pair<OfflineVersionPlan, URI> {
         val content =
             options.content as? TileflowOfflineContent.Hosted
                 ?: throw TileflowOfflineException.options("invalidContent")
         val client = client()
+        if (expectedApiOrigin != null && client.apiOrigin.toString() != expectedApiOrigin)
+            throw TileflowOfflineException(TileflowOfflineErrorCode.GRANT_REJECTED)
         val requests =
             OfflinePackRequest.requests(
                 content.mapId,
@@ -1359,9 +1384,10 @@ internal class OfflineStoreCore(
             )
         val downloads = ArrayList<OfflineDownload>()
         for (request in requests) {
+            val key = EstimateKey(client.apiOrigin, request)
             val reusable =
                 lock.withLock {
-                    val candidate = if (consuming) created.remove(request) else created[request]
+                    val candidate = if (consuming) created.remove(key) else created[key]
                     candidate?.takeIf {
                         !requiresFreshGrant &&
                             it.manifest.downloadExpiresAtMillis - now() > REUSE_WINDOW
@@ -1370,7 +1396,7 @@ internal class OfflineStoreCore(
             val download =
                 reusable
                     ?: client.create(request).also {
-                        if (!consuming) lock.withLock { created[request] = it }
+                        if (!consuming) lock.withLock { created[key] = it }
                     }
             downloads.add(download)
         }
@@ -1567,10 +1593,15 @@ internal class OfflineStoreCore(
         emitChanged(id)
     }
 
-    private fun emitChanged(id: String) {
+    private fun emitChanged(id: String, servingPublished: Boolean = false) {
         val record = records[id] ?: return
         val region = snapshot(record) ?: return
-        expiryPhase(record, now())?.let { phases[id] = it } ?: phases.remove(id)
+        val phase = expiryPhase(record, now())
+        val wasExpired = phases[id] == OfflineExpiryPhase.EXPIRED
+        val expired = phase == OfflineExpiryPhase.EXPIRED
+        // Progress or metadata can report expiry before the periodic check sees it.
+        if (!servingPublished && expired != wasExpired) publishServing()
+        phase?.let { phases[id] = it } ?: phases.remove(id)
         subscribers.emit(TileflowOfflineRegionEvent.Changed(region))
     }
 

@@ -23,3 +23,5 @@ include(":tileflow-foundation")
 include(":tileflow-services")
 
 include(":example")
+
+if (providers.gradleProperty("tileflowBenchmark").isPresent) include(":benchmark")

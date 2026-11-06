@@ -1,0 +1,53 @@
+name: TileflowBenchmarks
+options:
+  deploymentTarget:
+    iOS: '16.0'
+packages:
+  Tileflow:
+    path: ${TILEFLOW_SWIFT_PACKAGE}
+settings:
+  base:
+    SWIFT_VERSION: '6.0'
+    GENERATE_INFOPLIST_FILE: YES
+    INFOPLIST_KEY_UILaunchScreen_Generation: YES
+    MARKETING_VERSION: '1.0'
+    CURRENT_PROJECT_VERSION: '1'
+    DEAD_CODE_STRIPPING: YES
+    CODE_SIGN_STYLE: Automatic
+targetTemplates:
+  Consumer:
+    type: application
+    platform: iOS
+    sources: [App.swift]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.tileflow.benchmark.$(PRODUCT_NAME:rfc1034identifier)
+targets:
+  Empty:
+    templates: [Consumer]
+  EmptyBenchmark:
+    templates: [Consumer]
+    settings:
+      base:
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: BENCHMARK_BASELINE
+  Maps:
+    templates: [Consumer]
+    sources: [App.swift, ExampleSource.swift]
+    dependencies: [{package: Tileflow}]
+    settings:
+      base:
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: MAPS
+  MapsAndServices:
+    templates: [Consumer]
+    sources: [App.swift, ExampleSource.swift]
+    dependencies: [{package: Tileflow}, {package: Tileflow, product: TileflowServices}]
+    settings:
+      base:
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: MAPS SERVICES
+  StreetsBenchmark:
+    templates: [Consumer]
+    sources: [App.swift, RenderProbe.swift, ExampleSource.swift]
+    dependencies: [{package: Tileflow}]
+    settings:
+      base:
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: MAPS BENCHMARK

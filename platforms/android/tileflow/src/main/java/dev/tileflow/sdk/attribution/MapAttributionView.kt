@@ -32,9 +32,9 @@ import kotlin.math.roundToInt
  *
  * It is always shown while the map has something to credit, in the corner the map's options choose,
  * inside the content padding; padding that leaves it no room is ignored, so no option hides it.
- * Compact, it is a button and, on one or two lines, every source credit, the style's notices and
- * World's fair-use notice ([MapAttributionStrip]): a credit that does not fit is shortened, never
- * left out. The button opens every entry in full, in order, with its links. TalkBack reads the full
+ * The compact control has a button and up to two lines of source and regional credits, style
+ * notices and World's fair-use notice ([MapAttributionStrip]), shortened to fit. The button opens
+ * every entry in full, in order, with its links. TalkBack reads the full
  * text of every entry from the compact control and offers each link as an action. Links never open
  * by themselves: they reach the map view, which reports the request.
  *
@@ -66,7 +66,7 @@ internal class MapAttributionView(context: Context) : ViewGroup(context) {
     var expanded: Boolean = false
         private set
     private var linkActions: List<Int> = emptyList()
-    /** What the compact control shows: every source credit, then the notices. */
+    /** What the compact control shows: every source and regional credit, then the notices. */
     private var stripItems: List<MapAttributionStrip.Item> = emptyList()
 
     val control = LinearLayout(context)
@@ -355,10 +355,9 @@ internal class MapAttributionView(context: Context) : ViewGroup(context) {
 }
 
 /**
- * What the compact control shows on one or two lines: every source credit in order, then the
- * style's notices and World's fair-use notice. When they do not fit, the longest credits are
- * shortened first, to a common length, each keeping at least its first character and an ellipsis;
- * notices keep their text. Nothing is left out.
+ * Compact source and regional credits, style notices and World's fair-use notice.
+ * The longest credits shorten first, to a common length, keeping at least their first character
+ * and an ellipsis. Notices keep their text while credits shorten.
  */
 internal object MapAttributionStrip {
     data class Item(
@@ -374,7 +373,8 @@ internal object MapAttributionStrip {
     fun items(entries: List<MapAttributionEntry>): List<Item> =
         entries.mapNotNull {
             when (it.kind) {
-                MapAttributionEntry.Kind.SOURCE -> Item(it.text, false)
+                MapAttributionEntry.Kind.SOURCE,
+                MapAttributionEntry.Kind.REGIONAL -> Item(it.text, false)
                 MapAttributionEntry.Kind.NOTICE,
                 MapAttributionEntry.Kind.FAIR_USE -> Item(it.text, true)
                 else -> null
@@ -467,15 +467,23 @@ internal object MapAttributionStrip {
     private fun allowedLengths(characters: IntArray): List<IntRange> {
         val count = characters.size
         if (count <= 1) return listOf(1..1)
+        val firstWord =
+            (0 until count).firstOrNull { Character.isWhitespace(characters[it]) } ?: count
+        val brand = 1..maxOf(1, minOf(firstWord, count - 1))
+
+        // Downloaded chart credits put their qualification later in a colon-led paragraph.
+        val colon = characters.indexOf(':'.code)
+        if (colon >= 0) {
+            val name = String(characters, 0, colon)
+            if (" ENC" in name || " IENC" in name) return listOf(brand)
+        }
         val dash =
             (1 until count - 1).firstOrNull {
                 (characters[it] == '—'.code || characters[it] == '–'.code) &&
                     characters[it - 1] == ' '.code &&
                     characters[it + 1] == ' '.code
             } ?: return listOf(1..count - 1)
-        val firstWord =
-            (0 until count).firstOrNull { Character.isWhitespace(characters[it]) } ?: count
-        val ranges = mutableListOf(1..maxOf(1, minOf(firstWord, count - 1)))
+        val ranges = mutableListOf(brand)
         val clause = (dash + 2 until count).firstOrNull { characters[it] == ','.code }
         if (clause != null) ranges += clause..count - 1
         return ranges

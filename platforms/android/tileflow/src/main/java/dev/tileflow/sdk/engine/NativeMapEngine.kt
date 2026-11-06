@@ -356,7 +356,9 @@ internal class NativeMapEngine(
                         throw failure
                     }
                     if (method == MapContract.Method.SET_IMAGES) sceneContent.imagesChanged()
-                    if (method == MapContract.Method.ADD_SOURCE || method == MapContract.Method.REMOVE_SOURCE) {
+                    if (method == MapContract.Method.ADD_SOURCE ||
+                        method == MapContract.Method.UPDATE_SOURCE ||
+                        method == MapContract.Method.REMOVE_SOURCE) {
                         projection?.let { attribution.setStyle(it.style, (it.attributions + runtimeStyle.attributions).distinct()) }
                     }
                     result

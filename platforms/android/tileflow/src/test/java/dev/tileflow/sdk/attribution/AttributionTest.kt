@@ -573,6 +573,24 @@ class AttributionTest {
         view.layout(0, 0, width, height)
     }
 
+    @Test
+    fun colonQualifiedChartCreditsKeepTheirQualificationWhenShortened() {
+        val text = "NOAA ENC 2026-10-20: NOAA ENC® data, Office of Coast Survey. Tileflow Nautical is not an official or certified NOAA ENC."
+        val shortened = MapAttributionStrip.shorten(text, 120f) { it.length * 6f }
+
+        assertEquals("NOAA…", shortened)
+    }
+
+    @Test
+    fun regionalCreditsStayOnTheCompactStrip() {
+        val entries = listOf(
+            MapAttributionEntry(MapAttributionEntry.Kind.SOURCE, "© Tileflow"),
+            MapAttributionEntry(MapAttributionEntry.Kind.REGIONAL, "© IGN España"),
+        )
+
+        assertEquals(entries.map { it.text }, MapAttributionStrip.items(entries).map { it.text })
+    }
+
     /**
      * Every source credit stays on the map, shortened when needed and never left out, also with
      * many sources on a narrow phone; the notice stays whole.

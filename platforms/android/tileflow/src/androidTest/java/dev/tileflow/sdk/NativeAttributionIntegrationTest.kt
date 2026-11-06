@@ -189,6 +189,40 @@ public class NativeAttributionIntegrationTest {
         }
     }
 
+    @Test
+    public fun updatingASourceRefreshesItsAttribution() {
+        Fixture.require("${Fixture.ORIGIN}/manifest.json")
+        val activity = show(
+            TileflowMapSource(
+                map = "fixture",
+                manifestUrl = URI("${Fixture.ORIGIN}/manifest.json"),
+                allowsLoopbackHttp = true,
+            )
+        )
+        try {
+            runBlocking {
+                withContext(Dispatchers.Main) {
+                    val map = activity.map
+                    val control = attribution(activity)
+                    map.addSource(
+                        TileflowGeoJSONSource("credited", TileflowGeoJSONData.Empty, attribution = "Original provider")
+                    )
+                    assertTrue(control.entries.any { it.text == "Original provider" })
+
+                    map.updateSource("credited", JSONObject().put("attribution", "Replacement provider"))
+
+                    assertTrue(control.entries.any { it.text == "Replacement provider" })
+                    assertFalse(control.entries.any { it.text == "Original provider" })
+
+                    map.updateSource("credited", JSONObject().put("attribution", JSONObject.NULL))
+                    assertFalse(control.entries.any { it.text == "Replacement provider" })
+                }
+            }
+        } finally {
+            instrumentation.runOnMainSync { activity.finish() }
+        }
+    }
+
     // Marine credits
 
     @Test

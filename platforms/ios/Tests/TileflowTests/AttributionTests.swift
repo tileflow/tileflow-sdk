@@ -417,6 +417,21 @@ final class AttributionTests: XCTestCase {
         && text.hasPrefix(String(piece.dropLast())))
   }
 
+  func testColonQualifiedChartCreditsKeepTheirQualificationWhenShortened() {
+    let text = "NOAA ENC 2026-10-20: NOAA ENC® data, Office of Coast Survey. Tileflow Nautical is not an official or certified NOAA ENC."
+    let shortened = MapAttributionStrip.shorten(text, to: 120, measure: { CGFloat($0.count * 6) })
+
+    XCTAssertEqual(shortened, "NOAA…")
+  }
+
+  func testRegionalCreditsStayOnTheCompactStrip() {
+    let entries = [
+      MapAttributionEntry(.source, "© Tileflow"),
+      MapAttributionEntry(.regional, "© IGN España"),
+    ]
+    XCTAssertEqual(MapAttributionStrip.items(entries).map(\.text), entries.map(\.text))
+  }
+
   /// Every source credit stays on the map, shortened when needed and never left out, also with
   /// many sources on a narrow phone; the notice stays whole.
   func testEveryCreditStaysOnTheStripOfANarrowView() throws {

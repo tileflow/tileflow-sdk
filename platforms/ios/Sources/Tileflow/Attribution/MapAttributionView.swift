@@ -5,9 +5,9 @@ import UIKit
 ///
 /// It is always shown while the map has something to credit, in the corner the map's options
 /// choose, inside the content insets; insets that leave it no room are ignored, so no option hides
-/// it. Compact, it is a button and, on one or two lines, every source credit, the style's notices
-/// and World's fair-use notice (``MapAttributionStrip``): a credit that does not fit is shortened,
-/// never left out. The button opens every entry in full, in order, with its links. VoiceOver reads
+/// it. The compact control has a button and up to two lines of source and regional credits,
+/// style notices and World's fair-use notice (``MapAttributionStrip``), shortened to fit.
+/// The button opens every entry in full, in order, with its links. VoiceOver reads
 /// the full text of every entry from the compact control, and offers each link as an action. Links
 /// never open by themselves: they reach the map view, which reports `externalLinkRequested`.
 ///
@@ -34,7 +34,7 @@ final class MapAttributionView: UIView, UITextViewDelegate {
   }
   private(set) var entries: [MapAttributionEntry] = []
   private(set) var isExpanded = false
-  /// What the compact control shows: every source credit, then the notices.
+  /// What the compact control shows: every source and regional credit, then the notices.
   private var stripItems: [MapAttributionStrip.Item] = []
 
   let control = UIControl()
@@ -239,10 +239,9 @@ final class MapAttributionView: UIView, UITextViewDelegate {
   ) -> UITextItem.MenuConfiguration? { nil }
 }
 
-/// What the compact control shows on one or two lines: every source credit in order, then the
-/// style's notices and World's fair-use notice. When they do not fit, the longest credits are
-/// shortened first, to a common length, each keeping at least its first character and an ellipsis;
-/// notices keep their text. Nothing is left out.
+/// Compact source and regional credits, style notices and World's fair-use notice.
+/// The longest credits shorten first, to a common length, keeping at least their first character
+/// and an ellipsis. Notices keep their text while credits shorten.
 enum MapAttributionStrip {
   struct Item: Equatable, Sendable {
     let text: String
@@ -257,9 +256,9 @@ enum MapAttributionStrip {
   static func items(_ entries: [MapAttributionEntry]) -> [Item] {
     entries.compactMap { entry in
       switch entry.kind {
-      case .source: Item(text: entry.text, keepsText: false)
+      case .source, .regional: Item(text: entry.text, keepsText: false)
       case .notice, .fairUse: Item(text: entry.text, keepsText: true)
-      case .obligation, .page, .regional: nil
+      case .obligation, .page: nil
       }
     }
   }
@@ -346,13 +345,20 @@ enum MapAttributionStrip {
   private static func allowedLengths(_ characters: [Character]) -> [ClosedRange<Int>] {
     let count = characters.count
     guard count > 1 else { return [1...1] }
+    let firstWord = characters.firstIndex(where: \.isWhitespace) ?? count
+    let brand = 1...max(1, min(firstWord, count - 1))
+
+    // Downloaded chart credits put their qualification later in a colon-led paragraph.
+    if let colon = characters.firstIndex(of: ":") {
+      let name = String(characters[..<colon])
+      if name.contains(" ENC") || name.contains(" IENC") { return [brand] }
+    }
     let dash = characters.indices.first { index in
       index > 0 && index + 1 < count && ["—", "–"].contains(characters[index])
         && characters[index - 1] == " " && characters[index + 1] == " "
     }
     guard let dash else { return [1...(count - 1)] }
-    let firstWord = characters.firstIndex(where: \.isWhitespace) ?? count
-    var ranges = [1...max(1, min(firstWord, count - 1))]
+    var ranges = [brand]
     if let clause = characters[(dash + 2)...].firstIndex(of: ","), clause < count {
       ranges.append(clause...(count - 1))
     }

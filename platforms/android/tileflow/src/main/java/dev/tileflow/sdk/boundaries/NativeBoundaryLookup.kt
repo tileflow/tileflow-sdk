@@ -2,8 +2,11 @@ package dev.tileflow.sdk.boundaries
 
 import dev.tileflow.sdk.JoinBoundaryRowsOptions
 import dev.tileflow.sdk.TileflowBoundaryClass
+import dev.tileflow.sdk.TileflowBoundaryCode
 import dev.tileflow.sdk.TileflowBoundaryJoinResult
+import dev.tileflow.sdk.TileflowBoundaryKey
 import dev.tileflow.sdk.TileflowBoundaryLookup
+import dev.tileflow.sdk.TileflowBoundaryLookupRow
 import dev.tileflow.sdk.TileflowBoundaryRow
 import dev.tileflow.sdk.TileflowErrorCode
 import dev.tileflow.sdk.TileflowErrorContext
@@ -75,21 +78,25 @@ internal data class BoundaryLookupDescriptor(
 internal val JoinBoundaryRowsOptions.needsMapLookup: Boolean
     get() = joinBy != to.code && lookup == null && classes?.isEmpty() != true
 
-/** Loads only requested lookup classes through the map's existing authorized HTTP transport. */
+/** Resolves current lookup classes from durable storage or the map's authorized HTTP transport. */
 internal object NativeBoundaryLookup {
-    private const val MAXIMUM_COMPRESSED_BYTES = 16 * 1024 * 1024
+    private const val MAXIMUM_COMPRESSED_BYTES = BoundaryLookupStore.MAXIMUM_ARCHIVE_BYTES
     private const val MAXIMUM_CSV_BYTES = 64 * 1024 * 1024
 
     private data class Archive(val rows: Long, val bytes: Int, val sha256: String)
+
+    private data class Parsed(
+        val matchingRows: List<TileflowBoundaryLookupRow>,
+        val count: Long,
+    )
 
     fun join(
         rows: List<TileflowBoundaryRow>,
         options: JoinBoundaryRowsOptions,
         descriptor: BoundaryLookupDescriptor?,
         loader: ResourceLoader,
+        store: BoundaryLookupStore,
     ): TileflowBoundaryJoinResult {
-        requireOnline(loader)
-
         if (options.joinBy == options.to.code || options.lookup != null)
             return joinBoundaryRows(rows, options)
         if (options.classes?.isEmpty() == true)
@@ -104,10 +111,23 @@ internal object NativeBoundaryLookup {
         if (keys.isEmpty())
             return joinBoundaryRows(rows, options.copy(lookup = TileflowBoundaryLookup(emptyList())))
 
-        val files = descriptor.manifestUrl?.let { url ->
-            manifestFiles(read(loader, url), descriptor.releaseId)
+        val files by lazy(LazyThreadSafetyMode.NONE) {
+            descriptor.manifestUrl?.let { url ->
+                manifestFiles(read(loader, url), descriptor.releaseId)
+            }
         }
         val lookupRows = classes.flatMap { boundaryClass ->
+            val key = store.key(descriptor, boundaryClass)
+            val saved = store.read(key)
+            if (saved != null) {
+                val parsed = try {
+                    parseClass(saved.bytes, boundaryClass, options.joinBy, keys)
+                } catch (_: TileflowMapException) {
+                    null
+                }
+                if (parsed != null && parsed.count == saved.rows) return@flatMap parsed.matchingRows
+            }
+
             val url = urls.getValue(boundaryClass)
             val archive = files?.let { archive(it, boundaryClass, url) }
             val bytes = read(loader, url)
@@ -115,25 +135,36 @@ internal object NativeBoundaryLookup {
                 (bytes.size != archive.bytes || ResourceDigest.sha256(bytes) != archive.sha256)
             ) throw invalid()
 
-            var rowCount = 0L
-            val parsed = try {
-                parseBoundaryLookupCsv(decode(bytes)) { row ->
-                    require(row.boundaryClass == boundaryClass && row.id >= 0)
-                    rowCount++
-                    val key = row.key(options.joinBy)?.let(options.joinBy::normalize)
-                    key != null && key in keys
-                }
-            } catch (_: IllegalArgumentException) {
-                throw invalid()
-            } catch (_: IOException) {
-                throw invalid()
+            val parsed = parseClass(bytes, boundaryClass, options.joinBy, keys)
+            if (archive != null && parsed.count != archive.rows) throw invalid()
+            if (!store.write(key, BoundaryLookupStore.Record(bytes, parsed.count))) {
+                throw unavailable(message = "The map's Boundaries lookup could not be saved on this device.")
             }
-            if (archive != null && rowCount != archive.rows) throw invalid()
-            parsed
+            parsed.matchingRows
         }
-        val lookup = TileflowBoundaryLookup(lookupRows)
-        requireOnline(loader)
-        return joinBoundaryRows(rows, options.copy(lookup = lookup))
+        return joinBoundaryRows(rows, options.copy(lookup = TileflowBoundaryLookup(lookupRows)))
+    }
+
+    private fun parseClass(
+        bytes: ByteArray,
+        boundaryClass: TileflowBoundaryClass,
+        code: TileflowBoundaryCode,
+        keys: Set<TileflowBoundaryKey>,
+    ): Parsed {
+        var rowCount = 0L
+        val parsed = try {
+            parseBoundaryLookupCsv(decode(bytes)) { row ->
+                require(row.boundaryClass == boundaryClass && row.id >= 0)
+                rowCount++
+                val key = row.key(code)?.let(code::normalize)
+                key != null && key in keys
+            }
+        } catch (_: IllegalArgumentException) {
+            throw invalid()
+        } catch (_: IOException) {
+            throw invalid()
+        }
+        return Parsed(parsed, rowCount)
     }
 
     private fun read(loader: ResourceLoader, url: URI): ByteArray {
@@ -153,8 +184,10 @@ internal object NativeBoundaryLookup {
         } catch (_: IllegalArgumentException) {
             throw unavailable()
         }
-        requireOnline(loader)
-        if (response.status != 200) throw unavailable(response.status)
+        if (response.status != 200) {
+            requireOnline(loader)
+            throw unavailable(response.status)
+        }
         if (response.bytes.size > MAXIMUM_COMPRESSED_BYTES) throw tooLarge(MAXIMUM_COMPRESSED_BYTES)
         return response.bytes
     }
@@ -220,18 +253,21 @@ internal object NativeBoundaryLookup {
         TileflowErrorContext(
             reason = ErrorReason.BOUNDARY_LOOKUP_OFFLINE.wireName,
             resource = TileflowResourceKind.DATA,
-            message = "Boundary row joins on a map require an online connection.",
+            message = "Connect to download the Boundaries lookup for this map release.",
         ),
     )
 
-    private fun unavailable(status: Int? = null) =
+    private fun unavailable(
+        status: Int? = null,
+        message: String = "The map's Boundaries lookup could not be loaded.",
+    ) =
         TileflowMapException(
             TileflowErrorCode.RESOURCE_FAILED,
             TileflowErrorContext(
                 reason = ErrorReason.BOUNDARY_LOOKUP_UNAVAILABLE.wireName,
                 resource = TileflowResourceKind.DATA,
                 status = status,
-                message = "The map's Boundaries lookup could not be loaded.",
+                message = message,
             ),
         )
 

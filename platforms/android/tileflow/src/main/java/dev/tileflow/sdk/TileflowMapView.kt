@@ -1337,7 +1337,7 @@ constructor(
                         }
                     },
                 )
-            val created = NativeMapEngine(context, resourceLoader, loadable.grantScope, callbacks)
+            val created = NativeMapEngine(context, resourceLoader, loadable, callbacks)
             engine = created
             addView(
                 created.view,

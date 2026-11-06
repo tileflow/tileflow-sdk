@@ -43,6 +43,8 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   let container = UIView()
   private(set) var mapView: MLNMapView?
   let loader: any ResourceLoading
+  let boundaryLookupIdentity: BoundaryLookupIdentity?
+  let boundaryLookupStore: BoundaryLookupStore
   private let grantScope: ResourceCacheScope?
   private let offline: OfflineServingIndex
   /// The map's context in MapLibre's requests, while it is registered.
@@ -99,9 +101,13 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
 
   init(
     frame: CGRect, loader: any ResourceLoading, grantScope: ResourceCacheScope?,
-    offline: OfflineServingIndex = .shared
+    offline: OfflineServingIndex = .shared,
+    boundaryLookupIdentity: BoundaryLookupIdentity? = nil,
+    boundaryLookupStore: BoundaryLookupStore = .shared
   ) {
     self.loader = loader
+    self.boundaryLookupIdentity = boundaryLookupIdentity
+    self.boundaryLookupStore = boundaryLookupStore
     self.grantScope = grantScope
     self.offline = offline
     super.init()

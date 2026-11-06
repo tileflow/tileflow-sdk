@@ -5,6 +5,18 @@ import XCTest
 
 final class BoundaryLookupTests: XCTestCase {
   private let origin = "https://lookup.test"
+  private var storageRoot: URL!
+
+  override func setUp() {
+    storageRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  }
+
+  override func tearDown() { try? FileManager.default.removeItem(at: storageRoot) }
+
+  private func store() -> BoundaryLookupStore { BoundaryLookupStore(root: storageRoot) }
+  private var identity: BoundaryLookupIdentity {
+    .selfHosted(manifestURL: URL(string: origin + "/map.json")!, map: "fixture")
+  }
   private let gzip = Data(
     base64Encoded:
       "H4sIAAAAAAAC/8tM0UnOSSwu1skszo83NjQzizfSKUpN4zI0MADS6Zn5eTquwbq+LhCSCwDb2jtMLwAAAA==")!
@@ -33,6 +45,29 @@ final class BoundaryLookupTests: XCTestCase {
     ]
   }
 
+  func testDownloadedClassAnswersAnotherKeyAfterServiceRecreationOffline() async throws {
+    let body = Data(
+      "id,class,iso_3166_2,ref\n100,region,ES-MD,ES-MD\n101,region,ES-CT,ES-CT\n".utf8)
+    let transport = RecordingTransport { _ in
+      ResourcePayload(bytes: body, status: 200, headers: ["Cache-Control": "no-store"])
+    }
+    let loader = ResourceLoader(
+      policy: .init(origins: [origin]), transport: transport,
+      networkEnabled: { true }, reachable: { true })
+    let first = try await BoundaryLookupService(
+      loader: loader, store: store(), identity: identity, online: { true }
+    ).lookup(
+      descriptor(), classes: [.region], matching: .iso31662, keys: ["ES-MD"])
+    XCTAssertEqual(first.rows.map(\.id), [100])
+
+    let reopened = try await BoundaryLookupService(
+      loader: loader, store: store(), identity: identity, online: { false }
+    ).lookup(
+      descriptor(), classes: [.region], matching: .iso31662, keys: ["ES-CT"])
+    XCTAssertEqual(reopened.rows.map(\.id), [101])
+    XCTAssertEqual(transport.requests.count, 1)
+  }
+
   func testProjectionCapturesTheRenderedReleaseAndFetchesOnlyRequestedClasses() async throws {
     let projection = try await NativeStyleDocument.project(
       [
@@ -54,13 +89,15 @@ final class BoundaryLookupTests: XCTestCase {
     let loader = ResourceLoader(
       policy: .init(origins: [origin]), transport: transport,
       networkEnabled: { true }, reachable: { true })
-    let lookup = try await BoundaryLookupService(loader: loader, online: { true })
-      .lookup(descriptor, classes: [.region, .region])
+    let lookup = try await BoundaryLookupService(
+      loader: loader, store: store(), identity: identity, online: { true }
+    )
+    .lookup(descriptor, classes: [.region, .region])
     XCTAssertEqual(transport.requests.map { $0.url!.path }, ["/release-one/region.csv.gz"])
     XCTAssertEqual(lookup.find(.iso31662, key: "es-md").map(\.id), [100])
   }
 
-  func testAmbientCacheSurvivesReloadButOfflineFailsEvenWithCachedBytes() async throws {
+  func testDerivedStorageSurvivesReloadAndAmbientCacheClearing() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
     func cache() -> ResourceCacheStore {
@@ -75,22 +112,28 @@ final class BoundaryLookupTests: XCTestCase {
     let first = ResourceLoader(
       policy: .init(origins: [origin]), transport: transport,
       cache: firstCache, networkEnabled: { true }, reachable: { true })
-    _ = try await BoundaryLookupService(loader: first, online: { true })
-      .lookup(descriptor(), classes: [.region])
+    _ = try await BoundaryLookupService(
+      loader: first, store: store(), identity: identity, online: { true }
+    )
+    .lookup(descriptor(), classes: [.region])
     firstCache.settle()
+    firstCache.clear()
+    XCTAssertEqual(firstCache.usage().entries, 0)
     let secondCache = cache()
     let second = ResourceLoader(
       policy: .init(origins: [origin]), transport: transport,
       cache: secondCache, networkEnabled: { true }, reachable: { true })
-    _ = try await BoundaryLookupService(loader: second, online: { true })
-      .lookup(descriptor(), classes: [.region])
+    _ = try await BoundaryLookupService(
+      loader: second, store: store(), identity: identity, online: { true }
+    )
+    .lookup(descriptor(), classes: [.region])
     XCTAssertEqual(transport.requests.count, 1)
 
-    do {
-      _ = try await BoundaryLookupService(loader: second, online: { false })
-        .lookup(descriptor(), classes: [.region])
-      XCTFail("An offline lookup used cached bytes")
-    } catch let error as TileflowBoundaryJoinError { XCTAssertEqual(error, .offline) }
+    let stored = try await BoundaryLookupService(
+      loader: second, store: store(), identity: identity,
+      online: { false }
+    ).lookup(descriptor(), classes: [.region])
+    XCTAssertEqual(stored.rows.map(\.id), [100])
     let offline = ResourceLoader(
       policy: .init(origins: [origin]), transport: transport,
       cache: secondCache, networkEnabled: { false }, reachable: { true })
@@ -135,7 +178,11 @@ final class BoundaryLookupTests: XCTestCase {
         policy: .init(origins: [origin]), transport: transport,
         networkEnabled: { true }, reachable: { true })
       do {
-        let result = try await BoundaryLookupService(loader: loader, online: { true }).lookup(
+        let result = try await BoundaryLookupService(
+          loader: loader,
+          store: .init(root: storageRoot.appendingPathComponent(failure)), identity: identity,
+          online: { true }
+        ).lookup(
           descriptor, classes: [.region], matching: .iso31662, keys: ["missing"])
         XCTAssertEqual(failure, "none")
         XCTAssertTrue(result.rows.isEmpty)
@@ -182,8 +229,10 @@ final class BoundaryLookupTests: XCTestCase {
       policy: .init(origins: [origin]), transport: transport,
       cache: cache, networkEnabled: { true }, reachable: { true })
     do {
-      _ = try await BoundaryLookupService(loader: loader, online: { true })
-        .lookup(descriptor(), classes: [.region])
+      _ = try await BoundaryLookupService(
+        loader: loader, store: store(), identity: identity, online: { true }
+      )
+      .lookup(descriptor(), classes: [.region])
       XCTFail("Offline fallback answered an online-only lookup")
     } catch let error as TileflowBoundaryJoinError { XCTAssertEqual(error, .offline) }
   }
@@ -196,9 +245,10 @@ final class BoundaryLookupTests: XCTestCase {
     let loader = ResourceLoader(
       policy: .init(origins: [origin]), transport: transport,
       networkEnabled: { true }, reachable: { true })
-    let service = BoundaryLookupService(loader: loader, online: { true })
+    let service = BoundaryLookupService(
+      loader: loader, store: store(), identity: identity, online: { true })
     for _ in 0..<2 { _ = try await service.lookup(descriptor, classes: [.region]) }
-    XCTAssertEqual(transport.requests.count, 2)
+    XCTAssertEqual(transport.requests.count, 1)
     do {
       _ = try await service.lookup(descriptor, classes: [.municipality])
       XCTFail("Missing class accepted")
@@ -213,8 +263,11 @@ final class BoundaryLookupTests: XCTestCase {
       },
       networkEnabled: { true }, reachable: { true })
     do {
-      _ = try await BoundaryLookupService(loader: denied, online: { true })
-        .lookup(descriptor, classes: [.region])
+      _ = try await BoundaryLookupService(
+        loader: denied, store: .init(root: storageRoot.appendingPathComponent("denied")),
+        identity: identity, online: { true }
+      )
+      .lookup(descriptor, classes: [.region])
       XCTFail("Denied lookup accepted")
     } catch let error as TileflowBoundaryJoinError { XCTAssertEqual(error, .accessDenied) }
     XCTAssertThrowsError(try ResourceCompression.gunzip(gzip, maximumBytes: 2))
@@ -222,13 +275,16 @@ final class BoundaryLookupTests: XCTestCase {
   }
 
   func testGatewayTimeoutDoesNotPretendTheDeviceIsOffline() async throws {
-    let loader = ResourceLoader(policy: .init(origins: [origin]),
+    let loader = ResourceLoader(
+      policy: .init(origins: [origin]),
       transport: RecordingTransport { _ in
         ResourcePayload(bytes: Data(), status: 504, headers: [:])
       }, networkEnabled: { true }, reachable: { true })
     do {
-      _ = try await BoundaryLookupService(loader: loader, online: { true })
-        .lookup(descriptor(), classes: [.region])
+      _ = try await BoundaryLookupService(
+        loader: loader, store: store(), identity: identity, online: { true }
+      )
+      .lookup(descriptor(), classes: [.region])
       XCTFail("Gateway timeout accepted")
     } catch let error as TileflowBoundaryJoinError {
       XCTAssertEqual(error, .requestFailed(status: 504))
@@ -236,27 +292,33 @@ final class BoundaryLookupTests: XCTestCase {
   }
 
   @MainActor
-  func testMapCallRejectsOfflineDirectJoinsAndDiscardedGenerations() async throws {
+  func testMapCallAllowsOfflineDirectJoinsRejectsMissingLookupsAndDiscardedGenerations()
+    async throws
+  {
     let gate = BoundaryLookupGate()
-    let engine = NativeMapEngine(frame: .zero, loader: gate, grantScope: nil)
+    let engine = NativeMapEngine(
+      frame: .zero, loader: gate, grantScope: nil,
+      boundaryLookupIdentity: identity, boundaryLookupStore: store())
     engine.boundaryLookup = try descriptor()
     let direct = try JSONValue.encoded(
       BoundaryJoinRequest(
         rows: [.init(key: 100, value: 1)], options: .init(joinBy: .id)))
     TileflowHTTPClient.shared.isNetworkEnabled = false
-    do {
-      _ = try await engine.joinBoundaries(direct)
-      XCTFail("The map API joined while offline")
-    } catch let error as TileflowMapError {
-      XCTAssertEqual(error.context.reason, "boundaryLookupOffline")
-    }
-    TileflowHTTPClient.shared.isNetworkEnabled = true
     defer { TileflowHTTPClient.shared.isNetworkEnabled = true }
-
+    let directResult = try await engine.joinBoundaries(direct)
+    XCTAssertEqual(directResult["rows"]?.array?.first?["key"]?.number, 100)
     let payload = try JSONValue.encoded(
       BoundaryJoinRequest(
         rows: [.init(key: "ES-MD", value: 1)], options: .init(joinBy: .iso31662, classes: [.region])
       ))
+    do {
+      _ = try await engine.joinBoundaries(payload)
+      XCTFail("The map read a missing lookup while offline")
+    } catch let error as TileflowMapError {
+      XCTAssertEqual(error.context.reason, "boundaryLookupOffline")
+    }
+    TileflowHTTPClient.shared.isNetworkEnabled = true
+
     let task = Task { try await engine.joinBoundaries(payload) }
     await gate.waitUntilStarted()
     engine.boundaryLookupRevision += 1

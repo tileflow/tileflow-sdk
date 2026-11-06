@@ -48,7 +48,7 @@ test('boundary joins wait for the map and serialize only lookup data', async () 
   ]);
 });
 
-test('boundary joins retain the typed offline failure', async () => {
+test('boundary joins retain the typed offline lookup miss', async () => {
   const failure = {
     code: 'resourceFailed',
     recoverable: true,
@@ -66,7 +66,9 @@ test('boundary joins retain the typed offline failure', async () => {
   map.attach(1);
   map.receive('mount', 'contentReady', {});
   await assert.rejects(
-    createMapRef(map, new StyleRegistry(map)).joinBoundaryRows([], {joinBy: 'id'}),
+    createMapRef(map, new StyleRegistry(map)).joinBoundaryRows([{key: 'Q2807', value: 1}], {
+      joinBy: 'wikidata',
+    }),
     {
       code: 'resourceFailed',
       context: {reason: 'boundaryLookupOffline'},

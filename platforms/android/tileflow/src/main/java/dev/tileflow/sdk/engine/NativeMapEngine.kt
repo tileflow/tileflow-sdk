@@ -9,6 +9,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
 import dev.tileflow.sdk.JoinBoundaryRowsOptions
+import dev.tileflow.sdk.LoadableMapSource
 import dev.tileflow.sdk.TileflowBoundaryJoinResult
 import dev.tileflow.sdk.TileflowBoundaryRow
 import dev.tileflow.sdk.TileflowCamera
@@ -19,6 +20,7 @@ import dev.tileflow.sdk.TileflowErrorContext
 import dev.tileflow.sdk.TileflowMapException
 import dev.tileflow.sdk.TileflowResourceKind
 import dev.tileflow.sdk.attribution.MapAttributionControl
+import dev.tileflow.sdk.boundaries.BoundaryLookupStore
 import dev.tileflow.sdk.boundaries.NativeBoundaryLookup
 import dev.tileflow.sdk.boundaries.needsMapLookup
 import dev.tileflow.sdk.model.MapContract
@@ -29,7 +31,7 @@ import dev.tileflow.sdk.offline.OfflineServingRule
 import dev.tileflow.sdk.transport.MapResourceContexts
 import dev.tileflow.sdk.transport.MapResourceOutcome
 import dev.tileflow.sdk.transport.MapResourceRoute
-import dev.tileflow.sdk.transport.ResourceCacheScope
+import dev.tileflow.sdk.transport.grantScope
 import dev.tileflow.sdk.transport.ResourceLoader
 import dev.tileflow.sdk.transport.TileflowHttpClient
 import java.net.URI
@@ -69,11 +71,12 @@ internal class NativeMapEngine(
     context: Context,
     /** The generation's resource owner; the engine closes it when it retires. */
     private val loader: ResourceLoader,
-    /** The cache scope of a Hosted map's protected resources, or null for a self-hosted map. */
-    private val grantScope: ResourceCacheScope?,
+    source: LoadableMapSource,
     private val callbacks: MapEngineCallbacks,
 ) : MapEngine {
     private val application: Context = context.applicationContext ?: context
+    private val grantScope = source.grantScope
+    private val boundaryLookups = BoundaryLookupStore.forMap(application, source)
     private val container = FrameLayout(context)
     /** MapLibre's view, inside the engine's container under an image of the map during a change. */
     internal val mapView: MapView
@@ -308,7 +311,9 @@ internal class NativeMapEngine(
         if (retired) throw TileflowMapException(retiredCode)
         val descriptor = projection?.boundaryLookup
         val result = try {
-            withContext(Dispatchers.IO) { NativeBoundaryLookup.join(rows, options, descriptor, loader) }
+            withContext(Dispatchers.IO) {
+                NativeBoundaryLookup.join(rows, options, descriptor, loader, boundaryLookups)
+            }
         } catch (failure: Exception) {
             currentCoroutineContext().ensureActive()
             if (retired) throw TileflowMapException(retiredCode)

@@ -271,11 +271,12 @@ public class MapSceneIntegrationTest {
                     if (joinRows) {
                         TileflowOfflineSwitch.isNetworkEnabled = false
                         try {
-                            val error = runCatching {
-                                view.joinBoundaryRows(joinInput, joinOptions)
-                            }.exceptionOrNull() as? TileflowMapException
-                            assertEquals(TileflowErrorCode.RESOURCE_FAILED, error?.code)
-                            assertEquals("boundaryLookupOffline", error?.context?.reason)
+                            val offlineRows = listOf(joinInput.single().copy(key = TileflowBoundaryKey.Text(" es-md ")))
+                            val offlineOptions = joinOptions.copy(joinBy = TileflowBoundaryCode.ISO_3166_2)
+                            val offline = view.joinBoundaryRows(offlineRows, offlineOptions)
+                            assertEquals(TileflowBoundaryKey.Number(41.0), offline.rows.single().key)
+                            view.setBoundaryValues(offline.values())
+                            checkColor(Color.RED)
                         } finally {
                             TileflowOfflineSwitch.isNetworkEnabled = true
                         }

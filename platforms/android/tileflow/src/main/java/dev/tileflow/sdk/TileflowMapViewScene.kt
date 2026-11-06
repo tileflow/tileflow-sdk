@@ -340,8 +340,9 @@ public suspend fun TileflowMapView.routeInks(): TileflowRouteInks {
 }
 
 /**
- * Joins rows using the Boundaries release the map draws. Requires a ready, online map.
- * A lookup is downloaded only when the keys differ and [options] supplies no lookup.
+ * Joins rows using the Boundaries release the ready map draws. A missing lookup class is downloaded
+ * on demand and stored for later joins, including offline. Direct joins and a supplied [options]
+ * lookup use no downloaded data.
  */
 public suspend fun TileflowMapView.joinBoundaryRows(
     rows: List<TileflowBoundaryRow>,

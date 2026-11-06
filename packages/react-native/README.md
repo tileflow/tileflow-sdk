@@ -64,12 +64,14 @@ clusters. Coordinates are `[longitude, latitude]`; screen coordinates use layout
 durations use milliseconds.
 
 `MapViewRef.joinBoundaryRows(rows, options)` resolves ISO, NUTS, Wikidata and `ref` codes against
-the map's Boundaries release. Pass its result to `setBoundaryValues`. It downloads the requested
-class tables on demand and respects HTTP caching. The map method requires a connection, even with
-cached data; offline calls reject with `resourceFailed` and reason `boundaryLookupOffline`.
+the map's Boundaries release. Pass its result to `setBoundaryValues`. The first download validates
+and stores each complete class table in SDK storage, independently of HTTP caching. Later joins
+can use it offline, including different rows after a restart. A release change selects new tables;
+an unavailable current table without network rejects with `resourceFailed` and reason
+`boundaryLookupOffline`. A failed durable write also rejects the operation.
 The exported pure `joinBoundaryRows` works with a supplied `createBoundaryLookup` without network
-access. Both preserve the web join's duplicate, ambiguous and unmatched reports. Boundaries
-choropleths currently require connectivity; lookups are not added to offline packs.
+access. Both preserve the web join's duplicate, ambiguous and unmatched reports. This storage does
+not download the map's styles or tiles and does not add Boundaries to offline packs.
 
 Use `PointAnnotation` for native points, `MarkerView` for React views and `Images` for bundled or
 URI images, including SDF images. An annotation that consumes a touch takes precedence over a POI

@@ -263,7 +263,7 @@ public enum TileflowBoundaryJoinError: Error, Equatable, Sendable, LocalizedErro
     case .lookupRequired: "Joining these rows requires the Boundaries lookup table."
     case .invalidLookupID: "The Boundaries lookup has an invalid registry ID."
     case .invalidCSV: "The Boundaries lookup CSV is invalid."
-    case .offline: "Automatic Boundaries joins require a network connection."
+    case .offline: "This map release's Boundaries lookup is not stored on this device; connect to download it."
     case .lookupUnavailable: "This map release does not provide the requested Boundaries lookup."
     case .accessDenied: "The map cannot access its Boundaries lookup."
     case .mapChanged: "The map changed while its Boundaries lookup was loading."

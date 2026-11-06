@@ -7,10 +7,6 @@ struct BoundaryJoinRequest: Codable {
 
 extension NativeMapEngine {
   func joinBoundaries(_ payload: JSONValue) async throws -> JSONValue {
-    let service = BoundaryLookupService(loader: loader)
-    guard service.online() else {
-      throw TileflowMapError(.resourceFailed, reason: .boundaryLookupOffline)
-    }
     let request: BoundaryJoinRequest
     do {
       request = try JSONDecoder().decode(
@@ -21,16 +17,17 @@ extension NativeMapEngine {
     var options = request.options
     do {
       if options.lookup == nil, options.joinBy.rawValue != options.to.rawValue {
-        guard let descriptor = boundaryLookup else {
+        guard let descriptor = boundaryLookup, let identity = boundaryLookupIdentity else {
           throw TileflowBoundaryJoinError.lookupUnavailable
         }
+        let service = BoundaryLookupService(
+          loader: loader, store: boundaryLookupStore, identity: identity)
         options.lookup = try await service.lookup(
           descriptor, classes: options.classes,
           matching: options.joinBy, keys: request.rows.map(\.key))
       }
       try Task.checkCancellation()
       guard !retired, revision == boundaryLookupRevision else { throw TileflowMapError.cancelled }
-      guard service.online() else { throw TileflowBoundaryJoinError.offline }
       return try .encoded(joinBoundaryRows(request.rows, options: options))
     } catch let error as TileflowBoundaryJoinError {
       guard !retired, revision == boundaryLookupRevision else { throw TileflowMapError.cancelled }
@@ -57,6 +54,13 @@ extension NativeMapEngine {
         context: .init(
           reason: reason.rawValue, resource: .data, status: status, message: error.errorDescription)
       )
+    } catch is BoundaryLookupStorageError {
+      guard !retired, revision == boundaryLookupRevision else { throw TileflowMapError.cancelled }
+      throw TileflowMapError(
+        .resourceFailed,
+        context: .init(
+          reason: MapContract.ErrorReason.boundaryLookupUnavailable.rawValue, resource: .data,
+          message: "The Boundaries lookup could not be saved on this device."))
     } catch let error as ResourceError {
       guard !retired, revision == boundaryLookupRevision else { throw TileflowMapError.cancelled }
       if error == .responseTooLarge {

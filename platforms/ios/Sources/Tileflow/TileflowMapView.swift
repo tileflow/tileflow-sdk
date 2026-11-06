@@ -548,7 +548,8 @@ public final class TileflowMapView: UIView {
     let loader = loadable.makeLoader(session: hostedSession) { [weak self] in
       await self?.deploymentSuperseded(generation: current) ?? false
     }
-    let engine = NativeMapEngine(frame: bounds, loader: loader, grantScope: loadable.grantScope)
+    let engine = NativeMapEngine(frame: bounds, loader: loader, grantScope: loadable.grantScope,
+      boundaryLookupIdentity: loadable.boundaryLookupIdentity)
     engine.onFailure = { [weak self] error in
       self?.report(error, generation: current)
     }

@@ -304,8 +304,8 @@ extension TileflowMapView {
     return inks
   }
 
-  /// Joins rows using this map release's lookup. Requires a network connection, even when cached.
-  /// Use the global `joinBoundaryRows` function for a join without network access.
+  /// Joins rows using this map release's lookup. Downloaded classes remain available offline.
+  /// A class missing from device storage requires a network connection.
   public func joinBoundaryRows(
     _ rows: [TileflowBoundaryRow], options: JoinBoundaryRowsOptions
   ) async throws -> TileflowBoundaryJoinResult {

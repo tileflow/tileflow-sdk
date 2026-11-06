@@ -48,18 +48,19 @@ struct BoundaryLookupDescriptor: Equatable, Sendable {
 
 struct BoundaryLookupService: Sendable {
   let loader: any ResourceLoading
+  var store: BoundaryLookupStore = .shared
+  let identity: BoundaryLookupIdentity
   var online: @Sendable () -> Bool = {
     TileflowHTTPClient.shared.isNetworkEnabled && OfflineReachability.shared.isReachable
   }
 
-  static let maximumCompressedBytes = 16 * 1024 * 1024
+  static let maximumCompressedBytes = BoundaryLookupStore.maximumBodyBytes
   static let maximumDecodedBytes = 64 * 1024 * 1024
 
   func lookup(
     _ descriptor: BoundaryLookupDescriptor, classes: [TileflowBoundaryClass]?,
     matching code: TileflowBoundaryCode? = nil, keys: [TileflowBoundaryKey] = []
   ) async throws -> TileflowBoundaryLookup {
-    guard online() else { throw TileflowBoundaryJoinError.offline }
     for boundaryClass in classes ?? [] where descriptor.classes[boundaryClass] == nil {
       throw TileflowBoundaryJoinError.lookupUnavailable
     }
@@ -69,27 +70,40 @@ struct BoundaryLookupService: Sendable {
     }
     if selected.isEmpty { return try TileflowBoundaryLookup(rows: []) }
     let normalized = Set(
-      keys.compactMap { key in code.flatMap { BoundaryCodeNormalization.key(key, code: $0) } })
+      keys.compactMap { key in
+        code.flatMap { BoundaryCodeNormalization.key(key, code: $0) }
+      })
     if code != nil, normalized.isEmpty { return try TileflowBoundaryLookup(rows: []) }
-    let manifest: BoundaryLookupManifest?
-    if let url = descriptor.manifestURL {
-      let body = try await read(url)
-      guard let value = try? JSONDecoder().decode(BoundaryLookupManifest.self, from: body) else {
-        throw TileflowBoundaryJoinError.invalidCSV
-      }
-      manifest = value
-    } else {
-      manifest = nil
-    }
-    if let manifest,
-      manifest.schemaVersion != 2 || manifest.build != descriptor.releaseID
-        || manifest.family != "boundaries"
-    {
-      throw TileflowBoundaryJoinError.invalidCSV
-    }
+    var manifest: BoundaryLookupManifest?
+    var manifestLoaded = false
     var rows: [TileflowBoundaryLookupRow] = []
-    var seen = Set<TileflowBoundaryClass>()
-    for boundaryClass in selected where seen.insert(boundaryClass).inserted {
+
+    for boundaryClass in selected {
+      try Task.checkCancellation()
+      let key = BoundaryLookupStore.Key(
+        identity: identity, descriptor: descriptor,
+        boundaryClass: boundaryClass)
+      if let archive = store.read(key),
+        let parsed = try? parse(
+          archive.body, boundaryClass: boundaryClass, expectedRows: archive.rows,
+          code: code, normalized: normalized)
+      {
+        rows += parsed.rows
+        continue
+      }
+      try Task.checkCancellation()
+      guard online() else { throw TileflowBoundaryJoinError.offline }
+      if !manifestLoaded {
+        if let url = descriptor.manifestURL {
+          let body = try await read(url)
+          guard let value = try? JSONDecoder().decode(BoundaryLookupManifest.self, from: body),
+            value.schemaVersion == 2, value.build == descriptor.releaseID,
+            value.family == "boundaries"
+          else { throw TileflowBoundaryJoinError.invalidCSV }
+          manifest = value
+        }
+        manifestLoaded = true
+      }
       let url = descriptor.classes[boundaryClass]!
       let file: BoundaryLookupManifest.File?
       if let manifest {
@@ -109,41 +123,51 @@ struct BoundaryLookupService: Sendable {
       if let file, body.count != file.bytes || ResourceDigest.sha256(body) != file.sha256 {
         throw TileflowBoundaryJoinError.invalidCSV
       }
-      let bytes: Data
-      if body.starts(with: [0x1f, 0x8b]) {
-        do {
-          bytes = try ResourceCompression.gunzip(body, maximumBytes: Self.maximumDecodedBytes)
-        } catch ResourceError.responseTooLarge {
-          throw TileflowBoundaryJoinError.dataTooLarge(limit: Self.maximumDecodedBytes)
-        }
-      } else {
-        bytes = body
-      }
-      guard bytes.count <= Self.maximumDecodedBytes else {
-        throw TileflowBoundaryJoinError.dataTooLarge(limit: Self.maximumDecodedBytes)
-      }
-      guard let text = String(data: bytes, encoding: .utf8) else {
-        throw TileflowBoundaryJoinError.invalidCSV
-      }
-      var rowCount = 0
-      rows += try parseBoundaryLookupCsv(text) { row in
-        rowCount += 1
-        if rowCount.isMultiple(of: 1024) { try Task.checkCancellation() }
-        guard row.class == boundaryClass, BoundaryCodeNormalization.safeID(row.id) else {
-          throw TileflowBoundaryJoinError.invalidCSV
-        }
-        guard let code else { return true }
-        guard let raw = row.key(code), let key = BoundaryCodeNormalization.key(raw, code: code)
-        else {
-          return false
-        }
-        return normalized.contains(key)
-      }
-      if let file, rowCount != file.rows { throw TileflowBoundaryJoinError.invalidCSV }
+      let parsed = try parse(
+        body, boundaryClass: boundaryClass, expectedRows: file?.rows,
+        code: code, normalized: normalized)
+      try Task.checkCancellation()
+      try store.write(.init(body: body, rows: parsed.count), key: key)
+      rows += parsed.rows
     }
     try Task.checkCancellation()
-    guard online() else { throw TileflowBoundaryJoinError.offline }
     return try TileflowBoundaryLookup(rows: rows)
+  }
+
+  private func parse(
+    _ body: Data, boundaryClass: TileflowBoundaryClass, expectedRows: Int?,
+    code: TileflowBoundaryCode?, normalized: Set<TileflowBoundaryKey>
+  ) throws -> (rows: [TileflowBoundaryLookupRow], count: Int) {
+    let bytes: Data
+    if body.starts(with: [0x1f, 0x8b]) {
+      do {
+        bytes = try ResourceCompression.gunzip(body, maximumBytes: Self.maximumDecodedBytes)
+      } catch ResourceError.responseTooLarge {
+        throw TileflowBoundaryJoinError.dataTooLarge(limit: Self.maximumDecodedBytes)
+      }
+    } else {
+      bytes = body
+    }
+    guard bytes.count <= Self.maximumDecodedBytes else {
+      throw TileflowBoundaryJoinError.dataTooLarge(limit: Self.maximumDecodedBytes)
+    }
+    guard let text = String(data: bytes, encoding: .utf8) else {
+      throw TileflowBoundaryJoinError.invalidCSV
+    }
+    var count = 0
+    let rows = try parseBoundaryLookupCsv(text) { row in
+      count += 1
+      if count.isMultiple(of: 1024) { try Task.checkCancellation() }
+      guard row.class == boundaryClass, BoundaryCodeNormalization.safeID(row.id) else {
+        throw TileflowBoundaryJoinError.invalidCSV
+      }
+      guard let code else { return true }
+      guard let raw = row.key(code), let key = BoundaryCodeNormalization.key(raw, code: code)
+      else { return false }
+      return normalized.contains(key)
+    }
+    if let expectedRows, count != expectedRows { throw TileflowBoundaryJoinError.invalidCSV }
+    return (rows, count)
   }
 
   private func read(_ url: URL) async throws -> Data {

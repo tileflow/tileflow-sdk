@@ -876,14 +876,6 @@ final class NativeMapViewIntegrationTests: XCTestCase {
       XCTAssertEqual(result.duplicates, ["Q2807"])
       XCTAssertEqual(result.unmatched, ["Q-missing"])
       try await view.setBoundaryValues(result.values())
-      TileflowOfflineSwitch.shared.isNetworkEnabled = false
-      do {
-        _ = try await view.joinBoundaryRows([.init(key: 41, value: 1)], options: .init(joinBy: .id))
-        XCTFail("The map joined while offline")
-      } catch let error as TileflowMapError {
-        XCTAssertEqual(error.context.reason, "boundaryLookupOffline")
-      }
-      TileflowOfflineSwitch.shared.isNetworkEnabled = true
     } else {
       try await view.setBoundaryValues(.init(ids: [41: 1]))
     }
@@ -894,8 +886,20 @@ final class NativeMapViewIntegrationTests: XCTestCase {
       capture.lifetime = .keepAlways
       add(capture)
     }
-    try await view.setBoundaryValues(.init(ids: [41: 2]))
+    if join {
+      TileflowOfflineSwitch.shared.isNetworkEnabled = false
+      let offline = try await view.joinBoundaryRows([.init(key: "es-md", value: 2)],
+        options: .init(joinBy: .iso31662, classes: [.municipality]))
+      XCTAssertEqual(offline.rows, [.init(key: 41, value: 2)])
+      try await view.setBoundaryValues(offline.values())
+    } else { try await view.setBoundaryValues(.init(ids: [41: 2])) }
     try await waitForColor(0x0000ff)
+    if join {
+      let capture = XCTAttachment(image: NativeOfflineElevationTests.snapshot(window))
+      capture.name = "boundary-join-offline-registry-41-blue"
+      capture.lifetime = .keepAlways
+      add(capture)
+    }
     try await view.setBoundaryValues(nil)
     try await waitForColor(0x00ff00)
   }

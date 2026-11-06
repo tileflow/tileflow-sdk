@@ -70,7 +70,7 @@ function withTileflow(config, props) {
     return mod;
   });
   config = withProjectBuildGradle(config, (mod) => {
-    mod.modResults.contents = transforms.projectBuildGradle(mod.modResults.contents, settings);
+    mod.modResults.contents = transforms.projectBuildGradle(mod.modResults.contents);
     return mod;
   });
   return config;

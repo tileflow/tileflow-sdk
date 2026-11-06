@@ -13,11 +13,24 @@ the application's native projects:
 npm install --save-exact @tileflow/react-native@alpha
 ```
 
-For Expo, add `@tileflow/react-native` to the app's plugins. Configure credentials through the
-plugin's environment variables or native configuration. Credentials are never component props.
-For a community application, apply `tileflow_post_install(installer)` in the Podfile after
-`react_native_post_install`; the package supplies the hook in `ios/tileflow_post_install.rb`.
-Android resolves the Tileflow native artifacts through Maven Central.
+For Expo, add `@tileflow/react-native` to the app's plugins and run prebuild. The plugin adds
+Tileflow's Maven repository. Configure credentials through the plugin's environment variables
+or native configuration.
+
+For a React Native Community app, apply `tileflow_post_install(installer)` in the Podfile after
+`react_native_post_install`. The package supplies the hook in `ios/tileflow_post_install.rb`.
+Add Tileflow's repository to the root `android/build.gradle` and keep Maven Central for MapLibre:
+
+```groovy
+allprojects {
+  repositories {
+    exclusiveContent {
+      forRepository { maven { url = uri('https://maven.tileflow.dev') } }
+      filter { includeGroup('dev.tileflow') }
+    }
+  }
+}
+```
 
 Source changes can precede published packages. Check the selected package version before adopting
 an API. See the [mobile guides](https://tileflow.dev/docs).

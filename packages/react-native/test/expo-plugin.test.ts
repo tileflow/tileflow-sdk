@@ -158,16 +158,49 @@ test('iOS deployment targets rise to the SDK minimum only', () => {
   assert.equal(configurations.b.buildSettings.IPHONEOS_DEPLOYMENT_TARGET, '"16.4"');
 });
 
-test('a native candidate repository reaches every Gradle project, once', () => {
+test('Expo routes Tileflow artifacts exclusively to its Maven repository', () => {
   const gradle = `allprojects {\n  repositories {\n    google()\n    mavenCentral()\n  }\n}\n`;
-  const settings = plugin.settings({android: {mavenRepository: '/candidate/maven'}}, {});
-  const changed = plugin.projectBuildGradle(gradle, settings);
-  assert.match(
-    changed,
-    /repositories \{\n {4}maven \{ url = uri\("\/candidate\/maven"\) \} \/\/ Tileflow native candidate\n {4}google\(\)/u,
+  const settings = plugin.settings({}, {});
+  const changed = plugin.projectBuildGradle(gradle);
+  assert.ok(changed.startsWith(gradle));
+  assert.match(changed, /exclusiveContent \{[\s\S]*includeGroup\('dev\.tileflow'\)/u);
+  assert.match(changed, /gradleProperty\('tileflowMavenRepository'\)/u);
+  assert.match(changed, /https:\/\/maven\.tileflow\.dev/u);
+  assert.equal(plugin.projectBuildGradle(changed), changed);
+  assert.deepEqual(plugin.gradleProperties([], settings), [
+    {type: 'property', key: 'android.minSdkVersion', value: '26'},
+  ]);
+});
+
+test('a candidate overrides the repository without keeping stale Gradle configuration', () => {
+  const gradle = `allprojects {
+  repositories {
+    maven { url = uri("/stale/maven") } // Tileflow native candidate
+    mavenCentral()
+  }
+}
+`;
+  const settings = plugin.settings(
+    {android: {mavenRepository: '/candidate/maven', nativeVersion: '0.0.0-local.1'}},
+    {},
   );
-  assert.equal(plugin.projectBuildGradle(changed, settings), changed);
-  assert.equal(plugin.projectBuildGradle(changed, plugin.settings({}, {})), gradle);
+  const changed = plugin.projectBuildGradle(gradle);
+  assert.doesNotMatch(changed, /stale|Tileflow native candidate/u);
+  assert.match(changed, /mavenCentral\(\)/u);
+  assert.equal(plugin.projectBuildGradle(changed), changed);
+
+  const properties = plugin.gradleProperties([], settings);
+  assert.deepEqual(
+    properties.filter(({key}: {key: string}) => key.startsWith('tileflow')),
+    [
+      {type: 'property', key: 'tileflowMavenRepository', value: '/candidate/maven'},
+      {type: 'property', key: 'tileflowNativeVersion', value: '0.0.0-local.1'},
+    ],
+  );
+  assert.deepEqual(plugin.gradleProperties(properties, settings), properties);
+  assert.deepEqual(plugin.gradleProperties(properties, plugin.settings({}, {})), [
+    {type: 'property', key: 'android.minSdkVersion', value: '26'},
+  ]);
 });
 
 test('Android apps target at least API 26', () => {

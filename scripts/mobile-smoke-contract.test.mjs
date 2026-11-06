@@ -416,6 +416,28 @@ test('bounded failure projection never exposes process output, temporary paths o
   assert.deepEqual(parseMobileArguments(['android', '--keep']), {mode: 'android', keep: true});
 });
 
+test('only Android smoke accepts a public Maven rehearsal URL', () => {
+  const mavenUrl = 'https://public.example.test/maven';
+  assert.deepEqual(parseMobileArguments(['android', '--keep', '--maven-url', mavenUrl]), {
+    mode: 'android',
+    keep: true,
+    mavenUrl,
+  });
+  for (const args of [
+    ['packed', '--maven-url', mavenUrl],
+    ['ios', '--maven-url', mavenUrl],
+    ['android', '--maven-url'],
+    ['android', '--maven-url', '/local/candidate'],
+    ['android', '--maven-url', 'http://example.test'],
+    ['android', '--maven-url', 'https://user:secret@example.test'],
+    ['android', '--maven-url', 'https://example.test/?token=secret'],
+    ['android', '--maven-url', 'https://example.test/#hidden'],
+    ['android', '--maven-url', mavenUrl, '--maven-url', mavenUrl],
+  ]) {
+    assert.throws(() => parseMobileArguments(args), codeIs('INVALID_ARGUMENTS'));
+  }
+});
+
 test('root smoke commands remain opt-in and do not enter ordinary validation or publication', async () => {
   const root = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
   for (const mode of ['packed', 'android', 'ios'])

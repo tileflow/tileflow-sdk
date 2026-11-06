@@ -245,21 +245,32 @@ function gradleProperties(properties, config) {
   return next;
 }
 
-/** Adds a native candidate's local Maven repository to every project of the app's Gradle build. */
-function projectBuildGradle(source, config) {
-  const line = /^[ \t]*maven \{ url = uri\(.*\) \} \/\/ Tileflow native candidate\n/mu;
-  let next = source.replace(line, '');
-  if (!config.mavenRepository) return next;
-  const repositories = /(allprojects\s*\{\s*\n\s*repositories\s*\{\s*\n)/u;
-  if (!repositories.test(next)) {
-    throw new Error(
-      '@tileflow/react-native: android/build.gradle has no allprojects repositories.',
-    );
+const TILEFLOW_MAVEN_REPOSITORY = `// @tileflow/react-native Maven repository
+allprojects {
+  repositories {
+    exclusiveContent {
+      forRepository {
+        maven {
+          name = 'Tileflow'
+          url = rootProject.uri(providers.gradleProperty('tileflowMavenRepository').getOrElse('https://maven.tileflow.dev'))
+        }
+      }
+      filter {
+        includeGroup('dev.tileflow')
+      }
+    }
   }
-  return next.replace(
-    repositories,
-    `$1    maven { url = uri(${JSON.stringify(config.mavenRepository)}) } // Tileflow native candidate\n`,
-  );
+}
+// @tileflow/react-native Maven repository end
+`;
+
+/** Makes Tileflow's native SDK available to the app and its autolinked Android module. */
+function projectBuildGradle(source) {
+  const managed =
+    /^\/\/ @tileflow\/react-native Maven repository\r?\n[\s\S]*?^\/\/ @tileflow\/react-native Maven repository end\r?\n/gmu;
+  const legacy = /^[ \t]*maven \{ url = uri\(.*\) \} \/\/ Tileflow native candidate\r?\n/gmu;
+  const next = source.replace(managed, '').replace(legacy, '').trimEnd();
+  return `${next}\n\n${TILEFLOW_MAVEN_REPOSITORY}`;
 }
 
 module.exports = {

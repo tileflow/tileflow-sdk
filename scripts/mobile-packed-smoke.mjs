@@ -97,7 +97,7 @@ export async function runMobileSmoke(options, dependencies = {}) {
           createMobileConsumer(context, kind, packages, templates),
         native: (mode, consumer) =>
           mode === 'android'
-            ? buildMobileAndroid(context, consumer)
+            ? buildMobileAndroid(context, consumer, options.mavenUrl)
             : buildMobileIos(context, consumer),
       });
       if (dependencies.signal?.aborted) throw new MobileSmokeError('COMMAND_CANCELLED');

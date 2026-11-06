@@ -45,7 +45,8 @@ const prerequisites = new Set([
   'cocoapods',
 ]);
 const messages = Object.freeze({
-  INVALID_ARGUMENTS: 'Expected packed, android or ios, optionally followed by --keep.',
+  INVALID_ARGUMENTS:
+    'Expected packed, android or ios with optional --keep. Android accepts --maven-url <HTTPS URL>.',
   PLATFORM_UNAVAILABLE: 'Use Linux or macOS for packed/Android checks, and macOS for iOS checks.',
   PREREQUISITE_MISSING:
     'A required tool or SDK input is absent. See the mobile smoke prerequisites in CONTRIBUTING.md.',
@@ -110,16 +111,33 @@ export function projectMobileFailure(error) {
     ...(prerequisites.has(safe.prerequisite) ? {prerequisite: safe.prerequisite} : {}),
   };
 }
-export function parseMobileArguments(args) {
-  requireMobile(
-    args.length >= 1 &&
-      args.length <= 2 &&
-      ['packed', 'android', 'ios'].includes(args[0]) &&
-      (args.length === 1 || args[1] === '--keep'),
-    'INVALID_ARGUMENTS',
-    'arguments',
-  );
-  return {mode: args[0], keep: args[1] === '--keep'};
+export function parseMobileArguments([mode, ...args]) {
+  const invalid = () => new MobileSmokeError('INVALID_ARGUMENTS', 'arguments');
+  if (!['packed', 'android', 'ios'].includes(mode)) throw invalid();
+  const options = {mode, keep: false};
+
+  for (let index = 0; index < args.length; index += 1) {
+    const flag = args[index];
+    if (flag === '--keep' && !options.keep) {
+      options.keep = true;
+    } else if (flag === '--maven-url' && mode === 'android' && !options.mavenUrl) {
+      const value = args[++index];
+      const url = URL.parse(value);
+      if (
+        !value?.startsWith('https://') ||
+        !url ||
+        url.protocol !== 'https:' ||
+        url.username ||
+        url.password ||
+        /[?#]/u.test(value)
+      )
+        throw invalid();
+      options.mavenUrl = url.href;
+    } else {
+      throw invalid();
+    }
+  }
+  return options;
 }
 export function assertMobilePlatform(mode, platform) {
   requireMobile(['packed', 'android', 'ios'].includes(mode), 'INVALID_ARGUMENTS', 'arguments');

@@ -10,11 +10,9 @@ if (agpMajor < 9 || (agpMajor == 9 && !providers.gradleProperty('android.builtIn
 // Generates Fabric view delegates and TurboModule specs from src/specs.
 apply plugin: 'com.facebook.react'
 
-// The Tileflow Android SDK version this package pins, or a native candidate's with
-// tileflowNativeVersion; tileflowMavenRepository adds the candidate's local repository.
+// The app supplies the repositories and may override the pinned version for a candidate.
 def packageJson = new JsonSlurper().parse(file('../package.json'))
 def tileflowVersion = providers.gradleProperty('tileflowNativeVersion').getOrElse(packageJson.tileflow.nativeVersion)
-def tileflowRepository = providers.gradleProperty('tileflowMavenRepository').getOrNull()
 
 android {
 	namespace 'dev.tileflow.reactnative'
@@ -31,12 +29,6 @@ android {
 		kotlinOptions { jvmTarget = '17' }
 	}
 	testOptions { unitTests.includeAndroidResources = true }
-}
-
-repositories {
-	if (tileflowRepository) maven { url = uri(tileflowRepository) }
-	google()
-	mavenCentral()
 }
 
 dependencies {

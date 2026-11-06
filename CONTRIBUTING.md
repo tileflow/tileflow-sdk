@@ -85,7 +85,8 @@ prepared release bundle, and approval of the protected `npm-publish` environment
 A package README is part of its public artifact. Documentation changes can
 therefore make that package eligible for its next independent numeric alpha release, but do not
 publish it automatically. Keep builds deterministic and review the packed files before approving a
-release.
+release. Publish the native version pinned by `@tileflow/react-native` to Maven and SwiftPM
+before approving the matching npm release.
 
 Before submitting a package change, exercise the packed consumer:
 
@@ -109,6 +110,10 @@ pnpm run smoke:mobile:packed
 pnpm run smoke:mobile:android
 pnpm run smoke:mobile:ios
 ```
+
+To rehearse Android against a public Maven repository, pass `--maven-url <HTTPS URL>` to
+`smoke:mobile:android`. The smoke still reads the local candidate for its version and resolves
+`dev.tileflow` only from the URL.
 
 Packed checks need Linux/macOS, Node, npm, the repository's
 exact pnpm and `tar`; Android additionally needs JDK 21 in `JAVA_HOME`, JDK 17 in

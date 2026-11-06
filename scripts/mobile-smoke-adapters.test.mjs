@@ -331,6 +331,13 @@ for (const kind of ['expo', 'bare']) {
           join(android, 'build.gradle'),
           'buildscript {\n  ext {\n    minSdkVersion = 24\n  }\n}\n',
         );
+        await writeMobileFile(
+          root,
+          join(consumer.directory, 'node_modules/@tileflow/react-native/plugin/transforms.cjs'),
+          await readFile(
+            new URL('../packages/react-native/plugin/transforms.cjs', import.meta.url),
+          ),
+        );
         let bundle = bytecode();
         const context = await createMobileContext(root, {
           environment: {
@@ -360,20 +367,24 @@ for (const kind of ['expo', 'bare']) {
             return output();
           },
         });
-        const receipt = await buildMobileAndroid(context, consumer);
+        const mavenUrl = kind === 'expo' ? 'https://public.example.test/maven' : undefined;
+        const receipt = await buildMobileAndroid(context, consumer, mavenUrl);
         assert.equal(receipt.configuration, 'Release');
+        assert.equal(receipt.nativeMavenRepository, mavenUrl ?? 'local-candidate');
         assert.equal(receipt.nativeCandidate, '0.0.0-local.1');
         const properties = (
           await readMobileFile(root, join(android, 'gradle.properties'))
         ).toString();
+        assert.ok(
+          properties
+            .split('\n')
+            .includes(`tileflowMavenRepository=${mavenUrl ?? join(root, 'candidate', 'maven')}`),
+        );
         assert.match(properties, /^tileflowNativeVersion=0\.0\.0-local\.1$/mu);
         assert.match(properties, /^android\.minSdkVersion=26$/mu);
         const build = (await readMobileFile(root, join(android, 'build.gradle'))).toString();
         assert.match(build, /minSdkVersion = 26/u);
-        assert.match(
-          build,
-          /allprojects \{\n {2}repositories \{\n {4}maven \{ url = uri\(".*candidate\/maven"\) \}/u,
-        );
+        assert.match(build, /exclusiveContent \{[\s\S]*includeGroup\('dev\.tileflow'\)/u);
         assert.equal(receipt.files[0].hermes.version, 96);
         assert.equal(receipt.files[0].name, `${kind}/app-release.apk`);
         assert.equal(JSON.stringify(receipt).includes(root), false);

@@ -1,4 +1,5 @@
 import {realpath, stat} from 'node:fs/promises';
+import {createRequire} from 'node:module';
 import {isAbsolute, join, resolve} from 'node:path';
 import {
   assertHermesBytecode,
@@ -95,21 +96,15 @@ export function iosConsumerFiles(podfile, project) {
   };
 }
 
-/** Points a consumer's Gradle build at the candidate and raises its minimum to API 26. */
-export function androidConsumerFiles(properties, build, candidate) {
-  const repository = `maven { url = uri(${JSON.stringify(candidate.maven)}) }`;
-  const nextProperties = `${properties.replace(/\s*$/u, '')}
-tileflowMavenRepository=${candidate.maven}
-tileflowNativeVersion=${candidate.version}
+/** Selects the candidate version and repository, preserving the template's other properties. */
+function androidConsumerProperties(properties, version, repository) {
+  const previous =
+    /^(?:tileflowMavenRepository|tileflowNativeVersion|android\.minSdkVersion)=.*\r?\n/gmu;
+  return `${properties.replace(previous, '').trimEnd()}
+tileflowMavenRepository=${repository.replaceAll('\\', '\\\\')}
+tileflowNativeVersion=${version}
 android.minSdkVersion=${minimumAndroid}
 `;
-  let nextBuild = build.replace(/minSdkVersion = (\d+)/u, (line, value) =>
-    Number(value) < minimumAndroid ? `minSdkVersion = ${minimumAndroid}` : line,
-  );
-  nextBuild = /allprojects\s*\{\s*\n\s*repositories\s*\{/u.test(nextBuild)
-    ? nextBuild.replace(/(allprojects\s*\{\s*\n\s*repositories\s*\{\n)/u, `$1    ${repository}\n`)
-    : `${nextBuild.replace(/\s*$/u, '')}\n\nallprojects {\n  repositories {\n    ${repository}\n  }\n}\n`;
-  return {properties: nextProperties, build: nextBuild};
 }
 
 export async function checkMobilePrerequisites(
@@ -293,7 +288,7 @@ export function iosReleaseArguments(consumer, derived, packages) {
   ];
 }
 
-export async function buildMobileAndroid(context, consumer) {
+export async function buildMobileAndroid(context, consumer, mavenUrl) {
   const directory = join(consumer.directory, 'android');
   const step = `android-${consumer.kind}`;
   const wrapper = (
@@ -309,13 +304,29 @@ export async function buildMobileAndroid(context, consumer) {
     step,
   );
   const candidate = await readNativeCandidate(context);
-  const files = androidConsumerFiles(
-    (await readMobileFile(context.root, join(directory, 'gradle.properties'))).toString(),
-    (await readMobileFile(context.root, join(directory, 'build.gradle'))).toString(),
-    candidate,
+  const propertiesPath = join(directory, 'gradle.properties');
+  const buildPath = join(directory, 'build.gradle');
+  const pluginPath = join(
+    consumer.directory,
+    'node_modules',
+    '@tileflow',
+    'react-native',
+    'plugin',
+    'transforms.cjs',
   );
-  await writeMobileFile(context.root, join(directory, 'gradle.properties'), files.properties);
-  await writeMobileFile(context.root, join(directory, 'build.gradle'), files.build);
+  await assertOwnedPath(context.root, pluginPath);
+  const {projectBuildGradle} = createRequire(import.meta.url)(pluginPath);
+  const build = (await readMobileFile(context.root, buildPath)).toString();
+  const withMinimum = build.replace(/minSdkVersion = (\d+)/u, (line, value) =>
+    Number(value) < minimumAndroid ? `minSdkVersion = ${minimumAndroid}` : line,
+  );
+  const properties = (await readMobileFile(context.root, propertiesPath)).toString();
+  await writeMobileFile(
+    context.root,
+    propertiesPath,
+    androidConsumerProperties(properties, candidate.version, mavenUrl ?? candidate.maven),
+  );
+  await writeMobileFile(context.root, buildPath, projectBuildGradle(withMinimum));
   await context.run(
     join(directory, 'gradlew'),
     androidReleaseArguments(context.env.JAVA_HOME, context.env.TILEFLOW_JAVA_17_HOME),
@@ -362,6 +373,7 @@ export async function buildMobileAndroid(context, consumer) {
     configuration: 'Release',
     gradle: mobileVersions.gradle,
     nativeCandidate: candidate.version,
+    nativeMavenRepository: mavenUrl ?? 'local-candidate',
     files: apks,
   };
 }

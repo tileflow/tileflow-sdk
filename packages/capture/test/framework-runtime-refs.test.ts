@@ -10,6 +10,9 @@ const common = `
 import 'maplibre-gl/dist/maplibre-gl.css';
 const style = document.createElement('style'); style.textContent = 'html,body,#root {margin:0;width:100%;height:100%}'; document.head.append(style);
 const initialSource = {map:'main',manifestUrl:'/tileflow-fixture/initial.json'};
+const attribution = new URLSearchParams(location.search).get('attribution');
+const mapOptions = attribution === 'disabled' ? {attributionControl:false}
+  : attribution === 'compact' ? {attributionControl:{compact:true,customAttribution:'Additional fixture credit'}} : undefined;
 const sourceFor = value => ({map:value === 'other' ? 'other' : 'main',manifestUrl:'/tileflow-fixture/' + (value === 'waiting' ? 'waiting.json' : 'manifest.json')});
 function observeMap(map) {
   window.__runtime.maps.push(map);
@@ -32,7 +35,7 @@ configureTileflowMapLibre({workerUrl});
 function App() {
  const ref=useRef(null), [source,setSource]=useState(initialSource),[theme,setTheme]=useState('light'),[shown,setShown]=useState(true);
  useEffect(()=>{Object.assign(window.__runtime,{getRef:()=>ref.current,setTheme,setSource:value=>{window.__runtime.phase=value;setSource(sourceFor(value));},unmount:()=>setShown(false)});},[]);
- return shown ? <Map ref={ref} source={source} theme={theme} themeTransition={{duration:0}} center={[0,0]} zoom={3} height={280} onLoad={observeMap} onThemeChange={observeTheme} /> : null;
+ return shown ? <Map ref={ref} source={source} theme={theme} themeTransition={{duration:0}} center={[0,0]} zoom={3} height={280} mapOptions={mapOptions} onLoad={observeMap} onThemeChange={observeTheme} /> : null;
 }
 createRoot(document.getElementById('root')).render(<App/>);
 `;
@@ -42,16 +45,27 @@ import {ref,onMounted} from 'vue'; import {TileflowMap} from '@tileflow/vue';
 ${common}
 const map=ref(null),source=ref(initialSource),theme=ref('light'),shown=ref(true);
 onMounted(()=>Object.assign(window.__runtime,{getRef:()=>map.value,setTheme:value=>theme.value=value,setSource:value=>{window.__runtime.phase=value;source.value=sourceFor(value);},unmount:()=>shown.value=false}));
-</script><template><TileflowMap v-if="shown" ref="map" :source="source" :theme="theme" :theme-transition="{duration:0}" :center="[0,0]" :zoom="3" :height="280" @load="observeMap" @theme-change="observeTheme" /></template>`;
+</script><template><TileflowMap v-if="shown" ref="map" :source="source" :theme="theme" :theme-transition="{duration:0}" :center="[0,0]" :zoom="3" :height="280" :map-options="mapOptions" @load="observeMap" @theme-change="observeTheme" /></template>`;
 const svelteEntry = `import {mount} from 'svelte'; import App from './App.svelte'; ${worker} import {configureTileflowMapLibre} from '@tileflow/svelte'; configureTileflowMapLibre({workerUrl}); mount(App,{target:document.getElementById('root')});`;
 const svelteApp = `<script>
 import {onMount} from 'svelte'; import {TileflowMap} from '@tileflow/svelte';
 ${common}
 let map,source=initialSource,theme='light',shown=true;
 onMount(()=>{Object.assign(window.__runtime,{getRef:()=>map,setTheme:value=>theme=value,setSource:value=>{window.__runtime.phase=value;source=sourceFor(value);},unmount:()=>shown=false});});
-</script>{#if shown}<TileflowMap bind:this={map} {source} {theme} themeTransition={{duration:0}} center={[0,0]} zoom={3} height={280} on:load={event=>observeMap(event.detail)} onThemeChange={observeTheme} />{/if}`;
+</script>{#if shown}<TileflowMap bind:this={map} {source} {theme} themeTransition={{duration:0}} center={[0,0]} zoom={3} height={280} {mapOptions} on:load={event=>observeMap(event.detail)} onThemeChange={observeTheme} />{/if}`;
 
 for (const framework of ['react', 'vue', 'svelte'] as const) {
+  const fixture = () => ({
+    framework,
+    entry: framework === 'react' ? 'main.tsx' : 'main.js',
+    plugins: framework === 'vue' ? [vue()] : framework === 'svelte' ? [svelte()] : [],
+    files:
+      framework === 'react'
+        ? {'main.tsx': react}
+        : framework === 'vue'
+          ? {'main.js': vueEntry, 'App.vue': vueApp}
+          : {'main.js': svelteEntry, 'App.svelte': svelteApp},
+  });
   test(
     `${framework} runtime ref preserves rendered app layers and retires queued work`,
     {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 120_000},
@@ -301,4 +315,110 @@ for (const framework of ['react', 'vue', 'svelte'] as const) {
       );
     },
   );
+
+  test(
+    `${framework} keeps attribution visible while opening credits and dragging the map`,
+    {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 120_000},
+    async () => {
+      await withFrameworkVitePage(fixture(), async (page, origin) => {
+        await page.setViewportSize({width: 260, height: 280});
+        const manifest = await (await fetch(`${origin}/tileflow-fixture/manifest.json`)).json();
+        await page.route('**/tileflow-fixture/initial.json', (route) =>
+          route.fulfill({json: manifest}),
+        );
+        await page.route('**/tileflow-fixture/style.json', (route) =>
+          route.fulfill({json: attributionStyle('light')}),
+        );
+        await page.route('**/tileflow-fixture/dark.json', (route) =>
+          route.fulfill({json: attributionStyle('dark')}),
+        );
+
+        for (const mode of ['disabled', 'compact']) {
+          await page.goto(`${origin}/?attribution=${mode}`);
+          await page.waitForFunction(() => (window as any).__runtime?.maps.length === 1);
+          const notice = page.locator('.tileflow-notice');
+          await notice.waitFor({state: 'visible'});
+          assert.equal(await notice.innerText(), 'Not for navigation');
+
+          const credits = page.locator('.maplibregl-ctrl-attrib-inner');
+          const source = credits.getByRole('link', {name: 'North Atlantic chart contributors'});
+          await source.waitFor({state: 'visible'});
+          if (mode === 'compact')
+            assert.match(await credits.innerText(), /Additional fixture credit/u);
+
+          const info = page.getByRole('button', {name: 'Map credits'});
+          const details = page.locator('[data-tileflow-attribution-details]');
+          const inlineBounds = await credits.boundingBox();
+          const noticeBounds = await notice.boundingBox();
+          const infoBounds = await info.boundingBox();
+          await info.press('Enter');
+          assert.equal(await info.getAttribute('aria-expanded'), 'true');
+          await details.waitFor({state: 'visible'});
+          assert.equal(
+            await details.getByRole('link').getAttribute('href'),
+            'https://tileflow.dev/copyright',
+          );
+          assert.deepEqual(await credits.boundingBox(), inlineBounds);
+          assert.deepEqual(await notice.boundingBox(), noticeBounds);
+          assert.deepEqual(await info.boundingBox(), infoBounds);
+          const panelBounds = await details.boundingBox();
+          assert.ok(panelBounds && panelBounds.y >= 0);
+          assert.ok(noticeBounds && panelBounds.y + panelBounds.height <= noticeBounds.y);
+
+          await page.evaluate(() => {
+            const runtime = (window as any).__runtime;
+            runtime.maps.at(-1).once('drag', () => (runtime.dragged = true));
+          });
+          await page.mouse.move(110, 80);
+          await page.mouse.down();
+          await page.mouse.move(160, 100, {steps: 5});
+          await page.mouse.up();
+          await page.waitForFunction(() => (window as any).__runtime.dragged);
+          assert.equal(await source.isVisible(), true);
+          assert.equal(await info.isVisible(), true);
+
+          await info.click();
+          assert.equal(await details.isVisible(), false);
+          const bounds = await credits.boundingBox();
+          assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 260);
+          assert.ok(bounds.y >= 0 && bounds.y + bounds.height <= 280);
+
+          await info.click();
+          await page.evaluate(() => (window as any).__runtime.setTheme('dark'));
+          await details.getByRole('link', {name: 'North Sea chart contributors'}).waitFor();
+          assert.equal(await details.getByText('North Atlantic chart contributors').count(), 0);
+          await notice.waitFor({state: 'hidden'});
+        }
+      });
+    },
+  );
+}
+
+function attributionStyle(theme: 'light' | 'dark') {
+  const light = theme === 'light';
+  const source = light ? 'North Atlantic' : 'North Sea';
+  return {
+    version: 8,
+    name: theme,
+    ...(light
+      ? {
+          metadata: {
+            'tileflow:notices': [
+              {id: 'nautical-not-for-navigation', sources: ['points'], text: 'Not for navigation'},
+            ],
+          },
+        }
+      : {}),
+    sources: {
+      points: {
+        type: 'geojson',
+        data: {type: 'FeatureCollection', features: []},
+        attribution: `<a href="https://tileflow.dev/copyright">${source} chart contributors</a> | Marine open data contributors`,
+      },
+    },
+    layers: [
+      {id: 'background', type: 'background', paint: {'background-color': '#a9cae2'}},
+      {id: 'points', type: 'circle', source: 'points'},
+    ],
+  };
 }

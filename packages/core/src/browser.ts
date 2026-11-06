@@ -133,6 +133,10 @@ export {
   tileflowSkyHazeLayerId,
   type TileflowSkyHazeMap,
 } from './sky-haze-browser';
+export {
+  attachTileflowAttributionDetails,
+  tileflowAttributionControlOptions,
+} from './attribution-browser';
 export {tileflowCanvasContextAttributes} from './canvas-context-browser';
 export {
   createBoundaryFeatureState,

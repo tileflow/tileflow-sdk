@@ -174,6 +174,13 @@ internal class MapControlsView(context: Context) : ViewGroup(context) {
             recenter.show(locationShown, value)
         }
 
+    var attributionHeight: Int = 0
+        set(value) {
+            if (field == value) return
+            field = value
+            requestLayout()
+        }
+
     /** Space covered at each edge, in pixels. */
     var insets = TileflowEdgeInsets.ZERO
         set(value) {
@@ -245,7 +252,10 @@ internal class MapControlsView(context: Context) : ViewGroup(context) {
         val right = (r - l) - insets.right - margin
         val bottom = (b - t) - insets.bottom - margin
         val offsets =
-            mutableMapOf(controls.attributionPosition to ATTRIBUTION_SPACE_DP * density)
+            mutableMapOf(
+                controls.attributionPosition to
+                    max(ATTRIBUTION_SPACE_DP * density, attributionHeight + margin)
+            )
         for ((control, position) in
             listOf(
                 compass to controls.compassPosition,
@@ -270,7 +280,7 @@ internal class MapControlsView(context: Context) : ViewGroup(context) {
 
     internal companion object {
         const val MARGIN_DP = 8f
-        /** Space kept free for the attribution in its corner. */
+        /** Minimum space kept free for the attribution in its corner. */
         const val ATTRIBUTION_SPACE_DP = 36f
     }
 }

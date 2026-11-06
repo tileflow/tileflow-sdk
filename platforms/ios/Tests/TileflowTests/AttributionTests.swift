@@ -457,28 +457,24 @@ final class AttributionTests: XCTestCase {
     XCTAssertTrue(pieces.contains("Not for navigation"), "\(pieces)")
     XCTAssertFalse(pieces.contains { $0.hasPrefix("A long obligation") })
     let lines = (view.label.text ?? "").components(separatedBy: "\n")
-    XCTAssertLessThanOrEqual(lines.count, 2)
+    XCTAssertGreaterThan(lines.count, 2)
     let font = try XCTUnwrap(view.label.font)
     for line in lines {
       XCTAssertLessThanOrEqual(
         (line as NSString).size(withAttributes: [.font: font]).width, view.label.bounds.width,
         line)
     }
-    XCTAssertLessThanOrEqual(
-      view.control.frame.height + MapAttributionView.margin, MapControlsView.attributionSpace)
     XCTAssertGreaterThanOrEqual(view.label.bounds.height, font.lineHeight * CGFloat(lines.count))
 
-    // Ten credits on two lines of 162 points, at 6 points a character: each keeps its start.
+    // Use more lines before shortening individual credits.
     let many = (1...10).map {
       MapAttributionStrip.Item(text: "Credit number \($0)", keepsText: false)
     }
     let measure = { (text: String) in CGFloat(text.count * 6) }
     let narrow = MapAttributionStrip.lines(many, width: 162, measure: measure)
-    XCTAssertEqual(narrow.count, 2)
     XCTAssertTrue(narrow.allSatisfy { measure($0) <= 162 }, "\(narrow)")
-    let shortened = narrow.flatMap { $0.components(separatedBy: MapAttributionStrip.separator) }
-    XCTAssertEqual(shortened.count, many.count)
-    XCTAssertTrue(zip(shortened, many).allSatisfy { shows($0, $1.text) }, "\(shortened)")
+    let narrowPieces = narrow.flatMap { $0.components(separatedBy: MapAttributionStrip.separator) }
+    XCTAssertEqual(narrowPieces, many.map(\.text))
     let roomy = MapAttributionStrip.lines(Array(many.prefix(3)), width: 400, measure: measure)
     XCTAssertEqual(roomy, ["Credit number 1 · Credit number 2 · Credit number 3"])
 

@@ -560,6 +560,10 @@ public final class TileflowMapView: UIView {
       self.retireGeneration()
       self.emit(.failed(error))
     }
+    engine.attribution.view.onHeightChange = { [weak self] height in
+      guard let self, self.generation == current else { return }
+      self.controlsView.attributionHeight = height
+    }
     engine.onExternalLink = { [weak self] url in
       guard let self, !self.destroyed else { return }
       self.emit(.externalLinkRequested(url))
@@ -799,6 +803,7 @@ public final class TileflowMapView: UIView {
     engine?.retire(error)
     engine = nil
     controlsView.isHidden = true
+    controlsView.attributionHeight = 0
   }
 
   /// The current engine once it has initialized.

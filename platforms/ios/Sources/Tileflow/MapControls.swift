@@ -98,7 +98,7 @@ struct ScaleBarMeasure: Equatable {
 /// Native controls drawn over the renderer. Touches anywhere but on a control reach the map.
 @MainActor
 final class MapControlsView: UIView {
-  /// Space kept free for the attribution in its corner.
+  /// Minimum space kept free for the attribution in its corner.
   static let attributionSpace: CGFloat = 36
   static let margin: CGFloat = 8
 
@@ -119,6 +119,9 @@ final class MapControlsView: UIView {
   }
   var followMode: TileflowFollowMode = .none {
     didSet { if followMode != oldValue { updateRecenter() } }
+  }
+  var attributionHeight: CGFloat = 0 {
+    didSet { if attributionHeight != oldValue { setNeedsLayout() } }
   }
   var insets: UIEdgeInsets = .zero {
     didSet { if insets != oldValue { setNeedsLayout() } }
@@ -200,7 +203,9 @@ final class MapControlsView: UIView {
     super.layoutSubviews()
     let rightToLeft = effectiveUserInterfaceLayoutDirection == .rightToLeft
     let area = bounds.inset(by: insets).insetBy(dx: Self.margin, dy: Self.margin)
-    var offsets: [TileflowControlPosition: CGFloat] = [controls.attributionPosition: Self.attributionSpace]
+    var offsets = [
+      controls.attributionPosition: max(Self.attributionSpace, attributionHeight + Self.margin)
+    ]
     for (control, position, size) in [
       (compass as UIView, controls.compassPosition, CGSize(width: 44, height: 44)),
       (recenter, controls.recenterButtonPosition, CGSize(width: 44, height: 44)),

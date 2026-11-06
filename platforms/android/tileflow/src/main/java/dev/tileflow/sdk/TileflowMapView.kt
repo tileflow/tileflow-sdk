@@ -1339,6 +1339,9 @@ constructor(
                 )
             val created = NativeMapEngine(context, resourceLoader, loadable, callbacks)
             engine = created
+            created.attribution.view.onHeightChange = { height ->
+                if (engine === created) controlsView.attributionHeight = height
+            }
             addView(
                 created.view,
                 0,
@@ -1578,6 +1581,7 @@ constructor(
         insetsUpdate = null
         cameraEvents.rendererReplaced()
         controlsView.visibility = GONE
+        controlsView.attributionHeight = 0
         readyForEvents = false
         pendingReadyEvent = false
         generationReady = false

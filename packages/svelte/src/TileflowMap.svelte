@@ -32,6 +32,7 @@
   } from '@tileflow/core/runtime';
   import {
     attachTileflowAtmosphere,
+    attachTileflowAttributionDetails,
     attachTileflowLabelPlacement,
     attachTileflowHorizonQueries,
     attachTileflowFairUseNotice,
@@ -52,6 +53,7 @@
     registerTileflowWorldRequestBridge,
     subscribeTileflowSystemColorScheme,
     tileflowMaxPitch,
+    tileflowAttributionControlOptions,
     tileflowCanvasContextAttributes,
     type TileflowFairUseNoticeController,
     type TileflowMapLifecycleAttachment,
@@ -676,7 +678,7 @@
     const maplibreMap = new maplibregl.Map({
       ...mapOptions,
       canvasContextAttributes: tileflowCanvasContextAttributes(mapOptions?.canvasContextAttributes),
-      attributionControl: mapOptions?.attributionControl ?? {compact: true},
+      attributionControl: tileflowAttributionControlOptions(mapOptions?.attributionControl),
       // Tileflow's compiled styles are validated when they are built.
       validateStyle: mapOptions?.validateStyle ?? false,
       maxPitch: mapOptions?.maxPitch ?? tileflowMaxPitch,
@@ -699,6 +701,7 @@
     mapInstance = maplibreMap;
     mapReference.current.attach(maplibreMap, prepared.style);
     attachTileflowAtmosphere(maplibreMap);
+    attachTileflowAttributionDetails(maplibreMap);
     attachTileflowNotices(maplibreMap);
     attachTileflowNauticalLights(maplibreMap);
     attachTileflowLabelPlacement(maplibreMap);

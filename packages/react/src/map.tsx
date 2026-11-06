@@ -28,6 +28,7 @@ import type {
 } from 'maplibre-gl';
 import {
   attachTileflowAtmosphere,
+  attachTileflowAttributionDetails,
   attachTileflowFairUseNotice,
   attachTileflowHorizonQueries,
   attachTileflowLabelPlacement,
@@ -46,6 +47,7 @@ import {
   registerTileflowPmtilesProtocol,
   registerTileflowWorldRequestBridge,
   subscribeTileflowSystemColorScheme,
+  tileflowAttributionControlOptions,
   tileflowCanvasContextAttributes,
   type TileflowMap3DAttachment,
   TileflowMapError,
@@ -920,9 +922,9 @@ function MapImplementation<TAnnotation extends TileflowAnnotation = TileflowAnno
           pitch: pitchRef.current,
           zoom: zoomRef.current,
           interactive: resolvedInteractive,
-          attributionControl: stableMapOptions?.attributionControl ?? {
-            compact: true,
-          },
+          attributionControl: tileflowAttributionControlOptions(
+            stableMapOptions?.attributionControl,
+          ),
           // Tileflow's compiled styles are validated when they are built.
           validateStyle: stableMapOptions?.validateStyle ?? false,
           maxPitch: stableMapOptions?.maxPitch ?? tileflowMaxPitch,
@@ -935,6 +937,7 @@ function MapImplementation<TAnnotation extends TileflowAnnotation = TileflowAnno
         ownedController.attach(map, prepared.style);
         registerCleanup(() => mapControllerOwner.retire(ownedController));
         registerCleanup(attachTileflowAtmosphere(map));
+        attachTileflowAttributionDetails(map);
         registerCleanup(attachTileflowNotices(map));
         registerCleanup(attachTileflowNauticalLights(map));
         registerCleanup(attachTileflowLabelPlacement(map));

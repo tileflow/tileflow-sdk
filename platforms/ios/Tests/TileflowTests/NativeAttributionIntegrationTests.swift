@@ -83,6 +83,19 @@ final class NativeAttributionIntegrationTests: XCTestCase {
     XCTAssertEqual(visible.count, 2, "The scale bar and the recenter button.")
     XCTAssertTrue(visible.allSatisfy { $0.frame.maxY <= 844 - 300 }, "\(visible.map(\.frame))")
     XCTAssertLessThanOrEqual(controls.recenter.frame.maxY, frame.minY)
+
+    for index in 0..<6 {
+      var source = TileflowGeoJSONSource(id: "credit-\(index)", data: .empty)
+      source.attribution = "© Fixture provider number \(index)"
+      try await view.addSource(source)
+    }
+    try await waitUntil("the recenter button above the taller attribution") {
+      control.view.layoutIfNeeded()
+      controls.layoutIfNeeded()
+      let strip = control.view.convert(control.view.control.frame, to: view)
+      return strip.height > MapControlsView.attributionSpace
+        && controls.recenter.frame.maxY <= strip.minY
+    }
     XCTAssertTrue(events.failures.isEmpty, "\(events.failures)")
   }
 

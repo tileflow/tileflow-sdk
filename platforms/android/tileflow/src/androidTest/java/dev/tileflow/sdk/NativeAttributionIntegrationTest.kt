@@ -146,6 +146,20 @@ public class NativeAttributionIntegrationTest {
                     assertEquals("The scale bar and the recenter button.", 2, visible.size)
                     assertTrue(visible.all { it.bottom <= map.height - padding })
                     assertTrue(controls.recenter.bottom <= control.view.control.top)
+
+                    for (index in 0 until 6) {
+                        map.addSource(
+                            TileflowGeoJSONSource(
+                                "credit-$index",
+                                TileflowGeoJSONData.Empty,
+                                attribution = "© Fixture provider number $index",
+                            )
+                        )
+                    }
+                    waitFor("the recenter button above the taller attribution") {
+                        control.view.control.height > 36 * density &&
+                            controls.recenter.bottom <= control.view.control.top
+                    }
                     assertTrue("${activity.failures}", activity.failures.isEmpty())
                 }
             }

@@ -5,8 +5,8 @@ import UIKit
 ///
 /// It is always shown while the map has something to credit, in the corner the map's options
 /// choose, inside the content insets; insets that leave it no room are ignored, so no option hides
-/// it. The compact control has a button and up to two lines of source and regional credits,
-/// style notices and World's fair-use notice (``MapAttributionStrip``), shortened to fit.
+/// it. The compact control wraps source and regional credits, style notices and World's fair-use
+/// notice (``MapAttributionStrip``), shortening only credits that are wider than one line.
 /// The button opens every entry in full, in order, with its links. VoiceOver reads
 /// the full text of every entry from the compact control, and offers each link as an action. Links
 /// never open by themselves: they reach the map view, which reports `externalLinkRequested`.
@@ -15,14 +15,12 @@ import UIKit
 /// leaves those touches to it whatever the application filters.
 @MainActor
 final class MapAttributionView: UIView, UITextViewDelegate {
-  /// The compact control's height with one line and with two. Both fit the space the map's other
-  /// controls leave free for it in its corner (``MapControlsView/attributionSpace``).
-  static let compactHeight: CGFloat = 24
-  static let twoLineHeight: CGFloat = 28
+  static let minimumHeight: CGFloat = 24
   static let margin: CGFloat = 8
   static let iconWidth: CGFloat = 20
 
   var onLink: ((URL) -> Void)?
+  var onHeightChange: ((CGFloat) -> Void)?
   /// The corner, as the map's options name it once the layout direction is applied:
   /// `top-left`, `top-right`, `bottom-left` or `bottom-right`.
   var corner = "bottom-right" {
@@ -61,8 +59,8 @@ final class MapAttributionView: UIView, UITextViewDelegate {
     icon.contentMode = .center
     label.font = .systemFont(ofSize: 11)
     label.textColor = .label.withAlphaComponent(0.78)
-    label.numberOfLines = 2
-    label.lineBreakMode = .byClipping
+    label.numberOfLines = 0
+    label.lineBreakMode = .byWordWrapping
     for view in [icon, label] as [UIView] {
       view.isUserInteractionEnabled = false
       control.addSubview(view)
@@ -150,7 +148,7 @@ final class MapAttributionView: UIView, UITextViewDelegate {
   static func area(in bounds: CGRect, insets: UIEdgeInsets) -> CGRect {
     let width = bounds.width - insets.left - insets.right - 2 * margin
     let height = bounds.height - insets.top - insets.bottom - 2 * margin
-    if width >= 120, height >= twoLineHeight {
+    if width >= 120, height >= minimumHeight {
       return CGRect(
         x: bounds.minX + insets.left + margin, y: bounds.minY + insets.top + margin, width: width,
         height: height)
@@ -181,18 +179,36 @@ final class MapAttributionView: UIView, UITextViewDelegate {
 
   override func layoutSubviews() {
     super.layoutSubviews()
-    let area = Self.area(in: bounds, insets: insets)
+    guard !control.isHidden else {
+      onHeightChange?(0)
+      return
+    }
+
     let font = label.font ?? .systemFont(ofSize: 11)
     let measure = { (text: String) in
       ceil((text as NSString).size(withAttributes: [.font: font]).width)
     }
-    let lines = MapAttributionStrip.lines(
-      stripItems, width: Self.maximumWidth(in: area) - Self.iconWidth - 6, measure: measure)
-    label.text = lines.joined(separator: "\n")
-    let frame = Self.compactFrame(
-      width: (lines.map(measure).max() ?? 0) + Self.iconWidth + 6,
-      height: lines.count > 1 ? Self.twoLineHeight : Self.compactHeight, corner: corner, in: area)
+    func fit(in area: CGRect) -> CGRect {
+      let padding = Self.iconWidth + 6
+      let width = Self.maximumWidth(in: area) - padding
+      let lines = MapAttributionStrip.lines(stripItems, width: width, measure: measure)
+      label.text = lines.joined(separator: "\n")
+      let textWidth = min(width, lines.map(measure).max() ?? 0)
+      let fitting = label.sizeThatFits(
+        CGSize(width: max(0, textWidth + 4), height: .greatestFiniteMagnitude))
+      return Self.compactFrame(
+        width: max(0, textWidth + padding), height: max(Self.minimumHeight, ceil(fitting.height)),
+        corner: corner, in: area)
+    }
+
+    var area = Self.area(in: bounds, insets: insets)
+    var frame = fit(in: area)
+    if frame.height > area.height, insets != .zero {
+      area = Self.area(in: bounds, insets: .zero)
+      frame = fit(in: area)
+    }
     control.frame = frame
+    onHeightChange?(frame.height)
     let rightToLeft = effectiveUserInterfaceLayoutDirection == .rightToLeft
     let iconWidth = Self.iconWidth
     let labelWidth = max(0, frame.width - iconWidth - 6)
@@ -240,17 +256,15 @@ final class MapAttributionView: UIView, UITextViewDelegate {
 }
 
 /// Compact source and regional credits, style notices and World's fair-use notice.
-/// The longest credits shorten first, to a common length, keeping at least their first character
-/// and an ellipsis. Notices keep their text while credits shorten.
+/// Credits that exceed the available width shorten individually. Notices keep their full text.
 enum MapAttributionStrip {
   struct Item: Equatable, Sendable {
     let text: String
-    /// Notices keep their text while shortening the credits makes room.
+    /// Notices keep their full text and can wrap within the label.
     let keepsText: Bool
   }
 
   static let separator = " · "
-  static let maximumLines = 2
   static let ellipsis = "…"
 
   static func items(_ entries: [MapAttributionEntry]) -> [Item] {
@@ -263,55 +277,17 @@ enum MapAttributionStrip {
     }
   }
 
-  /// The lines, each at most `width` wide as `measure` measures text.
+  /// Packs credits into as many lines as needed, keeping each credit together.
   static func lines(_ items: [Item], width: CGFloat, measure: (String) -> CGFloat) -> [String] {
-    guard !items.isEmpty, width > 0 else { return [] }
-    if let lines = wrap(items.map(\.text), width: width, measure: measure) { return lines }
-    // The longest credits shorten first: find the longest common length that fits.
-    var low: CGFloat = 0
-    var high = width
-    var best: [String]?
-    for _ in 0..<16 {
-      let cap = (low + high) / 2
-      let texts = items.map { shorten($0.text, to: $0.keepsText ? width : cap, measure: measure) }
-      if let lines = wrap(texts, width: width, measure: measure) {
-        best = lines
-        low = cap
-      } else {
-        high = cap
-      }
-    }
-    if let best { return best }
-    // Too many credits to fit even at a character each: the notices come first and the last line
-    // takes the rest, clipped.
+    guard width > 0 else { return [] }
     var lines: [String] = []
-    let ordered = items.filter(\.keepsText) + items.filter { !$0.keepsText }
-    for text in ordered.map({ shorten($0.text, to: $0.keepsText ? width : 0, measure: measure) }) {
-      if let last = lines.last,
-        lines.count >= maximumLines || measure(last + separator + text) <= width
-      {
+    for item in items {
+      let text = item.keepsText ? item.text : shorten(item.text, to: width, measure: measure)
+      if let last = lines.last, measure(last + separator + text) <= width {
         lines[lines.count - 1] = last + separator + text
       } else {
         lines.append(text)
       }
-    }
-    return lines
-  }
-
-  /// Places whole texts on at most ``maximumLines`` lines, or nil when they do not fit.
-  private static func wrap(_ texts: [String], width: CGFloat, measure: (String) -> CGFloat)
-    -> [String]?
-  {
-    var lines = [""]
-    for text in texts {
-      let line = lines[lines.count - 1]
-      let joined = line.isEmpty ? text : line + separator + text
-      if measure(joined) <= width {
-        lines[lines.count - 1] = joined
-        continue
-      }
-      guard !line.isEmpty, measure(text) <= width, lines.count < maximumLines else { return nil }
-      lines.append(text)
     }
     return lines
   }

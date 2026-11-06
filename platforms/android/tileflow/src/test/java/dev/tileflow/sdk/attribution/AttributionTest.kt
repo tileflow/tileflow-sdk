@@ -518,9 +518,7 @@ class AttributionTest {
         assertEquals(View.VISIBLE, view.control.visibility)
         assertEquals(400 - (20 * density).toInt() - margin, view.control.right)
         assertEquals(800 - (300 * density).toInt() - margin, view.control.bottom)
-        assertTrue(
-            view.control.height + margin <= 36 * density + 0.5,
-        )
+        assertTrue(view.control.height >= view.label.layout.height)
         assertEquals(listOf("© Tileflow Fixture", "Not for navigation"), pieces(view))
         assertEquals(
             "© Tileflow Fixture\nA long obligation that only the full list and TalkBack show.\nNot for navigation",
@@ -627,19 +625,17 @@ class AttributionTest {
         assertFalse(pieces.any { it.startsWith("A long obligation") })
         for (piece in pieces.filter { "ENC" in it }) assertTrue(piece, "not official" in piece)
         val lines = view.label.text.toString().split("\n")
-        assertTrue(lines.size <= 2)
+        assertTrue(lines.size > 2)
+        assertEquals(lines.size, view.label.layout.lineCount)
+        assertTrue(view.label.layout.height <= view.label.height)
         for (line in lines) assertTrue(line, view.label.paint.measureText(line) <= view.label.width + 1)
-        assertTrue(view.control.height <= MapAttributionView.TWO_LINE_HEIGHT_DP * density + 1)
 
-        // Ten credits on two lines of 162 units, at 6 a character: each keeps its start.
+        // Use more lines before shortening individual credits.
         val many = (1..10).map { MapAttributionStrip.Item("Credit number $it", false) }
         val measure = { text: String -> text.length * 6f }
         val narrow = MapAttributionStrip.lines(many, 162f, measure)
-        assertEquals(2, narrow.size)
         assertTrue("$narrow", narrow.all { measure(it) <= 162f })
-        val shortened = narrow.flatMap { it.split(MapAttributionStrip.SEPARATOR) }
-        assertEquals(many.size, shortened.size)
-        assertTrue("$shortened", shortened.zip(many).all { (piece, item) -> shows(piece, item.text) })
+        assertEquals(many.map { it.text }, narrow.flatMap { it.split(MapAttributionStrip.SEPARATOR) })
         assertEquals(
             listOf("Credit number 1 · Credit number 2 · Credit number 3"),
             MapAttributionStrip.lines(many.take(3), 400f, measure),

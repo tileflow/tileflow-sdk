@@ -140,6 +140,10 @@ thin edges of 3D models stay continuous; other context attributes you pass are k
 The obsolete source fields `kind` and `style` are rejected. For a completely unmanaged map, use
 `maplibre-gl` directly rather than a Tileflow component.
 
+Attribution stays visible during map interaction. The information button opens the full credits
+and links. Tileflow ignores `mapOptions.attributionControl: false` and `compact: true`.
+Use `mapOptions.attributionControl.customAttribution` to add credits.
+
 ## Add runtime sources and layers
 
 This API is unreleased. Use the matching local packed packages until a compatible alpha is

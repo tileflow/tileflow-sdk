@@ -29,6 +29,7 @@ import {
 } from 'vue';
 import {
   attachTileflowAtmosphere,
+  attachTileflowAttributionDetails,
   attachTileflowFairUseNotice,
   attachTileflowHorizonQueries,
   attachTileflowLabelPlacement,
@@ -48,6 +49,7 @@ import {
   registerTileflowWorldRequestBridge,
   subscribeTileflowSystemColorScheme,
   type TileflowBrowserThemeBlendSelection,
+  tileflowAttributionControlOptions,
   tileflowCanvasContextAttributes,
   type TileflowFairUseNoticeController,
   type TileflowMap3DAttachment,
@@ -954,9 +956,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         canvasContextAttributes: tileflowCanvasContextAttributes(
           props.mapOptions?.canvasContextAttributes,
         ),
-        attributionControl: props.mapOptions?.attributionControl ?? {
-          compact: true,
-        },
+        attributionControl: tileflowAttributionControlOptions(props.mapOptions?.attributionControl),
         // Tileflow's compiled styles are validated when they are built.
         validateStyle: props.mapOptions?.validateStyle ?? false,
         maxPitch: props.mapOptions?.maxPitch ?? tileflowMaxPitch,
@@ -982,6 +982,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       mapRef.value = map;
       mapReference.current.attach(map, prepared.style);
       attachTileflowAtmosphere(map);
+      attachTileflowAttributionDetails(map);
       attachTileflowNotices(map);
       attachTileflowNauticalLights(map);
       attachTileflowLabelPlacement(map);

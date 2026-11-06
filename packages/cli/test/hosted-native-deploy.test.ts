@@ -636,3 +636,22 @@ test('native differences are summarized once each with the themes they apply to'
     {capability: 'globe', fallback: 'mercator', themes: ['dark'], all: false},
   ]);
 });
+
+test('a Hosted publication rate limit tells CI when to retry', async (t) => {
+  const platform = await startFakePlatform(t, {
+    mapId,
+    intercept: (request) =>
+      request.method === 'POST'
+        ? {status: 429, headers: {'Retry-After': '180'}, body: {code: 'RATE_LIMITED'}}
+        : undefined,
+  });
+  const input = await body(await rendererDeployment());
+  await assert.rejects(
+    publishHostedRendererDeployment({apiKey, apiUrl: platform.url, mapId}, input),
+    (error: unknown) =>
+      error instanceof HostedDeploymentError &&
+      error.resumable &&
+      error.status === 429 &&
+      /retry in 180 seconds/iu.test(error.message),
+  );
+});

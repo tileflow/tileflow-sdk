@@ -965,6 +965,8 @@ async function uploadNativeDocument(
       (code === 'TF_NATIVE_DEPLOYMENT_PUBLISHED' || code === 'TF_NATIVE_DOCUMENTS_INCOMPLETE')
     )
       return 'retry-deployment';
+    if (response.status === 429 && response.retryAfterMs !== undefined)
+      throw deploymentFailure(response, `The upload of ${label} failed`);
     if (response.status >= 500 || response.status === 429) {
       failure = deploymentFailure(response, `The upload of ${label} failed`, true);
       continue;
@@ -1048,6 +1050,16 @@ function deploymentFailure(
   prefix = 'Deploy failed',
   resumable = response.status >= 500 || response.status === 429,
 ): HostedDeploymentError {
+  if (response.status === 429) {
+    const seconds = Math.ceil((response.retryAfterMs ?? 0) / 1000);
+    const retry =
+      seconds > 0 ? `Retry in ${seconds} ${seconds === 1 ? 'second' : 'seconds'}.` : 'Retry later.';
+    return new HostedDeploymentError(
+      `${prefix} (429): Hosted publication is rate limited. ${retry}`,
+      {resumable: true, status: 429},
+    );
+  }
+
   const code = failureCode(response);
   const failedJob = asRecord(response.body).jobId;
   const jobDetail =

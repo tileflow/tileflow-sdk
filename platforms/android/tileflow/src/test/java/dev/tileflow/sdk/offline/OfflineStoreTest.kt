@@ -225,6 +225,34 @@ class OfflineStoreTest {
     }
 
     @Test
+    fun deviceCapComesFromTheHostedManifest() = runBlocking<Unit> {
+        val service = OfflineServiceStub()
+        service.tileLimit = 5
+        service.maximumPackResources = 9
+        val store = store(service)
+        store.loadRegion("madrid", madrid())
+        val done = waitFor(store, "madrid") { it.state == COMPLETE }
+        assertEquals(5L, done.billableResourceCount)
+
+        val barcelona =
+            TileflowOfflineRegionLoadOptions(
+                TileflowOfflineGeometry.BoundingBox(TileflowBoundingBox(2.15, 41.38, 2.18, 41.4)),
+                TileflowOfflineContent.Hosted(MAP_ID, listOf("light", "dark")),
+                minZoom = 12,
+                maxZoom = 17,
+            )
+        val downloaded = service.downloads.size
+        try {
+            store.loadRegion("barcelona", barcelona)
+            fail("Expected the combined regions to exceed the device cap")
+        } catch (error: TileflowOfflineException) {
+            assertEquals(TileflowOfflineErrorCode.DEVICE_LIMIT_EXCEEDED, error.code)
+            assertEquals(9, error.context.limit)
+        }
+        assertEquals(downloaded, service.downloads.size)
+    }
+
+    @Test
     fun fiftyThousandResourceDownload() = runBlocking<Unit> {
         val service = OfflineServiceStub()
         service.tileLimit = 49_998

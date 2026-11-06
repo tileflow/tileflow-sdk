@@ -173,6 +173,31 @@ final class OfflineStoreTests: XCTestCase {
     XCTAssertEqual(cache.usage().entries, 0)
   }
 
+  func testDeviceCapComesFromTheHostedManifest() async throws {
+    let service = OfflineServiceStub()
+    service.tileLimit = 5
+    service.maximumPackResources = 9
+    let store = makeStore(service)
+    try await store.loadRegion(id: "madrid", options: madrid())
+    let done = try await waitFor(store, "madrid") { $0.state == .complete }
+    XCTAssertEqual(done.billableResourceCount, 5)
+
+    let barcelona = TileflowOfflineRegionLoadOptions(
+      geometry: .boundingBox(
+        TileflowBoundingBox(west: 2.15, south: 41.38, east: 2.18, north: 41.4)),
+      content: .hosted(mapID: OfflineServiceStub.mapID, themes: ["light", "dark"]),
+      minZoom: 12, maxZoom: 17)
+    let downloaded = service.downloads.count
+    do {
+      try await store.loadRegion(id: "barcelona", options: barcelona)
+      XCTFail("Expected the combined regions to exceed the device cap")
+    } catch let error as TileflowOfflineError {
+      XCTAssertEqual(error.code, .deviceLimitExceeded)
+      XCTAssertEqual(error.context.limit, 9)
+    }
+    XCTAssertEqual(service.downloads.count, downloaded)
+  }
+
   func testFiftyThousandResourceDownload() async throws {
     let service = OfflineServiceStub()
     service.tileLimit = 49_998

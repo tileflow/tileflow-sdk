@@ -104,6 +104,7 @@ internal class OfflineStoreCore(
     private val servedSets = HashMap<String, Map<String, OfflineServedPacks>>()
     private val creditSets = HashMap<String, Map<String, OfflineSourceCredits>>()
     private data class EstimateKey(val apiOrigin: URI, val request: OfflinePackRequest)
+    private data class RenewalAttempt(val startedAt: Long, val count: Int)
 
     private val created = HashMap<EstimateKey, OfflineDownload>()
     /** Packs an earlier pass of a pending version held before its download was created again. */
@@ -354,36 +355,38 @@ internal class OfflineStoreCore(
     // Loading.
 
     /** Creates the region, resumes its unfinished download, or downloads a new version of it. */
-    /**
-     * Creates the region, resumes its unfinished download, or downloads a new version of it. An
-     * [automatic] version is an update the store started by itself.
-     */
     suspend fun load(
         id: String,
         options: TileflowOfflineRegionLoadOptions,
-        automatic: Boolean = false,
+    ): TileflowOfflineRegion = load(id, options, automaticOffer = null)
+
+    private suspend fun load(
+        id: String,
+        options: TileflowOfflineRegionLoadOptions,
+        automaticOffer: OfflineRegionRecord?,
     ): TileflowOfflineRegion {
         open()
+        val automatic = automaticOffer != null
         if (id.isEmpty() || id.toByteArray().size > 256)
             throw TileflowOfflineException.options("invalidRegionID")
         options.geometry.validate()
         options.zooms
         val json = options.toJson()
-        lock.withLock {
+        val current = lock.withLock {
             val record = records[id]
-            if (automatic && (record == null || !canStartAutomaticUpdate(record, now()))) {
+            if (automaticOffer != null && !canUseAutomaticOffer(record, automaticOffer)) {
                 throw TileflowOfflineException(TileflowOfflineErrorCode.GRANT_REJECTED)
             }
             val pending = record?.pending
-            val current = pending?.let { offlineOptions(it.options) }
+            val pendingOptions = pending?.let { offlineOptions(it.options) }
             if (
                 record != null &&
                     pending != null &&
                     !(pending.automatic == true && record.check?.state == "not_updatable") &&
-                    current?.copy(metadata = emptyMap()) == options.copy(metadata = emptyMap())
+                    pendingOptions?.copy(metadata = emptyMap()) == options.copy(metadata = emptyMap())
             ) {
                 // Metadata alone never restarts a download: it changes in place.
-                if (current.metadata != options.metadata)
+                if (pendingOptions.metadata != options.metadata)
                     save(replacingMetadata(record, options.metadata))
                 val latest = records.getValue(id)
                 // Loading an automatic update makes it the application's: it may use any allowed
@@ -405,15 +408,15 @@ internal class OfflineStoreCore(
                 start(id, records.getValue(id).pending!!)
                 return snapshot(records.getValue(id))!!
             }
+            record
         }
 
         // A new version: the plan first, so a refusal changes nothing.
-        val current = lock.withLock { records[id] }
         val number = current?.nextVersion ?: 1
         val requiresFreshGrant = current?.check?.state == "not_updatable"
         val expectedApiOrigin =
-            if (automatic)
-                current?.active?.apiOrigin
+            if (automaticOffer != null)
+                automaticOffer.active?.apiOrigin
                     ?: throw TileflowOfflineException(TileflowOfflineErrorCode.GRANT_REJECTED)
             else null
         val plan: OfflineVersionPlan
@@ -456,11 +459,8 @@ internal class OfflineStoreCore(
         if (!automatic && lock.withLock { records[id]?.pending?.also { runner.stop(id) } != null })
             settle(id)
         return lock.withLock {
-            if (automatic) {
-                val record = records[id]
-                if (record == null || record.active?.apiOrigin != expectedApiOrigin ||
-                    !canStartAutomaticUpdate(record, now())
-                ) throw TileflowOfflineException(TileflowOfflineErrorCode.GRANT_REJECTED)
+            if (automaticOffer != null && !canUseAutomaticOffer(records[id], automaticOffer)) {
+                throw TileflowOfflineException(TileflowOfflineErrorCode.GRANT_REJECTED)
             }
             if (records[id]?.pending != null) discardPending(id)
             val time = now()
@@ -832,6 +832,15 @@ internal class OfflineStoreCore(
             expiryPhase(record, time) == OfflineExpiryPhase.VALID
     }
 
+    private fun canUseAutomaticOffer(
+        record: OfflineRegionRecord?,
+        offer: OfflineRegionRecord,
+    ): Boolean =
+        record != null &&
+            record.active === offer.active &&
+            record.check === offer.check &&
+            canStartAutomaticUpdate(record, now())
+
     suspend fun automaticUpdatesEnabled(): Boolean =
         lock.withLock {
             openLocked()
@@ -873,16 +882,14 @@ internal class OfflineStoreCore(
             lock.withLock {
                 records.values
                     .filter { canStartAutomaticUpdate(it, now()) }
-                    .mapNotNull { record ->
-                        offlineOptions(record.active!!.options)?.let { record.id to it }
-                    }
-                    .sortedBy { it.first }
+                    .sortedBy { it.id }
             }
         val started = ArrayList<String>()
-        for ((id, options) in due) {
+        for (offer in due) {
+            val options = offlineOptions(offer.active!!.options) ?: continue
             try {
-                load(id, options, automatic = true)
-                started += id
+                load(offer.id, options, automaticOffer = offer)
+                started += offer.id
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {
@@ -913,7 +920,21 @@ internal class OfflineStoreCore(
 
     private suspend fun driving(id: String, maximumWaitMillis: Long): OfflineDriveResult {
         open()
-        var renewals = 0
+        val renewals = HashMap<Int, RenewalAttempt>()
+
+        fun renewalCount(index: Int, plan: OfflineVersionPlan): Int {
+            val time = now()
+            val expires = plan.downloads[index].manifest.downloadExpiresAtMillis
+            val previous = renewals[index]
+            // A replacement that had time to be used and aged into expiry gets a new retry budget.
+            val aged = previous != null &&
+                expires - previous.startedAt > RENEWAL_MARGIN &&
+                time - previous.startedAt >= RENEWAL_MARGIN &&
+                expires - time < RENEWAL_MARGIN
+            val count = if (aged) 1 else (previous?.count ?: 0) + 1
+            return count
+        }
+
         var attempt = 0
         var waited = false
         while (currentCoroutineContext().isActive) {
@@ -987,8 +1008,12 @@ internal class OfflineStoreCore(
                         RENEWAL_MARGIN && remainingPacks.any { it.download == index }
                 }
             if (expiring != null) {
-                renewals += 1
-                if (!renew(id, pending, expiring, renewals)) return OfflineDriveResult.Settled
+                val count = renewalCount(expiring, plan)
+                when (renew(id, pending, expiring, count)) {
+                    RenewalResult.STOPPED -> return OfflineDriveResult.Settled
+                    RenewalResult.REPLACED -> renewals[expiring] = RenewalAttempt(now(), count)
+                    RenewalResult.WAITING -> Unit
+                }
                 continue
             }
             if (pending.state != OfflineVersionRecord.State.DOWNLOADING || pending.error != null)
@@ -1034,13 +1059,12 @@ internal class OfflineStoreCore(
                 OfflineDownloadOutcome.Complete -> attempt = 0
                 OfflineDownloadOutcome.Cancelled -> return OfflineDriveResult.Settled
                 is OfflineDownloadOutcome.Renew -> {
-                    renewals += 1
-                    if (renewals > MAXIMUM_RENEWALS) {
-                        lock.withLock { update(id) { it.failed(outcome.error) } }
-                        return OfflineDriveResult.Settled
+                    val count = renewalCount(outcome.download, plan)
+                    when (renew(id, pending, outcome.download, count, outcome.error)) {
+                        RenewalResult.STOPPED -> return OfflineDriveResult.Settled
+                        RenewalResult.REPLACED -> renewals[outcome.download] = RenewalAttempt(now(), count)
+                        RenewalResult.WAITING -> Unit
                     }
-                    if (!renew(id, pending, outcome.download, renewals))
-                        return OfflineDriveResult.Settled
                 }
                 is OfflineDownloadOutcome.Wait -> {
                     attempt += 1
@@ -1095,19 +1119,19 @@ internal class OfflineStoreCore(
      * manifest lists unchanged are kept; other packs it held are offered with `If-None-Match`, so
      * unchanged ones answer 304. Returns false when the download stopped.
      */
+    private enum class RenewalResult { REPLACED, WAITING, STOPPED }
+
     private suspend fun renew(
         id: String,
         pending: OfflineVersionRecord,
         index: Int,
         renewals: Int,
-    ): Boolean {
+        error: TileflowOfflineException =
+            TileflowOfflineException(TileflowOfflineErrorCode.GRANT_REJECTED),
+    ): RenewalResult {
         if (renewals > MAXIMUM_RENEWALS) {
-            lock.withLock {
-                update(id) {
-                    it.failed(TileflowOfflineException(TileflowOfflineErrorCode.GRANT_REJECTED))
-                }
-            }
-            return false
+            lock.withLock { update(id) { it.failed(error) } }
+            return RenewalResult.STOPPED
         }
         try {
             val client = client()
@@ -1120,7 +1144,7 @@ internal class OfflineStoreCore(
             val previousPlan = lock.withLock { plan(id, pending) }
             val download = client.create(previousPlan.requests[index])
             return lock.withLock {
-                if (records[id]?.pending?.number != pending.number) return@withLock false
+                if (records[id]?.pending?.number != pending.number) return@withLock RenewalResult.STOPPED
                 val previousResources =
                     previousPlan.resources.associate { it.key.digest to (it.bytes to it.sha256) }
                 val previousPacks = previousPlan.packs.associateBy { it.key }
@@ -1165,7 +1189,7 @@ internal class OfflineStoreCore(
                         bytes = plan.bytes,
                     )
                 }
-                true
+                RenewalResult.REPLACED
             }
         } catch (error: CancellationException) {
             throw error
@@ -1181,14 +1205,14 @@ internal class OfflineStoreCore(
                     else it.failed(error)
                 }
             }
-            return error.isRecoverable
+            return if (error.isRecoverable) RenewalResult.WAITING else RenewalResult.STOPPED
         } catch (_: Exception) {
             lock.withLock {
                 update(id) {
                     it.failed(TileflowOfflineException(TileflowOfflineErrorCode.INVALID_RESPONSE))
                 }
             }
-            return false
+            return RenewalResult.STOPPED
         }
     }
 

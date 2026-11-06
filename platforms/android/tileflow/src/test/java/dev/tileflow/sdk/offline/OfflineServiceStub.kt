@@ -85,13 +85,17 @@ internal object OfflinePackBuilder {
  * serves them and the public files with the contract's headers and statuses, and records every
  * request.
  */
-internal class OfflineServiceStub : NativeHTTPTransporting, OfflineResourceFetching {
+internal class OfflineServiceStub(
+    private val grantLifetimeMillis: Long = 86_400_000,
+    private val advanceClockOnFirstPack: Int = 0,
+) : NativeHTTPTransporting, OfflineResourceFetching {
     class Download(val url: String, val headers: Map<String, String>, val status: Int)
 
     data class Refusal(val at: Int, val status: Int, val code: String, val retryAfter: String?)
 
     val clock = AtomicLong(1_793_188_800_000) // 2026-10-28T12:00:00Z
     val creations = AtomicInteger()
+    val transientRenewalFailures = AtomicInteger()
     val createdProfiles = CopyOnWriteArrayList<String>()
     val revalidations = AtomicInteger()
     val downloads = CopyOnWriteArrayList<Download>()
@@ -209,6 +213,12 @@ internal class OfflineServiceStub : NativeHTTPTransporting, OfflineResourceFetch
         }
         val buffer = Buffer().also { request.body!!.writeTo(it) }
         onReservation?.invoke()
+        if (creations.get() > 0 && transientRenewalFailures.getAndUpdate { maxOf(0, it - 1) } > 0) {
+            return ResourcePayload(
+                """{"code":"OFFLINE_PACKS_UNAVAILABLE"}""".toByteArray(),
+                503, mapOf("Retry-After" to "1"),
+            )
+        }
         return ResourcePayload(
             created(OfflinePackRequest.fromJson(buffer.readByteArray())!!),
             201,
@@ -347,7 +357,7 @@ internal class OfflineServiceStub : NativeHTTPTransporting, OfflineResourceFetch
                 }
         grants.clear()
         val grant = "tf_offline_v2.g${creations.get()}.sig"
-        grants[grant] = (now + 86_400_000) to 0
+        grants[grant] = (now + grantLifetimeMillis) to 0
         packs[grant] = bodies
         val manifest =
             JSONObject()
@@ -429,7 +439,7 @@ internal class OfflineServiceStub : NativeHTTPTransporting, OfflineResourceFetch
                         .put("url", "$ORIGIN/v1/offline/packs/revalidate")
                         .put("intervalSeconds", 86_400),
                 )
-                .put("download", JSONObject().put("expiresAt", date(now + 86_400_000)))
+                .put("download", JSONObject().put("expiresAt", date(now + grantLifetimeMillis)))
         return JSONObject()
             .put("version", 2)
             .put("kind", "offline_download")
@@ -520,6 +530,8 @@ internal class OfflineServiceStub : NativeHTTPTransporting, OfflineResourceFetch
             val data =
                 packs[grant]?.get(url)?.copyOf()
                     ?: return record(refusal(403, "OFFLINE_PACK_RESOURCE_DENIED"))
+            if (entry.second == 0 && creations.get() <= advanceClockOnFirstPack)
+                clock.addAndGet(grantLifetimeMillis + 1_000)
             val etag = "\"${data.copyOfRange(data.size - 32, data.size).joinToString("") { "%02x".format(it) }}\""
             val responseHeaders =
                 mapOf(

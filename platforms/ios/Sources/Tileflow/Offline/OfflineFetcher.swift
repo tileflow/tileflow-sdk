@@ -28,12 +28,16 @@ struct OfflineFetchResponse: Sendable {
   let wireSHA256: String?
   /// A finished body still waiting in the fetcher's directory, before delivery.
   var file: URL? = nil
+  /// The URL reported by the transfer service, retained until the authorized request consumes it.
+  var finalURL: URL? = nil
 }
 
-/// Moves resource bodies for the downloader. Implementations never follow redirects, store
-/// cookies or credentials, or cache responses.
+/// Moves resource bodies for the downloader without cookies, credential storage or HTTP cache.
+/// iOS background sessions follow redirects; responses from another origin are discarded.
 protocol OfflineResourceFetching: Sendable {
   func fetch(_ request: OfflineFetchRequest) async throws -> OfflineFetchResponse
+  /// Whether the system already finished this exact transfer; never starts a request.
+  func hasCompleted(id: String) async -> Bool
   /// Stops transfers whose identifiers start with `prefix`, keeping what is needed to resume them.
   func cancel(prefix: String)
   /// Stops transfers whose identifiers start with `prefix` and forgets them.
@@ -44,6 +48,7 @@ protocol OfflineResourceFetching: Sendable {
 }
 
 extension OfflineResourceFetching {
+  func hasCompleted(id: String) async -> Bool { false }
   func discard(prefix: String) { cancel(prefix: prefix) }
   func onWarning(_ handler: @escaping @Sendable (TileflowOfflineWarning) -> Void) {}
 }
@@ -216,6 +221,14 @@ final class OfflineURLSessionFetcher: NSObject, OfflineResourceFetching, URLSess
 
   func onWarning(_ handler: @escaping @Sendable (TileflowOfflineWarning) -> Void) {
     state.withLock { $0.warning = handler }
+  }
+
+  func hasCompleted(id: String) async -> Bool {
+    await listed()
+    return state.withLock { state in
+      guard case .success(let response) = state.finished[id] else { return false }
+      return response.status == 200 || response.status == 304
+    }
   }
 
   func fetch(_ request: OfflineFetchRequest) async throws -> OfflineFetchResponse {
@@ -432,7 +445,10 @@ final class OfflineURLSessionFetcher: NSObject, OfflineResourceFetching, URLSess
     let body: Result<URL, any Error>
     let size =
       (try? FileManager.default.attributesOfItem(atPath: location.path)[.size] as? Int) ?? 0
-    if size > max(Self.maximumBodyBytes, OfflinePackFormat.maximumBytes) {
+    if !Self.sameOrigin(downloadTask.originalRequest?.url, downloadTask.response?.url) {
+      try? FileManager.default.removeItem(at: location)
+      body = .failure(Self.originFailure)
+    } else if size > max(Self.maximumBodyBytes, OfflinePackFormat.maximumBytes) {
       body = .failure(
         TileflowOfflineError(.invalidResponse, context: .init(reason: "resourceTooLarge")))
     } else {
@@ -480,7 +496,14 @@ final class OfflineURLSessionFetcher: NSObject, OfflineResourceFetching, URLSess
     if superseded { return }
     let id = task.taskDescription
     var result: Result<OfflineFetchResponse, any Error>
-    if let error {
+    if task.response != nil && !Self.sameOrigin(task.originalRequest?.url, task.response?.url) {
+      if case .success(let file) = body { try? FileManager.default.removeItem(at: file) }
+      if let id {
+        try? FileManager.default.removeItem(at: resumeFile(id))
+        try? FileManager.default.removeItem(at: bodyFile(id))
+      }
+      result = .failure(Self.originFailure)
+    } else if let error {
       // A transfer that stopped part-way can resume from the system's resume data.
       if let id, let data = (error as NSError).userInfo[NSURLSessionDownloadTaskResumeData] as? Data
       {
@@ -499,13 +522,14 @@ final class OfflineURLSessionFetcher: NSObject, OfflineResourceFetching, URLSess
         result = .success(
           OfflineFetchResponse(
             status: status, headers: headers, body: Data(), wireBytes: nil, wireSHA256: nil,
-            file: file))
+            file: file, finalURL: response.url))
       case .failure(let error) where body != nil:
         result = .failure(error)
       case .failure:
         result = .success(
           OfflineFetchResponse(
-            status: status, headers: headers, body: Data(), wireBytes: 0, wireSHA256: nil))
+            status: status, headers: headers, body: Data(), wireBytes: 0, wireSHA256: nil,
+            finalURL: response.url))
       }
     } else {
       result = .failure(URLError(.badServerResponse))
@@ -525,6 +549,11 @@ final class OfflineURLSessionFetcher: NSObject, OfflineResourceFetching, URLSess
   private func deliver(_ response: OfflineFetchResponse, to request: OfflineFetchRequest) -> Result<
     OfflineFetchResponse, any Error
   > {
+    guard Self.sameOrigin(request.url, response.finalURL) else {
+      if let file = response.file { try? FileManager.default.removeItem(at: file) }
+      try? FileManager.default.removeItem(at: resumeFile(request.id))
+      return .failure(Self.originFailure)
+    }
     guard let file = response.file else { return .success(response) }
     defer { try? FileManager.default.removeItem(at: file) }
     if let destination = request.destination, response.status == 200 {
@@ -534,7 +563,8 @@ final class OfflineURLSessionFetcher: NSObject, OfflineResourceFetching, URLSess
         try? FileManager.default.removeItem(at: destination)
         try FileManager.default.moveItem(at: file, to: destination)
         return OfflineFetchResponse(
-          status: 200, headers: response.headers, body: Data(), wireBytes: nil, wireSHA256: nil)
+          status: 200, headers: response.headers, body: Data(), wireBytes: nil, wireSHA256: nil,
+          finalURL: response.finalURL)
       }
     }
     let size = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? Int) ?? 0
@@ -549,8 +579,19 @@ final class OfflineURLSessionFetcher: NSObject, OfflineResourceFetching, URLSess
       return OfflineFetchResponse(
         status: response.status, headers: response.headers, body: data,
         wireBytes: response.headers["Content-Encoding"] == nil ? data.count : received,
-        wireSHA256: nil)
+        wireSHA256: nil, finalURL: response.finalURL)
     }
+  }
+
+  private static var originFailure: TileflowOfflineError {
+    TileflowOfflineError(.invalidResponse, context: .init(reason: "responseOriginChanged"))
+  }
+
+  private static func sameOrigin(_ expected: URL?, _ actual: URL?) -> Bool {
+    guard let expected, let actual, actual.user == nil, actual.password == nil,
+      let scheme = actual.scheme?.lowercased(), ["https", "http"].contains(scheme),
+      actual.host?.isEmpty == false else { return false }
+    return ResourcePolicy.origin(expected) == ResourcePolicy.origin(actual)
   }
 
   func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {

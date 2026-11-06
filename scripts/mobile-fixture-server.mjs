@@ -505,6 +505,21 @@ function delayedSnapshot(request, response) {
 }
 let nativeRequests = 0;
 const server = createServer((request, response) => {
+  if (request.url === '/test/background-redirect') {
+    response.writeHead(302, {Location: `http://localhost:${port}/test/background-final`});
+    response.end();
+    return;
+  }
+  if (request.url === '/test/background-final') {
+    response.setHeader('Content-Type', 'application/json');
+    response.end(
+      JSON.stringify({
+        grantForwarded:
+          request.headers['x-tileflow-offline-grant'] === 'synthetic-offline-redirect-probe',
+      }),
+    );
+    return;
+  }
   response.setHeader('Access-Control-Allow-Origin', '*');
   if (delayedSnapshot(request, response)) return;
   if (request.url === '/__fixture/native-requests') {

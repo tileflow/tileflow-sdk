@@ -1024,6 +1024,52 @@ class OfflineStoreTest {
     }
 
     @Test
+    fun aLongDownloadRenewsFourHourlyGrantsAndRecoversFromAnInterruption() = runBlocking<Unit> {
+        val service = OfflineServiceStub(grantLifetimeMillis = 3_600_000, advanceClockOnFirstPack = 4)
+        service.refuseOnce =
+            OfflineServiceStub.Refusal(1, 429, "OFFLINE_TEAM_DAILY_LIMIT_REACHED", "7")
+        val sleeps = java.util.Collections.synchronizedList(mutableListOf<Long>())
+        val store = store(service, sleeps = sleeps)
+        store.loadRegion("madrid", madrid())
+        val done = waitFor(store, "madrid", timeoutMillis = 10_000) {
+            it.state == COMPLETE || it.state == FAILED
+        }
+        assertEquals(COMPLETE, done.state)
+        assertEquals(5, service.creations.get())
+        assertEquals(done.requiredPackCount, done.completedPackCount)
+        assertTrue(7_000L in sleeps)
+    }
+
+    @Test
+    fun aDownloadStopsWhenEveryReplacementGrantIsAlreadyExpiring() = runBlocking<Unit> {
+        val service = OfflineServiceStub(grantLifetimeMillis = 60_000)
+        val store = store(service)
+        store.loadRegion("madrid", madrid())
+        val done = waitFor(store, "madrid", timeoutMillis = 10_000) {
+            it.state == COMPLETE || it.state == FAILED
+        }
+        assertEquals(TileflowOfflineErrorCode.GRANT_REJECTED, done.error?.code)
+        assertEquals(4, service.creations.get())
+        assertTrue(service.downloads.isEmpty())
+    }
+
+    @Test
+    fun renewalWaitsThroughRepeatedTransientCreationFailures() = runBlocking<Unit> {
+        val service = OfflineServiceStub(grantLifetimeMillis = 3_600_000, advanceClockOnFirstPack = 1)
+        service.transientRenewalFailures.set(4)
+        val sleeps = java.util.Collections.synchronizedList(mutableListOf<Long>())
+        val store = store(service, sleeps = sleeps)
+        store.loadRegion("madrid", madrid())
+        val done = waitFor(store, "madrid", timeoutMillis = 10_000) {
+            it.state == COMPLETE || it.state == FAILED
+        }
+        assertEquals(COMPLETE, done.state)
+        assertEquals(2, service.creations.get())
+        assertEquals(0, service.transientRenewalFailures.get())
+        assertTrue(sleeps.count { it == 1_000L } >= 4)
+    }
+
+    @Test
     fun recoverableRefusalsWaitAsAsked() = runBlocking<Unit> {
         val service = OfflineServiceStub()
         service.refuseOnce =
@@ -1168,6 +1214,69 @@ class OfflineStoreTest {
         assertEquals(TileflowOfflineRegion.UpdateState.UpdateAvailable, unchanged.updateState)
         assertEquals(COMPLETE, unchanged.state)
         assertEquals(before.completedAtMillis, unchanged.completedAtMillis)
+    }
+
+    @Test
+    fun anAutomaticPassCannotUseReplacementOffersForItsOldOptions() = runBlocking<Unit> {
+        val staleUpdates = mutableListOf<Int>()
+        repeat(3) { attempt ->
+            withTimeout(10_000) {
+                val service = OfflineServiceStub()
+                val origin = AtomicReference(ORIGIN)
+                val store = store(service, root = "race-$attempt", apiOrigin = origin::get)
+                val oldOptions = madrid().copy(maxZoom = 12)
+                val replacement = madrid(east = -3.68).copy(maxZoom = 12)
+                val conditions = OfflineUpdateConditions(isUnmetered = true, isLowPower = false)
+                store.loadRegion("first", oldOptions)
+                awaitRegion(store, "first") { it.state == COMPLETE }
+                store.loadRegion("second", oldOptions)
+                awaitRegion(store, "second") { it.state == COMPLETE }
+                store.setAutomaticUpdates(true)
+                service.clock.addAndGet(DAY + 1_000)
+                service.revalidationState = "update_available"
+
+                val entered = CompletableDeferred<Unit>()
+                val release = java.util.concurrent.CountDownLatch(1)
+                service.onReservation = {
+                    service.onReservation = null
+                    entered.complete(Unit)
+                    check(release.await(10, TimeUnit.SECONDS))
+                }
+                val automatic = async(Dispatchers.Default) { store.core.updateAutomatically(conditions) }
+                try {
+                    entered.await()
+                    for (id in listOf("first", "second")) {
+                        assertEquals(
+                            TileflowOfflineRegion.UpdateState.UpdateAvailable,
+                            store.region(id)!!.updateState,
+                        )
+                    }
+                    origin.set("https://other.tileflow.test")
+                    store.loadRegion("second", replacement)
+                    awaitRegion(store, "second") { it.state == COMPLETE }
+                    service.clock.addAndGet(DAY + 1_000)
+                    service.revalidationState = "update_available"
+                    store.core.checkForUpdates()
+                    assertEquals(
+                        TileflowOfflineRegion.UpdateState.UpdateAvailable,
+                        store.region("second")!!.updateState,
+                    )
+                } finally {
+                    release.countDown()
+                }
+
+                if ("second" in automatic.await()) {
+                    assertEquals(oldOptions, store.region("second")!!.options)
+                    staleUpdates += attempt
+                } else {
+                    assertEquals(replacement, store.region("second")!!.options)
+                    assertEquals(listOf("second"), store.core.updateAutomatically(conditions))
+                    awaitRegion(store, "second") { it.state == COMPLETE }
+                    assertEquals(replacement, store.region("second")!!.options)
+                }
+            }
+        }
+        assertTrue("Old options started with the replacement offer in attempts $staleUpdates", staleUpdates.isEmpty())
     }
 
     @Test

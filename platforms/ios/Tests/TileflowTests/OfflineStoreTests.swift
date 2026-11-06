@@ -556,6 +556,68 @@ final class OfflineStoreTests: XCTestCase {
     XCTAssertEqual(other.creations, 2)
   }
 
+  func testALongDownloadRenewsFourHourlyGrantsAndRecoversFromAnInterruption() async throws {
+    let service = OfflineServiceStub(grantLifetime: 3_600, advanceClockOnFirstPack: 4)
+    service.refuseOnce = (1, 429, "OFFLINE_TEAM_DAILY_LIMIT_REACHED", "7")
+    let sleeps = LockedValue<[TimeInterval]>([])
+    let store = makeStore(service, sleeps: sleeps)
+    try await store.loadRegion(id: "madrid", options: madrid())
+    let done = try await waitFor(store, "madrid", timeout: 10) {
+      $0.state == .complete || $0.state == .failed
+    }
+    XCTAssertEqual(done.state, .complete)
+    XCTAssertEqual(service.creations, 5)
+    XCTAssertEqual(done.requiredPackCount, done.completedPackCount)
+    XCTAssertTrue(sleeps.withLock { $0 }.contains(7))
+  }
+
+  func testCompletedBackgroundPacksAreCollectedBeforeRenewingTheGrant() async throws {
+    let service = OfflineServiceStub(grantLifetime: 3_600)
+    let fetcher = CompletedPackFetcher(service)
+    let first = makeStore(service, fetcher: fetcher)
+    try await first.loadRegion(id: "madrid", options: madrid())
+    try await waitUntil { fetcher.completed.withLock { !$0.isEmpty } }
+    try await first.pauseRegion(id: "madrid")
+    let urls = fetcher.urls.withLock { $0 }
+    service.clock.withLock { $0 += 3_601 }
+    fetcher.holding.withLock { $0 = false }
+    try await first.resumeRegion(id: "madrid")
+    let done = try await waitFor(first, "madrid") { $0.state == .complete || $0.state == .failed }
+    XCTAssertEqual(done.state, .complete)
+    for url in urls {
+      XCTAssertEqual(service.downloads.filter { $0.url == url && $0.status == 200 }.count, 1,
+        "A completed background body was downloaded again")
+    }
+    XCTAssertTrue(fetcher.completed.withLock { $0.isEmpty })
+  }
+
+  func testADownloadStopsWhenEveryReplacementGrantIsAlreadyExpiring() async throws {
+    let service = OfflineServiceStub(grantLifetime: 60)
+    let store = makeStore(service)
+    try await store.loadRegion(id: "madrid", options: madrid())
+    let done = try await waitFor(store, "madrid", timeout: 10) {
+      $0.state == .complete || $0.state == .failed
+    }
+    XCTAssertEqual(done.error?.code, .grantRejected)
+    XCTAssertEqual(service.creations, 4)
+    XCTAssertTrue(service.downloads.isEmpty)
+  }
+
+  func testRenewalWaitsThroughRepeatedTransientCreationFailures() async throws {
+    let service = OfflineServiceStub(grantLifetime: 3_600, advanceClockOnFirstPack: 1)
+    service.transientRenewalFailures.withLock { $0 = 4 }
+    let sleeps = LockedValue<[TimeInterval]>([])
+    let store = makeStore(service, sleeps: sleeps)
+    try await store.loadRegion(id: "madrid", options: madrid())
+    let done = try await waitFor(store, "madrid", timeout: 10) {
+      $0.state == .complete || $0.state == .failed
+    }
+    XCTAssertEqual(done.state, .complete)
+    XCTAssertEqual(service.creations, 2)
+    XCTAssertEqual(service.creationAttempts.withLock { $0.count }, 6)
+    XCTAssertGreaterThanOrEqual(sleeps.withLock { $0.filter { $0 == 1 }.count }, 4)
+  }
+
   func testRecoverableRefusalsWaitAsAsked() async throws {
     let service = OfflineServiceStub()
     service.refuseOnce = (6, 429, "OFFLINE_TEAM_DAILY_LIMIT_REACHED", "7")
@@ -1265,11 +1327,20 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
   let revalidationReplies = LockedValue<[RevalidationReply]>([])
   let beforeRevalidationReply = LockedValue<(@Sendable () async -> Void)?>(nil)
   let refusesCreation = LockedValue(false)
+  let transientRenewalFailures = LockedValue(0)
   let refusesRevalidation = LockedValue(false)
   let creationAttempts = LockedValue<[String]>([])
   let clock = LockedValue<TimeInterval>(1_793_188_800)  // 2026-10-28T12:00:00Z
+  private let grantLifetime: TimeInterval
+  private let advanceClockOnFirstPack: Int
   private let lock = NSLock()
   private var state = State()
+
+  init(grantLifetime: TimeInterval = 86_400, advanceClockOnFirstPack: Int = 0) {
+    self.grantLifetime = grantLifetime
+    self.advanceClockOnFirstPack = advanceClockOnFirstPack
+  }
+
   /// The z17 tile a new World release changes.
   let changedTile: OfflineTileID = {
     let cover = OfflineTileCover(
@@ -1463,6 +1534,14 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
     }
     let plan = OfflinePackRequest(json: request.httpBody!)!
     creationAttempts.withLock { $0.append(plan.profile) }
+    if creations > 0, transientRenewalFailures.withLock({ remaining in
+      guard remaining > 0 else { return false }
+      remaining -= 1
+      return true
+    }) {
+      return ResourcePayload(bytes: Data(#"{"code":"OFFLINE_PACKS_UNAVAILABLE"}"#.utf8),
+        status: 503, headers: ["Retry-After": "1"])
+    }
     if refusesCreation.withLock({ $0 }) {
       return ResourcePayload(bytes: Data(#"{"error":{"code":"access_denied"}}"#.utf8), status: 403, headers: [:])
     }
@@ -1574,7 +1653,7 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
       + publicResources.reduce(0) { $0 + ($1["bytes"] as! Int) }
     state.grants.removeAll()
     let grant = "tf_offline_v2.g\(state.creations).sig"
-    state.grants[grant] = (now + 86_400, 0)
+    state.grants[grant] = (now + grantLifetime, 0)
     state.packs[grant] = bodies
     let manifest: [String: Any] = [
       "version": 2, "downloadId": "odl_" + String(format: "%022d", state.creations),
@@ -1616,7 +1695,7 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
       "revalidation": [
         "url": "\(Self.origin)/v1/offline/packs/revalidate", "intervalSeconds": 86_400,
       ],
-      "download": ["expiresAt": Self.date(now + 86_400)],
+      "download": ["expiresAt": Self.date(now + grantLifetime)],
     ]
     return try! JSONSerialization.data(withJSONObject: [
       "version": 2, "kind": "offline_download", "grant": grant, "manifest": manifest,
@@ -1634,7 +1713,6 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
       case offline
       case cancelled
     }
-    let now = clock.withLock { $0 }
     let action: Action = locked { state in
       // Checked under the lock, so a request cancelled before a test changes the stub never
       // reaches it.
@@ -1671,7 +1749,7 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
         let grant = request.headers["X-Tileflow-Offline-Grant"] ?? ""
         var expired = true
         if let entry = state.grants[grant] {
-          expired = now >= entry.expires
+          expired = clock.withLock { $0 >= entry.expires }
           if let limit = state.expireGrantAfter, entry.uses >= limit {
             state.expireGrantAfter = nil
             state.grants.removeValue(forKey: grant)
@@ -1682,6 +1760,9 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
         state.grants[grant]?.uses += 1
         guard var data = state.packs[grant]?[url] else {
           return record(refusal(403, "OFFLINE_PACK_RESOURCE_DENIED"))
+        }
+        if state.grants[grant]?.uses == 1, state.creations <= advanceClockOnFirstPack {
+          clock.withLock { $0 += grantLifetime + 1 }
         }
         let etag = "\"\(data.suffix(32).map { String(format: "%02x", $0) }.joined())\""
         let headers = [
@@ -1966,4 +2047,29 @@ final class OfflineSchedulerStub: OfflineUpdateScheduling, @unchecked Sendable {
   }
 
   func cancel() { state.withLock { $0.cancellations += 1 } }
+}
+
+private final class CompletedPackFetcher: OfflineResourceFetching, Sendable {
+  let holding = LockedValue(true)
+  let completed = LockedValue<[String: (OfflineFetchResponse, Data)]>([:])
+  let urls = LockedValue<Set<String>>([])
+  let base: OfflineServiceStub
+  init(_ base: OfflineServiceStub) { self.base = base }
+  func hasCompleted(id: String) async -> Bool { completed.withLock { $0[id] != nil } }
+  func fetch(_ request: OfflineFetchRequest) async throws -> OfflineFetchResponse {
+    if let saved = completed.withLock({ $0.removeValue(forKey: request.id) }) {
+      try saved.1.write(to: request.destination!)
+      return saved.0
+    }
+    let result = try await base.fetch(request)
+    guard holding.withLock({ $0 }), let file = request.destination, result.status == 200 else {
+      return result
+    }
+    let data = try Data(contentsOf: file)
+    completed.withLock { $0[request.id] = (result, data) }
+    urls.withLock { _ = $0.insert(request.url.absoluteString) }
+    try await Task.sleep(for: .seconds(60))
+    throw CancellationError()
+  }
+  func cancel(prefix: String) {}
 }

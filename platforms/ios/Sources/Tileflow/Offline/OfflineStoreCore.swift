@@ -775,7 +775,25 @@ actor OfflineStoreCore {
   }
 
   private func drive(_ id: String) async {
-    var renewals = 0
+    var renewals: [Int: (startedAt: Date, count: Int)] = [:]
+
+    func renewalCount(_ index: Int, _ plan: OfflineVersionPlan) -> Int {
+      let now = dependencies.now()
+      let expires = plan.downloads[index].manifest.downloadExpiresAt
+      let count: Int
+      // A replacement that had time to be used and aged into expiry gets a new retry budget.
+      if let previous = renewals[index],
+        expires.timeIntervalSince(previous.startedAt) > Self.renewalMargin,
+        now.timeIntervalSince(previous.startedAt) >= Self.renewalMargin,
+        expires.timeIntervalSince(now) < Self.renewalMargin
+      {
+        count = 1
+      } else {
+        count = (renewals[index]?.count ?? 0) + 1
+      }
+      return count
+    }
+
     var attempt = 0
     var waited = false
     while !Task.isCancelled {
@@ -825,12 +843,27 @@ actor OfflineStoreCore {
         }
       }
       let now = dependencies.now()
+      // Collect bodies already authorized and completed by the background service under their
+      // original manifest before changing the grant-tagged transfer identity.
+      var completedPacks = Set<String>()
+      for planned in remainingPacks {
+        let download = plan.downloads[planned.download]
+        if download.manifest.downloadExpiresAt.timeIntervalSince(now) < Self.renewalMargin,
+          await dependencies.fetcher.hasCompleted(
+            id: transferPrefix(id, pending.number) + planned.key + "." + download.grant.tag)
+        { completedPacks.insert(planned.key) }
+      }
       if let expiring = plan.downloads.indices.first(where: { index in
         plan.downloads[index].manifest.downloadExpiresAt.timeIntervalSince(now)
           < Self.renewalMargin && remainingPacks.contains(where: { $0.download == index })
+          && !remainingPacks.contains(where: { $0.download == index && completedPacks.contains($0.key) })
       }) {
-        renewals += 1
-        guard await renew(id, pending, download: expiring, renewals: renewals) else { return }
+        let count = renewalCount(expiring, plan)
+        switch await renew(id, pending, download: expiring, renewals: count) {
+        case .stopped: return
+        case .replaced: renewals[expiring] = (dependencies.now(), count)
+        case .waiting: break
+        }
         continue
       }
       if pending.state != .downloading || pending.error != nil {
@@ -848,7 +881,8 @@ actor OfflineStoreCore {
       let options = TileflowOfflineRegionLoadOptions(json: pending.options)
       let job = OfflineDownloadJob(
         prefix: transferPrefix(id, pending.number), plan: plan, pending: remaining,
-        pendingPacks: remainingPacks, previous: previousPacks(id, plan),
+        pendingPacks: remainingPacks.filter { completedPacks.contains($0.key) }
+          + remainingPacks.filter { !completedPacks.contains($0.key) }, previous: previousPacks(id, plan),
         activePaths: activePaths(), staging: layout.staging(id, pending.number), packs: packs,
         restriction: options?.networkRestriction ?? .none, unmeteredOnly: pending.automatic == true)
       let log = OfflineProgressLog(layout.progress(id, pending.number))
@@ -862,9 +896,12 @@ actor OfflineStoreCore {
       case .cancelled:
         return
       case .renew(let download, let error):
-        renewals += 1
-        guard renewals <= Self.maximumRenewals else { return update(id) { $0.fail(error) } }
-        guard await renew(id, pending, download: download, renewals: renewals) else { return }
+        let count = renewalCount(download, plan)
+        switch await renew(id, pending, download: download, renewals: count, error: error) {
+        case .stopped: return
+        case .replaced: renewals[download] = (dependencies.now(), count)
+        case .waiting: break
+        }
       case .wait(let error, let delay):
         attempt += 1
         let wait = delay ?? min(Self.maximumBackoff, pow(2, Double(min(attempt, 9))))
@@ -889,12 +926,15 @@ actor OfflineStoreCore {
   /// Creates a download of the pending version again. Stored resources and tile packs the new
   /// manifest lists unchanged are kept; other packs it held are offered with `If-None-Match`, so
   /// unchanged ones answer 304. Returns false when the download stopped.
+  private enum RenewalResult { case replaced, waiting, stopped }
+
   private func renew(
-    _ id: String, _ pending: OfflineVersionRecord, download index: Int, renewals: Int
-  ) async -> Bool {
+    _ id: String, _ pending: OfflineVersionRecord, download index: Int, renewals: Int,
+    error: TileflowOfflineError = .init(.grantRejected)
+  ) async -> RenewalResult {
     guard renewals <= Self.maximumRenewals else {
-      update(id) { $0.fail(.init(.grantRejected)) }
-      return false
+      update(id) { $0.fail(error) }
+      return .stopped
     }
     do {
       let client = try dependencies.client()
@@ -904,7 +944,7 @@ actor OfflineStoreCore {
       var plan = try self.plan(id, pending)
       let download = try await client.create(plan.requests[index])
       guard !Task.isCancelled, let current = records[id]?.pending, current.number == pending.number else {
-        return false
+        return .stopped
       }
       let previousResources = Dictionary(
         plan.resources.map { ($0.key.digest, ($0.bytes, $0.sha256)) },
@@ -951,9 +991,9 @@ actor OfflineStoreCore {
         $0.billable = plan.billable
         $0.bytes = plan.bytes
       }
-      return true
+      return .replaced
     } catch is CancellationError {
-      return false
+      return .stopped
     } catch let error as TileflowOfflineError {
       if error.isRecoverable {
         update(id) {
@@ -964,13 +1004,13 @@ actor OfflineStoreCore {
               error.retryAfter ?? Self.maximumBackoff
             ).offlineMilliseconds
         }
-        return true
+        return .waiting
       }
       update(id) { $0.fail(error) }
-      return false
+      return .stopped
     } catch {
       update(id) { $0.fail(.init(.invalidResponse)) }
-      return false
+      return .stopped
     }
   }
 

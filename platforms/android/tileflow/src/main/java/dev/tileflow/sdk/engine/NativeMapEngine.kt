@@ -312,7 +312,10 @@ internal class NativeMapEngine(
         val descriptor = projection?.boundaryLookup
         val result = try {
             withContext(Dispatchers.IO) {
-                NativeBoundaryLookup.join(rows, options, descriptor, loader, boundaryLookups)
+                val operation = currentCoroutineContext()
+                NativeBoundaryLookup.join(
+                    rows, options, descriptor, loader, boundaryLookups, operation::ensureActive,
+                )
             }
         } catch (failure: Exception) {
             currentCoroutineContext().ensureActive()

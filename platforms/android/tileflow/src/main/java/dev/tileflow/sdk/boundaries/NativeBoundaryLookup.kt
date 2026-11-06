@@ -96,7 +96,9 @@ internal object NativeBoundaryLookup {
         descriptor: BoundaryLookupDescriptor?,
         loader: ResourceLoader,
         store: BoundaryLookupStore,
+        checkCancellation: () -> Unit = {},
     ): TileflowBoundaryJoinResult {
+        checkCancellation()
         if (options.joinBy == options.to.code || options.lookup != null)
             return joinBoundaryRows(rows, options)
         if (options.classes?.isEmpty() == true)
@@ -113,15 +115,16 @@ internal object NativeBoundaryLookup {
 
         val files by lazy(LazyThreadSafetyMode.NONE) {
             descriptor.manifestUrl?.let { url ->
-                manifestFiles(read(loader, url), descriptor.releaseId)
+                manifestFiles(read(loader, url, checkCancellation), descriptor.releaseId)
             }
         }
         val lookupRows = classes.flatMap { boundaryClass ->
+            checkCancellation()
             val key = store.key(descriptor, boundaryClass)
             val saved = store.read(key)
             if (saved != null) {
                 val parsed = try {
-                    parseClass(saved.bytes, boundaryClass, options.joinBy, keys)
+                    parseClass(saved.bytes, boundaryClass, options.joinBy, keys, checkCancellation)
                 } catch (_: TileflowMapException) {
                     null
                 }
@@ -130,19 +133,23 @@ internal object NativeBoundaryLookup {
 
             val url = urls.getValue(boundaryClass)
             val archive = files?.let { archive(it, boundaryClass, url) }
-            val bytes = read(loader, url)
+            val bytes = read(loader, url, checkCancellation)
             if (archive != null &&
                 (bytes.size != archive.bytes || ResourceDigest.sha256(bytes) != archive.sha256)
             ) throw invalid()
 
-            val parsed = parseClass(bytes, boundaryClass, options.joinBy, keys)
+            val parsed = parseClass(bytes, boundaryClass, options.joinBy, keys, checkCancellation)
             if (archive != null && parsed.count != archive.rows) throw invalid()
+            checkCancellation()
             if (!store.write(key, BoundaryLookupStore.Record(bytes, parsed.count))) {
                 throw unavailable(message = "The map's Boundaries lookup could not be saved on this device.")
             }
             parsed.matchingRows
         }
-        return joinBoundaryRows(rows, options.copy(lookup = TileflowBoundaryLookup(lookupRows)))
+        checkCancellation()
+        val result = joinBoundaryRows(rows, options.copy(lookup = TileflowBoundaryLookup(lookupRows)))
+        checkCancellation()
+        return result
     }
 
     private fun parseClass(
@@ -150,10 +157,13 @@ internal object NativeBoundaryLookup {
         boundaryClass: TileflowBoundaryClass,
         code: TileflowBoundaryCode,
         keys: Set<TileflowBoundaryKey>,
+        checkCancellation: () -> Unit,
     ): Parsed {
+        checkCancellation()
         var rowCount = 0L
         val parsed = try {
-            parseBoundaryLookupCsv(decode(bytes)) { row ->
+            parseBoundaryLookupCsv(decode(bytes, checkCancellation)) { row ->
+                if (rowCount % 256 == 0L) checkCancellation()
                 require(row.boundaryClass == boundaryClass && row.id >= 0)
                 rowCount++
                 val key = row.key(code)?.let(code::normalize)
@@ -164,10 +174,12 @@ internal object NativeBoundaryLookup {
         } catch (_: IOException) {
             throw invalid()
         }
+        checkCancellation()
         return Parsed(parsed, rowCount)
     }
 
-    private fun read(loader: ResourceLoader, url: URI): ByteArray {
+    private fun read(loader: ResourceLoader, url: URI, checkCancellation: () -> Unit): ByteArray {
+        checkCancellation()
         val response = try {
             loader.loadOnline(url)
         } catch (_: NetworkUnavailableException) {
@@ -184,6 +196,7 @@ internal object NativeBoundaryLookup {
         } catch (_: IllegalArgumentException) {
             throw unavailable()
         }
+        checkCancellation()
         if (response.status != 200) {
             requireOnline(loader)
             throw unavailable(response.status)
@@ -218,13 +231,14 @@ internal object NativeBoundaryLookup {
         return Archive(rows.toLong(), bytes.toInt(), digest)
     }
 
-    private fun decode(bytes: ByteArray): String {
+    private fun decode(bytes: ByteArray, checkCancellation: () -> Unit): String {
         val gzip = bytes.size >= 2 && bytes[0] == 0x1f.toByte() && bytes[1] == 0x8b.toByte()
         val csv = if (gzip) {
             GZIPInputStream(bytes.inputStream()).use { input ->
                 val output = ByteArrayOutputStream()
                 val buffer = ByteArray(16 * 1024)
                 while (true) {
+                    checkCancellation()
                     val count = input.read(buffer)
                     if (count < 0) break
                     if (count > MAXIMUM_CSV_BYTES - output.size()) throw tooLarge()

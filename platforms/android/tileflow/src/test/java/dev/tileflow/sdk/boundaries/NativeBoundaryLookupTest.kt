@@ -19,13 +19,23 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.RandomAccessFile
 import java.net.URI
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.zip.GZIPOutputStream
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.RecordedRequest
 import okio.Buffer
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -78,6 +88,44 @@ class NativeBoundaryLookupTest {
                 val result = NativeBoundaryLookup.join(different, region, descriptor, loader, store())
                 assertEquals(TileflowBoundaryKey.Number(43.0), result.rows.single().key)
                 assertEquals(1, server.requestCount)
+            }
+        }
+    }
+
+    @Test
+    fun cancellationDuringTheFirstDownloadStopsBeforeSavingOrRequestingAnotherClass() = runBlocking {
+        val respond = CountDownLatch(1)
+        MockWebServer().use { server ->
+            server.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    if (request.path?.endsWith("/region.csv.gz") == true) {
+                        if (!respond.await(5, TimeUnit.SECONDS)) return MockResponse().setResponseCode(500)
+                        return MockResponse().setBody(gzip(csv))
+                    }
+                    return MockResponse().setBody(gzip("id,class,iso_3166_2\n43,municipality,ES-MD\n"))
+                }
+            }
+            server.start()
+            val url = server.url("/boundaries/tiles.json").toUri()
+            val descriptor = requireNotNull(projection(url).boundaryLookup)
+            val policy = ResourcePolicy(setOf(ResourcePolicy.origin(url)), true)
+            val options = region.copy(classes = setOf(TileflowBoundaryClass.REGION, TileflowBoundaryClass.MUNICIPALITY))
+
+            ResourceLoader(policy).use { loader ->
+                val joining = launch(Dispatchers.IO) {
+                    val operation = currentCoroutineContext()
+                    NativeBoundaryLookup.join(rows, options, descriptor, loader, store(), operation::ensureActive)
+                }
+                try {
+                    assertEquals("/boundaries/release-1/region.csv.gz", server.takeRequest(5, TimeUnit.SECONDS)?.path)
+                } finally {
+                    joining.cancel()
+                    respond.countDown()
+                }
+                joining.join()
+
+                assertEquals(1, server.requestCount)
+                assertFalse(storage.exists())
             }
         }
     }

@@ -137,7 +137,7 @@ const gradleOutput = await command(
   resolve(root, 'platforms/android'),
 );
 await writeFile(join(destination, 'android-build.log'), `${gradleOutput}\n`);
-// POM, Gradle metadata, sources and documentation must already meet Maven Central's requirements.
+// POM, Gradle metadata, sources and documentation must already meet the publication contract.
 await validateMavenRepository(maven, {catalog, version, engines});
 const mapArtifact = androidArtifacts.tileflow;
 const artifactPath = `${catalog.maven.group.replaceAll('.', '/')}/${mapArtifact}/${version}/${mapArtifact}-${version}.aar`;

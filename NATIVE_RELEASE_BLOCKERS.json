@@ -7,8 +7,8 @@
       "summary": "Create the protected native-publish environment: main only, a required reviewer and no administrator bypass."
     },
     {
-      "id": "maven-central-namespace",
-      "summary": "Verify the dev.tileflow namespace in the Central Publisher Portal and store a publishing user token in the native-publish environment."
+      "id": "maven-repository",
+      "summary": "Provision the public R2 Maven repository and domain, and store bucket-scoped write credentials only in the protected native-publish environment."
     },
     {
       "id": "native-release-signing-key",

@@ -1,50 +1,79 @@
 import {appendFile, writeFile} from 'node:fs/promises';
 import {isAbsolute} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {repositoryUrl} from './native-central-portal.mjs';
+import {readMavenMetadata} from './native-maven-bundle.mjs';
 import {
+  parseReservationIndex,
+  readAnonymousMavenFile,
+  reservationIndexKey,
+} from './native-maven-repository.mjs';
+import {
+  compareAlphaVersions,
   mavenArtifactDirectory,
+  parseAlphaVersion,
   planNativeVersion,
   readNativeReleaseCatalog,
   swiftRemotes,
 } from './native-release-config.mjs';
 import {swiftVersions} from './native-swift-release.mjs';
 
-// Derives the next native version from what is already public: Maven Central metadata for every
-// catalog artifact and the tags of the Swift distribution repository. No source file carries a
-// release version, as with npm.
+// A fresh dispatch advances past both published and reserved native versions.
 
-/** Versions listed by an artifact's Maven metadata; an artifact that was never published has none. */
-export async function mavenVersions(
+/** Includes every listed version and records which ones are absent from some artifacts. */
+async function mavenVersionState(
   catalog,
-  {fetch: request = fetch, baseUrl = repositoryUrl} = {},
+  {fetch: request = fetch, baseUrl = catalog.maven.repositoryUrl} = {},
 ) {
-  const versions = new Set();
-  for (const {artifactId} of catalog.maven.publications) {
+  const {group, publications} = catalog.maven;
+  const appearances = new Map();
+
+  for (const {artifactId} of publications) {
     const url = `${baseUrl}/${mavenArtifactDirectory(catalog, artifactId)}/maven-metadata.xml`;
     const response = await request(url, {headers: {'cache-control': 'no-cache'}});
     if (response.status === 404) continue;
     if (!response.ok)
       throw new Error(`${url} answered ${response.status}; the release cannot be planned.`);
-    for (const [, version] of (await response.text()).matchAll(/<version>([^<]+)<\/version>/gu)) {
-      versions.add(version.trim());
-    }
+
+    const versions = readMavenMetadata(Buffer.from(await response.arrayBuffer()), {
+      key: url,
+      group,
+      artifactId,
+      acceptsVersion: parseAlphaVersion,
+    });
+    for (const version of versions) appearances.set(version, (appearances.get(version) ?? 0) + 1);
   }
-  return [...versions];
+
+  const versions = [...appearances.keys()];
+  const incomplete = versions.filter((version) => appearances.get(version) < publications.length);
+  return {versions, incomplete};
+}
+
+export async function mavenVersions(catalog, options) {
+  return (await mavenVersionState(catalog, options)).versions;
 }
 
 export async function planNativeRelease({catalog, sourceRevision, swiftRemote, request}) {
+  const maven = await mavenVersionState(catalog, {fetch: request});
+  const index = await readAnonymousMavenFile(catalog.maven.repositoryUrl, reservationIndexKey, {
+    request,
+  });
+  const reserved = index ? parseReservationIndex(index, catalog) : [];
   const plan = planNativeVersion({
     initialVersion: catalog.initialVersion,
     swiftVersions: await swiftVersions(swiftRemote),
-    mavenVersions: await mavenVersions(catalog, {fetch: request}),
+    mavenVersions: [...maven.versions, ...reserved],
   });
+  const unpublished = reserved.filter((version) => !maven.versions.includes(version));
+  const incompleteVersions = [
+    ...new Set([...plan.incomplete, ...maven.incomplete, ...unpublished]),
+  ];
   return {
     schemaVersion: 1,
+    signingTimeUnix: Math.floor(Date.now() / 1000),
     sourceRevision,
     version: plan.to,
     previousVersion: plan.from,
-    incompleteVersions: plan.incomplete,
+    incompleteVersions: incompleteVersions.sort(compareAlphaVersions),
     swift: {repository: catalog.swift.repository},
     maven: {
       group: catalog.maven.group,
@@ -75,7 +104,7 @@ async function main() {
     `Maven: ${plan.maven.artifacts.map((artifact) => `${plan.maven.group}:${artifact}`).join(', ')}.`,
   ];
   if (plan.incompleteVersions.length > 0) {
-    summary.push(`Published on only one side: ${plan.incompleteVersions.join(', ')}.`);
+    summary.push(`Incomplete native versions: ${plan.incompleteVersions.join(', ')}.`);
   }
   console.log(summary.join('\n'));
   if (process.env.GITHUB_OUTPUT)

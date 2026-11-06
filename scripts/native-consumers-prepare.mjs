@@ -9,12 +9,12 @@ import {fileURLToPath} from 'node:url';
 //   --swift-url URL         resolve the Swift package from a git URL at the candidate's exact
 //                           version tag (as SwiftPM consumers do) instead of a local path
 //   --maven-repository DIR  resolve Android artifacts from another local repository, such as an
-//                           extracted Maven Central bundle, instead of the candidate's `maven/`
+//                           signed Maven bundle, instead of the candidate's `maven/`
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const kotlinString = (value) => JSON.stringify(value).replaceAll('$', '\\$');
 const usage =
-  'Usage: native-consumers-prepare.mjs /absolute/candidate /new/absolute/consumers [--swift-url URL] [--maven-repository /absolute/repository]';
+  'Usage: native-consumers-prepare.mjs /absolute/candidate /new/absolute/consumers [--swift-url URL] [--maven-repository /absolute/repository|https://repository]';
 const [candidate, output, ...rest] = process.argv.slice(2);
 const options = new Map();
 for (let index = 0; index < rest.length; index += 2) {
@@ -26,7 +26,8 @@ for (let index = 0; index < rest.length; index += 2) {
 }
 if (!candidate || !output || !isAbsolute(candidate) || !isAbsolute(output)) throw new Error(usage);
 const mavenRepository = options.get('--maven-repository') ?? join(candidate, 'maven');
-if (!isAbsolute(mavenRepository)) throw new Error(usage);
+if (!isAbsolute(mavenRepository) && !/^https:\/\/[^\s]+$/u.test(mavenRepository))
+  throw new Error(usage);
 const receipt = JSON.parse(await readFile(join(candidate, 'candidate.json'), 'utf8'));
 const swiftPackage = join(candidate, receipt.swift?.path ?? 'swift');
 const packageReference = options.has('--swift-url')

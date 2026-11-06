@@ -12,9 +12,9 @@ import {
   readNativeReleaseCatalog,
 } from './native-release-config.mjs';
 
-// Maven Central bundle preparation for the native Android artifacts. Gradle writes an unsigned
+// Signed Maven repository preparation for the native Android artifacts. Gradle writes an unsigned
 // local repository; this script validates it, signs the exact files, adds checksums and writes the
-// zip uploaded to the Central Publisher Portal. It uses Node built-ins and the gpg executable only,
+// portable zip archive. It uses Node built-ins and the gpg executable only,
 // so the isolated publish job needs no workspace install.
 
 const checksumAlgorithms = ['md5', 'sha1', 'sha256', 'sha512'];
@@ -73,6 +73,70 @@ const text = (element, ...path) => {
   for (const name of path) current = child(current, name);
   return current?.text.trim() ?? '';
 };
+
+function oneChild(element, name, optional = false) {
+  const matches = children(element, name);
+  if (matches.length !== 1 && !(optional && matches.length === 0)) {
+    throw new Error(`Expected one <${name}> element.`);
+  }
+  return matches[0];
+}
+
+function leaf(element) {
+  if (!element || element.children.length !== 0) throw new Error('Expected a text element.');
+  return element.text.trim();
+}
+
+/** Reads the version listing for one exact Maven coordinate. */
+export function readMavenMetadata(bytes, {key, group, artifactId, acceptsVersion}) {
+  try {
+    const document = parseXml(bytes.toString('utf8'));
+    const metadata = oneChild(document, 'metadata');
+    if (
+      document.children.length !== 1 ||
+      document.text.trim() ||
+      metadata.text.trim() ||
+      metadata.children.length !== 3 ||
+      leaf(oneChild(metadata, 'groupId')) !== group ||
+      leaf(oneChild(metadata, 'artifactId')) !== artifactId
+    ) {
+      throw new Error('Unexpected Maven coordinates or metadata structure.');
+    }
+
+    const versioning = oneChild(metadata, 'versioning');
+    const versionsElement = oneChild(versioning, 'versions');
+    const versions = versionsElement.children.map((entry) => {
+      if (entry.name !== 'version') throw new Error('Unexpected entry in <versions>.');
+      const version = leaf(entry);
+      if (!acceptsVersion(version)) throw new Error(`Unexpected Maven version ${version}.`);
+      return version;
+    });
+    if (
+      versioning.text.trim() ||
+      versionsElement.text.trim() ||
+      versions.length !== new Set(versions).size ||
+      versioning.children.some(
+        ({name}) => !['latest', 'release', 'versions', 'lastUpdated'].includes(name),
+      )
+    ) {
+      throw new Error('Unexpected Maven version listing.');
+    }
+    for (const field of ['latest', 'release']) {
+      const element = oneChild(versioning, field, true);
+      if (element && !versions.includes(leaf(element))) {
+        throw new Error(`<${field}> must name a listed version.`);
+      }
+    }
+    const lastUpdated = oneChild(versioning, 'lastUpdated', true);
+    if (lastUpdated && !/^\d{14}$/u.test(leaf(lastUpdated))) {
+      throw new Error('Invalid <lastUpdated>.');
+    }
+
+    return versions;
+  } catch (error) {
+    throw new Error(`Cannot update ${key}: ${error.message}`, {cause: error});
+  }
+}
 
 /** Required edges of the published packages, checked in both Maven and Gradle metadata. */
 function validateDependencies(dependencies, {catalog, artifactId, version, engines}, usage) {
@@ -141,7 +205,7 @@ function validateDependencies(dependencies, {catalog, artifactId, version, engin
   return problems.map((message) => `${artifactId}: ${message}`);
 }
 
-/** Central Portal POM requirements plus the coordinates this release must carry. */
+/** Maven POM requirements plus the coordinates this release must carry. */
 export function validatePom(source, {catalog, artifactId, version, engines}) {
   const problems = [];
   const document = parseXml(source);
@@ -264,7 +328,7 @@ async function listFiles(directory, prefix = '') {
 
 /**
  * Validates a Maven repository for one release. Unsigned mode checks a Gradle candidate; signed
- * mode checks a Central bundle directory, where every file also needs signatures and checksums.
+ * mode checks a signed staging directory, where every file also needs signatures and checksums.
  */
 export async function validateMavenRepository(directory, options) {
   const {catalog, version, signed = false, verifySignature} = options;
@@ -367,7 +431,7 @@ async function gpg(gnupgHome, args, input) {
   });
 }
 
-/** Reads the one secret key in a keyring and the facts Central relies on. */
+/** Reads the one secret key in a keyring and its signing capabilities. */
 export async function describeSigningKey(gnupgHome, now = Date.now()) {
   const listing = await gpg(gnupgHome, [
     '--with-colons',
@@ -392,9 +456,7 @@ export async function describeSigningKey(gnupgHome, now = Date.now()) {
     throw new Error(`Signing key ${fingerprint} is revoked, expired or disabled.`);
   }
   if (!capabilities.includes('s')) {
-    throw new Error(
-      `Signing key ${fingerprint} cannot sign with its primary key; Maven Central verifies primary-key signatures.`,
-    );
+    throw new Error(`Signing key ${fingerprint} cannot sign with its primary key.`);
   }
   return {fingerprint, expiresAt};
 }
@@ -411,17 +473,18 @@ export async function importSigningKey({armoredKey, expectedFingerprint, gnupgHo
   return key;
 }
 
-export function gpgSigner({gnupgHome, fingerprint, passphrase}) {
+export function gpgSigner({gnupgHome, fingerprint, passphrase, signingTimeUnix}) {
   return async (path) => {
     await gpg(
       gnupgHome,
       [
+        ...(signingTimeUnix === undefined ? [] : ['--faked-system-time', `${signingTimeUnix}!`]),
         '--yes',
         '--pinentry-mode',
         'loopback',
         '--passphrase-fd',
         '0',
-        // The trailing "!" pins the primary key; Central does not accept subkey signatures.
+        // The trailing "!" pins the primary key; the release identity is the primary key.
         '--local-user',
         `${fingerprint}!`,
         '--armor',
@@ -504,9 +567,9 @@ export async function writeZip(output, entries) {
 
 /**
  * Copies the validated primary files into a new directory, signs each one, writes its checksums,
- * validates the signed layout and zips it for the Central Publisher Portal.
+ * validates the signed layout and optionally writes a portable archive.
  */
-export async function createCentralBundle({
+export async function createMavenBundle({
   repository,
   catalog,
   version,
@@ -539,10 +602,10 @@ export async function createCentralBundle({
   });
   const entries = [];
   for (const path of files) entries.push({name: path, bytes: await readFile(join(staging, path))});
-  await writeZip(output, entries);
+  if (output) await writeZip(output, entries);
   return {
     files: files.length,
-    sha256: digest('sha256', await readFile(output)),
+    ...(output ? {sha256: digest('sha256', await readFile(output))} : {}),
   };
 }
 
@@ -598,30 +661,43 @@ async function main() {
         `::warning title=Signing key expires soon::Extend ${key.fingerprint} and republish it.`,
       );
     }
-  } else if (command === 'bundle') {
-    const options = parseOptions(args, ['--repository', '--version', '--gnupghome', '--output']);
+  } else if (command === 'bundle' || command === 'stage') {
+    const options = parseOptions(args, [
+      '--repository',
+      '--version',
+      '--gnupghome',
+      '--output',
+      '--signing-time',
+    ]);
     const gnupgHome = absolute(options, '--gnupghome');
     const output = absolute(options, '--output');
     const {fingerprint} = await describeSigningKey(gnupgHome);
-    const staging = await mkdtemp(join(tmpdir(), 'tileflow-central-'));
-    await rm(staging, {recursive: true});
-    const result = await createCentralBundle({
+    const staging = command === 'stage' ? output : await mkdtemp(join(tmpdir(), 'tileflow-maven-'));
+    if (command !== 'stage') await rm(staging, {recursive: true});
+    const signingTimeUnix = options.has('--signing-time')
+      ? Number(options.get('--signing-time'))
+      : undefined;
+    if (
+      signingTimeUnix !== undefined &&
+      (!Number.isSafeInteger(signingTimeUnix) || signingTimeUnix <= 0)
+    )
+      throw new Error('Invalid signing time.');
+    const result = await createMavenBundle({
       repository: absolute(options, '--repository'),
       catalog,
       version: options.get('--version'),
       staging,
-      output,
+      output: command === 'stage' ? undefined : output,
       sign: gpgSigner({
         gnupgHome,
         fingerprint,
         passphrase: process.env.NATIVE_SIGNING_KEY_PASSPHRASE,
+        signingTimeUnix,
       }),
       verifySignature: gpgSignatureVerifier({gnupgHome, fingerprint}),
     });
-    await rm(staging, {recursive: true, force: true});
-    console.log(
-      `Central bundle ${output}: ${result.files} files, SHA-256 ${result.sha256}, signed by ${fingerprint}.`,
-    );
+    if (command !== 'stage') await rm(staging, {recursive: true, force: true});
+    console.log(`Signed Maven ${output}: ${result.files} files, signed by ${fingerprint}.`);
   } else if (command === 'keyserver') {
     const options = parseOptions(args, ['--fingerprint']);
     const fingerprint = options.get('--fingerprint')?.toUpperCase() ?? '';
@@ -633,13 +709,13 @@ async function main() {
     const body = await response.text();
     if (!response.ok || !body.includes('BEGIN PGP PUBLIC KEY BLOCK')) {
       throw new Error(
-        `The public key ${fingerprint} is not on keyserver.ubuntu.com, so Maven Central cannot verify the signatures. Publish the signing public key before releasing.`,
+        `The public key ${fingerprint} is not on keyserver.ubuntu.com, so consumers cannot retrieve the signing key. Publish the signing public key before releasing.`,
       );
     }
     console.log(`Public key ${fingerprint} is available from keyserver.ubuntu.com.`);
   } else {
     throw new Error(
-      'Usage: native-maven-bundle.mjs validate|import-key|bundle|keyserver [options]',
+      'Usage: native-maven-bundle.mjs validate|import-key|bundle|stage|keyserver [options]',
     );
   }
 }

@@ -31,7 +31,7 @@ Configuration and usage are described in the
 
 ## Provenance
 
-`provenance.json` names the source revision, the source inventory digest and the renderer versions. The same release is published to Maven Central for Android under
+`provenance.json` names the source revision, the source inventory digest and the renderer versions. The same release is published to https://maven.tileflow.dev for Android under
 `dev.tileflow` with the same version.
 
 ## License

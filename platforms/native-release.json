@@ -36,6 +36,7 @@
         "name": "Tileflow Android foundation",
         "description": "Shared configuration, transport and value types for Tileflow Android libraries."
       }
-    ]
+    ],
+    "repositoryUrl": "https://maven.tileflow.dev"
   }
 }

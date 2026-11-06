@@ -34,6 +34,17 @@ export function validateNativeReleaseCatalog(catalog) {
   if (!/^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)+$/u.test(catalog.maven?.group ?? '')) {
     fail('invalid maven.group.');
   }
+  const repository = new URL(catalog.maven.repositoryUrl);
+  if (
+    repository.protocol !== 'https:' ||
+    repository.username ||
+    repository.password ||
+    repository.search ||
+    repository.hash ||
+    repository.href.replace(/\/$/u, '') !== catalog.maven.repositoryUrl
+  ) {
+    fail('maven.repositoryUrl must be a canonical public HTTPS URL.');
+  }
   const publications = catalog.maven.publications;
   if (!Array.isArray(publications) || publications.length === 0) fail('no Maven publications.');
   const modules = new Set();

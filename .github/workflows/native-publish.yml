@@ -2,7 +2,7 @@ name: Native publish
 run-name: Prepare Swift and Android release from main at ${{ github.sha }}
 
 # Publishes the Swift package to its distribution repository and the Android artifacts to Maven
-# Central. See "Native Swift and Android releases" in PUBLISHING.md. The workflow has no inputs:
+# on R2. The workflow has no inputs:
 # it binds itself to the current main head, derives the next alpha from what is already public,
 # builds and verifies one bundle, and waits for approval on the native-publish environment.
 # Credentials exist only in that environment and only the publish job can read them.
@@ -118,7 +118,7 @@ jobs:
               }));
             } catch (error) {
               if (error.status !== 404) throw error;
-              core.setFailed(`Create the ${name} environment as described in PUBLISHING.md.`);
+              core.setFailed(`Create the ${name} environment with the required protection rules.`);
               return;
             }
             const problems = [];
@@ -367,8 +367,10 @@ jobs:
       - name: Require release credentials
         shell: bash
         env:
-          MAVEN_CENTRAL_TOKEN_USERNAME: ${{ secrets.MAVEN_CENTRAL_TOKEN_USERNAME }}
-          MAVEN_CENTRAL_TOKEN_PASSWORD: ${{ secrets.MAVEN_CENTRAL_TOKEN_PASSWORD }}
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_MAVEN_BUCKET: ${{ vars.R2_MAVEN_BUCKET }}
+          R2_MAVEN_ACCESS_KEY_ID: ${{ secrets.R2_MAVEN_ACCESS_KEY_ID }}
+          R2_MAVEN_SECRET_ACCESS_KEY: ${{ secrets.R2_MAVEN_SECRET_ACCESS_KEY }}
           NATIVE_SIGNING_KEY: ${{ secrets.NATIVE_SIGNING_KEY }}
           NATIVE_SIGNING_KEY_PASSPHRASE: ${{ secrets.NATIVE_SIGNING_KEY_PASSPHRASE }}
           NATIVE_SIGNING_KEY_FINGERPRINT: ${{ vars.NATIVE_SIGNING_KEY_FINGERPRINT }}
@@ -376,14 +378,14 @@ jobs:
         run: |
           set -euo pipefail
           missing=()
-          for name in MAVEN_CENTRAL_TOKEN_USERNAME MAVEN_CENTRAL_TOKEN_PASSWORD NATIVE_SIGNING_KEY \
+          for name in R2_ACCOUNT_ID R2_MAVEN_BUCKET R2_MAVEN_ACCESS_KEY_ID R2_MAVEN_SECRET_ACCESS_KEY NATIVE_SIGNING_KEY \
             NATIVE_SIGNING_KEY_PASSPHRASE NATIVE_SIGNING_KEY_FINGERPRINT SWIFT_DISTRIBUTION_DEPLOY_KEY
           do
             [[ -n "${!name:-}" ]] || missing+=("$name")
           done
           if (( ${#missing[@]} > 0 ))
           then
-            echo "::error title=Native release credentials missing::The $NATIVE_RELEASE_ENVIRONMENT environment lacks ${missing[*]}. NATIVE_SIGNING_KEY_FINGERPRINT is an environment variable; the others are environment secrets. See PUBLISHING.md."
+            echo "::error title=Native release credentials missing::The $NATIVE_RELEASE_ENVIRONMENT environment lacks ${missing[*]}. R2_ACCOUNT_ID, R2_MAVEN_BUCKET and NATIVE_SIGNING_KEY_FINGERPRINT are environment variables; the others are secrets. See the native distribution procedure."
             exit 1
           fi
 
@@ -433,45 +435,33 @@ jobs:
           node scripts/native-maven-bundle.mjs import-key --gnupghome "$RUNNER_TEMP/gnupg"
           node scripts/native-maven-bundle.mjs keyserver --fingerprint "$NATIVE_SIGNING_KEY_FINGERPRINT"
 
-      - name: Check Maven Central state
-        id: central
-        shell: bash
-        env:
-          MAVEN_CENTRAL_TOKEN_USERNAME: ${{ secrets.MAVEN_CENTRAL_TOKEN_USERNAME }}
-          MAVEN_CENTRAL_TOKEN_PASSWORD: ${{ secrets.MAVEN_CENTRAL_TOKEN_PASSWORD }}
-        run: |
-          set -euo pipefail
-          state="$(node scripts/native-central-portal.mjs state --version "$VERSION")"
-          echo "Maven Central state for $VERSION: $state"
-          echo "state=$state" >> "$GITHUB_OUTPUT"
-
-      - name: Sign the Maven artifacts and create the Central bundle
-        if: steps.central.outputs.state == 'new'
+      - name: Sign the Maven repository
         shell: bash
         env:
           NATIVE_SIGNING_KEY_PASSPHRASE: ${{ secrets.NATIVE_SIGNING_KEY_PASSPHRASE }}
-        run: >-
-          node scripts/native-maven-bundle.mjs bundle
-          --repository "$RUNNER_TEMP/native-release/candidate/maven"
-          --version "$VERSION"
-          --gnupghome "$RUNNER_TEMP/gnupg"
-          --output "$RUNNER_TEMP/central-bundle.zip"
-
-      # USER_MANAGED stops at VALIDATED: Central checks POMs, signatures and checksums, but nothing
-      # becomes public until the Swift tag exists.
-      - name: Upload to Maven Central and wait for validation
-        id: upload
-        if: steps.central.outputs.state == 'new'
-        shell: bash
-        env:
-          MAVEN_CENTRAL_TOKEN_USERNAME: ${{ secrets.MAVEN_CENTRAL_TOKEN_USERNAME }}
-          MAVEN_CENTRAL_TOKEN_PASSWORD: ${{ secrets.MAVEN_CENTRAL_TOKEN_PASSWORD }}
         run: |
           set -euo pipefail
-          node scripts/native-central-portal.mjs upload \
+          signing_time="$(node -p "require('$RUNNER_TEMP/native-release/plan.json').signingTimeUnix")"
+          node scripts/native-maven-bundle.mjs stage \
+            --repository "$RUNNER_TEMP/native-release/candidate/maven" \
             --version "$VERSION" \
-            --bundle "$RUNNER_TEMP/central-bundle.zip" | tee "$RUNNER_TEMP/central-upload.log"
-          grep '^deployment=' "$RUNNER_TEMP/central-upload.log" | tail -n 1 >> "$GITHUB_OUTPUT"
+            --gnupghome "$RUNNER_TEMP/gnupg" \
+            --signing-time "$signing_time" \
+            --output "$RUNNER_TEMP/signed-maven"
+
+      - name: Publish and verify the R2 Maven repository
+        shell: bash
+        env:
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_MAVEN_BUCKET: ${{ vars.R2_MAVEN_BUCKET }}
+          R2_MAVEN_ACCESS_KEY_ID: ${{ secrets.R2_MAVEN_ACCESS_KEY_ID }}
+          R2_MAVEN_SECRET_ACCESS_KEY: ${{ secrets.R2_MAVEN_SECRET_ACCESS_KEY }}
+          NATIVE_SIGNING_KEY_FINGERPRINT: ${{ vars.NATIVE_SIGNING_KEY_FINGERPRINT }}
+        run: >-
+          node scripts/native-maven-repository.mjs
+          --repository "$RUNNER_TEMP/signed-maven"
+          --version "$VERSION"
+          --gnupghome "$RUNNER_TEMP/gnupg"
 
       - name: Push the Swift release commit and tag
         shell: bash
@@ -494,23 +484,6 @@ jobs:
             --swift "$RUNNER_TEMP/native-release/candidate/swift"
           rm -rf "$ssh_dir"
 
-      - name: Publish the validated Maven Central deployment
-        id: central-publish
-        if: steps.central.outputs.state == 'new'
-        shell: bash
-        env:
-          DEPLOYMENT: ${{ steps.upload.outputs.deployment }}
-          MAVEN_CENTRAL_TOKEN_USERNAME: ${{ secrets.MAVEN_CENTRAL_TOKEN_USERNAME }}
-          MAVEN_CENTRAL_TOKEN_PASSWORD: ${{ secrets.MAVEN_CENTRAL_TOKEN_PASSWORD }}
-        run: node scripts/native-central-portal.mjs publish --version "$VERSION" --deployment "$DEPLOYMENT"
-
-      - name: Verify Maven Central files
-        shell: bash
-        run: >-
-          node scripts/native-central-portal.mjs verify
-          --version "$VERSION"
-          --repository "$RUNNER_TEMP/native-release/candidate/maven"
-
       - name: Create release receipt
         shell: bash
         run: |
@@ -529,19 +502,9 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      # A validated deployment that was never published is dropped, so a rerun uploads afresh.
-      - name: Drop the unpublished Central deployment
-        if: failure() && steps.upload.outputs.deployment != '' && steps.central-publish.outcome != 'success'
-        shell: bash
-        env:
-          DEPLOYMENT: ${{ steps.upload.outputs.deployment }}
-          MAVEN_CENTRAL_TOKEN_USERNAME: ${{ secrets.MAVEN_CENTRAL_TOKEN_USERNAME }}
-          MAVEN_CENTRAL_TOKEN_PASSWORD: ${{ secrets.MAVEN_CENTRAL_TOKEN_PASSWORD }}
-        run: node scripts/native-central-portal.mjs drop --version "$VERSION" --deployment "$DEPLOYMENT"
-
       - name: Remove signing material
         if: always()
         shell: bash
         run: |
           gpgconf --homedir "$RUNNER_TEMP/gnupg" --kill gpg-agent 2>/dev/null || true
-          rm -rf "$RUNNER_TEMP/gnupg" "$RUNNER_TEMP/swift-ssh" "$RUNNER_TEMP/central-bundle.zip"
+          rm -rf "$RUNNER_TEMP/gnupg" "$RUNNER_TEMP/swift-ssh" "$RUNNER_TEMP/signed-maven"

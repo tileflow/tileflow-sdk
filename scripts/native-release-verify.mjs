@@ -261,7 +261,7 @@ async function summary(release) {
     `- Source: \`${candidate.sourceRevision}\``,
     `- MapLibre Native: iOS ${candidate.engines.ios}, Android ${candidate.engines.android}`,
     `- Swift: https://github.com/${catalog.swift.repository} tag \`${candidate.version}\` at commit \`${swiftRelease.commit}\` (tree \`${swiftRelease.tree}\`, parent \`${swiftRelease.parent ?? 'none'}\`)`,
-    `- Maven Central: ${Object.values(candidate.android.modules)
+    `- Tileflow Maven (${catalog.maven.repositoryUrl}): ${Object.values(candidate.android.modules)
       .map((coordinate) => `\`${coordinate}\``)
       .join(', ')}`,
     '',
@@ -284,7 +284,11 @@ async function receipt(release, bundleDigest, output) {
       commit: swiftRelease.commit,
       tree: swiftRelease.tree,
     },
-    maven: {coordinates: Object.values(candidate.android.modules), files: maven},
+    maven: {
+      repositoryUrl: catalog.maven.repositoryUrl,
+      coordinates: Object.values(candidate.android.modules),
+      files: maven,
+    },
   };
   await writeFile(output, `${JSON.stringify(document, null, 2)}\n`, {flag: 'wx'});
 }

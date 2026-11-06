@@ -9,13 +9,10 @@ import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
 import {readNativeStylePins} from './mobile-native-style.mjs';
 import {
-  centralPortal,
-  centralReleaseState,
-  verifyCentralFiles,
-  waitForDeployment,
-} from './native-central-portal.mjs';
-import {
-  createCentralBundle,
+  createMavenBundle,
+  describeSigningKey,
+  gpgSignatureVerifier,
+  gpgSigner,
   primaryFileNames,
   validateModuleMetadata,
   validatePom,
@@ -215,9 +212,9 @@ test('reads published Maven versions and treats a missing artifact as unpublishe
     baseUrl: 'https://repository.test',
     fetch: async (url) => {
       requested.push(url);
-      if (url.includes('/tileflow/')) {
+      if (url.endsWith('/tileflow/maven-metadata.xml')) {
         return new Response(
-          '<metadata><versioning><versions><version>0.1.0-alpha.0</version><version>0.1.0-alpha.1</version></versions></versioning></metadata>',
+          '<metadata><groupId>dev.tileflow</groupId><artifactId>tileflow</artifactId><versioning><versions><version>0.1.0-alpha.0</version><version>0.1.0-alpha.1</version></versions></versioning></metadata>',
         );
       }
       return new Response('', {status: 404});
@@ -231,7 +228,7 @@ test('reads published Maven versions and treats a missing artifact as unpublishe
   );
 });
 
-test('POMs must carry the metadata Maven Central requires and exact release dependencies', () => {
+test('POMs must carry the publication metadata and exact release dependencies', () => {
   const options = {catalog, artifactId: 'tileflow-services', version, engines};
   assert.deepEqual(validatePom(pom('tileflow-services'), options), []);
   assert.deepEqual(
@@ -370,13 +367,13 @@ test('Gradle variants preserve the publication dependency graph and exact versio
   );
 });
 
-test('the Central bundle signs and checksums every file and zips them deterministically', async (t) => {
+test('the Maven bundle signs and checksums every file and zips them deterministically', async (t) => {
   const directory = await temporary(t);
   const repository = join(directory, 'maven');
   await candidateRepository(repository);
   const signed = [];
   const bundle = (name) =>
-    createCentralBundle({
+    createMavenBundle({
       repository,
       catalog,
       version,
@@ -424,67 +421,6 @@ test('the zip writer produces archives that standard tools read', async (t) => {
   const {stdout: content} = await run('unzip', ['-p', output, 'b/file.txt']);
   assert.equal(content, 'second');
   await assert.rejects(writeZip(output, []), /EEXIST/u);
-});
-
-test('the Central Portal client uses the user token and stops on rejected deployments', async () => {
-  const calls = [];
-  const states = ['PENDING', 'VALIDATING', 'FAILED'];
-  const portal = centralPortal({
-    username: 'user',
-    password: 'secret',
-    baseUrl: 'https://portal.test',
-    fetch: async (url, init) => {
-      calls.push({url, method: init.method, authorization: init.headers.authorization});
-      if (url.includes('/published?')) {
-        return Response.json({published: new URL(url).searchParams.get('name') === 'tileflow'});
-      }
-      if (url.includes('/status?')) {
-        return Response.json({deploymentState: states.shift(), errors: {pom: ['missing scm']}});
-      }
-      return new Response('', {status: 204});
-    },
-  });
-  assert.equal(calls.length, 0);
-  assert.equal(await portal.published('dev.tileflow', 'tileflow', version), true);
-  assert.equal(calls[0].authorization, `Bearer ${Buffer.from('user:secret').toString('base64')}`);
-  assert.equal(
-    calls[0].url,
-    `https://portal.test/api/v1/publisher/published?namespace=dev.tileflow&name=tileflow&version=${version}`,
-  );
-  await assert.rejects(
-    waitForDeployment(portal, 'deployment', 'VALIDATED', {timeoutMs: 10_000, intervalMs: 1}),
-    /rejected deployment deployment:[\s\S]*missing scm/u,
-  );
-  await assert.rejects(centralReleaseState(portal, catalog, version), /only part of/u);
-  assert.throws(() => centralPortal({username: '', password: ''}), /MAVEN_CENTRAL_TOKEN_USERNAME/u);
-});
-
-test('Maven Central verification compares the served bytes with the approved files', async (t) => {
-  const directory = await temporary(t);
-  await candidateRepository(directory);
-  const served = async (url) => {
-    const path = url.replace('https://repository.test/', '');
-    return new Response(await readFile(join(directory, path)));
-  };
-  await verifyCentralFiles({
-    catalog,
-    version,
-    repository: directory,
-    baseUrl: 'https://repository.test',
-    fetch: served,
-    timeoutMs: 1_000,
-  });
-  await assert.rejects(
-    verifyCentralFiles({
-      catalog,
-      version,
-      repository: directory,
-      baseUrl: 'https://repository.test',
-      fetch: async () => new Response('other bytes'),
-      timeoutMs: 1_000,
-    }),
-    /serves different bytes/u,
-  );
 });
 
 test('native archives reject stale browser assets while accepting native map resources', async () => {
@@ -601,11 +537,11 @@ test('the native release workflow confines credentials to the approved publish j
     publish.indexOf('Require release credentials') <
       publish.indexOf('Checkout exact release source'),
   );
-  for (const [, name] of workflow.matchAll(/secrets\.([A-Z_]+)/gu)) {
+  for (const [, name] of workflow.matchAll(/secrets\.([A-Z0-9_]+)/gu)) {
     assert.ok(
       [
-        'MAVEN_CENTRAL_TOKEN_USERNAME',
-        'MAVEN_CENTRAL_TOKEN_PASSWORD',
+        'R2_MAVEN_ACCESS_KEY_ID',
+        'R2_MAVEN_SECRET_ACCESS_KEY',
         'NATIVE_SIGNING_KEY',
         'NATIVE_SIGNING_KEY_PASSPHRASE',
         'SWIFT_DISTRIBUTION_DEPLOY_KEY',
@@ -615,11 +551,11 @@ test('the native release workflow confines credentials to the approved publish j
   }
   const interlock = beforePublish.indexOf('Enforce native release interlock');
   assert.ok(interlock >= 0 && interlock < beforePublish.indexOf('Plan the native version'));
-  assert.ok(publish.indexOf('Upload to Maven Central') < publish.indexOf('Push the Swift release'));
   assert.ok(
-    publish.indexOf('Push the Swift release') <
-      publish.indexOf('Publish the validated Maven Central'),
+    publish.indexOf('Publish and verify the R2 Maven repository') <
+      publish.indexOf('Push the Swift release'),
   );
+  assert.doesNotMatch(workflow, /MAVEN_CENTRAL|native-central-portal/u);
   for (const [, reference] of workflow.matchAll(/uses: (\S+)/gu)) {
     assert.match(reference, /@[0-9a-f]{40}$/u, `${reference} must be pinned to a commit`);
   }
@@ -799,4 +735,41 @@ test('versionless Compose dependencies require an explicit exact Compose platfor
     (item) => item.module !== 'compose-bom',
   );
   assert.match(check(document).join(), /androidx.compose.*non-exact/u);
+});
+
+test('GPG staging retries produce identical signatures at the release plan time', async (t) => {
+  const directory = await temporary(t);
+  // macOS limits Unix socket paths; GPG's agent needs a short keyring path.
+  const keyring = await mkdtemp('/tmp/tf-gpg-');
+  t.after(async () => {
+    await run('gpgconf', ['--homedir', keyring, '--kill', 'gpg-agent']).catch(() => {});
+    await rm(keyring, {recursive: true, force: true});
+  });
+  await run('gpg', [
+    '--homedir',
+    keyring,
+    '--batch',
+    '--pinentry-mode',
+    'loopback',
+    '--passphrase',
+    '',
+    '--quick-generate-key',
+    'Tileflow test <test@example.invalid>',
+    'rsa2048',
+    'sign',
+    '1d',
+  ]);
+  const {fingerprint} = await describeSigningKey(keyring);
+  const signingTimeUnix = Math.floor(Date.now() / 1000);
+  const path = join(directory, 'artifact');
+  await writeFile(path, 'approved bytes');
+  const sign = gpgSigner({gnupgHome: keyring, fingerprint, signingTimeUnix});
+  await sign(path);
+  const signature = await readFile(`${path}.asc`);
+  await sign(path);
+  assert.deepEqual(await readFile(`${path}.asc`), signature);
+  const verify = gpgSignatureVerifier({gnupgHome: keyring, fingerprint});
+  assert.equal((await verify(path, `${path}.asc`)).ok, true);
+  await writeFile(path, 'tampered bytes');
+  assert.equal((await verify(path, `${path}.asc`)).ok, false);
 });

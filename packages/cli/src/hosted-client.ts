@@ -901,9 +901,28 @@ async function uploadNativeDocument(
   throw failure!;
 }
 
+const deploymentFailureDetails = new Map([
+  ['TF_DEPLOYMENT_BODY_INVALID', 'Hosted could not read the deployment request.'],
+  ['TF_MAP_FORBIDDEN', 'Check that the credential can publish to this Map.'],
+  ['TF_STYLE_STORAGE_UNAVAILABLE', 'Hosted could not store the style. Retry the deployment.'],
+  ['TF_RENDERER_DEPLOYMENT_RETIRED', 'Update the Tileflow CLI and retry.'],
+  ['TF_RENDERER_DEPLOYMENT_INVALID', 'Run tileflow validate --target hosted and fix any issues.'],
+  ['TF_NATIVE_FAMILY_REQUIRED', 'The deployment is missing its native family.'],
+  ['TF_NATIVE_FAMILY_TOO_LARGE', 'The native family exceeds the Hosted size limit.'],
+  ['TF_NATIVE_FAMILY_INVALID', 'The native family document did not match the deployment.'],
+  ['TF_NATIVE_DOCUMENT_NOT_FOUND', 'The reserved deployment does not contain this document.'],
+  ['TF_NATIVE_DOCUMENT_MISMATCH', 'The native document does not match the deployment.'],
+  ['TF_NATIVE_DOCUMENT_UNAVAILABLE', 'Hosted could not store the native document.'],
+  ['TF_NATIVE_DOCUMENTS_INCOMPLETE', 'The deployment is missing native documents.'],
+  ['TF_NATIVE_DEPLOYMENT_PUBLISHED', 'The deployment was already published.'],
+  ['TF_NATIVE_DEPLOYMENT_INCONSISTENT', 'The reservation does not match this deployment.'],
+  ['TF_NATIVE_STAGING_INCOMPLETE', 'Hosted has not finished preparing the deployment.'],
+  ['TF_NATIVE_STAGING_UNAVAILABLE', 'Hosted could not prepare the deployment.'],
+]);
+
 function failureCode(response: HostedJsonResponse): string | undefined {
   const code = asRecord(response.body).code;
-  return typeof code === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/u.test(code) ? code : undefined;
+  return typeof code === 'string' && deploymentFailureDetails.has(code) ? code : undefined;
 }
 
 function deploymentFailure(
@@ -912,10 +931,13 @@ function deploymentFailure(
   resumable = response.status >= 500 || response.status === 429,
 ): HostedDeploymentError {
   const code = failureCode(response);
-  const error = asRecord(response.body).error;
-  const detail = safeText(error, 300) && !/[\p{Cf}]|tf_[a-z]+_/u.test(error) ? `: ${error}` : '';
+  const detail = code
+    ? deploymentFailureDetails.get(code)
+    : response.status === 401 || response.status === 403
+      ? 'Check that the credential can publish to this Map.'
+      : undefined;
   return new HostedDeploymentError(
-    `${prefix} (${response.status}${code ? ` ${code}` : ''})${detail}`,
+    `${prefix} (${response.status}${code ? ` ${code}` : ''})${detail ? `: ${detail}` : ''}`,
     {resumable, status: response.status, ...(code ? {code} : {})},
   );
 }

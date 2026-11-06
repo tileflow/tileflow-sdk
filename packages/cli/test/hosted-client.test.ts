@@ -14,7 +14,7 @@ import {
   validateApiKey,
 } from '../src/hosted-client';
 
-test('Team credentials validate without a Project and Map operations send the chosen target', async () => {
+test('Team credentials target the chosen Map without reflecting server error details', async () => {
   const profile = await validateApiKey('https://api.example.test', 'synthetic-team-key', {
     fetch: (async () =>
       Response.json({
@@ -52,13 +52,27 @@ test('Team credentials validate without a Project and Map operations send the ch
       {
         request: {
           fetch: (async (_url, init) => {
-            target = new Headers(init?.headers).get('X-Tileflow-Map-Id');
-            return Response.json({error: 'fixture'}, {status: 403});
+            const headers = new Headers(init?.headers);
+            target = headers.get('X-Tileflow-Map-Id');
+            return Response.json(
+              {
+                code: 'UNRECOGNIZED_SERVER_VALUE',
+                error: `Rejected ${headers.get('Authorization')}`,
+              },
+              {status: 403},
+            );
           }) as typeof fetch,
         },
       },
     ),
-    HostedDeploymentError,
+    (error: unknown) => {
+      assert(error instanceof HostedDeploymentError);
+      assert.equal(error.status, 403);
+      assert(!error.message.includes('synthetic-team-key'));
+      assert(!error.message.includes('UNRECOGNIZED_SERVER_VALUE'));
+      assert.equal(error.code, undefined);
+      return true;
+    },
   );
   assert.equal(target, 'map_AbCdEfGhIjKlMnOp');
 });

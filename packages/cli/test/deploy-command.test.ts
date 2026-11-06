@@ -828,7 +828,7 @@ test('a style failure after icon upload also preserves the previous manifest', a
     mapId: managedMapId,
     intercept: (request) =>
       request.path === '/v1/styles'
-        ? failure(503, 'TF_STYLE_STORAGE_UNAVAILABLE', 'style storage unavailable')
+        ? failure(503, 'TF_STYLE_STORAGE_UNAVAILABLE', `Rejected ${fakeApiKey}`)
         : undefined,
   });
   const originalManifest = existingHostedManifest(api.url);
@@ -838,10 +838,8 @@ test('a style failure after icon upload also preserves the previous manifest', a
   });
 
   assert.equal(result.code, 1);
-  assert.match(
-    result.stdout,
-    /Deploy failed \(503 TF_STYLE_STORAGE_UNAVAILABLE\): style storage unavailable/,
-  );
+  assert.match(result.stdout, /Deploy failed \(503 TF_STYLE_STORAGE_UNAVAILABLE\)/);
+  assert(!result.stdout.includes(fakeApiKey));
   assert.deepEqual(routes(api), ['PUT /v1/icon-packages', 'POST /v1/styles']);
   assert.equal(await readFile(fixture.manifestPath, 'utf8'), originalManifest);
 });

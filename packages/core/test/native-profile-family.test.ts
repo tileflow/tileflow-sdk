@@ -3,6 +3,7 @@ import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 import {
   createTileflowNativeFamily,
+  createTileflowNativeFamilyTheme,
   emphasizeTileflowNativeValue,
   fillTileflowNativeTemplate,
   mixTileflowNativeColours,
@@ -89,6 +90,12 @@ test('creation is deterministic and leaves its input unchanged', () => {
   assert.throws(() =>
     createTileflowNativeFamily({map: 'evaluators', ...input, themes: [...input.themes, 'day']}),
   );
+});
+
+test('recomputing one theme reproduces its entry in the complete family', () => {
+  for (const entry of family.themes) {
+    assert.deepEqual(createTileflowNativeFamilyTheme(entry.name, input.styles[entry.name]!), entry);
+  }
 });
 
 test('blend layers over all group themes equal the browser blend at every position', () => {

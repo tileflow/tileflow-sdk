@@ -242,6 +242,14 @@ export function createTileflowNativeFamily(
   return parseTileflowNativeFamily(family);
 }
 
+/** Recompute one theme entry without building or parsing an entire family. */
+export function createTileflowNativeFamilyTheme(
+  name: string,
+  style: MapLibreStyle,
+): TileflowNativeFamilyTheme {
+  return themeSchema.parse(familyTheme(name, style));
+}
+
 function familyTheme(name: string, style: MapLibreStyle) {
   const metadata = style.metadata;
   const colorScheme = metadata?.['tileflow:colorScheme'] === 'dark' ? 'dark' : 'light';

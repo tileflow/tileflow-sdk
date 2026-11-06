@@ -681,6 +681,7 @@ export type {TileflowNativeCapability, TileflowNativeDegradation} from './native
 
 export {
   createTileflowNativeFamily,
+  createTileflowNativeFamilyTheme,
   emphasizeTileflowNativeValue,
   fillTileflowNativeTemplate,
   mixTileflowNativeColours,

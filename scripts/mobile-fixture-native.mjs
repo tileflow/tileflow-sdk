@@ -197,7 +197,8 @@ export function createNativeBuildFixture({base, elevation}) {
         response.end(elevation);
         return true;
       }
-      if (!path.startsWith('/native/')) return false;
+      const inconsistent = path.startsWith('/native-inconsistent/');
+      if (!inconsistent && !path.startsWith('/native/')) return false;
       let directory;
       try {
         directory = await prepare();
@@ -207,7 +208,9 @@ export function createNativeBuildFixture({base, elevation}) {
         response.end();
         return true;
       }
-      const relative = decodeURIComponent(path.slice('/native/'.length));
+      const relative = decodeURIComponent(
+        path.slice((inconsistent ? '/native-inconsistent/' : '/native/').length),
+      );
       const file = resolve(directory, relative);
       if (!file.startsWith(`${directory}/`)) {
         response.statusCode = 404;
@@ -230,7 +233,21 @@ export function createNativeBuildFixture({base, elevation}) {
               ? 'font/ttf'
               : 'application/octet-stream',
       );
-      response.end(bytes);
+      if (inconsistent && relative === 'manifest.json') {
+        response.end(bytes.toString().replaceAll('/native/', '/native-inconsistent/'));
+      } else if (
+        inconsistent &&
+        (relative === 'families/city.json' || relative.endsWith('/families/city.json'))
+      ) {
+        const family = JSON.parse(bytes);
+        const layer = family.blend.groups[0].layers.find(
+          (value) => typeof value.source === 'string',
+        );
+        layer.source = 'not-in-the-style';
+        response.end(JSON.stringify(family));
+      } else {
+        response.end(bytes);
+      }
       return true;
     },
   };

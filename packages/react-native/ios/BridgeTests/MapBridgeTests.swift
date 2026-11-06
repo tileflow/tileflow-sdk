@@ -165,6 +165,46 @@ final class MapBridgeTests: XCTestCase {
     await fulfillment(of: [rejected], timeout: 1)
   }
 
+  func testInconsistentFamilyWarnsAndSwitchesThroughTheBridge() async throws {
+    let port = ProcessInfo.processInfo.environment["TILEFLOW_FIXTURE_PORT"] ?? "18645"
+    let url = URL(string: "http://127.0.0.1:\(port)/native-inconsistent/manifest.json")!
+    let response = try? await URLSession.shared.data(from: url)
+    try XCTSkipUnless((response?.1 as? HTTPURLResponse)?.statusCode == 200, "Start the mobile fixture server.")
+
+    let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+    let window = scene.map { UIWindow(windowScene: $0) } ?? UIWindow()
+    window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+    window.rootViewController = UIViewController()
+    window.makeKeyAndVisible()
+    let host = TFMapHostView(frame: window.bounds)
+    defer {
+      host.dispose()
+      window.isHidden = true
+    }
+    window.rootViewController?.view.addSubview(host)
+    let ready = expectation(description: "React Native map ready")
+    let warning = expectation(description: "Family warning forwarded")
+    let changed = expectation(description: "Nearest theme applied directly")
+    for event in [ready, warning, changed] { event.assertForOverFulfill = false }
+    host.eventHandler = { _, type, payload in
+      if type == "failed" { XCTFail(payload) }
+      if type == "contentReady" { ready.fulfill() }
+      if type == "warning", payload.contains("nativeFamilyInconsistent") { warning.fulfill() }
+      if type == "themeChanged", payload.contains("dark") { changed.fulfill() }
+    }
+
+    let source = try MapBridgeValues.json([
+      "map": "city", "manifestUrl": url.absoluteString, "allowsLoopbackHttp": true,
+    ])
+    host.update(reactTag: 77, instanceID: "inconsistent", sourceJSON: source,
+      appearanceJSON: "{}", optionsJSON: "{}")
+    await fulfillment(of: [ready, warning], timeout: 30)
+    host.update(reactTag: 77, instanceID: "inconsistent", sourceJSON: source,
+      appearanceJSON: #"{"themeBlend":{"themes":["light","dark"],"position":0.75}}"#,
+      optionsJSON: "{}")
+    await fulfillment(of: [changed], timeout: 15)
+  }
+
   func testChangingReactTagRetiresCallsEvenWhenTheInstanceStringIsReused() throws {
     let host = TFMapHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
     defer { host.dispose() }

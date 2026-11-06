@@ -123,6 +123,7 @@ internal class NativeMapEngine(
     internal var manifest: NativeMapManifest? = null
         private set
     internal var family: NativeFamily? = null
+    private var familyInconsistent = false
         private set
     private var colorScheme = "light"
     private var storedZooms: ((String) -> IntRange?)? = null
@@ -460,7 +461,8 @@ internal class NativeMapEngine(
         val style = prepared.style
         val projected = prepared.projected
         manifest = prepared.manifest
-        family = loadFamily(document.styleUrl)
+        familyInconsistent = false
+        family = loadFamily(document.styleUrl, document.theme, style)
         if (retired) throw TileflowMapException(retiredCode)
         shownTheme = document.theme
         grantScope?.let { scope ->
@@ -562,18 +564,22 @@ internal class NativeMapEngine(
      * revision discovery gave. A map without it draws its themes but cannot blend them or apply an
      * emphasis.
      */
-    private suspend fun loadFamily(styleUrl: String): NativeFamily? {
+    private suspend fun loadFamily(styleUrl: String, theme: String, style: JSONObject): NativeFamily? {
         val manifest = manifest ?: return null
-        return NativeFamily.load(manifest, styleUrl, loader) { url ->
-            warnings.warn(
-                "resourceFailed",
-                "The map's family document does not match its revision.",
-                TileflowResourceKind.STYLE,
-                runCatching { dev.tileflow.sdk.transport.ResourcePolicy.origin(URI(url)) }
-                    .getOrNull(),
-                null,
-            )
-        }
+        return NativeFamily.load(manifest, styleUrl, loader, style, theme, ::rejectFamily)
+    }
+
+    private fun rejectFamily(url: String) {
+        family = null
+        familyInconsistent = true
+        warnings.warn(
+            "resourceFailed",
+            "The map's family document does not match its styles. Themes will switch directly.",
+            TileflowResourceKind.STYLE,
+            runCatching { dev.tileflow.sdk.transport.ResourcePolicy.origin(URI(url)) }.getOrNull(),
+            null,
+            reason = "nativeFamilyInconsistent",
+        )
     }
 
     /** Gives MapLibre a projected style; what the engine reads from it applies once it loads. */
@@ -930,18 +936,22 @@ internal class NativeMapEngine(
 
     private suspend fun setBlend(payload: JSONObject): JSONObject {
         val manifest = manifest ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
-        val family =
-            family
-                ?: throw TileflowMapException(
-                    TileflowErrorCode.RESOURCE_FAILED,
-                    TileflowErrorContext(
-                        resource = TileflowResourceKind.STYLE,
-                        message = "The map has no native family document.",
-                    ),
-                )
         val list = payload.optJSONArray("themes") ?: invalid()
         val names = (0 until list.length()).map { list.optString(it) }
-        if (names.size < 2 || !payload.has("position")) invalid()
+        val position = payload.optDouble("position")
+        if (names.size < 2 || !position.isFinite()) invalid()
+        val at = position.coerceIn(0.0, (names.size - 1).toDouble())
+        val nearest = Math.round(at).toInt()
+        if (familyInconsistent && names.all { it in manifest.styles })
+            return setTheme(JSONObject().put("theme", names[nearest]))
+
+        val family = family ?: throw TileflowMapException(
+            TileflowErrorCode.RESOURCE_FAILED,
+            TileflowErrorContext(
+                resource = TileflowResourceKind.STYLE,
+                message = "The map has no native family document.",
+            ),
+        )
         val plan =
             names.takeIf { all -> all.all { it in manifest.styles } }?.let(family::blend)
                 ?: throw TileflowMapException(
@@ -951,8 +961,6 @@ internal class NativeMapEngine(
         val (group, selection) = plan
         appearanceRevision += 1
         val revision = appearanceRevision
-        val at = payload.optDouble("position").coerceIn(0.0, (names.size - 1).toDouble())
-        val nearest = Math.round(at).toInt()
         val hold = payload.optBoolean("hold", false)
         // A move within the blend on screen sets the values that follow the position.
         blend?.takeIf { it.group == group && it.selection == selection }?.let { current ->
@@ -981,6 +989,11 @@ internal class NativeMapEngine(
             shownTheme = target
             blend = NativeBlend(group, names, selection, at, nearest)
             present(style, projected, payload.optDouble("duration", 0.0) / 1000)
+        } catch (_: NativeEvaluators.Failure) {
+            if (revision != appearanceRevision || retired) return result("superseded", target)
+            val styleUrl = manifest.theme(target).styleUrl
+            rejectFamily(manifest.familyUrl(styleUrl) ?: styleUrl)
+            return setTheme(JSONObject().put("theme", target))
         } catch (error: Exception) {
             if (revision != appearanceRevision || retired) return result("superseded", target)
             transition("error", current, target)
@@ -1010,11 +1023,14 @@ internal class NativeMapEngine(
     ): JSONObject {
         val manifest = manifest ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
         val plan = family.groups[group]
-        val url = manifest.theme(themes[Math.round(position).toInt()]).styleUrl
+        val theme = themes[Math.round(position).toInt()]
+        val url = manifest.theme(theme).styleUrl
         val style =
             withContext(Dispatchers.IO) {
                 NativeManifest.document(url, ::load, TileflowResourceKind.STYLE)
             }
+        if (!family.matches(manifest, theme, style))
+            throw NativeEvaluators.Failure("The blend plan does not match its style.")
         style.put("layers", JSONArray(NativeEvaluators.blendLayers(plan, selection, position)))
         plan.opt("light")?.let {
             style.put("light", NativeEvaluators.fill(it, position, selection))

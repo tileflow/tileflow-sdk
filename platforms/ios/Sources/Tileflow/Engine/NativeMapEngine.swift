@@ -69,6 +69,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   /// The map's manifest, family document and the colour scheme the view reported.
   var manifest: NativeManifest?
   var family: NativeFamily?
+  var familyInconsistent = false
   var colorScheme = "light"
   var storedZooms: NativeStyleDocument.StoredZooms?
   /// What the map shows: one theme, or a blend.
@@ -427,7 +428,8 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
     let manifest = prepared.manifest
     let theme = prepared.theme
     self.manifest = manifest
-    family = await loadFamily(styleURL: theme.styleURL)
+    familyInconsistent = false
+    family = await loadFamily(theme: theme, style: prepared.document.value)
     await readDownloadedCredits()
     guard !retired, mapView != nil else { throw TileflowMapError.cancelled }
     shown = .theme(theme.name)
@@ -454,18 +456,27 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   /// Reads the map's family document, if it has one, and checks a Hosted document against the
   /// revision discovery gave. A map without it draws its themes but cannot blend them or apply an
   /// emphasis.
-  private func loadFamily(styleURL: URL) async -> NativeFamily? {
+  private func loadFamily(theme: NativeManifest.Theme, style: [String: Any]) async -> NativeFamily? {
     guard let manifest else { return nil }
-    return await NativeFamily.load(manifest, styleURL: styleURL, loader: loader) { url in
-      warnings.warn(
-        .object([
-          "code": .string("resourceFailed"),
-          "message": .string("The map's family document does not match its revision."),
-          "context": .object([
-            "resource": .string("style"), "origin": .string(ResourcePolicy.origin(url)),
-          ]),
-        ]))
+    return await NativeFamily.load(
+      manifest, styleURL: theme.styleURL, loader: loader, style: style, theme: theme.name
+    ) { url in
+      rejectFamily(at: url)
     }
+  }
+
+  func rejectFamily(at url: URL) {
+    family = nil
+    familyInconsistent = true
+    warnings.warn(
+      .object([
+        "code": .string("resourceFailed"),
+        "message": .string("The map's family document does not match its styles. Themes will switch directly."),
+        "context": .object([
+          "resource": .string("style"), "reason": .string("nativeFamilyInconsistent"),
+          "origin": .string(ResourcePolicy.origin(url)),
+        ]),
+      ]))
   }
 
   /// Gives MapLibre a projected style. What the engine reads from it applies once it loads.

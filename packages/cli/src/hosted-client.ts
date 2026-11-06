@@ -697,7 +697,12 @@ export type HostedRendererDeploymentEvent =
       count: number;
     }>
   | Readonly<{kind: 'activating'; version: number}>
-  | Readonly<{kind: 'publication-job'; jobId: string; state: 'queued' | 'running'}>;
+  | Readonly<{
+      kind: 'publication-job';
+      jobId: string;
+      state: 'queued' | 'running';
+      phase?: 'family' | 'staging' | 'activation';
+    }>;
 
 const deploymentRequestTimeoutMs = 60_000;
 const maximumDeploymentRounds = 4;
@@ -852,7 +857,7 @@ async function waitForHostedPublication(
 ): Promise<HostedJsonResponse> {
   let response = initial;
   let jobId: string | undefined;
-  let lastState: 'queued' | 'running' | undefined;
+  let lastProgress: string | undefined;
 
   for (let poll = 0; poll < 180; poll += 1) {
     const body = asRecord(response.body);
@@ -868,9 +873,20 @@ async function waitForHostedPublication(
       throw new HostedDeploymentError('The publication job response is invalid.', {status: 202});
 
     jobId = body.jobId;
-    if (lastState !== body.state) {
-      lastState = body.state;
-      options.onProgress?.({kind: 'publication-job', jobId, state: lastState});
+    const phase =
+      body.state === 'running' &&
+      (body.phase === 'family' || body.phase === 'staging' || body.phase === 'activation')
+        ? body.phase
+        : undefined;
+    const progress = phase ?? body.state;
+    if (lastProgress !== progress) {
+      lastProgress = progress;
+      options.onProgress?.({
+        kind: 'publication-job',
+        jobId,
+        state: body.state,
+        ...(phase ? {phase} : {}),
+      });
     }
 
     await options.sleep(Math.max(1000, Math.min(response.retryAfterMs ?? 1000, 5000)));

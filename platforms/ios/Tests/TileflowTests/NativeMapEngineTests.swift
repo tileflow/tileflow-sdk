@@ -170,6 +170,26 @@ final class NativeMapEngineTests: XCTestCase {
     XCTAssertEqual(foreign.withLock { $0 }, [])
   }
 
+  func testInconsistentFamilyOpensAndSwitchesThemesDirectly() async throws {
+    let url = URL(string: "\(FixtureServer.origin)/native-inconsistent/manifest.json")!
+    try await requireMapFixture(url)
+    let map = try await mountMap(.init(map: "city", manifestURL: url, allowsLoopbackHTTP: true))
+    defer { map.close() }
+
+    XCTAssertTrue(map.warnings().contains { $0.error.context.reason == "nativeFamilyInconsistent" })
+    let dark = expectation(description: "Blend selected dark directly")
+    let light = expectation(description: "Direct switch selected light")
+    map.view.onEvent = { event in
+      if case .themeChanged("dark") = event { dark.fulfill() }
+      if case .themeChanged("light") = event { light.fulfill() }
+      if case .failed(let error) = event { XCTFail(String(describing: error)) }
+    }
+    try await map.view.setBlend(themes: ["light", "dark"], position: 0.75)
+    await fulfillment(of: [dark], timeout: 10)
+    try await map.view.setTheme("light")
+    await fulfillment(of: [light], timeout: 10)
+  }
+
   func testDownloadedSelfHostedThemesBlendWithoutANetwork() async throws {
     let origin = FixtureServer.origin
     let manifest = URL(string: "\(origin)/native/manifest.json")!

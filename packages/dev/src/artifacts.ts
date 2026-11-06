@@ -46,8 +46,8 @@ import {
   resolveTileflowRenderer,
   type TileflowNativeBuildRecord,
   tileflowNativeBuildRecordFileName,
-  type TileflowNativeFamily,
   TileflowNativeCompatibilityError,
+  type TileflowNativeFamily,
   type TileflowRenderer,
 } from '@tileflow/core/native-profile';
 import {prepareTileflowStyleFamilyForRendering} from '@tileflow/core/runtime';
@@ -465,6 +465,11 @@ export async function createTileflowArtifactPlan(
               ]),
           )
         : undefined;
+    for (const [mapName, family] of Object.entries(nativeFamilies ?? {})) {
+      const revision = hashBytes(nativeFamilySource(family));
+      for (const style of Object.values(styles[mapName]!))
+        style.metadata = {...style.metadata, 'tileflow:nativeFamilySha256': revision};
+    }
     const provenance = await createTileflowBuildProvenance(prepared.cwd);
     const buildManifest = await createTileflowMapBuildManifest(
       Object.fromEntries(
@@ -809,8 +814,12 @@ function nativeFamilyFiles(artifacts: TileflowBuildArtifacts): TileflowArtifactF
   return Object.entries(artifacts.nativeFamilies ?? {}).map(([mapName, family]) => ({
     contentType: 'application/json; charset=utf-8',
     fileName: `families/${mapName}.json`,
-    source: `${serializeCanonicalJson(family)}\n`,
+    source: nativeFamilySource(family),
   }));
+}
+
+function nativeFamilySource(family: TileflowNativeFamily): string {
+  return `${serializeCanonicalJson(family)}\n`;
 }
 
 function createFontAwareManifest(

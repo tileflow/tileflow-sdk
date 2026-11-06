@@ -75,7 +75,7 @@ export function createTileflowStyleFamily(
     if (values.every((v) => same(v, first))) return first;
     return add(values);
   };
-  const documents = themes.map((name) => JSON.parse(serializeCanonicalJson(styles[name])) as Json);
+  const documents = themes.map((name) => normalizedJson(styles[name])!);
   for (const document of documents) assertStyle(document);
   const template = factor(documents);
   const packed = shareConstants(template);
@@ -429,8 +429,32 @@ function record(node: unknown): node is Record<string, unknown> {
   return !!node && typeof node === 'object' && !Array.isArray(node);
 }
 function same(a: unknown, b: unknown): boolean {
-  return serializeCanonicalJson(a) === serializeCanonicalJson(b);
+  return a === b || serializeCanonicalJson(a) === serializeCanonicalJson(b);
 }
+/** Detach and normalize once. A stringify/parse round trip retains two copies of each style. */
+function normalizedJson(value: unknown): Json | undefined {
+  if (Array.isArray(value)) return Array.from(value, (item) => normalizedJson(item) ?? null);
+  if (record(value)) {
+    // Preserve JSON's treatment of an explicitly authored serializer.
+    if (
+      Object.prototype.propertyIsEnumerable.call(value, 'toJSON') &&
+      typeof value.toJSON === 'function'
+    )
+      return JSON.parse(serializeCanonicalJson(value)) as Json;
+
+    const entries: [string, Json][] = [];
+    for (const key of Object.keys(value).sort()) {
+      const child = normalizedJson(value[key]);
+      if (child !== undefined) entries.push([key, child]);
+    }
+    return Object.fromEntries(entries);
+  }
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+  if (typeof value === 'number') return Number.isFinite(value) ? value || 0 : null;
+  if (typeof value === 'bigint') throw new TypeError('A JSON value cannot contain a bigint.');
+  return undefined;
+}
+
 function serializeCanonicalJson(value: unknown): string {
   const sort = (node: unknown): unknown =>
     Array.isArray(node)

@@ -2136,15 +2136,23 @@ function printHostedDeployProgress(event: HostedDeployEvent) {
         `  ${pc.green('✓')} ${event.document === 'family' ? 'Family document' : `Native style ${event.theme}`} ${pc.gray(`${formatBytes(event.bytes)}, ${event.position}/${event.count}`)}`,
       );
       return;
-    case 'publication-job':
+    case 'publication-job': {
+      const messages = {
+        family: 'Verifying the native family and blend plans.',
+        staging: 'Preparing verified styles for delivery.',
+        activation: 'Activating the new revision.',
+      };
       logInfo(
         event.state === 'queued'
           ? `Publication queued (${event.jobId}).`
-          : 'Verifying publication.',
+          : event.phase
+            ? messages[event.phase]
+            : 'Checking the publication request.',
       );
       return;
+    }
     case 'activating':
-      logInfo(`Activating v${event.version}.`);
+      logInfo(`Submitting v${event.version} for activation.`);
       return;
   }
 }

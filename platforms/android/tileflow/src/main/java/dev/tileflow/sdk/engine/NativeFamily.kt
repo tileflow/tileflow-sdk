@@ -43,12 +43,47 @@ internal class NativeFamily private constructor(val document: JSONObject) {
         return NativeEvaluators.at(inks, position, NativeEvaluators::mixRouteInks)
     }
 
+    /** Check a legacy plan's physical layers before handing them to MapLibre. */
+    fun matches(manifest: NativeMapManifest, theme: String, style: JSONObject): Boolean {
+        val names = themes.map { it.optString("name") }
+        val index = index(theme) ?: return false
+        if (document.optString("map") != manifest.map || names.size != manifest.styles.size ||
+            names.toSet() != manifest.styles.keys) return false
+
+        val byId = style.optJSONArray("layers")?.objects()?.associateBy { it.optString("id") }
+            ?: return false
+        for (group in groups) {
+            val members = group.optJSONArray("themes") ?: return false
+            val indices = (0 until members.length()).map { members.optInt(it, -1) }
+            if (indices.any { it !in themes.indices }) return false
+            if (index !in indices) continue
+
+            val planned = group.optJSONArray("layers")?.objects()?.takeIf { it.isNotEmpty() }
+                ?: return false
+            val originals = mutableSetOf<String>()
+            for (layer in planned) {
+                val id = layer.optString("id")
+                val original = if (id in byId) id else id.replace(copySuffix, "")
+                val base = byId[original] ?: return false
+                if (listOf("type", "source", "source-layer").any {
+                    layer.optString(it) != base.optString(it)
+                }) return false
+                originals += original
+            }
+            if (originals != byId.keys) return false
+        }
+        return true
+    }
+
     companion object {
+        private val copySuffix = Regex("::(?:branch|theme)-[0-9]+$")
         /** Reads the family of the selected style, including the Hosted SHA-256 binding. */
         suspend fun load(
             manifest: NativeMapManifest,
             style: String,
             loader: ResourceLoader,
+            currentStyle: JSONObject? = null,
+            theme: String? = null,
             mismatch: (String) -> Unit = {},
         ): NativeFamily? {
             val url = manifest.familyUrl(style) ?: return null
@@ -59,11 +94,22 @@ internal class NativeFamily private constructor(val document: JSONObject) {
                         ?.takeIf { it.status == 200 }
                         ?.bytes
                 } ?: return null
-            if (manifest.family?.second?.let { ResourceDigest.sha256(bytes) != it } == true) {
+            val bound = currentStyle?.optJSONObject("metadata")?.optString("tileflow:nativeFamilySha256")
+            val revisions = listOfNotNull(manifest.family?.second, bound?.takeIf { it.isNotEmpty() })
+            if (revisions.isNotEmpty()) {
+                val digest = ResourceDigest.sha256(bytes)
+                if (revisions.any { it != digest }) {
+                    mismatch(url)
+                    return null
+                }
+            }
+            val family = runCatching { parse(JSONObject(String(bytes, Charsets.UTF_8))) }.getOrNull()
+                ?: return null
+            if (theme != null && currentStyle != null && !family.matches(manifest, theme, currentStyle)) {
                 mismatch(url)
                 return null
             }
-            return runCatching { parse(JSONObject(String(bytes, Charsets.UTF_8))) }.getOrNull()
+            return family
         }
 
         fun defaultRouteInks(scheme: String): JSONObject {

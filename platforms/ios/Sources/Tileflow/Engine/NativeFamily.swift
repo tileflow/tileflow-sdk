@@ -21,20 +21,65 @@ struct NativeFamily: Sendable {
   @MainActor
   static func load(
     _ manifest: NativeManifest, styleURL: URL, loader: any ResourceLoading,
+    style: [String: Any]? = nil, theme: String? = nil,
     mismatch: (URL) -> Void = { _ in }
   ) async -> NativeFamily? {
     guard let url = manifest.familyURL(styleURL: styleURL),
       let payload = try? await loader.load(URLRequest(url: url)),
       payload.status == 200
     else { return nil }
-    if let revision = manifest.family?.revision, ResourceDigest.sha256(payload.bytes) != revision {
-      mismatch(url)
-      return nil
+    let bound = (style?["metadata"] as? [String: Any])?["tileflow:nativeFamilySha256"] as? String
+    let revisions = [manifest.family?.revision, bound].compactMap { $0 }
+    if !revisions.isEmpty {
+      let digest = ResourceDigest.sha256(payload.bytes)
+      if revisions.contains(where: { $0 != digest }) {
+        mismatch(url)
+        return nil
+      }
     }
     guard let document = try? JSONDecoder().decode(JSONValue.self, from: payload.bytes) else {
       return nil
     }
-    return NativeFamily(document)
+    guard let family = NativeFamily(document) else { return nil }
+    if let theme, let style, !family.matches(manifest, theme: theme, style: style) {
+      mismatch(url)
+      return nil
+    }
+    return family
+  }
+
+  /// Older styles have no family digest. Check the plan's physical layers against the style
+  /// before giving it to the renderer. Core may split one original layer into several copies.
+  func matches(_ manifest: NativeManifest, theme: String, style: [String: Any]) -> Bool {
+    let names = themes.compactMap { $0["name"]?.string }
+    guard document["map"]?.string == manifest.map, names.count == themes.count,
+      names.count == manifest.styles.count, Set(names) == Set(manifest.styles.keys),
+      let index = index(of: theme), let layers = style["layers"] as? [[String: Any]]
+    else { return false }
+    let byID = Dictionary(
+      layers.compactMap { layer in (layer["id"] as? String).map { ($0, layer) } },
+      uniquingKeysWith: { first, _ in first })
+    for group in groups {
+      guard let members = group["themes"]?.array, members.allSatisfy({
+        guard let number = $0.number else { return false }
+        return number >= 0 && number < Double(themes.count) && number.rounded() == number
+      }) else { return false }
+      if !members.contains(.number(Double(index))) { continue }
+      guard let planned = group["layers"]?.array, !planned.isEmpty else { return false }
+      var originals = Set<String>()
+      for layer in planned {
+        guard let id = layer["id"]?.string else { return false }
+        let original = byID[id] == nil
+          ? id.replacingOccurrences(of: #"::(?:branch|theme)-[0-9]+$"#, with: "", options: .regularExpression)
+          : id
+        guard let base = byID[original], ["type", "source", "source-layer"].allSatisfy({
+          layer[$0]?.string == base[$0] as? String
+        }) else { return false }
+        originals.insert(original)
+      }
+      if originals != Set(byID.keys) { return false }
+    }
+    return true
   }
 
   /// Core's route inks for a colour scheme, for maps without a family document.

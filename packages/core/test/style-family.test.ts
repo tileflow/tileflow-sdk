@@ -88,6 +88,20 @@ test('compact families preserve arbitrary JSON, reuse columns and materialize de
   assert.equal(materializeTileflowStyleFamily(family, 'day').layers.length, 1);
 });
 
+test('compaction detaches styles and keeps JSON normalization at the wire boundary', () => {
+  const holes = [undefined, undefined, Infinity, -0];
+  Reflect.deleteProperty(holes, 1);
+  const day = {
+    ...style('#abcdef'),
+    metadata: {notWritten: undefined, holes, labels: {z: 1, a: 2}},
+  };
+  const compact = createTileflowStyleFamily({day});
+  const expanded = materializeTileflowStyleFamily(compact, 'day');
+  assert.deepEqual(expanded, JSON.parse(JSON.stringify(day)));
+  day.metadata.labels.a = 3;
+  assert.deepEqual(expanded.metadata?.labels, {a: 2, z: 1});
+});
+
 test('structurally different author maps remain supported and cannot take the appearance fast path', () => {
   const day = style('#000000');
   const night = {

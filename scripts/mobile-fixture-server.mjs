@@ -537,7 +537,7 @@ const server = createServer((request, response) => {
     setTimeout(() => response.end('{"tiles":'), 300);
     return;
   }
-  if (/^\/(?:native|terrain)\//u.test(request.url ?? '')) {
+  if (/^\/(?:native|native-inconsistent|terrain)\//u.test(request.url ?? '')) {
     response.setHeader('Cache-Control', 'no-store');
     nativeBuild.handle(request, response).then((handled) => {
       if (handled) return;

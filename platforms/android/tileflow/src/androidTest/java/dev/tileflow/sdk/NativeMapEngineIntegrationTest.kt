@@ -48,6 +48,7 @@ public class NativeMapHostActivity : ComponentActivity() {
     val loaded = CountDownLatch(1)
     val failures = CopyOnWriteArrayList<TileflowErrorCode>()
     val warnings = CopyOnWriteArrayList<TileflowMapEvent.Warning>()
+    val changedThemes = CopyOnWriteArrayList<String>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,6 +59,7 @@ public class NativeMapHostActivity : ComponentActivity() {
                         TileflowMapEvent.ContentReady -> loaded.countDown()
                         is TileflowMapEvent.Failed -> failures.add(it.code)
                         is TileflowMapEvent.Warning -> warnings.add(it)
+                        is TileflowMapEvent.ThemeChanged -> changedThemes.add(it.theme)
                         else -> Unit
                     }
                 }
@@ -275,6 +277,30 @@ public class NativeMapEngineIntegrationTest {
         assertEquals("MapLibre stores nothing", 0, mapLibreDatabaseRows(context).values.sum())
         assertTrue("Map errors: ${activity.failures}", activity.failures.isEmpty())
         assertTrue("Warnings: ${activity.warnings}", activity.warnings.isEmpty())
+    }
+
+    @Test
+    public fun inconsistentFamilyOpensAndSwitchesThemesDirectly() {
+        val url = "${Fixture.ORIGIN}/native-inconsistent/manifest.json"
+        Fixture.require(url)
+        NativeMapHostActivity.requested =
+            TileflowMapSource(map = "city", manifestUrl = URI(url), allowsLoopbackHttp = true)
+        NativeMapHostActivity.camera = madrid
+        val activity = show()
+        try {
+            runBlocking {
+                withContext(Dispatchers.Main) {
+                    activity.map.setBlend(listOf("light", "dark"), 0.75)
+                    assertEquals("dark", activity.changedThemes.lastOrNull())
+                    activity.map.setTheme("light")
+                    assertEquals("light", activity.changedThemes.lastOrNull())
+                }
+            }
+            assertTrue(activity.warnings.any { it.context.reason == "nativeFamilyInconsistent" })
+            assertTrue(activity.failures.isEmpty())
+        } finally {
+            finish(activity)
+        }
     }
 
     private fun hosted() =

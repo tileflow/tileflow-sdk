@@ -420,6 +420,44 @@ test('a queued publication resumes after losing its status response', async (t) 
   assert.ok(events.some((event) => event.kind === 'publication-job' && event.jobId === jobId));
 });
 
+test('polling reports each runner phase while the job is running', async (t) => {
+  const input = await body(await rendererDeployment());
+  const jobId = `pub_${'c'.repeat(64)}`;
+  const phases = ['family', 'staging', 'activation'];
+  const events: HostedRendererDeploymentEvent[] = [];
+  const platform = await startFakePlatform(t, {
+    mapId,
+    intercept: ({path}) => {
+      if (!path.endsWith(jobId)) return undefined;
+      const phase = phases.shift();
+      return phase
+        ? {
+            status: 202,
+            body: {kind: 'tileflow-hosted-publication-job', mapId, jobId, state: 'running', phase},
+          }
+        : {status: 422, body: {code: 'TF_HOSTED_PUBLICATION_FAILED', jobId}};
+    },
+  });
+  const fetch: typeof globalThis.fetch = async (target, init) =>
+    init?.method === 'POST'
+      ? Response.json(
+          {kind: 'tileflow-hosted-publication-job', mapId, jobId, state: 'queued'},
+          {status: 202},
+        )
+      : globalThis.fetch(target, init);
+  await assert.rejects(
+    publishHostedRendererDeployment({apiKey, apiUrl: platform.url, mapId}, input, {
+      request: {fetch},
+      sleep: immediately,
+      onProgress: (event) => events.push(event),
+    }),
+  );
+  assert.deepEqual(
+    events.filter((event) => event.kind === 'publication-job').map((event) => event.phase),
+    [undefined, 'family', 'staging', 'activation'],
+  );
+});
+
 test('a permanent runner failure reports the publication ID', async (t) => {
   const input = await body(await rendererDeployment());
   const jobId = `pub_${'b'.repeat(64)}`;

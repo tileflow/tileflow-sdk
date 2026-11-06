@@ -229,6 +229,14 @@ extension NativeMapEngine {
   }
 
   func setBlend(_ payload: JSONValue) async throws -> JSONValue {
+    if familyInconsistent, let manifest,
+      let names = payload["themes"]?.array?.compactMap(\.string), names.count >= 2,
+      names.allSatisfy({ manifest.styles[$0] != nil }),
+      let position = payload["position"]?.number, position.isFinite
+    {
+      let index = Int(min(Double(names.count - 1), max(0, position)).rounded())
+      return try await setTheme(.object(["theme": .string(names[index])]))
+    }
     let request = try blendRequest(payload)
     appearanceRevision += 1
     // A move within the blend on screen sets the values that follow the position.
@@ -290,6 +298,11 @@ extension NativeMapEngine {
           group: request.group, themes: request.themes, selection: request.selection,
           position: request.position, dominant: request.nearest))
       try await present(style, projected: projected, duration: request.duration)
+    } catch is NativeEvaluators.Failure {
+      guard revision == appearanceRevision, !retired else { return superseded }
+      let styleURL = try manifest.theme(target).styleURL
+      rejectFamily(at: manifest.familyURL(styleURL: styleURL) ?? styleURL)
+      return try await setTheme(.object(["theme": .string(target)]))
     } catch {
       guard revision == appearanceRevision, !retired else { return superseded }
       transition("error", current: current, target: target)
@@ -312,6 +325,9 @@ extension NativeMapEngine {
     let dominant = Int(position.rounded(.toNearestOrAwayFromZero))
     let url = try manifest.theme(themes[dominant]).styleURL
     var style = try await NativeMapPreparation.read(url, kind: .style, loader: loader).value
+    guard family.matches(manifest, theme: themes[dominant], style: style) else {
+      throw NativeEvaluators.Failure(message: "The blend plan does not match its style.")
+    }
     let layers = try NativeEvaluators.blendLayers(
       group: plan, selection: selection, position: position)
     style["layers"] = layers.map(\.foundation)

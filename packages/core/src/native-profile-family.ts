@@ -10,6 +10,7 @@ import {tileflowPortableIdSchema, tileflowThemeNameSchema} from './portable-iden
 import {tileflowStyleRouteInks} from './route-inks';
 import {readTileflowSunPreset, tileflowStyleSunPreset} from './sun';
 import {
+  assertTileflowThemeBlendStructure,
   createTileflowThemeBlendTemplate,
   fillTileflowThemeBlendTemplate,
   mixTileflowColours,
@@ -316,7 +317,7 @@ function blendGroups(
   for (const [index, style] of styles.entries()) {
     const group = groups.find((members) => {
       try {
-        planTileflowThemeBlend([styles[members[0]!]!, style], tileflowNativeBlendOptions);
+        assertTileflowThemeBlendStructure(styles[members[0]!]!, style);
         return true;
       } catch (error) {
         if (error instanceof TileflowThemeBlendError) return false;

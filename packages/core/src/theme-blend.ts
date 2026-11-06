@@ -140,7 +140,7 @@ export function planTileflowThemeBlend(
   if (styles.length < 2)
     throw new TileflowThemeBlendError('A theme blend needs two or more themes.');
   const [base] = styles as [MapLibreStyle, ...MapLibreStyle[]];
-  assertSameStructure(styles, base);
+  for (const style of styles.slice(1)) assertTileflowThemeBlendStructure(base, style);
 
   const mixedImages = new Set(imageProperties);
   if (options.iconImages === 'switch') mixedImages.delete('icon-image');
@@ -495,28 +495,27 @@ function clampPosition(position: number, themes: number): number {
   return Math.min(themes - 1, Math.max(0, position));
 }
 
-function assertSameStructure(styles: readonly MapLibreStyle[], base: MapLibreStyle): void {
+/** Check whether two themes share the structure required by the blend planner. */
+export function assertTileflowThemeBlendStructure(base: MapLibreStyle, style: MapLibreStyle): void {
   const ids = (style: MapLibreStyle) => style.layers.map((layer) => layer.id);
-  for (const style of styles) {
-    if (!same(ids(style), ids(base)))
-      throw new TileflowThemeBlendError(
-        'Blended themes must have the same layers in the same order.',
-      );
-    if (!same(style.sources, base.sources))
-      throw new TileflowThemeBlendError('Blended themes must use the same sources.');
-    if (!same(style.sprite, base.sprite) || !same(style.glyphs, base.glyphs))
-      throw new TileflowThemeBlendError('Blended themes must use the same sprite and glyphs.');
-    for (const key of ['projection', 'terrain'] as const)
-      if (!same(style[key], base[key]))
-        throw new TileflowThemeBlendError(`Blended themes must use the same ${key}.`);
-    for (const [index, layer] of style.layers.entries()) {
-      const other = base.layers[index]!;
-      for (const key of ['type', 'source', 'source-layer', 'filter', 'minzoom', 'maxzoom'])
-        if (!same(layer[key], other[key]))
-          throw new TileflowThemeBlendError(
-            `Blended themes differ in ${key} of layer ${JSON.stringify(layer.id)}.`,
-          );
-    }
+  if (!same(ids(style), ids(base)))
+    throw new TileflowThemeBlendError(
+      'Blended themes must have the same layers in the same order.',
+    );
+  if (!same(style.sources, base.sources))
+    throw new TileflowThemeBlendError('Blended themes must use the same sources.');
+  if (!same(style.sprite, base.sprite) || !same(style.glyphs, base.glyphs))
+    throw new TileflowThemeBlendError('Blended themes must use the same sprite and glyphs.');
+  for (const key of ['projection', 'terrain'] as const)
+    if (!same(style[key], base[key]))
+      throw new TileflowThemeBlendError(`Blended themes must use the same ${key}.`);
+  for (const [index, layer] of style.layers.entries()) {
+    const other = base.layers[index]!;
+    for (const key of ['type', 'source', 'source-layer', 'filter', 'minzoom', 'maxzoom'])
+      if (!same(layer[key], other[key]))
+        throw new TileflowThemeBlendError(
+          `Blended themes differ in ${key} of layer ${JSON.stringify(layer.id)}.`,
+        );
   }
 }
 
@@ -893,7 +892,7 @@ function scaleByWeight(opacity: unknown, weight: BlendLeaf): unknown {
 }
 
 function same(a: unknown, b: unknown): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
+  return a === b || JSON.stringify(a) === JSON.stringify(b);
 }
 
 const oklabCache = new Map<string, readonly number[] | null>();

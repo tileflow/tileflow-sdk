@@ -696,7 +696,8 @@ export type HostedRendererDeploymentEvent =
       position: number;
       count: number;
     }>
-  | Readonly<{kind: 'activating'; version: number}>;
+  | Readonly<{kind: 'activating'; version: number}>
+  | Readonly<{kind: 'publication-job'; jobId: string; state: 'queued' | 'running'}>;
 
 const deploymentRequestTimeoutMs = 60_000;
 const maximumDeploymentRounds = 4;
@@ -728,6 +729,7 @@ export async function publishHostedRendererDeployment(
     ...authorizationHeaders(api.apiKey, mapId),
     'Content-Encoding': 'gzip',
     'Content-Type': 'application/json',
+    'X-Tileflow-Publication': 'async',
   };
   const request: HostedRequestOptions = {
     ...options.request,
@@ -753,13 +755,19 @@ export async function publishHostedRendererDeployment(
   let lastVersion: number | undefined;
   for (let round = 0; round < maximumDeploymentRounds; round += 1) {
     if (lastVersion !== undefined) options.onProgress?.({kind: 'activating', version: lastVersion});
-    const response = await requestHostedPublication(
+    let response = await requestHostedPublication(
       origin,
       '/v1/styles',
       {body, headers, method: 'POST'},
       request,
       {step: lastVersion === undefined ? 'reservation' : 'activation', bytes},
     );
+    response = await waitForHostedPublication(origin, mapId, api.apiKey, response, {
+      request,
+      sleep,
+      bytes,
+      onProgress: options.onProgress,
+    });
     if (response.status === 200) {
       const parsed = response.json
         ? tileflowRendererDeploymentResponseSchema.safeParse(response.body)
@@ -828,6 +836,53 @@ export async function publishHostedRendererDeployment(
   throw new HostedDeploymentError('The deployment did not complete after its native uploads.', {
     resumable: true,
   });
+}
+
+async function waitForHostedPublication(
+  origin: string,
+  mapId: string,
+  apiKey: string,
+  initial: HostedJsonResponse,
+  options: Readonly<{
+    request: HostedRequestOptions;
+    sleep(milliseconds: number): Promise<unknown>;
+    bytes: number;
+    onProgress?: (event: HostedRendererDeploymentEvent) => void;
+  }>,
+): Promise<HostedJsonResponse> {
+  let response = initial;
+  let jobId: string | undefined;
+  let lastState: 'queued' | 'running' | undefined;
+
+  for (let poll = 0; poll < 180; poll += 1) {
+    const body = asRecord(response.body);
+    if (response.status !== 202 || body.kind !== 'tileflow-hosted-publication-job') return response;
+
+    if (
+      body.mapId !== mapId ||
+      typeof body.jobId !== 'string' ||
+      !/^pub_[a-f0-9]{64}$/u.test(body.jobId) ||
+      (jobId !== undefined && jobId !== body.jobId) ||
+      (body.state !== 'queued' && body.state !== 'running')
+    )
+      throw new HostedDeploymentError('The publication job response is invalid.', {status: 202});
+
+    jobId = body.jobId;
+    if (lastState !== body.state) {
+      lastState = body.state;
+      options.onProgress?.({kind: 'publication-job', jobId, state: lastState});
+    }
+
+    await options.sleep(Math.max(1000, Math.min(response.retryAfterMs ?? 1000, 5000)));
+    response = await requestHostedPublication(
+      origin,
+      `/v1/styles/publications/${jobId}`,
+      {headers: authorizationHeaders(apiKey, mapId)},
+      options.request,
+      {step: 'publication status', bytes: options.bytes},
+    );
+  }
+  throw new HostedDeploymentError(`Publication ${jobId} is still running.`, {resumable: true});
 }
 
 async function uploadNativeDocument(
@@ -950,6 +1005,10 @@ const deploymentFailureDetails = new Map([
   ['TF_STYLE_STORAGE_UNAVAILABLE', 'Hosted could not store the style. Retry the deployment.'],
   ['TF_RENDERER_DEPLOYMENT_RETIRED', 'Update the Tileflow CLI and retry.'],
   ['TF_RENDERER_DEPLOYMENT_INVALID', 'Run tileflow validate --target hosted and fix any issues.'],
+  [
+    'TF_HOSTED_PUBLICATION_FAILED',
+    'Hosted could not verify or activate this publication. Contact support with the publication ID.',
+  ],
   ['TF_NATIVE_FAMILY_REQUIRED', 'The deployment is missing its native family.'],
   ['TF_NATIVE_FAMILY_TOO_LARGE', 'The native family exceeds the Hosted size limit.'],
   ['TF_NATIVE_FAMILY_INVALID', 'The native family document did not match the deployment.'],
@@ -974,13 +1033,20 @@ function deploymentFailure(
   resumable = response.status >= 500 || response.status === 429,
 ): HostedDeploymentError {
   const code = failureCode(response);
+  const failedJob = asRecord(response.body).jobId;
+  const jobDetail =
+    code === 'TF_HOSTED_PUBLICATION_FAILED' &&
+    typeof failedJob === 'string' &&
+    /^pub_[a-f0-9]{64}$/u.test(failedJob)
+      ? ` Publication ID: ${failedJob}.`
+      : '';
   const detail = code
     ? deploymentFailureDetails.get(code)
     : response.status === 401 || response.status === 403
       ? 'Check that the credential can publish to this Map.'
       : undefined;
   return new HostedDeploymentError(
-    `${prefix} (${response.status}${code ? ` ${code}` : ''})${detail ? `: ${detail}` : ''}`,
+    `${prefix} (${response.status}${code ? ` ${code}` : ''})${detail ? `: ${detail}` : ''}${jobDetail}`,
     {resumable, status: response.status, ...(code ? {code} : {})},
   );
 }

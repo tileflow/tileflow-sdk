@@ -375,6 +375,76 @@ test('a recognized server error keeps its actionable message', async (t) => {
   );
 });
 
+test('a queued publication resumes after losing its status response', async (t) => {
+  const platform = await startFakePlatform(t, {mapId});
+  const input = await body(await rendererDeployment());
+  const api = {apiKey, apiUrl: platform.url, mapId};
+  const jobId = `pub_${'a'.repeat(64)}`;
+  const events: HostedRendererDeploymentEvent[] = [];
+  let result: Response;
+  let lost = false;
+  const fetch: typeof globalThis.fetch = async (target, init) => {
+    const path = new URL(String(target)).pathname;
+    if (path === '/v1/styles/publications/' + jobId) {
+      assert.equal(new Headers(init?.headers).get('Authorization'), `Bearer ${apiKey}`);
+      if (!lost && result.status === 200) {
+        lost = true;
+        throw new Error('Connection closed');
+      }
+      return result;
+    }
+    const response = await globalThis.fetch(target, init);
+    if (path !== '/v1/styles') return response;
+    assert.equal(new Headers(init?.headers).get('X-Tileflow-Publication'), 'async');
+    result = response;
+    return Response.json(
+      {kind: 'tileflow-hosted-publication-job', mapId, jobId, state: 'queued'},
+      {status: 202},
+    );
+  };
+  await assert.rejects(
+    publishHostedRendererDeployment(api, input, {
+      request: {fetch},
+      sleep: immediately,
+      onProgress: (e) => events.push(e),
+    }),
+    (error: unknown) => error instanceof HostedDeploymentError && error.resumable,
+  );
+  const uploads = platform.uploads.length;
+  const published = await publishHostedRendererDeployment(api, input, {
+    request: {fetch},
+    sleep: immediately,
+  });
+  assert.equal(published.version, 1);
+  assert.equal(platform.uploads.length, uploads);
+  assert.ok(events.some((event) => event.kind === 'publication-job' && event.jobId === jobId));
+});
+
+test('a permanent runner failure reports the publication ID', async (t) => {
+  const input = await body(await rendererDeployment());
+  const jobId = `pub_${'b'.repeat(64)}`;
+  const platform = await startFakePlatform(t, {
+    mapId,
+    intercept: (request) =>
+      request.method === 'POST'
+        ? {
+            status: 202,
+            body: {kind: 'tileflow-hosted-publication-job', mapId, jobId, state: 'running'},
+          }
+        : {status: 422, body: {code: 'TF_HOSTED_PUBLICATION_FAILED', jobId}},
+  });
+  await assert.rejects(
+    publishHostedRendererDeployment({apiKey, apiUrl: platform.url, mapId}, input, {
+      sleep: immediately,
+    }),
+    (error: unknown) =>
+      error instanceof HostedDeploymentError &&
+      !error.resumable &&
+      error.code === 'TF_HOSTED_PUBLICATION_FAILED' &&
+      error.message.includes(jobId),
+  );
+});
+
 test('a rejected document stops the deployment with the server code', async (t) => {
   const platform = await startFakePlatform(t, {
     mapId,

@@ -95,7 +95,6 @@ import {
   validateAccountSession,
   validateApiKey,
 } from './hosted-client';
-import {hostedApiKeyOption, hostedApiUrlOption, isHostedApiKey} from './hosted-options';
 import {
   describeNativeDifference,
   HostedCompatibilityError,
@@ -107,6 +106,7 @@ import {
   prepareHostedDeploy,
   runHostedDeploy,
 } from './hosted-native-deploy';
+import {hostedApiKeyOption, hostedApiUrlOption, isHostedApiKey} from './hosted-options';
 import {inspectTileflowHostedCompatibility} from './hosted-preflight';
 import type {HostedMapStatus} from './hosted-response';
 import {registerIconDiffCommand} from './icon-diff-command';
@@ -2134,6 +2134,13 @@ function printHostedDeployProgress(event: HostedDeployEvent) {
     case 'uploaded':
       console.log(
         `  ${pc.green('✓')} ${event.document === 'family' ? 'Family document' : `Native style ${event.theme}`} ${pc.gray(`${formatBytes(event.bytes)}, ${event.position}/${event.count}`)}`,
+      );
+      return;
+    case 'publication-job':
+      logInfo(
+        event.state === 'queued'
+          ? `Publication queued (${event.jobId}).`
+          : 'Verifying publication.',
       );
       return;
     case 'activating':

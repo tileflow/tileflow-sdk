@@ -3,6 +3,7 @@ package dev.tileflow.reactnative
 import androidx.test.core.app.ApplicationProvider
 import dev.tileflow.sdk.TileflowErrorCode
 import dev.tileflow.sdk.TileflowMapException
+import dev.tileflow.sdk.offline.TileflowOfflineSwitch
 import java.io.InputStream
 import java.net.InetAddress
 import java.net.ServerSocket
@@ -64,6 +65,53 @@ class NativeMapMediaTest {
             val request = server.takeRequest()
             assertNull(request.getHeader("Authorization"))
             assertNull(request.getHeader("X-Tileflow-Credential"))
+            assertNull(request.getHeader("X-Tileflow-Mobile-Client"))
+            assertNull(request.getHeader("X-Tileflow-Native-Grant"))
+            assertNull(request.getHeader("Cookie"))
+        }
+    }
+
+    @Test
+    fun remoteApplicationImagesRespectTheNetworkSwitch() = runBlocking {
+        val previouslyEnabled = TileflowOfflineSwitch.isNetworkEnabled
+        TileflowOfflineSwitch.isNetworkEnabled = false
+        try {
+            MockWebServer().use { server ->
+                server.enqueue(MockResponse().setBody("image-bytes"))
+                val error = runCatching {
+                    TileflowMapMedia.load(
+                        ApplicationProvider.getApplicationContext(),
+                        server.url("/image.png").toString(),
+                    )
+                }.exceptionOrNull()
+
+                assertEquals(0, server.requestCount)
+                assertEquals(TileflowErrorCode.RESOURCE_FAILED, (error as? TileflowMapException)?.code)
+            }
+        } finally {
+            TileflowOfflineSwitch.isNetworkEnabled = previouslyEnabled
+        }
+    }
+
+    @Test
+    fun remoteApplicationImagesDoNotFollowRedirects() = runBlocking {
+        MockWebServer().use { origin ->
+            MockWebServer().use { target ->
+                target.enqueue(MockResponse().setBody("redirected-image"))
+                origin.enqueue(
+                    MockResponse().setResponseCode(302).setHeader("Location", target.url("/image.png"))
+                )
+                val error = runCatching {
+                    TileflowMapMedia.load(
+                        ApplicationProvider.getApplicationContext(),
+                        origin.url("/image.png").toString(),
+                    )
+                }.exceptionOrNull()
+
+                assertEquals(1, origin.requestCount)
+                assertEquals(0, target.requestCount)
+                assertEquals(TileflowErrorCode.RESOURCE_FAILED, (error as? TileflowMapException)?.code)
+            }
         }
     }
 

@@ -42,6 +42,33 @@ class NativeStyleDocumentTest {
         return documents[url.toString()]?.toByteArray() ?: throw NativeResourceStatus(404)
     }
 
+    @Test
+    fun aRemoteAddressTheSdkCannotOwnIsRejectedBeforeRendering() {
+        for (source in listOf(
+            """{"type":"geojson","data":"https://app@blocked.test/points.geojson"}""",
+            """{"type":"vector","url":"pmtiles://https://app@blocked.test/tiles.pmtiles"}""",
+        )) {
+            val document = JSONObject("""{"version":8,"sources":{"bad":$source},"layers":[]}""")
+            val error =
+                runCatching { NativeStyleDocument.project(document, styleUrl, context, ::load) }
+                    .exceptionOrNull() as? TileflowMapException
+            assertEquals(TileflowErrorCode.RESOURCE_FAILED, error?.code)
+            assertEquals(emptyList<URI>(), loads)
+        }
+    }
+
+    @Test
+    fun aProviderAliasCannotEscapeTheMapTransport() {
+        val document = JSONObject(
+            """{"version":8,"glyphs":"maplibre://fonts/{fontstack}/{range}.pbf","sources":{},"layers":[]}"""
+        )
+        val error =
+            runCatching { NativeStyleDocument.project(document, styleUrl, context, ::load) }
+                .exceptionOrNull() as? TileflowMapException
+        assertEquals(TileflowErrorCode.RESOURCE_FAILED, error?.code)
+        assertEquals(emptyList<URI>(), loads)
+    }
+
     private val style =
         JSONObject(
             """

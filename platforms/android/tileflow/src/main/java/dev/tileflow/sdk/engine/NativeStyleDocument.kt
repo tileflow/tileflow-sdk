@@ -82,7 +82,22 @@ internal object NativeStyleDocument {
         val kinds = mutableListOf<Pair<String, TileflowResourceKind>>()
         fun address(base: String, value: String, kind: TileflowResourceKind): String {
             val remote = MapResourceAddress.resolve(base, value)
-            val projected = MapResourceAddress.encode(remote, context) ?: return value
+            val projected = MapResourceAddress.encode(remote, context)
+            if (projected == null) {
+                // MapLibre can turn provider aliases into network URLs after projection.
+                if (
+                    remote.startsWith("asset://") ||
+                        remote.startsWith("file://") ||
+                        remote.startsWith("local://") ||
+                        remote.startsWith("data:")
+                )
+                    return value
+
+                throw TileflowMapException(
+                    TileflowErrorCode.RESOURCE_FAILED,
+                    TileflowErrorContext(resource = kind),
+                )
+            }
             kinds += prefix(remote) to kind
             return projected
         }

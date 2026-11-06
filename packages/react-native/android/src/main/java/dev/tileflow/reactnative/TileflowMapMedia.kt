@@ -3,27 +3,21 @@ package dev.tileflow.reactnative
 import android.content.Context
 import android.util.Base64
 import com.facebook.react.views.imagehelper.ImageSource
+import dev.tileflow.configuration.internal.TileflowInternalApi
 import dev.tileflow.sdk.TileflowErrorCode
 import dev.tileflow.sdk.TileflowMapException
+import dev.tileflow.sdk.transport.TileflowApplicationImageTransport
 import java.io.ByteArrayOutputStream
-import java.io.IOException
 import java.io.InputStream
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import okhttp3.Call
-import okhttp3.Callback
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.Response
 
 /** Application images use the host's URIs, without the map's credential or resource grants. */
+@OptIn(TileflowInternalApi::class)
 internal object TileflowMapMedia {
-    internal const val MAXIMUM_BYTES = 32 * 1024 * 1024
-    private val client = OkHttpClient()
+    internal const val MAXIMUM_BYTES = TileflowApplicationImageTransport.MAXIMUM_BYTES
 
     suspend fun load(context: Context, value: String): ByteArray =
         withContext(Dispatchers.IO) {
@@ -33,7 +27,7 @@ internal object TileflowMapMedia {
             val bytes =
                 when (uri.scheme?.lowercase()) {
                     "http",
-                    "https" -> remote(uri.toString())
+                    "https" -> TileflowApplicationImageTransport.load(uri.toString())
                     "data" -> data(value) { coroutine.ensureActive() }
                     "asset",
                     "assets" ->
@@ -58,43 +52,6 @@ internal object TileflowMapMedia {
             coroutine.ensureActive()
             if (bytes.isEmpty()) throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
             bytes
-        }
-
-    private suspend fun remote(uri: String): ByteArray =
-        suspendCancellableCoroutine { continuation ->
-            val call = client.newCall(Request.Builder().url(uri).build())
-            continuation.invokeOnCancellation { call.cancel() }
-            call.enqueue(
-                object : Callback {
-                    override fun onFailure(call: Call, error: IOException) {
-                        continuation.resumeWith(
-                            Result.failure(TileflowMapException(TileflowErrorCode.RESOURCE_FAILED))
-                        )
-                    }
-
-                    override fun onResponse(call: Call, response: Response) {
-                        response.use {
-                            try {
-                                val body = response.body
-                                if (!response.isSuccessful || body == null)
-                                    throw TileflowMapException(TileflowErrorCode.RESOURCE_FAILED)
-                                if (body.contentLength() > MAXIMUM_BYTES)
-                                    throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
-                                val bytes =
-                                    body.byteStream().use { stream ->
-                                        bounded(stream) {
-                                            if (!continuation.isActive)
-                                                throw CancellationException()
-                                        }
-                                    }
-                                continuation.resumeWith(Result.success(bytes))
-                            } catch (error: Throwable) {
-                                continuation.resumeWith(Result.failure(error))
-                            }
-                        }
-                    }
-                }
-            )
         }
 
     internal fun bounded(stream: InputStream, check: () -> Unit = {}): ByteArray {

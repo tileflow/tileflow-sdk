@@ -1,6 +1,6 @@
 import Foundation
 import CryptoKit
-import Tileflow
+@_spi(TileflowReactNative) import Tileflow
 import UIKit
 
 extension MapBridgeValues {
@@ -117,7 +117,7 @@ extension MapBridgeValues {
 
 /// Application images are loaded outside the UI actor before the SDK installs one complete set.
 enum MapImageLoader {
-  static let maximumBytes = 32 * 1024 * 1024
+  static let maximumBytes = TileflowApplicationImageTransport.maximumBytes
 
   static func data(_ uri: String) async throws -> Data {
     try Task.checkCancellation()
@@ -126,16 +126,7 @@ enum MapImageLoader {
     }
     let data: Data
     if scheme == "http" || scheme == "https" {
-      let (bytes, response) = try await URLSession.shared.bytes(from: url)
-      defer { bytes.task.cancel() }
-      guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
-        response.expectedContentLength <= maximumBytes else { throw TileflowMapError.resourceFailed }
-      var buffer = Data()
-      for try await byte in bytes {
-        guard buffer.count < maximumBytes else { throw TileflowMapError.invalidRequest }
-        buffer.append(byte)
-      }
-      data = buffer
+      data = try await TileflowApplicationImageTransport.load(url)
     } else if scheme == "data" {
       data = try await detached { try dataURI(uri) }
     } else if scheme == "file" {

@@ -153,6 +153,11 @@ final class NativeHTTPTransport: NativeHTTPTransporting {
     guard client.isNetworkEnabled else { throw URLError(.notConnectedToInternet) }
     let slots = lane == .resources ? client.resourceSlots : nil
     try await slots?.acquire()
+    guard client.isNetworkEnabled else {
+      slots?.release()
+      throw URLError(.notConnectedToInternet)
+    }
+
     let transfer = HTTPTransfer(
       maximumBytes: maximumBytes, isHead: request.httpMethod == "HEAD")
     let identity = ObjectIdentifier(transfer)
@@ -431,4 +436,7 @@ final class AsyncSemaphore: @unchecked Sendable {
 
   /// Slots not held by any caller.
   var availableCount: Int { lock.withLock { available } }
+
+  /// Callers waiting for a slot.
+  var waitingCount: Int { lock.withLock { waiters.count } }
 }

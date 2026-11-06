@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import UIKit
 import XCTest
 
@@ -241,6 +242,36 @@ final class MapBridgeTests: XCTestCase {
     catch is CancellationError {}
   }
 
+  func testRemoteImagesRefuseRedirectsAndRespectTheNetworkSwitch() async throws {
+    let server = try ImageHTTPFixture()
+    let origin = try await server.start()
+    defer { server.stop() }
+    let offline = TileflowOfflineSwitch.shared
+    let previouslyEnabled = offline.isNetworkEnabled
+    offline.isNetworkEnabled = true
+    defer { offline.isNetworkEnabled = previouslyEnabled }
+
+    let bytes = try await MapImageLoader.data(origin + "/image")
+    XCTAssertEqual(bytes, Data("image".utf8))
+
+    do {
+      _ = try await MapImageLoader.data(origin + "/moved")
+      XCTFail("Image request followed a redirect")
+    } catch let error as TileflowMapError {
+      XCTAssertEqual(error, .resourceFailed)
+    }
+    XCTAssertEqual(server.requests, 2)
+
+    offline.isNetworkEnabled = false
+    do {
+      _ = try await MapImageLoader.data(origin + "/image")
+      XCTFail("Image request ignored the network switch")
+    } catch let error as TileflowMapError {
+      XCTAssertEqual(error, .resourceFailed)
+    }
+    XCTAssertEqual(server.requests, 2)
+  }
+
   func testLateImageLoadCannotOverwriteANewerSet() async throws {
     let host = TFMapHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
     defer { host.dispose() }
@@ -277,4 +308,57 @@ final class MapBridgeTests: XCTestCase {
     await fulfillment(of: [oldEnded], timeout: 1)
     XCTAssertEqual(host.map?.images.map(\.name), ["new"])
   }
+}
+
+private final class ImageHTTPFixture: @unchecked Sendable {
+  private let listener: NWListener
+  private let queue = DispatchQueue(label: "Tileflow image test")
+  private let lock = NSLock()
+  private var count = 0
+
+  init() throws {
+    let parameters = NWParameters.tcp
+    parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
+    listener = try NWListener(using: parameters)
+  }
+
+  var requests: Int { lock.withLock { count } }
+
+  func start() async throws -> String {
+    listener.newConnectionHandler = { [weak self] connection in
+      guard let self else { connection.cancel(); return }
+      connection.start(queue: self.queue)
+      connection.receive(minimumIncompleteLength: 16, maximumLength: 4096) { data, _, _, _ in
+        guard let data else { connection.cancel(); return }
+        self.lock.withLock { self.count += 1 }
+        let redirect = String(decoding: data, as: UTF8.self).hasPrefix("GET /moved ")
+        let response = redirect
+          ? "302 Found\r\nLocation: /image\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+          : "200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nimage"
+        connection.send(content: Data(("HTTP/1.1 " + response).utf8), completion: .contentProcessed { _ in
+          connection.cancel()
+        })
+      }
+    }
+    return try await withCheckedThrowingContinuation { continuation in
+      listener.stateUpdateHandler = { [weak listener] state in
+        switch state {
+        case .ready:
+          listener?.stateUpdateHandler = nil
+          guard let port = listener?.port else {
+            continuation.resume(throwing: URLError(.cannotConnectToHost))
+            return
+          }
+          continuation.resume(returning: "http://127.0.0.1:\(port.rawValue)")
+        case .failed(let error):
+          listener?.stateUpdateHandler = nil
+          continuation.resume(throwing: error)
+        default: break
+        }
+      }
+      listener.start(queue: queue)
+    }
+  }
+
+  func stop() { listener.cancel() }
 }

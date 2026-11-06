@@ -105,6 +105,37 @@ final class HTTPTransportTests: XCTestCase {
     XCTAssertEqual(StubProtocol.started, 0)
   }
 
+  func testQueuedResourceDoesNotStartAfterNetworkIsDisabled() async throws {
+    let client = TileflowHTTPClient(protocolClasses: [StubProtocol.self])
+    let transport = NativeHTTPTransport(maximumBytes: 64, lane: .resources, client: client)
+    let slots = client.resourceSlots
+    let capacity = TileflowHTTPClient.maximumConcurrentResources
+    for _ in 0..<capacity { try await slots.acquire() }
+    defer {
+      for _ in 1..<capacity { slots.release() }
+      XCTAssertEqual(slots.availableCount, capacity)
+    }
+
+    let queued = Task {
+      try await transport.send(URLRequest(url: URL(string: "https://stub.test/chunks")!))
+    }
+    defer { queued.cancel() }
+    do {
+      try await waitUntil { slots.waitingCount == 1 }
+    } catch {
+      slots.release()
+      throw error
+    }
+    client.isNetworkEnabled = false
+    slots.release()
+
+    do {
+      _ = try await queued.value
+      XCTFail("A queued request started after the network was disabled")
+    } catch { XCTAssertEqual((error as? URLError)?.code, .notConnectedToInternet) }
+    XCTAssertEqual(StubProtocol.started, 0)
+  }
+
   func testConcurrencyIsBoundedAndCancelledWaitersLeaveTheQueue() async throws {
     let semaphore = AsyncSemaphore(2)
     try await semaphore.acquire()

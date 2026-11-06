@@ -88,6 +88,38 @@ class HttpTransportTest {
     }
 
     @Test
+    fun queuedResourceDoesNotStartAfterNetworkIsDisabled() {
+        server.enqueue(MockResponse().setBody("tile"))
+        server.start()
+        val transport = resources()
+        val executor = Executors.newSingleThreadExecutor()
+        val slots = TileflowHttpClient.resourceSlots
+        val capacity = TileflowHttpClient.MAXIMUM_CONCURRENT_RESOURCES
+        slots.acquire(capacity)
+        try {
+            val queued = executor.submit<Throwable?> {
+                runCatching { transport.send(request()) }.exceptionOrNull()
+            }
+            try {
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+                while (!slots.hasQueuedThreads() && System.nanoTime() < deadline) Thread.sleep(1)
+                assertTrue("The resource request is waiting for a slot", slots.hasQueuedThreads())
+                TileflowHttpClient.networkEnabled = false
+            } finally {
+                slots.release()
+            }
+
+            val error = queued.get(10, TimeUnit.SECONDS)
+            assertEquals(0, server.requestCount)
+            assertTrue(error is NetworkUnavailableException)
+        } finally {
+            slots.release(capacity - 1)
+            transport.close()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
     fun resourceConcurrencyIsBounded() {
         repeat(TileflowHttpClient.MAXIMUM_CONCURRENT_RESOURCES + 1) { server.enqueue(slow()) }
         server.start()

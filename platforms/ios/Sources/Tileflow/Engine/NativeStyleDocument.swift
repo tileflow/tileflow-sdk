@@ -87,10 +87,15 @@ enum NativeStyleDocument {
     var style = document
     var kinds: [(prefix: String, kind: TileflowResourceKind)] = []
     let base = styleURL.absoluteString
-    func address(_ url: String, base: String, kind: TileflowResourceKind) -> String {
+    func address(_ url: String, base: String, kind: TileflowResourceKind) throws -> String {
       let resolved = MapResourceAddress.resolve(url, against: base)
       guard let projected = MapResourceAddress.encode(resolved, context: context) else {
-        return url
+        // MapLibre can turn provider aliases into network URLs after projection.
+        if resolved.hasPrefix("asset://") || resolved.hasPrefix("file://")
+          || resolved.hasPrefix("data:") {
+          return url
+        }
+        throw TileflowMapError(.resourceFailed, context: .init(resource: kind))
       }
       let literal = resolved.firstIndex(of: "{").map { String(resolved[..<$0]) } ?? resolved
       kinds.append((literal, kind))
@@ -108,7 +113,7 @@ enum NativeStyleDocument {
         if ["vector", "raster", "raster-dem"].contains(type), let url = source["url"] as? String {
           if url.hasPrefix("pmtiles://") {
             let archive = String(url.dropFirst("pmtiles://".count))
-            source["url"] = "pmtiles://" + address(archive, base: base, kind: .tile)
+            source["url"] = try "pmtiles://" + address(archive, base: base, kind: .tile)
           } else {
             let resolved = MapResourceAddress.resolve(url, against: base)
             guard let tileJSONURL = URL(string: resolved) else {
@@ -135,13 +140,13 @@ enum NativeStyleDocument {
             let minimum = (source["minzoom"] as? NSNumber)?.intValue ?? 0
             source["minzoom"] = max(minimum, zooms.lowerBound)
           }
-          source["tiles"] = tiles.map { address($0, base: sourceBase, kind: .tile) }
+          source["tiles"] = try tiles.map { try address($0, base: sourceBase, kind: .tile) }
         }
         if type == "geojson", let data = source["data"] as? String {
-          source["data"] = address(data, base: base, kind: .data)
+          source["data"] = try address(data, base: base, kind: .data)
         }
         if type == "image", let url = source["url"] as? String {
-          source["url"] = address(url, base: base, kind: .image)
+          source["url"] = try address(url, base: base, kind: .image)
           if let tile = worldImageTile(source) { source = tile }
         }
         if let text = source["attribution"] as? String, !text.isEmpty,
@@ -154,24 +159,28 @@ enum NativeStyleDocument {
       style["sources"] = sources
     }
     if let sprite = style["sprite"] as? String {
-      style["sprite"] = address(sprite, base: base, kind: .sprite)
+      style["sprite"] = try address(sprite, base: base, kind: .sprite)
     } else if let sprites = style["sprite"] as? [[String: Any]] {
-      style["sprite"] = sprites.map { entry -> [String: Any] in
+      style["sprite"] = try sprites.map { entry -> [String: Any] in
         var entry = entry
-        if let url = entry["url"] as? String { entry["url"] = address(url, base: base, kind: .sprite) }
+        if let url = entry["url"] as? String {
+          entry["url"] = try address(url, base: base, kind: .sprite)
+        }
         return entry
       }
     }
     if let glyphs = style["glyphs"] as? String {
-      style["glyphs"] = address(glyphs, base: base, kind: .glyphs)
+      style["glyphs"] = try address(glyphs, base: base, kind: .glyphs)
     }
     if let faces = style["font-faces"] as? [String: Any] {
-      style["font-faces"] = faces.mapValues { value -> Any in
-        if let url = value as? String { return address(url, base: base, kind: .font) }
+      style["font-faces"] = try faces.mapValues { value -> Any in
+        if let url = value as? String { return try address(url, base: base, kind: .font) }
         guard let files = value as? [[String: Any]] else { return value }
-        return files.map { file -> [String: Any] in
+        return try files.map { file -> [String: Any] in
           var file = file
-          if let url = file["url"] as? String { file["url"] = address(url, base: base, kind: .font) }
+          if let url = file["url"] as? String {
+            file["url"] = try address(url, base: base, kind: .font)
+          }
           return file
         }
       }

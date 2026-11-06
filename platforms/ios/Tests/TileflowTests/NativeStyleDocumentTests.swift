@@ -318,6 +318,39 @@ final class NativeStyleDocumentTests: XCTestCase {
     XCTAssertEqual(projected.attributions, ["© Climate"])
   }
 
+  func testRemoteAddressesTheSDKCannotOwnAreRejectedBeforeRendering() async throws {
+    let sources = [
+      ["type": "geojson", "data": "//app@blocked.test/points.geojson"],
+      ["type": "vector", "url": "pmtiles://https://app@blocked.test/tiles.pmtiles"],
+    ]
+    for source in sources {
+      let style: [String: Any] = ["version": 8, "sources": ["bad": source], "layers": []]
+      do {
+        _ = try await NativeStyleDocument.project(
+          style, styleURL: URL(string: "https://a.test/style.json")!, context: context,
+          load: { _, _ in XCTFail("Invalid address reached the loader"); return [:] })
+        XCTFail("An unowned network address reached the renderer")
+      } catch let error as TileflowMapError {
+        XCTAssertEqual(error, .resourceFailed)
+      }
+    }
+  }
+
+  func testProviderAliasesCannotEscapeTheMapTransport() async throws {
+    let style: [String: Any] = [
+      "version": 8, "glyphs": "maplibre://fonts/{fontstack}/{range}.pbf",
+      "sources": [:], "layers": [],
+    ]
+    do {
+      _ = try await NativeStyleDocument.project(
+        style, styleURL: URL(string: "https://a.test/style.json")!, context: context,
+        load: { _, _ in XCTFail("Provider alias reached the loader"); return [:] })
+      XCTFail("An unowned provider alias reached the renderer")
+    } catch let error as TileflowMapError {
+      XCTAssertEqual(error, .resourceFailed)
+    }
+  }
+
   /// A style that draws its labels with web fonts has no glyphs for the engine; its text is left
   /// out so the rest of the map draws.
   func testTextWithoutGlyphsOrFontFacesIsLeftOut() async throws {

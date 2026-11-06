@@ -145,6 +145,11 @@ internal class NativeHTTPTransport(
             Thread.currentThread().interrupt()
             throw InterruptedIOException("Resource request cancelled.")
         }
+        if (!TileflowHttpClient.networkEnabled) {
+            slots?.release()
+            throw NetworkUnavailableException()
+        }
+
         val released = AtomicBoolean()
         val release = { if (released.compareAndSet(false, true)) slots?.release() }
         val call = TileflowHttpClient.client(lane, timeoutMillis).newCall(request)

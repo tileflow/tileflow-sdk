@@ -268,6 +268,64 @@ export function registerTilesetCommands(
     });
 
   tileset
+    .command('restore')
+    .description("Make a tileset's previous version current again, for every Map that uses it")
+    .argument('<id>', 'Team-local logical ID or opaque resource ID')
+    .option('--team <team>', 'target Team as @team')
+    .addOption(hostedApiUrlOption())
+    .addOption(hostedApiKeyOption('Team data API key'))
+    .option('--json', 'print deterministic schema-version-1 JSON')
+    .action(async (id: string, options: HostedTilesetOptions) => {
+      try {
+        if (!isTilesetId(id))
+          return emitFailure(options.json, 'invalid_tileset_id', 'Tileset ID is invalid.');
+        const authority = await resolveTeamAuthority(options, ['tilesets:write'], dependencies);
+        if (!authority) return;
+        const path = `/v1/tilesets/${encodeURIComponent(id)}`;
+        const detail = await authorizedTeamRequest(authority, path, 'GET');
+        if (!detail.ok) {
+          return emitFailure(
+            options.json,
+            `http_${detail.status}`,
+            `Tileset status failed (${detail.status}).`,
+          );
+        }
+        const expectedCurrentVersion = tilesetDetailResponseSchema.parse(detail.body).tileset
+          .currentVersion;
+        if (expectedCurrentVersion === null) {
+          return emitFailure(
+            options.json,
+            'no_previous_version',
+            `${id} has no previous version to restore.`,
+          );
+        }
+        const response = await authorizedTeamRequest(authority, `${path}/restore`, 'POST', {
+          body: JSON.stringify({expectedCurrentVersion}),
+          headers: {'Content-Type': 'application/json'},
+        });
+        if (!response.ok) {
+          const failure = asRecord(response.body);
+          return emitFailure(
+            options.json,
+            typeof failure.code === 'string' ? failure.code : `http_${response.status}`,
+            typeof failure.error === 'string'
+              ? `${failure.error}.`
+              : `Tileset restore failed (${response.status}).`,
+          );
+        }
+        const restored = tilesetRestoreResponseSchema.parse(response.body).tileset;
+        if (options.json) {
+          return emitJson({command: 'tileset restore', ok: true, schemaVersion: 1, tileset: restored});
+        }
+        console.log(
+          `${pc.green('✓')} ${pc.bold(id)} is at version ${restored.currentVersion} again; version ${restored.previousVersion} is its previous one. Maps read it within minutes, without deploying.`,
+        );
+      } catch {
+        emitFailure(options.json, 'tileset_restore_failed', 'Tileset restore failed.');
+      }
+    });
+
+  tileset
     .command('purge')
     .description('Permanently purge one unreferenced Team tileset')
     .argument('<id>', 'Team-local logical ID or opaque resource ID')
@@ -439,6 +497,19 @@ const tilesetDependencySchema = z
     environment: z.string().min(1).max(64),
     mapId: safeIdentifierSchema,
     sourceId: safeIdentifierSchema,
+  })
+  .strict();
+export const tilesetRestoreResponseSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    tileset: z
+      .object({
+        currentVersion: z.number().int().positive(),
+        id: physicalTilesetIdSchema,
+        previousVersion: z.number().int().positive(),
+        slug: z.string().min(1).max(128),
+      })
+      .strict(),
   })
   .strict();
 const tilesetDetailResponseSchema = z

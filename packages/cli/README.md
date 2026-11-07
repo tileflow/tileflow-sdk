@@ -282,6 +282,30 @@ Temporary service failures retain bounded retries.
 prepared icon identities; they do not turn package directories into a separate hosted library.
 Use the installed command's help for exact arguments and supported JSON output.
 
+## Restore an earlier version
+
+Deployments are immutable. Restoring one publishes its content again as a new version of the Map, so
+the deployment it replaces stays in the history and can be restored in turn:
+
+```bash
+npx tileflow deployments list --map-id map_AbCdEfGhIjKlMnOp
+npx tileflow deployments restore 12 --map-id map_AbCdEfGhIjKlMnOp
+```
+
+Allowed websites are not part of a deployment and do not change. A restore is refused when the data
+the version needs has since changed, and the refusal names the source. Your repository still holds
+what you replaced, so the next `tileflow deploy` publishes that again unless you revert it.
+
+A tileset keeps its current and previous versions. Restoring swaps them for every Map that uses the
+tileset, with no deployment, and restoring again undoes it:
+
+```bash
+npx tileflow tileset restore stores --team @acme
+```
+
+The restore is refused while an upload to that tileset is in progress, and while a live Map needs
+data the previous version lacks. Restore or republish that Map first.
+
 ## Team Icon Sets and repository locks
 
 Two intentionally separate families cover shared icons. `icon-set` manages the remote Team catalog

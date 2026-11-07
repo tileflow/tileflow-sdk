@@ -2,7 +2,7 @@
   "name": "tileflow",
   "version": "0.0.0-development",
   "license": "Apache-2.0",
-  "description": "CLI-only tools for Tileflow config, capture, visual testing, and deploy.",
+  "description": "CLI-only tools for Tileflow config, capture, visual testing, tiling, and deploy.",
   "type": "module",
   "homepage": "https://tileflow.dev",
   "repository": {
@@ -25,6 +25,7 @@
   },
   "files": [
     "dist",
+    "REFERENCE.md",
     "LICENSE"
   ],
   "bin": {
@@ -54,10 +55,14 @@
     "commander": "^15.0.0",
     "hono": "4.13.14",
     "picocolors": "^1.1.1",
+    "pmtiles": "4.5.0",
+    "proj4": "2.22.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@mapbox/vector-tile": "3.0.0",
     "@types/pngjs": "6.0.5",
+    "pbf": "5.1.2",
     "pngjs": "7.0.0"
   }
 }

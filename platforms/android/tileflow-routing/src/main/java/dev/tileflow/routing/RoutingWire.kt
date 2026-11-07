@@ -30,7 +30,7 @@ internal object RoutingWire {
         }
 
     fun route(request: TileflowRouteRequest): JSONObject {
-        positions(request.locations, 2..5, "locations")
+        positions(request.locations, 2..25, "locations")
         travel(request.mode, request.vehicle, request.avoid)
         requireRequest(request.alternatives in 0..2) { "Ask for 0 to 2 alternatives." }
         requireRequest(request.alternatives == 0 || request.locations.size == 2) {

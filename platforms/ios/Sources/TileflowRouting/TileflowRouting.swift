@@ -16,7 +16,7 @@ public struct TileflowRouting: Sendable {
       configuration: configuration, session: session, policy: TileflowRoutingError.policy)
   }
 
-  /// The fastest route through two to five positions, with up to two alternatives between two
+  /// The fastest route through two to 25 positions, with up to two alternatives between two
   /// positions: its line, distance, duration, steps and whether it uses tolls, highways or ferries.
   public func route(_ request: TileflowRouteRequest) async throws -> TileflowRouteResponse {
     try await run {
@@ -225,7 +225,7 @@ public struct TileflowVehicle: Sendable, Equatable {
 }
 
 public struct TileflowRouteRequest: Sendable, Equatable {
-  /// Two to five positions, in travel order.
+  /// Two to 25 positions, in travel order.
   public var locations: [TileflowPosition]
   public var mode: TileflowRoutingMode
   /// Only for `truck`.

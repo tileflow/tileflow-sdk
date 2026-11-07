@@ -275,6 +275,11 @@ wrapper. A bounded accessible marker is rendered when `renderMarker` is omitted.
 remain in native vector or GeoJSON layers and are selected through semantic rendered-feature
 queries rather than thousands of React marker views.
 
+A clustered GeoJSON source or heatmap compiled into the map's style renders here, with
+`tileflow validate --renderer native` checking it. `annotationClusters`, `dataSources`,
+`dataOverlays`, tap-to-expand and Terra Draw are web features and do not apply: `Map` has no data
+channel for runtime GeoJSON, and clusters do not reach `onInteractionEvent`.
+
 The application owns persistent selection and its presentation. The SDK emits normalized
 annotation or POI targets but no popup, callout, tooltip, sheet, panel or modal renderer.
 

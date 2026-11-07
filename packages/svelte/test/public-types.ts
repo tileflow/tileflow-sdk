@@ -146,3 +146,18 @@ void [
   imageCallback,
   namedComponent,
 ];
+
+const clusteredProps: import('../src/index.js').TileflowMapProps = {
+  annotationClusters: {clusterRadius: 60},
+  dataOverlays: {},
+  dataSources: {stores: {data: 'https://example.com/stores.geojson', kind: 'geojson'}},
+  source: {map: 'main'},
+};
+void clusteredProps;
+// @ts-expect-error image mode draws no runtime data.
+const imageData: import('../src/index.js').TileflowMapProps = {
+  dataSources: {},
+  mode: 'image',
+  source: {map: 'main'},
+};
+void imageData;

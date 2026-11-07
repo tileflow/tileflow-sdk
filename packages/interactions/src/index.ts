@@ -40,6 +40,7 @@ export type {
   TileflowPoiProperties,
   TileflowPoiSizeRank,
   TileflowResolvedAnnotationTarget,
+  TileflowResolvedClusterTarget,
   TileflowResolvedInteractionTarget,
   TileflowResolvedMapTarget,
   TileflowResolvedPoiFeature,

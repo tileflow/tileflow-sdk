@@ -19,7 +19,7 @@ from the presence of an npm package. Config files are trusted executable code.
 - [React](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/react/README.md): Worker setup, interactive maps, annotations, and static rendering UI.
 - [Vue](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/vue/README.md): Worker setup, TileflowMap, slots, and controlled interaction state.
 - [Svelte](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/svelte/README.md): Svelte 5 components, snippets, and interaction state.
-- [Interactions](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/interactions/README.md): Portable annotations, semantic POIs, validation, and popup state.
+- [Interactions](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/interactions/README.md): Portable annotations, clustering, semantic POIs, validation, and popup state.
 
 ## Native UI
 

@@ -108,7 +108,10 @@ test('keeps component exports aligned with the public props declaration', async 
   const declaredProps = [
     ...extractPropertyNames(declaration, 'TileflowMapBaseProps'),
     ...extractPropertyNames(declaration, 'TileflowMapStyleSourceProps'),
+    'annotationClusters',
     'annotations',
+    'dataOverlays',
+    'dataSources',
     'defaultInteractionState',
     'interactions',
     'interactionState',

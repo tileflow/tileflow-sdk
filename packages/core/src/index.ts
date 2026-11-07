@@ -240,14 +240,22 @@ export {
   tileflowMapIdSchema,
 } from './maps';
 export {
+  clusterOverlay,
+  geojsonSource,
+  heatmapOverlay,
   hostedTileset,
   isSafeLocalPmtilesPath,
   maplibreOverlay,
   remove,
   tileflowHostedSourceLimit,
+  tileflowInlineGeoJsonByteLimit,
   tileflowOverlayPlacements,
 } from './overlays';
 export type {
+  TileflowClusterProperty,
+  TileflowGeoJsonClusterOptions,
+  TileflowGeoJsonFeatureCollection,
+  TileflowGeoJsonSource,
   TileflowHostedSourceCollection,
   TileflowHostedTilesetSource,
   TileflowHostedTilesetType,
@@ -256,6 +264,7 @@ export type {
   TileflowOverlayCollection,
   TileflowOverlayPlacement,
   TileflowRemoveOperation,
+  TileflowSource,
 } from './overlays';
 export type {
   ResolvedTileflowMap,

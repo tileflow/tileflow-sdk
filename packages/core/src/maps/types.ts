@@ -9,9 +9,9 @@ import type {TileflowIconSource} from '../icon-set';
 import type {TileflowMarine} from '../marine';
 import type {
   TileflowHostedSourceCollection,
-  TileflowHostedTilesetSource,
   TileflowMapLibreOverlay,
   TileflowOverlayCollection,
+  TileflowSource,
 } from '../overlays';
 import {tileflowPortableIdSchema} from '../portable-identity';
 import type {TileflowSky} from '../sky';
@@ -82,7 +82,7 @@ export type TileflowMapDesign = TileflowMapTextAssets & {
    * is dark. Colours take theme tokens. False disables an inherited sky.
    */
   sky?: TileflowSky;
-  /** Keyed logical hosted sources. Omission inherits; entries replace atomically. */
+  /** Keyed hosted tilesets and GeoJSON sources. Omission inherits; entries replace atomically. */
   sources?: TileflowHostedSourceCollection;
   /** Browser color-scheme mapping. Runtime resolves "system" to one of these concrete names. */
   systemThemes?: {
@@ -128,7 +128,7 @@ export type ResolvedTileflowMap = Omit<TileflowMapIdentity, 'name'> &
     modules?: TileflowResolvedSemanticModuleOverrides;
     name: string;
     overlays?: Readonly<Record<string, TileflowMapLibreOverlay>>;
-    sources?: Readonly<Record<string, TileflowHostedTilesetSource>>;
+    sources?: Readonly<Record<string, TileflowSource>>;
     themes: Readonly<Record<TileflowThemeName, TileflowTheme>>;
   };
 

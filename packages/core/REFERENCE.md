@@ -223,7 +223,51 @@ package uses this contract for its mounted Map; it is not yet published.
 Tileflow World is the hosted primary source, with an open (CC0)
 [schema](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/reference/tileflow-world-v1.json);
 detail layers load only when drawn. `vectorTiles()` takes that schema or OpenMapTiles
-(`openMapTiles()`). `hostedTileset()`, `boundaryAreas` and overlays add named sources.
+(`openMapTiles()`). `hostedTileset()`, `geojsonSource()`, `boundaryAreas` and overlays add named
+sources.
+
+`geojsonSource()` declares GeoJSON in `sources`, and `clusterOverlay()` and `heatmapOverlay()` return
+ordinary overlays that keep `placement`, `remove()`, and `tileflow validate`:
+
+<!-- docs:check -->
+
+```ts
+import {clusterOverlay, defineMap, geojsonSource, heatmapOverlay} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+
+export default defineMap({
+  id: 'store-locator',
+  version: 1,
+  extends: streets,
+  sources: {
+    stores: geojsonSource({
+      attribution: 'Stores © Example',
+      cluster: true,
+      clusterMaxZoom: 14,
+      clusterRadius: 50,
+    }),
+  },
+  overlays: {
+    density: heatmapOverlay({
+      id: 'density',
+      maxZoom: 9,
+      placement: 'below-labels',
+      source: 'stores',
+    }),
+    stores: clusterOverlay({id: 'stores', placement: 'above-labels', source: 'stores'}),
+  },
+});
+```
+
+Omit `data` to fill the source at runtime through a framework adapter's `dataSources`. Inline `data`
+is limited to 512,000 bytes; larger files use an absolute `https://` URL. Clustering options keep
+their MapLibre and Mapbox names. A cluster overlay over a source without `cluster: true` fails
+validation with `TF_OVERLAY_CLUSTER_SOURCE_INVALID`, and a map with no label font and no `font` option
+fails with `TF_OVERLAY_FONT_UNAVAILABLE`. Web helpers are also exported from
+`@tileflow/core/runtime`. `heatmapOverlay()` also accepts `sourceLayer` for hosted vector tilesets,
+which cannot cluster. See the
+[interactions reference](https://github.com/tileflow/tileflow-sdk/blob/main/packages/interactions/REFERENCE.md)
+for runtime data, click-to-expand, and React Native support.
 
 `bathymetry({vectorLayers: {...}})` declares contour/name layers. `marine: 'nautical'` adds
 navigation marks, flashing lights, and a "Not for navigation" notice.

@@ -258,7 +258,9 @@ export function createTileflowMapLibrePoiController(
 
   const handleClick = (value: unknown) => {
     const event = parsePointerEvent(value);
-    if (!event || disposed) return;
+    if (!event || disposed || (value as {defaultPrevented?: unknown}).defaultPrevented === true) {
+      return;
+    }
     const modality = inputModality(event);
     const match = hitTest(event);
     if (!match) return;

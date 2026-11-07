@@ -324,6 +324,7 @@ function normalizeRevisionCartography(
       Object.entries(input.sources)
         .sort(([left], [right]) => compareCodeUnits(left, right))
         .map(([sourceId, source]) => {
+          if (source.kind === 'geojson') return [sourceId, source];
           const {local: _local, ...logicalSource} = source;
           return [sourceId, logicalSource];
         }),

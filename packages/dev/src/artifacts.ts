@@ -1087,7 +1087,9 @@ export function assertNoLocalTilesetsForProduction(
 }
 
 function hasLocalTilesetSources(project: TileflowBuildCatalog): boolean {
-  return Object.values(project.maps).some((map) => Object.keys(map.sources ?? {}).length > 0);
+  return Object.values(project.maps).some((map) =>
+    Object.values(map.sources ?? {}).some((source) => source.kind === 'hosted-tileset'),
+  );
 }
 
 /** Prevents a framework build from silently replacing the frontend's Hosted delivery contract. */

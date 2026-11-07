@@ -2,7 +2,7 @@
   "name": "@tileflow/interactions",
   "version": "0.0.0-development",
   "license": "Apache-2.0",
-  "description": "Portable annotation and interaction contracts for Tileflow maps.",
+  "description": "Portable annotation, clustering and interaction contracts for Tileflow maps.",
   "type": "module",
   "sideEffects": false,
   "homepage": "https://tileflow.dev",
@@ -24,7 +24,8 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
-    "LICENSE"
+    "LICENSE",
+    "REFERENCE.md"
   ],
   "scripts": {
     "prepack": "node ../../scripts/package-license.mjs --prepare",
@@ -51,6 +52,7 @@
     "access": "public"
   },
   "dependencies": {
+    "supercluster": "^8.0.1",
     "zod": "^4.6.7"
   },
   "peerDependencies": {
@@ -62,6 +64,7 @@
     }
   },
   "devDependencies": {
+    "@types/supercluster": "^7.1.3",
     "maplibre-gl": "6.16.0"
   }
 }

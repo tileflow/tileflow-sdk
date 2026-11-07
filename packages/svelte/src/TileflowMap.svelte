@@ -71,9 +71,11 @@
     type TileflowInteractionViewContext,
   } from '@tileflow/interactions';
   import {
+    createTileflowMapLibreDataRuntime,
     createTileflowMapLibreDomRuntime,
     createTileflowMapLibreInteractionCoordinator,
     createTileflowMapLibreSemanticDomRuntime,
+    type TileflowMapLibreDataRuntime,
     type TileflowMapLibreDomRenderTarget,
     type TileflowMapLibreDomRuntime,
     type TileflowMapLibreInteractionCoordinator,
@@ -87,7 +89,10 @@
 
   export let alt: NonNullable<TileflowMapProps['alt']> = '';
   export let analytics: TileflowMapProps['analytics'] = undefined;
+  export let annotationClusters: TileflowMapProps['annotationClusters'] = undefined;
   export let annotations: TileflowMapProps['annotations'] = undefined;
+  export let dataOverlays: TileflowMapProps['dataOverlays'] = undefined;
+  export let dataSources: TileflowMapProps['dataSources'] = undefined;
 
   export let center: TileflowMapProps['center'] = undefined;
   export let captureId: TileflowMapProps['captureId'] = undefined;
@@ -126,6 +131,7 @@
   let mapFairUseNotice: TileflowFairUseNoticeController | null = null;
   let mapLifecycleAttachment: TileflowMapLifecycleAttachment | null = null;
   let annotationRuntime: TileflowMapLibreDomRuntime<TileflowAnnotation> | null = null;
+  let dataRuntime: TileflowMapLibreDataRuntime<TileflowAnnotation> | null = null;
   let annotationRuntimeDiagnosticsUnsubscribe: (() => void) | null = null;
   let annotationRuntimeEventsUnsubscribe: (() => void) | null = null;
   let annotationRuntimeTargetsUnsubscribe: (() => void) | null = null;
@@ -266,7 +272,10 @@
     defaultInteractionState,
   );
   $: hasInteractionConfiguration =
+    annotationClusters !== undefined ||
     annotations !== undefined ||
+    dataOverlays !== undefined ||
+    dataSources !== undefined ||
     interactions !== undefined ||
     interactionState !== undefined ||
     defaultInteractionState !== undefined ||
@@ -350,6 +359,14 @@
   $: if (mounted) {
     annotations;
     syncAnnotations();
+  }
+
+  $: if (mounted) {
+    annotationClusters;
+    annotationResolution;
+    dataOverlays;
+    dataSources;
+    syncDataLayers();
   }
 
   $: if (mounted) {
@@ -458,6 +475,8 @@
     readinessRunId += 1;
     const lifecycleAttachment = mapLifecycleAttachment;
     const fairUseNotice = mapFairUseNotice;
+    dataRuntime?.dispose();
+    dataRuntime = null;
     const annotationInteractionsForMap = annotationRuntime;
     const semanticInteractionsForMap = semanticRuntime;
     const detachAnnotationCoordinator = annotationRuntimeCoordinatorDetach;
@@ -738,6 +757,22 @@
       annotationRuntimeDiagnostics = annotationInteractionsForMap.getDiagnostics();
       syncAnnotationRenderTargets(annotationInteractionsForMap.getRenderTargets());
       syncAnnotations();
+      // Created ahead of semantic POIs: a click on a cluster belongs to the cluster.
+      dataRuntime = createTileflowMapLibreDataRuntime<
+        MapLibreMap,
+        MapLibreMarker,
+        TileflowAnnotation
+      >({
+        createMarker: ({element}) => new maplibregl.Marker({element}),
+        document: targetContainer.ownerDocument,
+        map: maplibreMap,
+        onDiagnostic: (diagnostic) => onInteractionDiagnostic?.(diagnostic),
+        onInteractionEvent(event) {
+          if (!interactionRuntimesDisposing) onInteractionEvent?.(event);
+        },
+        setHiddenAnnotations: annotationInteractionsForMap.setHiddenAnnotations,
+      });
+      syncDataLayers();
     } catch (error) {
       console.error('Failed to initialize Tileflow annotations', error);
       setBridgeInteractionDiagnostic(
@@ -922,6 +957,15 @@
         'Unable to reconcile the Tileflow annotation runtime.',
       );
     }
+  }
+
+  function syncDataLayers() {
+    dataRuntime?.reconcile({
+      annotationClusters,
+      annotations: annotationResolution.ok && !isImageMode ? annotationResolution.annotations : [],
+      dataOverlays,
+      dataSources,
+    });
   }
 
   function syncSemanticInteractions() {

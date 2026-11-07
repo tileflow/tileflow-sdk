@@ -1,6 +1,7 @@
 import {readTileflowCompilerProvenance} from './cartography/compiler-inspection';
 import {tileflowBandPlacementIndex, tileflowLayerSlots} from './cartography/contributions';
 import {isTileflowPortableId} from './portable-identity';
+import {parseTileflowLineBackgroundFontStack} from './text-background';
 
 export const tileflowOverlayPlacements = [
   'above-water',
@@ -12,6 +13,12 @@ export const tileflowOverlayPlacements = [
 ] as const;
 
 export const tileflowHostedSourceLimit = 16 as const;
+/** Larger data belongs behind a URL or in runtime `dataSources`, not in every compiled style. */
+export const tileflowInlineGeoJsonByteLimit = 512_000 as const;
+/** Marks cluster overlay layers so runtimes find them without knowing their names. */
+export const tileflowClusterMetadataKey = 'tileflow:cluster' as const;
+
+export type TileflowClusterLayerRole = 'cluster' | 'count' | 'point';
 
 export type TileflowOverlayPlacement = (typeof tileflowOverlayPlacements)[number];
 export type TileflowHostedTilesetType = 'raster' | 'vector';
@@ -24,6 +31,39 @@ export type TileflowHostedTilesetSource = Readonly<{
   tileSize?: 256 | 512;
   type: TileflowHostedTilesetType;
 }>;
+
+/** A GeoJSON FeatureCollection, the shape MapLibre clustering and `setData` accept. */
+export type TileflowGeoJsonFeatureCollection = Readonly<{
+  features: readonly Readonly<Record<string, unknown>>[];
+  type: 'FeatureCollection';
+}>;
+
+/** MapLibre aggregate: `[operator, mapExpression]`, summed into each cluster's properties. */
+export type TileflowClusterProperty = readonly [operator: unknown, map: unknown];
+
+/** Clustering options named as in the Mapbox and MapLibre source specifications. */
+export type TileflowGeoJsonClusterOptions = Readonly<{
+  /** Group nearby points in the worker. Defaults to false. */
+  cluster?: boolean;
+  /** The last zoom that clusters; points are separate above it. MapLibre's default is 14. */
+  clusterMaxZoom?: number;
+  /** The fewest points that form a cluster. MapLibre's default is 2. */
+  clusterMinPoints?: number;
+  /** Aggregates kept on clusters, such as `{total: ['+', ['get', 'price']]}`. */
+  clusterProperties?: Readonly<Record<string, TileflowClusterProperty>>;
+  /** Cluster radius in CSS pixels. MapLibre's default is 50. */
+  clusterRadius?: number;
+}>;
+
+export type TileflowGeoJsonSource = Readonly<
+  TileflowGeoJsonClusterOptions & {
+    attribution?: string;
+    data: TileflowGeoJsonFeatureCollection | string;
+    kind: 'geojson';
+  }
+>;
+
+export type TileflowSource = TileflowGeoJsonSource | TileflowHostedTilesetSource;
 
 export type TileflowMapLibreOverlayLayer = Readonly<
   Record<string, unknown> & {
@@ -56,7 +96,7 @@ export type TileflowOverlayIdentity = Readonly<{
 }>;
 
 export type TileflowHostedSourceCollection = Readonly<
-  Record<string, TileflowHostedTilesetSource | TileflowRemoveOperation>
+  Record<string, TileflowSource | TileflowRemoveOperation>
 >;
 
 export type TileflowOverlayCollection = Readonly<
@@ -101,6 +141,48 @@ export function hostedTileset(options: {
     tileset: options.tileset,
     ...(options.tileSize === undefined ? {} : {tileSize: options.tileSize}),
     type,
+  });
+}
+
+/**
+ * Declare a named GeoJSON source. Omit `data` for a source the application fills at runtime through
+ * a framework adapter's `dataSources`.
+ */
+export function geojsonSource(
+  options: Readonly<
+    TileflowGeoJsonClusterOptions & {
+      attribution?: string;
+      data?: TileflowGeoJsonFeatureCollection | string;
+    }
+  > = {},
+): TileflowGeoJsonSource {
+  const data = options.data ?? {features: [], type: 'FeatureCollection'};
+  if (typeof data === 'string') {
+    if (!isHttpsUrl(data)) {
+      throw new Error('Tileflow GeoJSON source URLs must be absolute https:// URLs.');
+    }
+  } else if (
+    !isPlainRecord(data) ||
+    data.type !== 'FeatureCollection' ||
+    !Array.isArray(data.features)
+  ) {
+    throw new Error('Tileflow GeoJSON source data must be a FeatureCollection or an https:// URL.');
+  }
+  if (
+    typeof data !== 'string' &&
+    new TextEncoder().encode(JSON.stringify(data)).byteLength > tileflowInlineGeoJsonByteLimit
+  ) {
+    throw new Error(
+      `Tileflow inline GeoJSON is limited to ${tileflowInlineGeoJsonByteLimit} bytes. Use an https:// URL or runtime dataSources.`,
+    );
+  }
+  assertClusterOptions(options);
+  const attribution = options.attribution?.trim();
+  return Object.freeze({
+    ...(attribution ? {attribution} : {}),
+    ...pickClusterOptions(options),
+    data: typeof data === 'string' ? data : (Object.freeze(cloneJson(data)) as typeof data),
+    kind: 'geojson',
   });
 }
 
@@ -149,6 +231,154 @@ export function maplibreOverlay(options: {
   });
 }
 
+/**
+ * Draw a clustering GeoJSON source: sized bubbles, their counts, and the separate points. Layers are
+ * named `<id>-clusters`, `<id>-cluster-count` and `<id>-points`. The count uses the map's label font
+ * unless `font` names another. Framework adapters zoom into a clicked cluster.
+ */
+export function clusterOverlay(options: {
+  /** Bubble colours by point count: the first applies below `steps[0]`. */
+  colors?: readonly [string, string, string];
+  /** Zoom in when a cluster is clicked or tapped. Defaults to true. */
+  expandOnClick?: boolean;
+  /** An exact text-font stack, for maps whose labels use another font. */
+  font?: readonly string[];
+  id: string;
+  placement: TileflowOverlayPlacement;
+  /** Colour of the separate points. */
+  pointColor?: string;
+  /** Bubble radii in pixels, matching `colors`. */
+  radii?: readonly [number, number, number];
+  source: string;
+  /** The two point counts where bubbles change size and colour. */
+  steps?: readonly [number, number];
+  textColor?: string;
+}): TileflowMapLibreOverlay {
+  const colors = options.colors ?? ['#2563eb', '#7c3aed', '#db2777'];
+  const radii = options.radii ?? [16, 22, 30];
+  const [low, high] = options.steps ?? [100, 750];
+  if (!(low > 0 && high > low) || !radii.every((radius) => radius > 0)) {
+    throw new Error('Tileflow cluster steps must increase and radii must be positive.');
+  }
+  const metadata = (role: TileflowClusterLayerRole) => ({
+    [tileflowClusterMetadataKey]: {
+      expandOnClick: options.expandOnClick ?? true,
+      role,
+    },
+  });
+  const step = (values: readonly (number | string)[]) => [
+    'step',
+    ['get', 'point_count'],
+    values[0],
+    low,
+    values[1],
+    high,
+    values[2],
+  ];
+  return maplibreOverlay({
+    layers: [
+      {
+        filter: ['has', 'point_count'],
+        id: `${options.id}-clusters`,
+        metadata: metadata('cluster'),
+        paint: {
+          'circle-color': step(colors),
+          'circle-radius': step(radii),
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 2,
+        },
+        type: 'circle',
+      },
+      {
+        filter: ['has', 'point_count'],
+        id: `${options.id}-cluster-count`,
+        layout: {
+          'text-allow-overlap': true,
+          'text-field': ['get', 'point_count_abbreviated'],
+          ...(options.font ? {'text-font': [...options.font]} : {}),
+          'text-ignore-placement': true,
+          'text-size': 13,
+        },
+        metadata: metadata('count'),
+        paint: {'text-color': options.textColor ?? '#ffffff'},
+        type: 'symbol',
+      },
+      {
+        filter: ['!', ['has', 'point_count']],
+        id: `${options.id}-points`,
+        metadata: metadata('point'),
+        paint: {
+          'circle-color': options.pointColor ?? colors[0],
+          'circle-radius': 6,
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 1.5,
+        },
+        type: 'circle',
+      },
+    ],
+    placement: options.placement,
+    source: options.source,
+  });
+}
+
+/**
+ * Draw point density from a GeoJSON source or a hosted vector tileset. `weight` is a number or a
+ * MapLibre expression; values above 1 make a point count for more than one.
+ */
+export function heatmapOverlay(options: {
+  /** `[density, color]` stops from 0 to 1. Start transparent so empty areas stay clear. */
+  colors?: readonly (readonly [density: number, color: string])[];
+  id: string;
+  intensity?: unknown;
+  /** Above this zoom the layer is not drawn, for handing over to points or clusters. */
+  maxZoom?: number;
+  opacity?: unknown;
+  placement: TileflowOverlayPlacement;
+  radius?: unknown;
+  source: string;
+  /** The source-layer of a vector tileset. GeoJSON sources have none. */
+  sourceLayer?: string;
+  weight?: unknown;
+}): TileflowMapLibreOverlay {
+  const colors = options.colors ?? [
+    [0, 'rgba(33, 102, 172, 0)'],
+    [0.2, '#67a9cf'],
+    [0.4, '#d1e5f0'],
+    [0.6, '#fddbc7'],
+    [0.8, '#ef8a62'],
+    [1, '#b2182b'],
+  ];
+  if (
+    colors.length < 2 ||
+    colors.some(([density], index) => {
+      const previous = colors[index - 1]?.[0] ?? -1;
+      return !(density >= 0 && density <= 1 && density > previous);
+    })
+  ) {
+    throw new Error('Tileflow heatmap colors need at least two increasing densities from 0 to 1.');
+  }
+  const paint: Record<string, unknown> = {
+    'heatmap-color': ['interpolate', ['linear'], ['heatmap-density'], ...colors.flat()],
+    'heatmap-intensity': options.intensity ?? 1,
+    'heatmap-opacity': options.opacity ?? 0.8,
+    'heatmap-radius': options.radius ?? 30,
+    'heatmap-weight': options.weight ?? 1,
+  };
+  return maplibreOverlay({
+    layers: [
+      {
+        id: options.id,
+        ...(options.maxZoom === undefined ? {} : {maxzoom: options.maxZoom}),
+        paint,
+        ...(options.sourceLayer === undefined ? {} : {'source-layer': options.sourceLayer}),
+        type: 'heatmap',
+      },
+    ],
+    placement: options.placement,
+    source: options.source,
+  });
+}
+
 /** Remove one inherited keyed source or overlay. */
 export function remove(): TileflowRemoveOperation {
   return Object.freeze({op: 'remove'});
@@ -175,7 +405,7 @@ export class TileflowOverlayCompilationError extends Error {
 
 export function resolveTileflowHostedSources(
   mapId: string,
-  sources: Readonly<Record<string, TileflowHostedTilesetSource>> | undefined,
+  sources: Readonly<Record<string, TileflowSource>> | undefined,
   reservedSourceIds: ReadonlySet<string>,
 ): {
   definitions: Record<string, Record<string, unknown>>;
@@ -207,6 +437,10 @@ export function resolveTileflowHostedSources(
         `Source ID "${sourceId}" conflicts with a Tileflow source.`,
       );
     }
+    if (source.kind === 'geojson') {
+      definitions[sourceId] = createTileflowGeoJsonSourceDefinition(source);
+      continue;
+    }
     const duplicate = tilesets.get(source.tileset);
     if (duplicate) {
       throw new TileflowOverlayCompilationError(
@@ -233,16 +467,30 @@ export function resolveTileflowHostedSources(
   return {definitions, identities};
 }
 
+/** The MapLibre source definition of one declared GeoJSON source. */
+export function createTileflowGeoJsonSourceDefinition(
+  source: TileflowGeoJsonSource,
+): Record<string, unknown> {
+  return {
+    ...(source.attribution === undefined ? {} : {attribution: source.attribution}),
+    ...pickClusterOptions(source),
+    data: cloneJson(source.data),
+    type: 'geojson',
+  };
+}
+
 export function insertTileflowOverlays(input: {
   basemapLayers: readonly Record<string, unknown>[];
   mapId: string;
   overlays: Readonly<Record<string, TileflowMapLibreOverlay>> | undefined;
+  sourceDefinitions?: Readonly<Record<string, Record<string, unknown>>>;
   sourceIds: readonly string[];
 }): {
   identities: Record<string, TileflowOverlayIdentity>;
   layers: Record<string, unknown>[];
 } {
   const availableSources = new Set(input.sourceIds);
+  const labelFont = readTileflowLabelFont(input.basemapLayers);
   const identities: Record<string, TileflowOverlayIdentity> = {};
   const groups = new Map<TileflowOverlayPlacement, Record<string, unknown>[]>();
   const layerIds = new Set(
@@ -272,8 +520,18 @@ export function insertTileflowOverlays(input: {
         );
       }
       layerIds.add(layer.id);
+      if (readClusterRole(layer) && input.sourceDefinitions?.[overlay.source]?.cluster !== true) {
+        throw new TileflowOverlayCompilationError(
+          'TF_OVERLAY_CLUSTER_SOURCE_INVALID',
+          `${path}.source`,
+          `Cluster overlay "${overlayId}" needs a GeoJSON source declared with cluster: true.`,
+          `Use geojsonSource({cluster: true}) for source "${overlay.source}".`,
+        );
+      }
+      const label =
+        readClusterRole(layer) === 'count' ? withLabelFont(layer, labelFont, path) : layer;
       return {
-        ...cloneJson(layer),
+        ...cloneJson(label),
         source: overlay.source,
         metadata: {
           ...(isPlainRecord(layer.metadata) ? cloneJson(layer.metadata) : {}),
@@ -298,6 +556,104 @@ export function insertTileflowOverlays(input: {
   }
 
   return {identities, layers};
+}
+
+/** The font stack of the style's first text layer that a new label can share. */
+export function readTileflowLabelFont(
+  layers: readonly Record<string, unknown>[],
+): readonly string[] | undefined {
+  for (const layer of layers) {
+    const font = isPlainRecord(layer.layout) ? layer.layout['text-font'] : undefined;
+    if (
+      Array.isArray(font) &&
+      font.length > 0 &&
+      font.every((face) => typeof face === 'string' && !parseTileflowLineBackgroundFontStack(face))
+    ) {
+      return font as string[];
+    }
+  }
+  return undefined;
+}
+
+function readClusterRole(
+  layer: TileflowMapLibreOverlayLayer,
+): TileflowClusterLayerRole | undefined {
+  const metadata = isPlainRecord(layer.metadata) ? layer.metadata : undefined;
+  const cluster = metadata?.[tileflowClusterMetadataKey];
+  return isPlainRecord(cluster) ? (cluster.role as TileflowClusterLayerRole) : undefined;
+}
+
+function withLabelFont(
+  layer: TileflowMapLibreOverlayLayer,
+  font: readonly string[] | undefined,
+  path: string,
+): TileflowMapLibreOverlayLayer {
+  const layout = layer.layout as Record<string, unknown>;
+  if (layout['text-font'] !== undefined) return layer;
+  if (!font) {
+    throw new TileflowOverlayCompilationError(
+      'TF_OVERLAY_FONT_UNAVAILABLE',
+      `${path}.font`,
+      `Cluster count layer "${layer.id}" has no label font to share.`,
+      'Pass font to clusterOverlay() with a stack the map declares.',
+    );
+  }
+  return {...layer, layout: {...layout, 'text-font': [...font]}};
+}
+
+function pickClusterOptions(source: TileflowGeoJsonClusterOptions): TileflowGeoJsonClusterOptions {
+  return {
+    ...(source.cluster === undefined ? {} : {cluster: source.cluster}),
+    ...(source.clusterMaxZoom === undefined ? {} : {clusterMaxZoom: source.clusterMaxZoom}),
+    ...(source.clusterMinPoints === undefined ? {} : {clusterMinPoints: source.clusterMinPoints}),
+    ...(source.clusterProperties === undefined
+      ? {}
+      : {clusterProperties: cloneJson(source.clusterProperties)}),
+    ...(source.clusterRadius === undefined ? {} : {clusterRadius: source.clusterRadius}),
+  };
+}
+
+function assertClusterOptions(options: TileflowGeoJsonClusterOptions): void {
+  const {cluster, clusterMaxZoom, clusterMinPoints, clusterProperties, clusterRadius} = options;
+  if (cluster !== undefined && typeof cluster !== 'boolean') {
+    throw new Error('Tileflow GeoJSON cluster must be a boolean.');
+  }
+  if (clusterRadius !== undefined && !(Number.isFinite(clusterRadius) && clusterRadius > 0)) {
+    throw new Error('Tileflow clusterRadius must be a positive number of pixels.');
+  }
+  if (
+    clusterMaxZoom !== undefined &&
+    !(Number.isFinite(clusterMaxZoom) && clusterMaxZoom >= 0 && clusterMaxZoom <= 24)
+  ) {
+    throw new Error('Tileflow clusterMaxZoom must be a zoom from 0 to 24.');
+  }
+  if (
+    clusterMinPoints !== undefined &&
+    !(Number.isInteger(clusterMinPoints) && clusterMinPoints >= 2)
+  ) {
+    throw new Error('Tileflow clusterMinPoints must be an integer of at least 2.');
+  }
+  if (
+    !cluster &&
+    [clusterMaxZoom, clusterMinPoints, clusterProperties, clusterRadius].some(
+      (value) => value !== undefined,
+    )
+  ) {
+    throw new Error('Tileflow cluster options require cluster: true.');
+  }
+  for (const [name, value] of Object.entries(clusterProperties ?? {})) {
+    if (!Array.isArray(value) || value.length !== 2) {
+      throw new Error(`Tileflow clusterProperties.${name} must be [operator, mapExpression].`);
+    }
+  }
+}
+
+function isHttpsUrl(value: string): boolean {
+  try {
+    return new URL(value).protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 export function isSafeLocalPmtilesPath(value: unknown): value is string {

@@ -14,6 +14,7 @@ export type TileflowInteractionDiagnosticCode =
   | 'DUPLICATE_ANNOTATION_ID'
   | 'INVALID_FIELD'
   | 'INVALID_ANNOTATION'
+  | 'INVALID_DATA_LAYER'
   | 'INVALID_DOCUMENT'
   | 'LIMIT_EXCEEDED'
   | 'MISSING_VIEW'

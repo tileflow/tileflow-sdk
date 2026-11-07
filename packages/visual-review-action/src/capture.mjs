@@ -191,33 +191,48 @@ async function collectSemanticDiffs(tileflow, report, options, root, temporary) 
         results.push({map, message: 'The base branch has no matching config.', changes: []});
         continue;
       }
-      const result = await runTileflow(tileflow, options.cwd, [
-        'semantic-diff',
-        '--from-config',
-        baseConfig,
-        '--to-config',
-        options.config,
-        '--from-map',
-        map,
-        '--to-map',
-        map,
-        '--json',
-      ]);
-      const document = parseJson(result.stdout);
-      if (result.code !== 0 || !document?.diff) {
-        results.push({map, message: 'The semantic diff is unavailable.', changes: []});
+      const result = await runSemanticDiff(tileflow, options, baseConfig, map);
+      if (!result.diff) {
+        results.push({map, message: result.message, changes: []});
         continue;
       }
       results.push({
         map,
-        total: document.diff.summary.total,
-        changes: document.diff.changes.slice(0, limits.maximumChanges),
+        total: result.diff.summary.total,
+        changes: result.diff.changes.slice(0, limits.maximumChanges),
       });
     }
     return results;
   } finally {
     await git(root, ['worktree', 'remove', '--force', worktree]).catch(() => {});
   }
+}
+
+/**
+ * Map selectors are required for a multi-map config and rejected for a single-map one, so a side
+ * that turns out to have one map drops its selector and the comparison runs again.
+ */
+async function runSemanticDiff(tileflow, options, baseConfig, map) {
+  const selectors = {from: ['--from-map', map], to: ['--to-map', map]};
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const result = await runTileflow(tileflow, options.cwd, [
+      'semantic-diff',
+      '--from-config',
+      baseConfig,
+      '--to-config',
+      options.config,
+      ...selectors.from,
+      ...selectors.to,
+      '--json',
+    ]);
+    const document = parseJson(result.stdout);
+    if (result.code === 0 && document?.diff) return {diff: document.diff};
+    const failure = parseJson(result.stderr) ?? document;
+    const side = /^SEMANTIC_DIFF_(FROM|TO)_MAP_UNNECESSARY$/.exec(failure?.code ?? '')?.[1];
+    if (!side) return {message: `The semantic diff is unavailable: ${describeFailure(result)}`};
+    selectors[side.toLowerCase()] = [];
+  }
+  return {message: 'The semantic diff is unavailable.'};
 }
 
 async function extractBaselines(root, baseSha, baselinePath, destination) {
@@ -274,10 +289,16 @@ function findExecutable(cwd, root) {
  * blocks the user namespaces of its sandbox unless that exact binary is authorized.
  */
 async function prepareBrowser(tileflow, cwd) {
+  if (process.platform === 'linux' && process.env.RUNNER_ENVIRONMENT === 'github-hosted') {
+    const playwright = findPlaywrightCli(tileflow);
+    await run('sudo', [process.execPath, playwright, 'install-deps', 'chromium'], cwd);
+    await run(process.execPath, [playwright, 'install', '--only-shell', 'chromium'], cwd);
+    await authorizeBrowserSandbox(cwd);
+  }
   await run(tileflow, ['setup', 'capture'], cwd);
-  if (process.platform !== 'linux' || process.env.RUNNER_ENVIRONMENT !== 'github-hosted') return;
-  const playwright = findPlaywrightCli(tileflow);
-  await run('sudo', [process.execPath, playwright, 'install-deps', 'chromium'], cwd);
+}
+
+async function authorizeBrowserSandbox(cwd) {
   const cache = join(homedir(), '.cache', 'ms-playwright');
   const shells = readdirSync(cache)
     .filter((name) => name.startsWith('chromium_headless_shell-'))
@@ -293,8 +314,6 @@ async function prepareBrowser(tileflow, cwd) {
     ),
     '',
   ].join('\n');
-  await run('sudo', ['chown', '-R', 'root:root', cache], cwd);
-  await run('sudo', ['chmod', '-R', 'go-w', cache], cwd);
   const profilePath = '/etc/apparmor.d/tileflow-playwright-chromium';
   await run('sudo', ['tee', profilePath], cwd, profile);
   await run('sudo', ['apparmor_parser', '-r', profilePath], cwd);

@@ -66,6 +66,7 @@ for a walkthrough and troubleshooting.
   [Vue](https://tileflow.dev/docs/integrations/vue), [Svelte](https://tileflow.dev/docs/integrations/svelte),
   or [MapLibre](https://tileflow.dev/docs/integrations/maplibre-gl-js) guide.
 - **Create images:** capture maps and compare designs with the [Capture package](packages/capture/README.md).
+- **Review map changes:** see before and after renders in pull requests with the [visual review action](packages/visual-review-action/README.md).
 - **Ship your map:** [build production assets](https://tileflow.dev/docs/development-and-deployment/production-builds),
   then [self-host](https://tileflow.dev/docs/development-and-deployment/self-hosting) or
   [deploy to Tileflow](https://tileflow.dev/docs/development-and-deployment/deployment).

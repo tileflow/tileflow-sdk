@@ -146,9 +146,9 @@ function formatPixels(pixels, total) {
 }
 
 function renderScene(scene, imageBase) {
-  const image = (kind, alt) =>
+  const image = (kind, alt, width = '100%') =>
     scene.images[kind]
-      ? `<img alt="${alt}" src="${imageBase}/${evidenceFile(scene.scene, kind)}" width="100%">`
+      ? `<img alt="${alt}" src="${imageBase}/${evidenceFile(scene.scene, kind)}" width="${width}">`
       : '<em>none</em>';
   const lines = [
     `<details open><summary><strong>${escapeText(scene.scene)}</strong> · ${escapeText(scene.map)}</summary>`,
@@ -158,7 +158,7 @@ function renderScene(scene, imageBase) {
   ];
   if (scene.images.diff) {
     lines.push(`<tr><th colspan="2">Changed pixels</th></tr>`);
-    lines.push(`<tr><td colspan="2">${image('diff', 'Changed pixels')}</td></tr>`);
+    lines.push(`<tr><td colspan="2">${image('diff', 'Changed pixels', '50%')}</td></tr>`);
   }
   lines.push('</table>', '', '</details>', '');
   return lines;

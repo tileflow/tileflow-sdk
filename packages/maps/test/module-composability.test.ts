@@ -25,7 +25,16 @@ import {
   water,
 } from '@tileflow/core';
 import {createStyleWithInspection} from '@tileflow/core/build';
-import {baedeker, blueprint, civica, map1777, siegfried, soundings, streets} from '../src';
+import {
+  baedeker,
+  blueprint,
+  civica,
+  map1777,
+  outdoors,
+  siegfried,
+  soundings,
+  streets,
+} from '../src';
 import {streetsPreparedModels, streetsTreeIconIds} from './streets-assets';
 import {streetsPoiImageIds} from './streets-poi-fixture';
 
@@ -57,6 +66,7 @@ const officialMaps = {
   blueprint: blueprint,
   siegfried,
   soundings,
+  outdoors,
 };
 
 const preparedOfficialAssets = {
@@ -65,6 +75,8 @@ const preparedOfficialAssets = {
     icons: {
       ids: [
         ...streetsTreeIconIds,
+        'outdoors-peak',
+        'outdoors-peak-dark',
         'baedeker-hachures',
         'baedeker-orchard',
         'baedeker-paper-grain',

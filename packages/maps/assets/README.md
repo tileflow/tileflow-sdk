@@ -17,8 +17,11 @@ rectangle when no supported network classification is available.
 Official maps use the same public asset contract as application maps. Streets declares
 `icons: [streetsIcons]`; its light, dark, and monochrome themes select semantic image IDs from that
 shared atlas. Faded themes retain the category-colored POI artwork; monochrome themes use matching
-grayscale markers. Every official map is an independent root and declares only its own asset
-descriptors.
+grayscale markers. Every official map except Outdoors is an independent root and declares only its
+own asset descriptors. Outdoors extends Streets and declares `icons: [streetsIcons, outdoorsIcons]`.
+
+The `outdoors/icons` directory holds `outdoors-peak` and `outdoors-peak-dark`, original summit
+triangles for light and dark grounds.
 
 Streets also declares `models: [streetsModels]`. Its seven original tree models live in
 `streets/models/`, each with a lighter `.far.glb` companion. The `streets-tree-*.pattern.svg`

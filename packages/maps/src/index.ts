@@ -3,6 +3,7 @@ import {blueprint as blueprintDefinition} from './official/blueprint';
 import {civica as civicaDefinition} from './official/civica';
 import {freezeOfficialMap} from './official/freeze';
 import {map1777 as map1777Definition} from './official/map-1777';
+import {outdoors as outdoorsDefinition} from './official/outdoors';
 import {siegfried as siegfriedDefinition} from './official/siegfried';
 import {soundings as soundingsDefinition} from './official/soundings';
 import {streets as streetsDefinition} from './official/streets';
@@ -16,6 +17,7 @@ export {
   civicaIcons,
   map1777Fonts,
   map1777Icons,
+  outdoorsIcons,
   siegfriedFonts,
   siegfriedIcons,
   soundingsIcons,
@@ -32,6 +34,8 @@ export const map1777 = freezeOfficialMap(map1777Definition);
 export const blueprint = freezeOfficialMap(blueprintDefinition);
 export const siegfried = freezeOfficialMap(siegfriedDefinition);
 export const soundings = freezeOfficialMap(soundingsDefinition);
+export const outdoors = freezeOfficialMap(outdoorsDefinition);
 
 export {streetsThemes};
+export {outdoorsThemes} from './official/outdoors-themes';
 export {siegfriedThemes} from './official/siegfried-themes';

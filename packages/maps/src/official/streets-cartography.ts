@@ -219,10 +219,10 @@ export function withStreetsCartography(base: TileflowMap) {
   });
 }
 
-function stackOf(module: object): TileflowNamedRenderStack {
+export function stackOf(module: object): TileflowNamedRenderStack {
   return 'renderStack' in module ? (module.renderStack as TileflowNamedRenderStack) : {};
 }
-function withoutStack<T extends object>(module: T): T & {readonly renderStack?: undefined} {
+export function withoutStack<T extends object>(module: T): T & {readonly renderStack?: undefined} {
   const result = {...module};
   if ('renderStack' in result) delete result.renderStack;
   return result as T & {readonly renderStack?: undefined};

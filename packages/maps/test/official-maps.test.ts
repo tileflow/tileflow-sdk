@@ -36,6 +36,8 @@ import {
   map1777,
   map1777Fonts,
   map1777Icons,
+  outdoors,
+  outdoorsIcons,
   siegfried,
   siegfriedFonts,
   siegfriedIcons,
@@ -116,6 +118,8 @@ const officialIconIds = [
   'major-transit',
 
   'oneway',
+  'outdoors-peak',
+  'outdoors-peak-dark',
   'parking',
   'road-shield-circle-neutral',
   'road-shield-rectangle-blue',
@@ -435,6 +439,7 @@ test('official maps declare their expected icon and typography providers', () =>
   assert.equal(resolvedMap1777.glyphs, undefined);
   assert.deepEqual(resolvedBlueprint.icons, [blueprintIcons]);
   assert.deepEqual(resolvedSiegfried.icons, [siegfriedIcons]);
+  assert.deepEqual(resolveMap(outdoors).icons, [streetsIcons, outdoorsIcons]);
   assert.deepEqual(resolvedSoundings.icons, [soundingsIcons]);
   assert.deepEqual(resolvedBaedeker.fonts, [baedekerFonts]);
   assert.deepEqual(resolvedSiegfried.fonts, [siegfriedFonts]);

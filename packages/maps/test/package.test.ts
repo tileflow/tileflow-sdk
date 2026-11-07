@@ -109,6 +109,7 @@ test('publishes every official icon and font directory with provenance', async (
       'siegfried-water-lines.pattern.svg',
       'siegfried-wetland.pattern.svg',
     ],
+    outdoors: ['outdoors-peak-dark.svg', 'outdoors-peak.svg'],
     soundings: [
       'soundings-boat-hoist.svg',
       'soundings-boatyard.svg',
@@ -346,7 +347,7 @@ test('imports and compiles all packaged official maps against public Core APIs',
     const mapExports = Object.entries(maps)
       .filter(([, value]) => value && typeof value === 'object' && typeof value.id === 'string')
       .map(([name]) => name).sort();
-    if (JSON.stringify(mapExports) !== JSON.stringify(['baedeker', 'blueprint', 'civica', 'map1777', 'siegfried', 'soundings', 'streets'])) {
+    if (JSON.stringify(mapExports) !== JSON.stringify(['baedeker', 'blueprint', 'civica', 'map1777', 'outdoors', 'siegfried', 'soundings', 'streets'])) {
       throw new Error('Official map exports do not match the supported catalog: ' + mapExports.join(', '));
     }
     for (const name of ['cyberpunk', 'matrix', 'superTileWorld', 'cyberpunkFonts', 'matrixIcons', 'superTileWorldIcons', 'sanFrancisto', 'sanFrancistoIcons']) {
@@ -359,6 +360,7 @@ test('imports and compiles all packaged official maps against public Core APIs',
       ['map1777', 'map-1777'],
       ['blueprint', 'blueprint'],
       ['siegfried', 'siegfried'],
+      ['outdoors', 'outdoors'],
       ['soundings', 'soundings'],
     ]) {
       if (!maps[name] || typeof maps[name] !== 'object') process.exit(2);
@@ -381,7 +383,7 @@ test('imports and compiles all packaged official maps against public Core APIs',
               'map-1777-crop-cross', 'map-1777-crop-hatch', 'map-1777-crop-lines', 'map-1777-heath', 'map-1777-orchard',
               'map-1777-paper-grain', 'map-1777-residential', 'map-1777-sand',
               'map-1777-water-ripples', 'map-1777-wetland', 'map-1777-woodland',
-              'major-transit', 'oneway', 'parking', 'road-shield-circle-neutral',
+              'major-transit', 'oneway', 'outdoors-peak', 'outdoors-peak-dark', 'parking', 'road-shield-circle-neutral',
               'road-shield-rectangle-blue', 'road-shield-rectangle-green',
               'road-shield-rectangle-neutral', 'road-shield-rectangle-orange',
               'road-shield-rectangle-red', 'road-shield-rectangle-yellow',

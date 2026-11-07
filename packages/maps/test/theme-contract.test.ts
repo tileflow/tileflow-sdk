@@ -6,6 +6,7 @@ import {
   blueprint,
   civica,
   map1777,
+  outdoors,
   siegfried,
   siegfriedThemes,
   soundings,
@@ -129,7 +130,16 @@ test('every official module, render stack, and terrain value has a valid semanti
     water: ['water', 'hydro', 'surface', 'labels'],
   };
 
-  for (const map of [streets, baedeker, civica, map1777, blueprint, siegfried, soundings]) {
+  for (const map of [
+    streets,
+    baedeker,
+    civica,
+    map1777,
+    blueprint,
+    siegfried,
+    soundings,
+    outdoors,
+  ]) {
     assert.deepEqual(
       auditTileflowMapThemeValues(resolveMap(map)),
       [],
@@ -202,7 +212,16 @@ test('Siegfried light and dark expose identical semantic vocabularies', () => {
 });
 
 test('every official map has a deterministic complete theme collection', () => {
-  for (const map of [streets, baedeker, civica, map1777, blueprint, siegfried, soundings]) {
+  for (const map of [
+    streets,
+    baedeker,
+    civica,
+    map1777,
+    blueprint,
+    siegfried,
+    soundings,
+    outdoors,
+  ]) {
     const resolved = resolveMap(map);
     assert.ok(Object.keys(resolved.themes).length > 0, `${map.id} has no themes`);
     assert.ok(resolved.themes[resolved.defaultTheme], `${map.id} has an invalid defaultTheme`);

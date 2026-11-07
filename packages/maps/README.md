@@ -67,11 +67,12 @@ The CLI owns the interface; compiler and runtime changes require rebuilding thos
   vermilion landmarks.
 - `map1777` (1777): 1777 ink and watercolor on current data, with 3D and four times of day.
 - `siegfried`: a terrain atlas with coordinated light/dark ink palettes, contours, and engraved patterns.
+- `outdoors`: Streets on natural ground with hillshade, contours, trails, and summits. It needs
+  Terrain or your own DEM; never rely on it alone for route safety.
 - `soundings`: bathymetric reference cartography with depth bands, continuous relief, and port context.
 - `blueprint`: a dark architectural drawing style, with a default camera centered on San Francisco.
 
-Every official map is a complete, independent root using the same Core compiler. Official map
-objects are deeply frozen shared instances. Do not mutate them; use `defineMap({extends: ...})`
+Outdoors extends Streets; the rest are independent roots on the same Core compiler. Official map objects are deeply frozen shared instances. Do not mutate them; use `defineMap({extends: ...})`
 to create an application-owned map.
 
 ### Streets appearance
@@ -82,7 +83,7 @@ presets. Default retains the configuration key `light`: `theme="light" timeOfDay
 selects `dark`, while `theme="light" timeOfDay="day"` selects `light`. The other concrete themes
 are `dawn`, `dusk`, `faded`, `monochrome`, `dawn-faded`, `dawn-monochrome`, `dusk-faded`,
 `dusk-monochrome`, `dark-faded`, and `dark-monochrome`. All twelve appearances share roads, label placement, fonts and icon artwork.
-Colors and lighting vary; flat-map colors are authored independently.
+Colors and lighting vary.
 
 Scene lighting is calibrated against Mapbox Standard while retaining Streets' slate-blue roads,
 neutral urban surfaces, pale warm rural ground, green parks and cream buildings. All appearances
@@ -96,7 +97,7 @@ Urban and education areas use neutral surfaces; farmland stays pale, mapped orch
 green. Activity areas tint the ground by activity until buildings take over. Footprints drawn
 by building parts (`extrude: false`) are omitted from the flat building layers. Streets
 suspends duplicate flat building footprints in 3D so roads remain visible under open landmarks;
-2D mode restores ordinary footprints. Normal 3D buildings keep a small neutral/active tone difference. Authored models use
+2D mode restores ordinary footprints. Authored models use
 the neutral building color and independently configurable window shading.
 
 Streets packages DINish Medium for roads, house numbers and POIs, and Bold for shields, approximating

@@ -34,6 +34,9 @@ export const soundingsIcons = packageDirectory('assets/soundings/icons');
 /** Package-owned Siegfried patterns. This root does not compose Streets assets. */
 export const siegfriedIcons = packageDirectory('assets/siegfried/icons');
 
+/** Package-owned Outdoors symbols. The map composes them after the Streets icons it extends. */
+export const outdoorsIcons = packageDirectory('assets/outdoors/icons');
+
 /** Package-owned Cívica print lettering and its license. */
 export const civicaFonts = packageDirectory('assets/civica/fonts');
 

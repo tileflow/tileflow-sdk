@@ -2297,66 +2297,78 @@ test('pending edits in a GeoPackage write-ahead log are read', async (t) => {
   const path = join(directory, 'live.gpkg');
   const point = (x: number) => gpkgGeometry(wkb({coordinates: [x, 41], type: 'Point'}));
   writeGeopackage(path, [{name: 'data', rows: [{geometry: point(2), id: 1}]}]);
+  // Closed here, not in a hook: Windows cannot delete the workspace while this handle is open.
   const writer = new DatabaseSync(path);
-  t.after(() => writer.close());
-  writer.exec('PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;');
-  writer.prepare('INSERT INTO data(id, geom) VALUES (2, ?)').run(point(3));
-  assert.ok((await readFile(`${path}-wal`)).length > 0);
-  const result = await build(directory, ['live.gpkg', '--maxzoom', '6', '--json']);
-  assert.equal(result.code, 0, result.stderr);
-  assert.equal(JSON.parse(result.stdout).input.features, 2);
+  try {
+    writer.exec('PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;');
+    writer.prepare('INSERT INTO data(id, geom) VALUES (2, ?)').run(point(3));
+    assert.ok((await readFile(`${path}-wal`)).length > 0);
+    const result = await build(directory, ['live.gpkg', '--maxzoom', '6', '--json']);
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).input.features, 2);
+  } finally {
+    writer.close();
+  }
 });
 
-test('interrupting a GeoPackage read removes its temporary files and touches nothing else', async (t) => {
-  const directory = await workspace(t);
-  writeGeopackage(join(directory, 'big.gpkg'), [
-    {
-      name: 'data',
-      rows: Array.from({length: 300_000}, (_, index) => ({
-        geometry: gpkgGeometry(
-          wkb({coordinates: [(index % 900) / 10, (index % 700) / 10], type: 'Point'}),
-        ),
-        id: index + 1,
-      })),
-    },
-  ]);
-  const child = spawn(process.execPath, cliFixtureArguments(['tileset', 'build', 'big.gpkg']), {
-    cwd: directory,
-    stdio: ['ignore', 'ignore', 'pipe'],
-  });
-  await new Promise<void>((resolve) => {
-    child.stderr.on('data', (chunk) => {
-      if (String(chunk).includes('Reading features')) resolve();
+test(
+  'interrupting a GeoPackage read removes its temporary files and touches nothing else',
+  {skip: !signalsReachHandlers},
+  async (t) => {
+    const directory = await workspace(t);
+    writeGeopackage(join(directory, 'big.gpkg'), [
+      {
+        name: 'data',
+        rows: Array.from({length: 300_000}, (_, index) => ({
+          geometry: gpkgGeometry(
+            wkb({coordinates: [(index % 900) / 10, (index % 700) / 10], type: 'Point'}),
+          ),
+          id: index + 1,
+        })),
+      },
+    ]);
+    const child = spawn(process.execPath, cliFixtureArguments(['tileset', 'build', 'big.gpkg']), {
+      cwd: directory,
+      stdio: ['ignore', 'ignore', 'pipe'],
     });
-  });
-  child.kill('SIGINT');
-  const code = await new Promise((resolve) => child.on('close', resolve));
-  assert.equal(code, 130);
-  assert.deepEqual(await readdir(directory), ['big.gpkg']);
-});
+    await new Promise<void>((resolve) => {
+      child.stderr.on('data', (chunk) => {
+        if (String(chunk).includes('Reading features')) resolve();
+      });
+    });
+    child.kill('SIGINT');
+    const code = await new Promise((resolve) => child.on('close', resolve));
+    assert.equal(code, 130);
+    assert.deepEqual(await readdir(directory), ['big.gpkg']);
+  },
+);
 
-test('interrupting a KML read removes its temporary files', async (t) => {
-  const directory = await workspace(t);
-  const placemark = (index: number) =>
-    `<Placemark><name>n${index}</name><Point><coordinates>${(index % 900) / 10},${(index % 700) / 10}</coordinates></Point></Placemark>`;
-  await writeFile(
-    join(directory, 'big.kml'),
-    `<kml>${Array.from({length: 600_000}, (_, index) => placemark(index)).join('')}</kml>`,
-  );
-  const child = spawn(process.execPath, cliFixtureArguments(['tileset', 'build', 'big.kml']), {
-    cwd: directory,
-    stdio: ['ignore', 'ignore', 'pipe'],
-  });
-  await new Promise<void>((resolve) => {
-    child.stderr.on('data', (chunk) => {
-      if (String(chunk).includes('Reading features')) resolve();
+test(
+  'interrupting a KML read removes its temporary files',
+  {skip: !signalsReachHandlers},
+  async (t) => {
+    const directory = await workspace(t);
+    const placemark = (index: number) =>
+      `<Placemark><name>n${index}</name><Point><coordinates>${(index % 900) / 10},${(index % 700) / 10}</coordinates></Point></Placemark>`;
+    await writeFile(
+      join(directory, 'big.kml'),
+      `<kml>${Array.from({length: 600_000}, (_, index) => placemark(index)).join('')}</kml>`,
+    );
+    const child = spawn(process.execPath, cliFixtureArguments(['tileset', 'build', 'big.kml']), {
+      cwd: directory,
+      stdio: ['ignore', 'ignore', 'pipe'],
     });
-  });
-  child.kill('SIGINT');
-  const code = await new Promise((resolve) => child.on('close', resolve));
-  assert.equal(code, 130);
-  assert.deepEqual(await readdir(directory), ['big.kml']);
-});
+    await new Promise<void>((resolve) => {
+      child.stderr.on('data', (chunk) => {
+        if (String(chunk).includes('Reading features')) resolve();
+      });
+    });
+    child.kill('SIGINT');
+    const code = await new Promise((resolve) => child.on('close', resolve));
+    assert.equal(code, 130);
+    assert.deepEqual(await readdir(directory), ['big.kml']);
+  },
+);
 
 async function assertNoTemporaryFiles(directory: string): Promise<void> {
   const names = await readdir(directory);

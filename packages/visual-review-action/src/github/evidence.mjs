@@ -1,4 +1,7 @@
 const maximumAttempts = 4;
+const placeholderPath = 'README.md';
+const placeholder =
+  'Evidence for the Tileflow visual review action. Files here are managed automatically.\n';
 
 /**
  * Writes to the evidence branch through the Git Data API, so no job in this stage needs a checkout
@@ -18,11 +21,17 @@ export async function writeEvidence(github, branch, files, message, removePrefix
     }
     if (removePrefixes.length > 0 && parent) {
       const {tree} = await github.get(`/git/trees/${parent}?recursive=1`);
-      for (const entry of tree) {
-        const removed = removePrefixes.some((prefix) => entry.path.startsWith(prefix));
-        if (entry.type === 'blob' && removed) {
-          entries.push({path: entry.path, mode: '100644', type: 'blob', sha: null});
-        }
+      const blobs = tree.filter((entry) => entry.type === 'blob');
+      const removed = blobs.filter(({path}) =>
+        removePrefixes.some((prefix) => path.startsWith(prefix)),
+      );
+      for (const {path} of removed) {
+        entries.push({path, mode: '100644', type: 'blob', sha: null});
+      }
+      // GitHub refuses a tree update that would leave the tree empty.
+      if (removed.length > 0 && removed.length === blobs.length && files.length === 0) {
+        const blob = await github.post('/git/blobs', {content: placeholder, encoding: 'utf-8'});
+        entries.push({path: placeholderPath, mode: '100644', type: 'blob', sha: blob.sha});
       }
     }
     if (entries.length === 0) return parent;

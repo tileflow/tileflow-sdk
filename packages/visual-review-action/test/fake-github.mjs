@@ -53,7 +53,7 @@ export async function startFakeGitHub(initial = {}) {
     [
       'POST',
       /^\/git\/blobs$/,
-      (_, body) => [201, {sha: blob(Buffer.from(body.content, 'base64'))}],
+      (_, body) => [201, {sha: blob(Buffer.from(body.content, body.encoding))}],
     ],
     [
       'GET',
@@ -79,6 +79,7 @@ export async function startFakeGitHub(initial = {}) {
           if (entry.sha === null) tree.delete(entry.path);
           else tree.set(entry.path, entry.sha);
         }
+        if (body.base_tree && tree.size === 0) return [404, {message: 'Not Found'}];
         const sha = id(JSON.stringify([...tree]));
         state.trees.set(sha, tree);
         return [201, {sha}];

@@ -254,7 +254,7 @@ describe('publishing stages', () => {
     assert.deepEqual(main.get('test/visual-baselines/madrid.png'), png());
     assert.ok(main.has('test/visual-baselines/madrid.receipt.json'));
     const remaining = [...github.files('tileflow-visual-review').keys()];
-    assert.deepEqual(remaining, [], 'closing clears the evidence for this pull request');
+    assert.deepEqual(remaining, ['README.md'], 'closing clears the evidence for this pull request');
   });
 
   it('ignores a forged bot comment when updating its report', async () => {
@@ -342,7 +342,7 @@ describe('publishing stages', () => {
     await runApprove(env);
     await runPromote({...env, TILEFLOW_REVIEW_MERGED: 'false'});
     assert.equal(github.files('main').has('test/visual-baselines/madrid.png'), false);
-    assert.deepEqual([...github.files('tileflow-visual-review').keys()], []);
+    assert.deepEqual([...github.files('tileflow-visual-review').keys()], ['README.md']);
   });
 
   it('does not promote when different commits merged than were approved', async () => {

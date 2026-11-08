@@ -273,6 +273,8 @@ export const tileflowWorldLayerFields = Object.freeze({
     name: {type: 'String'},
     'name_<lang>': {type: 'String'},
     name_latin: {type: 'String'},
+    network: {type: 'String'},
+    official: {type: 'Number'},
     oneway: {type: 'Boolean'},
     outer_radius_m: {type: 'Number', required: true},
     radius_m: {type: 'Number', required: true},

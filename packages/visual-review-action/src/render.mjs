@@ -28,11 +28,12 @@ export function summarize(report, baselineEdits = []) {
     };
   }
   if (pending.length > 0) {
-    const label = pending.length === 1 ? 'scene needs' : 'scenes need';
+    const noun = report.scenes.length === 1 ? 'scene' : 'scenes';
+    const verb = pending.length === 1 ? 'needs' : 'need';
     return {
       state: 'failure',
       verdict: 'changed',
-      title: `${pending.length} of ${report.scenes.length} ${label} review`,
+      title: `${pending.length} of ${report.scenes.length} ${noun} ${verb} review`,
       pending,
       noise,
     };

@@ -3,10 +3,13 @@ import {basename, extname, join, posix} from 'node:path';
 import type {Readable} from 'node:stream';
 import {pipeline} from 'node:stream/promises';
 import yauzl, {type Entry, type ZipFile} from 'yauzl';
-import {TilesetBuildError} from './errors';
+import {listChoices, TilesetBuildError} from './errors';
 
 const projectionExtension = '.prj';
 const dataExtensions = ['.shp', '.dbf', '.cpg'];
+/** Entries are listed in memory, so their number is bounded before the first one is opened. */
+const maximumEntries = 65_536;
+const maximumKmlBytes = 4 * 1024 ** 3;
 
 /** One Shapefile chosen from a zip. Files are written under fixed names, never archive paths. */
 export class ZippedShapefile {
@@ -82,14 +85,98 @@ export class ZippedShapefile {
   }
 }
 
-function isShapefile(entry: Entry): boolean {
+/**
+ * The KML document inside a KMZ. It is streamed straight into the parser, so nothing from the
+ * archive reaches the disk, and yauzl stops any entry that inflates past its declared size.
+ */
+export class ZippedKml {
+  private constructor(
+    private readonly zip: ZipFile,
+    private readonly entry: Entry,
+  ) {}
+
+  static async open(path: string, requested: string | undefined): Promise<ZippedKml> {
+    const zip = await openZip(path);
+    try {
+      const entry = chooseKml((await listEntries(zip)).filter(isKml), requested);
+      if (entry.uncompressedSize > maximumKmlBytes) {
+        throw new TilesetBuildError(
+          'TF_TILESET_BUILD_INPUT_LIMIT',
+          'input',
+          `${entry.fileName} expands to more than ${maximumKmlBytes / 1024 ** 3} GiB. Convert it to a format that can be streamed from disk first.`,
+        );
+      }
+      return new ZippedKml(zip, entry);
+    } catch (error) {
+      zip.close();
+      throw error;
+    }
+  }
+
+  get uncompressedBytes(): number {
+    return this.entry.uncompressedSize;
+  }
+
+  async *chunks(): AsyncGenerator<Buffer> {
+    try {
+      for await (const chunk of await openEntry(this.zip, this.entry)) yield chunk as Buffer;
+    } catch (error) {
+      throw unreadable(error);
+    }
+  }
+
+  close(): void {
+    this.zip.close();
+  }
+}
+
+function isDataEntry(entry: Entry, extension: string): boolean {
   const name = entry.fileName;
   return (
     !name.endsWith('/') &&
-    extname(name).toLowerCase() === '.shp' &&
+    extname(name).toLowerCase() === extension &&
     !basename(name).startsWith('.') &&
     !name.split('/').includes('__MACOSX')
   );
+}
+
+function isShapefile(entry: Entry): boolean {
+  return isDataEntry(entry, '.shp');
+}
+
+function isKml(entry: Entry): boolean {
+  return isDataEntry(entry, '.kml');
+}
+
+/** `doc.kml` is the name the KMZ convention gives the main document; anything else must be unique. */
+function chooseKml(documents: readonly Entry[], requested: string | undefined): Entry {
+  const names = documents.map((entry) => entry.fileName).sort();
+  if (names.length === 0) {
+    throw new TilesetBuildError(
+      'TF_TILESET_BUILD_ZIP_ENTRY_INVALID',
+      'input',
+      'The KMZ has no .kml file.',
+    );
+  }
+  if (requested !== undefined) {
+    const match = documents.find((entry) => entry.fileName === requested);
+    if (match) return match;
+    throw new TilesetBuildError(
+      'TF_TILESET_BUILD_ZIP_ENTRY_INVALID',
+      'zipEntry',
+      `The KMZ has no KML document named "${requested}". It has: ${listChoices(names)}.`,
+    );
+  }
+  const main = documents.find((entry) => entry.fileName.toLowerCase() === 'doc.kml');
+  if (main) return main;
+  if (documents.length > 1) {
+    throw new TilesetBuildError(
+      'TF_TILESET_BUILD_ZIP_ENTRY_INVALID',
+      'zipEntry',
+      `The KMZ has ${names.length} KML documents and no doc.kml. Choose one with --zip-entry: ${listChoices(names)}.`,
+    );
+  }
+  return documents[0];
 }
 
 function chooseShapefile(shapefiles: readonly Entry[], requested: string | undefined): Entry {
@@ -101,7 +188,7 @@ function chooseShapefile(shapefiles: readonly Entry[], requested: string | undef
       'The zip has no .shp file. Only Shapefiles can be read from a zip; extract other formats first.',
     );
   }
-  const listed = `${names.slice(0, 20).join(', ')}${names.length > 20 ? `, and ${names.length - 20} more` : ''}`;
+  const listed = listChoices(names);
   if (requested !== undefined) {
     const match = shapefiles.find((entry) => entry.fileName === requested);
     if (match) return match;
@@ -139,6 +226,16 @@ function listEntries(zip: ZipFile): Promise<Entry[]> {
     const entries: Entry[] = [];
     zip.on('entry', (entry: Entry) => {
       entries.push(entry);
+      if (entries.length > maximumEntries) {
+        reject(
+          new TilesetBuildError(
+            'TF_TILESET_BUILD_INPUT_LIMIT',
+            'input',
+            `The archive has more than ${maximumEntries} entries.`,
+          ),
+        );
+        return;
+      }
       zip.readEntry();
     });
     zip.once('end', () => resolve(entries));
@@ -157,6 +254,7 @@ function openEntry(zip: ZipFile, entry: Entry): Promise<Readable> {
 }
 
 function unreadable(error: unknown): TilesetBuildError {
+  if (error instanceof TilesetBuildError) return error;
   const detail = error instanceof Error ? error.message : 'unknown error';
   return new TilesetBuildError(
     'TF_TILESET_BUILD_INPUT_INVALID',

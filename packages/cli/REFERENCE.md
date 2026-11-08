@@ -21,19 +21,40 @@ npx tileflow tileset build ./data/stores.geojson -o ./data/stores.pmtiles --json
 
 ### Inputs
 
-| Format                    | Detected from                                                | Notes                                                                  |
-| ------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------- |
-| GeoJSON                   | `.geojson`, `.json`                                          | FeatureCollection, Feature or geometry. Streamed.                      |
-| Newline-delimited GeoJSON | `.ndjson`, `.geojsonl`, `.geojsons`, `.geojsonseq`, `.jsonl` | One Feature or geometry per line; RFC 8142 separators are accepted.    |
-| CSV                       | `.csv`, `.tsv`                                               | UTF-8 with a header row. Comma, semicolon, tab or pipe delimited.      |
-| Shapefile                 | `.shp`, or `.zip` holding one                                | Reads `.dbf`, `.prj` and `.cpg` beside it. Z and M values are ignored. |
+| Format                    | Detected from                                                | Notes                                                                        |
+| ------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| GeoJSON                   | `.geojson`, `.json`                                          | FeatureCollection, Feature or geometry. Streamed.                            |
+| Newline-delimited GeoJSON | `.ndjson`, `.geojsonl`, `.geojsons`, `.geojsonseq`, `.jsonl` | One Feature or geometry per line; RFC 8142 separators are accepted.          |
+| CSV                       | `.csv`, `.tsv`                                               | UTF-8 with a header row. Comma, semicolon, tab or pipe delimited.            |
+| Shapefile                 | `.shp`, or `.zip` holding one                                | Reads `.dbf`, `.prj` and `.cpg` beside it. Z and M values are ignored.       |
+| GeoPackage                | `.gpkg`                                                      | One feature table. Needs Node.js 22.13 or later. Z and M values are ignored. |
+| KML                       | `.kml`, or `.kmz` holding one                                | Placemarks only. Altitude and styles are ignored.                            |
+| GPX                       | `.gpx`                                                       | Waypoints, routes and tracks each become a feature.                          |
 
-Pass `--format csv|geojson|geojsonseq|shapefile` when the extension is misleading. A zip with several
-Shapefiles needs `--zip-entry <path>` to choose one. Other formats inside a zip are not read. Other formats, such as GeoPackage, KML or FlatGeobuf, are not supported.
+Pass `--format csv|geojson|geojsonseq|geopackage|gpx|kml|shapefile` when the extension is misleading. A
+zip with several Shapefiles, or a KMZ with several KML documents and no `doc.kml`, needs
+`--zip-entry <path>` to choose one. Other formats inside a zip are not read. Other formats, such as
+FlatGeobuf, are not supported.
 
 CSV coordinate columns are found by name: `lon`, `lng`, `long`, `longitude`, `lat`, `latitude`, in
 any case. Use `--lon-column` and `--lat-column` for anything else. Columns are typed as a whole, so a
 value like `01234` keeps a whole column as text, and empty cells are omitted from the feature.
+
+A GeoPackage with several feature tables needs `--input-layer <table>`, and the error lists them. The
+source-layer name then defaults to that table unless you pass `--layer`. The integer primary key
+becomes the feature ID, and attributes keep their SQLite types. BLOB and generated columns are skipped
+with a warning. SQL views, curved geometries and the extended GeoPackage binary encoding are not read.
+The file is only read, and edits still pending in a write-ahead log are included.
+
+KML features get `name`, `description`, `address`, `phoneNumber`, `timestamp`, `begin`, `end`, and
+`folder` for the nearest enclosing Folder, plus every `ExtendedData` value. Values stay text unless a
+`Schema` declares a numeric or Boolean type, so `--rank-by` needs a declared numeric field. If an
+`ExtendedData` value repeats one of those names, the last one is kept with a warning. A
+`MultiGeometry` stays one feature when its parts share a type. Overlays and network links are ignored
+with a warning, and remote content is never fetched.
+
+GPX features get `name`, `desc`, `cmt`, `src`, `sym`, `type`, `time`, and the numeric `ele` and
+`number`. Elevation and time on individual route and track points are ignored with a warning.
 
 ### Coordinate reference systems
 
@@ -44,16 +65,24 @@ npx tileflow tileset build ./data/parcels.shp --reproject --json
 npx tileflow tileset build ./data/sites.csv --lon-column x --lat-column y --source-crs EPSG:25830 --reproject --json
 ```
 
-| Input                              | Treated as                                                  |
-| ---------------------------------- | ----------------------------------------------------------- |
-| GeoJSON without a `crs` member     | WGS84 longitude and latitude, as RFC 7946 requires          |
-| GeoJSON with a WGS84 `crs` member  | WGS84                                                       |
-| GeoJSON with another `crs` member  | Refused. Restate it with `--source-crs`, plus `--reproject` |
-| CSV with standard or named columns | WGS84. Any other coordinates fail the range check           |
-| CSV with no recognizable columns   | Refused until you name the columns                          |
-| Shapefile with a WGS84 `.prj`      | WGS84                                                       |
-| Shapefile with another `.prj`      | Refused until you add `--reproject`                         |
-| Shapefile without a `.prj`         | Refused until you pass `--source-crs`                       |
+| Input                               | Treated as                                                  |
+| ----------------------------------- | ----------------------------------------------------------- |
+| GeoJSON without a `crs` member      | WGS84 longitude and latitude, as RFC 7946 requires          |
+| GeoJSON with a WGS84 `crs` member   | WGS84                                                       |
+| GeoJSON with another `crs` member   | Refused. Restate it with `--source-crs`, plus `--reproject` |
+| CSV with standard or named columns  | WGS84. Any other coordinates fail the range check           |
+| CSV with no recognizable columns    | Refused until you name the columns                          |
+| Shapefile with a WGS84 `.prj`       | WGS84                                                       |
+| Shapefile with another `.prj`       | Refused until you add `--reproject`                         |
+| Shapefile without a `.prj`          | Refused until you pass `--source-crs`                       |
+| GeoPackage layer in WGS84           | WGS84                                                       |
+| GeoPackage layer in another CRS     | Refused until you add `--reproject`                         |
+| GeoPackage layer with no usable CRS | Refused until you pass `--source-crs`                       |
+| KML and GPX                         | WGS84, as both formats define                               |
+
+A GeoPackage layer's CRS comes from `gpkg_spatial_ref_sys`. The reserved `srs_id` values -1 and 0 mean
+undefined, so they count as no usable CRS. A row whose `srs_id` differs from its layer stops the build
+with `TF_TILESET_BUILD_CRS_MIXED`, unless `--source-crs` states the CRS for every row.
 
 `--source-crs` states what the coordinates are, and overrides anything the file declares. It accepts
 `EPSG:4326`, `EPSG:3857`, `EPSG:4258`, `EPSG:4269`, UTM zones on WGS84 (`EPSG:326xx`, `EPSG:327xx`),
@@ -92,7 +121,8 @@ Human output always prints the bounds, and `--json` reports them as `archive.bou
 | `--exclude <fields>`   | Drop these comma-separated attributes, by source name            |
 | `--rank-by <field>`    | Thin the lowest values of this numeric attribute first           |
 | `--rank-ascending`     | With `--rank-by`, thin the highest values first                  |
-| `--zip-entry <path>`   | The `.shp` to read from a zip holding several                    |
+| `--zip-entry <path>`   | The `.shp` or `.kml` to read from an archive holding several     |
+| `--input-layer <name>` | The feature table to read from a GeoPackage holding several      |
 | `--lon-column <name>`  | CSV longitude column                                             |
 | `--lat-column <name>`  | CSV latitude column                                              |
 | `--source-crs <crs>`   | State the input CRS                                              |
@@ -179,31 +209,36 @@ are dropped with a warning.
 On failure the exit code is 1, stdout is empty, and stderr carries
 `{"error": {"code", "message", "path"}, "ok": false, "schemaVersion": 1}`.
 
-| Code                                        | Meaning                                                |
-| ------------------------------------------- | ------------------------------------------------------ |
-| `TF_TILESET_BUILD_INPUT_MISSING`            | The input file does not exist                          |
-| `TF_TILESET_BUILD_INPUT_INVALID`            | Malformed data or zip; names the feature or row        |
-| `TF_TILESET_BUILD_FORMAT_UNSUPPORTED`       | Unknown extension or MultiPatch Shapefile              |
-| `TF_TILESET_BUILD_ZIP_ENTRY_INVALID`        | Zip has no `.shp`, several, or not the one named       |
-| `TF_TILESET_BUILD_RANK_INVALID`             | `--rank-by` has no numeric values, or is missing       |
-| `TF_TILESET_BUILD_EMPTY`                    | No usable features                                     |
-| `TF_TILESET_BUILD_CRS_UNKNOWN`              | The input does not state its CRS                       |
-| `TF_TILESET_BUILD_CRS_NOT_WGS84`            | Stated CRS needs `--reproject`                         |
-| `TF_TILESET_BUILD_CRS_UNREADABLE`           | `--source-crs` or the declared CRS could not be parsed |
-| `TF_TILESET_BUILD_DATUM_UNSUPPORTED`        | No known shift from the datum to WGS84                 |
-| `TF_TILESET_BUILD_COORDINATES_OUT_OF_RANGE` | Coordinates are not WGS84 after any conversion         |
-| `TF_TILESET_BUILD_CSV_COLUMNS`              | Coordinate columns are missing or ambiguous            |
-| `TF_TILESET_BUILD_FIELD_CONFLICT`           | Two field names collide after renaming                 |
-| `TF_TILESET_BUILD_FIELDS_INVALID`           | `--include` and `--exclude` were combined              |
-| `TF_TILESET_BUILD_TOO_MANY_FIELDS`          | More than 512 fields; use `--include`                  |
-| `TF_TILESET_BUILD_LAYER_INVALID`            | The layer name is not valid                            |
-| `TF_TILESET_BUILD_ZOOM_INVALID`             | Zooms are out of range or reversed                     |
-| `TF_TILESET_BUILD_OUTPUT_EXISTS`            | The output exists; pass `--force`                      |
-| `TF_TILESET_BUILD_OUTPUT_INVALID`           | The output equals the input, or its folder is missing  |
-| `TF_TILESET_BUILD_TILE_TOO_LARGE`           | A tile cannot fit without losing features              |
-| `TF_TILESET_BUILD_TOO_MANY_TILES`           | More than 16 million tile entries; lower `--maxzoom`   |
-| `TF_TILESET_BUILD_ARCHIVE_TOO_LARGE`        | The archive exceeds the publishable 8 GB               |
-| `TF_TILESET_BUILD_DISK_FULL`                | Not enough free disk space                             |
+| Code                                        | Meaning                                                        |
+| ------------------------------------------- | -------------------------------------------------------------- |
+| `TF_TILESET_BUILD_INPUT_MISSING`            | The input file does not exist                                  |
+| `TF_TILESET_BUILD_INPUT_INVALID`            | Malformed data, XML, GeoPackage or zip                         |
+| `TF_TILESET_BUILD_INPUT_UNSAFE`             | The XML has a DOCTYPE or entity declaration                    |
+| `TF_TILESET_BUILD_INPUT_LIMIT`              | The input exceeds a safety limit listed below                  |
+| `TF_TILESET_BUILD_FORMAT_UNSUPPORTED`       | Unknown extension, or geometry with no tile equivalent         |
+| `TF_TILESET_BUILD_RUNTIME_UNSUPPORTED`      | GeoPackage input needs Node.js 22.13 or later                  |
+| `TF_TILESET_BUILD_ZIP_ENTRY_INVALID`        | Archive has no data file, several, or not the one named        |
+| `TF_TILESET_BUILD_INPUT_LAYER_INVALID`      | GeoPackage has no feature table, several, or not the one named |
+| `TF_TILESET_BUILD_RANK_INVALID`             | `--rank-by` has no numeric values, or is missing               |
+| `TF_TILESET_BUILD_EMPTY`                    | No usable features                                             |
+| `TF_TILESET_BUILD_CRS_UNKNOWN`              | The input does not state its CRS                               |
+| `TF_TILESET_BUILD_CRS_NOT_WGS84`            | Stated CRS needs `--reproject`                                 |
+| `TF_TILESET_BUILD_CRS_MIXED`                | GeoPackage rows use a CRS other than their layer's             |
+| `TF_TILESET_BUILD_CRS_UNREADABLE`           | `--source-crs` or the declared CRS could not be parsed         |
+| `TF_TILESET_BUILD_DATUM_UNSUPPORTED`        | No known shift from the datum to WGS84                         |
+| `TF_TILESET_BUILD_COORDINATES_OUT_OF_RANGE` | Coordinates are not WGS84 after any conversion                 |
+| `TF_TILESET_BUILD_CSV_COLUMNS`              | Coordinate columns are missing or ambiguous                    |
+| `TF_TILESET_BUILD_FIELD_CONFLICT`           | Two field names collide after renaming                         |
+| `TF_TILESET_BUILD_FIELDS_INVALID`           | `--include` and `--exclude` were combined                      |
+| `TF_TILESET_BUILD_TOO_MANY_FIELDS`          | More than 512 fields; use `--include`                          |
+| `TF_TILESET_BUILD_LAYER_INVALID`            | The layer name is not valid                                    |
+| `TF_TILESET_BUILD_ZOOM_INVALID`             | Zooms are out of range or reversed                             |
+| `TF_TILESET_BUILD_OUTPUT_EXISTS`            | The output exists; pass `--force`                              |
+| `TF_TILESET_BUILD_OUTPUT_INVALID`           | The output equals the input, or its folder is missing          |
+| `TF_TILESET_BUILD_TILE_TOO_LARGE`           | A tile cannot fit without losing features                      |
+| `TF_TILESET_BUILD_TOO_MANY_TILES`           | More than 16 million tile entries; lower `--maxzoom`           |
+| `TF_TILESET_BUILD_ARCHIVE_TOO_LARGE`        | The archive exceeds the publishable 8 GB                       |
+| `TF_TILESET_BUILD_DISK_FULL`                | Not enough free disk space                                     |
 
 ### Limits
 
@@ -212,6 +247,21 @@ under 600 MB. A single very large feature must fit in memory on its own. Tempora
 output and are removed on exit, including Ctrl-C. Allow free space of about twice the input, or three times the uncompressed Shapefile for a zip. Tiling
 runs on one thread, with compression on the thread pool, so plan for up to a minute per million simple
 features.
+
+KML and GPX are streamed. A document with a DOCTYPE or entity declaration is refused, because neither
+format needs one and it is how entity-expansion attacks work. Only the five predefined XML entities
+and numeric character references are decoded. One tag can hold 1 MiB and 256 attributes, elements can
+nest 128 levels, and one text value can hold 8 MiB in KML or 1 MiB in GPX. One KML feature can hold
+64 MiB of attribute text.
+
+A KMZ is streamed without being extracted. Its KML document can expand to 4 GiB, an archive can hold
+65,536 entries, and an entry that inflates past its declared size stops the build.
+
+A GeoPackage is opened read-only and runs none of its own SQL. Tables must be plain tables, so views
+and virtual tables are not read. On early Node.js 22 releases, reading a GeoPackage in
+write-ahead-log mode can leave `-wal` and `-shm` files beside it. A GeoPackage with a rollback journal
+left by an interrupted writer is refused until a tool that can write to it recovers it. One feature
+can hold 5 million positions and parts in KML, GPX and GeoPackage.
 
 The build does not merge adjacent polygons at low zooms, cluster points, or join attributes. Polygons
 are simplified independently, so neighbours that share a border can show hairline gaps at low zooms.

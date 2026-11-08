@@ -261,8 +261,8 @@ refuse to overwrite hosted manifests by default, and deploy refuses to replace a
 manifest without explicit authorization. Keep separate outputs, or use the documented overwrite
 option only for an intentional migration.
 
-Data publication is separate from map deployment. Build PMTiles locally from GeoJSON, CSV or
-Shapefile with nothing else to install:
+Data publication is separate from map deployment. Build PMTiles locally from GeoJSON, CSV,
+Shapefile, GeoPackage, KML or GPX:
 
 ```sh
 npx tileflow tileset build ./data/stores.geojson -o ./data/stores.pmtiles --json

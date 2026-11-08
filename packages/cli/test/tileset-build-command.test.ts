@@ -1,6 +1,6 @@
 import {VectorTile} from '@mapbox/vector-tile';
 import assert from 'node:assert/strict';
-import {spawn} from 'node:child_process';
+import {spawn, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {mkdir, mkdtemp, readdir, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -16,6 +16,8 @@ import {
   prepareTeamTilesetUpload,
 } from '../src/tileset-upload';
 
+const {DatabaseSync} = process.getBuiltinModule('node:sqlite');
+
 type GeoJsonGeometry = {coordinates: any; type: string};
 type DecodedFeature = {
   geometry: GeoJsonGeometry;
@@ -27,6 +29,8 @@ const utm30nPrj =
   'PROJCS["ETRS_1989_UTM_Zone_30N",GEOGCS["GCS_ETRS_1989",DATUM["D_ETRS_1989",SPHEROID["GRS_1980",6378137.0,298.257222101]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Transverse_Mercator"],PARAMETER["False_Easting",500000.0],PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",-3.0],PARAMETER["Scale_Factor",0.9996],PARAMETER["Latitude_Of_Origin",0.0],UNIT["Meter",1.0]]';
 const wgs84Prj =
   'GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]]';
+const pseudoMercatorWkt =
+  'PROJCS["WGS 84 / Pseudo-Mercator",GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433]],PROJECTION["Mercator_1SP"],PARAMETER["central_meridian",0],PARAMETER["scale_factor",1],PARAMETER["false_easting",0],PARAMETER["false_northing",0],UNIT["metre",1]]';
 const nad27Prj =
   'GEOGCS["GCS_North_American_1927",DATUM["D_North_American_1927",SPHEROID["Clarke_1866",6378206.4,294.9786982]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]]';
 
@@ -704,7 +708,7 @@ test('invalid requests fail fast with stable codes and keep existing output', as
   const directory = await workspace(t);
   await writeFile(join(directory, 'a.geojson'), collection(gridPoints(4, 1)));
   await writeFile(join(directory, 'taken.pmtiles'), 'keep me');
-  await writeFile(join(directory, 'a.gpkg'), 'x');
+  await writeFile(join(directory, 'a.fgb'), 'x');
   await writeFile(join(directory, 'a.zip'), 'x');
   await writeFile(join(directory, 'empty.geojson'), '{"type":"FeatureCollection","features":[]}');
   await writeFile(join(directory, 'cut.geojson'), '{"type":"FeatureCollection","features":[{');
@@ -717,7 +721,7 @@ test('invalid requests fail fast with stable codes and keep existing output', as
 
   const cases: Array<[string[], string, RegExp?]> = [
     [['missing.geojson'], 'TF_TILESET_BUILD_INPUT_MISSING'],
-    [['a.gpkg'], 'TF_TILESET_BUILD_FORMAT_UNSUPPORTED', /\.shp/u],
+    [['a.fgb'], 'TF_TILESET_BUILD_FORMAT_UNSUPPORTED', /\.shp/u],
     [['a.zip'], 'TF_TILESET_BUILD_INPUT_INVALID', /zip could not be read/u],
     [['a.geojson', '-o', 'taken.pmtiles'], 'TF_TILESET_BUILD_OUTPUT_EXISTS', /--force/u],
     [['a.geojson', '-o', 'a.geojson'], 'TF_TILESET_BUILD_OUTPUT_INVALID'],
@@ -1129,6 +1133,1097 @@ test('archives record what generated them', async (t) => {
   assert.match(String(metadata.generator_version), /^\d+\.\d+\.\d+/u);
 });
 
+const placeKml = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2" xmlns:atom="http://www.w3.org/2005/Atom">
+<Document>
+  <name>Atlas</name>
+  <Schema name="stops" id="stops">
+    <SimpleField type="int" name="riders"><displayName>Riders</displayName></SimpleField>
+    <SimpleField type="bool" name="staffed"/>
+    <SimpleField type="string" name="code"/>
+  </Schema>
+  <!-- a comment with <Placemark> inside must not count -->
+  <GroundOverlay><name>Scan</name></GroundOverlay>
+  <NetworkLink><Link><href>https://example.com/more.kml</href></Link></NetworkLink>
+  <Folder>
+    <name>Stops &amp; stations</name>
+    <Placemark>
+      <name>Plaza</name>
+      <atom:author><atom:name>Not the feature name</atom:name></atom:author>
+      <description><![CDATA[<b>Big</b> & busy]]></description>
+      <TimeStamp><when>2026-01-02</when></TimeStamp>
+      <ExtendedData>
+        <SchemaData schemaUrl="#stops">
+          <SimpleData name="riders">1200</SimpleData>
+          <SimpleData name="staffed">true</SimpleData>
+          <SimpleData name="code">01234</SimpleData>
+        </SchemaData>
+        <Data name="note"><displayName>Note</displayName><value>Caf&#233;</value></Data>
+      </ExtendedData>
+      <Point><coordinates>-3.7074,40.4155,650</coordinates></Point>
+    </Placemark>
+  </Folder>
+  <Placemark>
+    <name>Route</name>
+    <LineString><coordinates>
+      -3.8,40.3,0
+      -3.6, 40.5,0
+    </coordinates></LineString>
+  </Placemark>
+  <Placemark>
+    <name>Park</name>
+    <Polygon>
+      <outerBoundaryIs><LinearRing><coordinates>-3.9,40.2 -3.9,40.6 -3.5,40.6 -3.5,40.2 -3.9,40.2</coordinates></LinearRing></outerBoundaryIs>
+      <innerBoundaryIs><LinearRing><coordinates>-3.8,40.3 -3.7,40.3 -3.7,40.4 -3.8,40.4 -3.8,40.3</coordinates></LinearRing></innerBoundaryIs>
+    </Polygon>
+  </Placemark>
+  <Placemark>
+    <name>Pair</name>
+    <MultiGeometry>
+      <Point><coordinates>2.1,41.3</coordinates></Point>
+      <Point><coordinates>2.2,41.4</coordinates></Point>
+    </MultiGeometry>
+  </Placemark>
+  <Placemark>
+    <name>Mixed</name>
+    <MultiGeometry>
+      <Point><coordinates>2.3,41.5</coordinates></Point>
+      <LineString><coordinates>2.3,41.5 2.4,41.6</coordinates></LineString>
+    </MultiGeometry>
+  </Placemark>
+  <Placemark>
+    <name>Log</name>
+    <gx:Track>
+      <when>2026-01-02T10:00:00Z</when><when>2026-01-02T10:01:00Z</when>
+      <gx:coord>-5.0 42.0 0</gx:coord><gx:coord>-5.1 42.1 0</gx:coord>
+    </gx:Track>
+  </Placemark>
+  <Placemark><name>Nowhere</name></Placemark>
+</Document>
+</kml>
+`;
+
+test('KML placemarks keep their geometry, names, folders and declared attribute types', async (t) => {
+  const directory = await workspace(t);
+  await writeFile(join(directory, 'atlas.kml'), placeKml);
+
+  const result = await build(directory, ['atlas.kml', '--maxzoom', '9', '--json']);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.stderr, '');
+  const document = JSON.parse(result.stdout);
+  assert.equal(document.input.format, 'kml');
+  assert.deepEqual(document.crs, {
+    authority: 'format',
+    label: 'KML (WGS84 by definition)',
+    reprojected: false,
+  });
+  assert.equal(document.input.skipped.emptyGeometry, 1);
+  assert.ok(document.warnings.includes('Altitude values in the KML were ignored.'));
+  assert.ok(document.warnings.some((item: string) => item.startsWith('2 overlays')));
+
+  const decoded = await decodeZoom(join(directory, 'atlas.pmtiles'), 9, 'atlas');
+  const plaza = decoded.find((item) => item.properties.name === 'Plaza')!;
+  assert.deepEqual(
+    {...plaza.properties},
+    {
+      code: '01234',
+      description: '<b>Big</b> & busy',
+      folder: 'Stops & stations',
+      name: 'Plaza',
+      note: 'Café',
+      riders: 1200,
+      staffed: true,
+      timestamp: '2026-01-02',
+    },
+  );
+  assertClose(plaza.geometry.coordinates, [-3.7074, 40.4155], 0.002);
+  const route = decoded.find((item) => item.properties.name === 'Route')!;
+  assert.equal(route.geometry.type, 'LineString');
+  assert.equal(route.properties.folder, undefined);
+  assert.ok(
+    decoded
+      .filter((item) => item.properties.name === 'Park')
+      .some((item) => item.geometry.type === 'Polygon' && item.geometry.coordinates.length === 2),
+    'the hole stays a hole',
+  );
+  const pair = decoded.filter((item) => item.properties.name === 'Pair');
+  assert.equal(distinctPositions(pair), 2);
+  const mixed = decoded.filter((item) => item.properties.name === 'Mixed');
+  assert.deepEqual([...new Set(mixed.map((item) => item.geometry.type))].sort(), [
+    'LineString',
+    'Point',
+  ]);
+  assert.equal(decoded.find((item) => item.properties.name === 'Log')!.geometry.type, 'LineString');
+  await assertNoTemporaryFiles(directory);
+});
+
+test('KML extensions are found by namespace, and repeated built-in fields are reported', async (t) => {
+  const directory = await workspace(t);
+  await writeFile(
+    join(directory, 'tracked.kml'),
+    `<ns0:kml xmlns:ns0="http://www.opengis.net/kml/2.2" xmlns:ns1="http://www.google.com/kml/ext/2.2">
+      <ns0:Placemark>
+        <ns0:name>Log</ns0:name>
+        <ns0:ExtendedData><ns0:Data name="name"><ns0:value>Other</ns0:value></ns0:Data></ns0:ExtendedData>
+        <ns1:Track><ns1:coord>2.2 41.2 0</ns1:coord><ns1:coord>2.3 41.3 0</ns1:coord></ns1:Track>
+      </ns0:Placemark>
+    </ns0:kml>`,
+  );
+  const result = await build(directory, ['tracked.kml', '--maxzoom', '9', '--json']);
+  assert.equal(result.code, 0, result.stderr);
+  const document = JSON.parse(result.stdout);
+  assert.deepEqual(document.input.geometryTypes, ['LineString']);
+  assert.ok(
+    document.warnings.some((item: string) => item.includes('more than one value for "name"')),
+  );
+  const [log] = await decodeZoom(join(directory, 'tracked.pmtiles'), 9, 'tracked');
+  assert.equal(log.properties.name, 'Other');
+});
+
+test('a character reference split across read chunks decodes the same as a whole one', async (t) => {
+  const directory = await workspace(t);
+  const reference = '&#x000000000000041;';
+  const element = '<wpt lat="41" lon="2"><name>';
+  const padding = ' '.repeat(4 * 1024 * 1024 - '<gpx>'.length - element.length - 5);
+  await writeFile(
+    join(directory, 'split.gpx'),
+    `<gpx>${padding}${element}${reference}</name></wpt></gpx>`,
+  );
+  const result = await build(directory, ['split.gpx', '--maxzoom', '6', '--json']);
+  assert.equal(result.code, 0, result.stderr);
+  const [point] = await decodeZoom(join(directory, 'split.pmtiles'), 6, 'split');
+  assert.equal(point.properties.name, 'A');
+});
+
+test('KML under a namespace prefix reads the same, and a declared rank is numeric', async (t) => {
+  const directory = await workspace(t);
+  const body = placeKml
+    .replace('<?xml version="1.0" encoding="UTF-8"?>\n', '')
+    .replace('xmlns="http://www.opengis.net/kml/2.2"', 'xmlns:ns0="http://www.opengis.net/kml/2.2"')
+    .replace(/<(\/?)(?=[A-Za-z])(?!gx:|atom:)/gu, '<$1ns0:');
+  await writeFile(join(directory, 'prefixed.kml'), body);
+  const result = await build(directory, [
+    'prefixed.kml',
+    '--maxzoom',
+    '9',
+    '--rank-by',
+    'riders',
+    '--json',
+  ]);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).input.features, 7);
+  const decoded = await decodeZoom(join(directory, 'prefixed.pmtiles'), 9, 'prefixed');
+  assert.equal(decoded.find((item) => item.properties.riders === 1200)!.properties.name, 'Plaza');
+});
+
+test('a KMZ streams its main document, and asks which one when that is unclear', async (t) => {
+  const directory = await workspace(t);
+  const kml = (name: string) =>
+    Buffer.from(
+      `<kml xmlns="http://www.opengis.net/kml/2.2"><Placemark><name>${name}</name><Point><coordinates>2,41</coordinates></Point></Placemark></kml>`,
+    );
+  await writeZip(join(directory, 'main.kmz'), [
+    {data: kml('Other'), name: 'files/extra.kml'},
+    {data: kml('Main'), name: 'doc.kml'},
+    {data: Buffer.from('not xml'), name: '__MACOSX/doc.kml'},
+  ]);
+  const built = await build(directory, ['main.kmz', '--maxzoom', '6', '--json']);
+  assert.equal(built.code, 0, built.stderr);
+  const decoded = await decodeZoom(join(directory, 'main.pmtiles'), 6, 'main');
+  assert.equal(decoded[0].properties.name, 'Main');
+  assert.deepEqual((await readdir(directory)).sort(), ['main.kmz', 'main.pmtiles']);
+
+  const picked = await build(directory, [
+    'main.kmz',
+    '--zip-entry',
+    'files/extra.kml',
+    '-o',
+    'picked.pmtiles',
+    '--maxzoom',
+    '6',
+    '--json',
+  ]);
+  assert.equal(picked.code, 0, picked.stderr);
+  const other = await decodeZoom(join(directory, 'picked.pmtiles'), 6, 'main');
+  assert.equal(other[0].properties.name, 'Other');
+
+  await writeZip(join(directory, 'two.kmz'), [
+    {data: kml('A'), name: 'a.kml'},
+    {data: kml('B'), name: 'b.kml'},
+  ]);
+  const ambiguous = await build(directory, ['two.kmz', '--json']);
+  assert.equal(failure(ambiguous).code, 'TF_TILESET_BUILD_ZIP_ENTRY_INVALID');
+  assert.match(failure(ambiguous).message, /a\.kml, b\.kml/u);
+
+  const missing = await build(directory, ['two.kmz', '--zip-entry', 'c.kml', '--json']);
+  assert.equal(failure(missing).code, 'TF_TILESET_BUILD_ZIP_ENTRY_INVALID');
+
+  await writeZip(join(directory, 'empty.kmz'), [{data: Buffer.from('x'), name: 'readme.txt'}]);
+  assert.equal(
+    failure(await build(directory, ['empty.kmz', '--json'])).code,
+    'TF_TILESET_BUILD_ZIP_ENTRY_INVALID',
+  );
+  await writeFile(join(directory, 'broken.kmz'), 'not a zip');
+  assert.equal(
+    failure(await build(directory, ['broken.kmz', '--json'])).code,
+    'TF_TILESET_BUILD_INPUT_INVALID',
+  );
+  const wrongFormat = await build(directory, ['main.kmz', '--format', 'gpx', '--json']);
+  assert.equal(failure(wrongFormat).code, 'TF_TILESET_BUILD_FORMAT_UNSUPPORTED');
+  await assertNoTemporaryFiles(directory);
+});
+
+test('a KMZ entry that lies about its size is stopped', async (t) => {
+  const directory = await workspace(t);
+  const data = Buffer.from(
+    `<kml><Placemark><Point><coordinates>2,41</coordinates></Point></Placemark>${' '.repeat(5_000_000)}</kml>`,
+  );
+  await writeZip(join(directory, 'lying.kmz'), [{data, declaredBytes: 100, name: 'doc.kml'}]);
+  const lying = await build(directory, ['lying.kmz', '--json']);
+  assert.equal(failure(lying).code, 'TF_TILESET_BUILD_INPUT_INVALID');
+  assert.match(failure(lying).message, /zip could not be read/u);
+
+  await writeZip(join(directory, 'huge.kmz'), [
+    {data, declaredBytes: 5 * 1024 ** 3, name: 'doc.kml'},
+  ]);
+  const huge = await build(directory, ['huge.kmz', '--json']);
+  assert.equal(failure(huge).code, 'TF_TILESET_BUILD_INPUT_LIMIT');
+  await assertNoTemporaryFiles(directory);
+});
+
+test('hostile or malformed XML is refused with a stable code and no expansion', async (t) => {
+  const directory = await workspace(t);
+  const inRoot = (body: string) => `<kml>${body}</kml>`;
+  const laughs = `<?xml version="1.0"?><!DOCTYPE kml [<!ENTITY a "aaaaaaaaaa"><!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;">]><kml><Placemark><name>&b;</name><Point><coordinates>2,41</coordinates></Point></Placemark></kml>`;
+  const external = `<!DOCTYPE gpx SYSTEM "file:///etc/passwd"><gpx/>`;
+  const cases: [string, string, string, RegExp][] = [
+    ['laughs.kml', laughs, 'TF_TILESET_BUILD_INPUT_UNSAFE', /DOCTYPE/u],
+    ['external.gpx', external, 'TF_TILESET_BUILD_INPUT_UNSAFE', /DOCTYPE/u],
+    [
+      'entity.kml',
+      inRoot('<Placemark><name>&custom;</name></Placemark>'),
+      'TF_TILESET_BUILD_INPUT_INVALID',
+      /not defined/u,
+    ],
+    ['ampersand.kml', inRoot('<name>AT&T</name>'), 'TF_TILESET_BUILD_INPUT_INVALID', /bare/u],
+    ['truncated.kml', '<kml><Placemark>', 'TF_TILESET_BUILD_INPUT_INVALID', /truncated/u],
+    ['crossed.kml', '<kml><a></b></kml>', 'TF_TILESET_BUILD_INPUT_INVALID', /does not close/u],
+    ['root.kml', '<html></html>', 'TF_TILESET_BUILD_INPUT_INVALID', /not a KML document/u],
+    ['root.gpx', '<kml></kml>', 'TF_TILESET_BUILD_INPUT_INVALID', /not a GPX document/u],
+    ['empty.kml', '', 'TF_TILESET_BUILD_INPUT_INVALID', /no XML elements/u],
+    [
+      'tuple.kml',
+      inRoot('<Placemark><Point><coordinates>2</coordinates></Point></Placemark>'),
+      'TF_TILESET_BUILD_INPUT_INVALID',
+      /Placemark 1: a position/u,
+    ],
+    [
+      'range.kml',
+      inRoot('<Placemark><Point><coordinates>400,41</coordinates></Point></Placemark>'),
+      'TF_TILESET_BUILD_COORDINATES_OUT_OF_RANGE',
+      /Placemark 1/u,
+    ],
+    [
+      'deep.kml',
+      inRoot('<a>'.repeat(200) + '</a>'.repeat(200)),
+      'TF_TILESET_BUILD_INPUT_LIMIT',
+      /nest/u,
+    ],
+    [
+      'tag.kml',
+      `<kml a="${'x'.repeat(2 * 1024 * 1024)}`,
+      'TF_TILESET_BUILD_INPUT_LIMIT',
+      /one tag/u,
+    ],
+    [
+      'attributes.kml',
+      `<kml ${Array.from({length: 300}, (_, index) => `a${index}="1"`).join(' ')}/>`,
+      'TF_TILESET_BUILD_INPUT_LIMIT',
+      /attributes/u,
+    ],
+    [
+      'field.kml',
+      inRoot(`<Placemark><name>${'x'.repeat(9 * 1024 * 1024)}</name></Placemark>`),
+      'TF_TILESET_BUILD_INPUT_LIMIT',
+      /Placemark 1: a text value/u,
+    ],
+    [
+      'coordinates.kml',
+      inRoot(
+        `<Placemark><LineString><coordinates>${'1'.repeat(4096)}</coordinates></LineString></Placemark>`,
+      ),
+      'TF_TILESET_BUILD_INPUT_INVALID',
+      /tuples/u,
+    ],
+    [
+      'commas.kml',
+      inRoot(
+        `<Placemark><LineString><coordinates>${', '.repeat(2_000_000)}</coordinates></LineString></Placemark>`,
+      ),
+      'TF_TILESET_BUILD_INPUT_INVALID',
+      /tuples/u,
+    ],
+    [
+      'tag-one-chunk.kml',
+      `<kml a="${'x'.repeat(1_500_000)}"></kml>`,
+      'TF_TILESET_BUILD_INPUT_LIMIT',
+      /one tag/u,
+    ],
+    [
+      'blank.gpx',
+      '<gpx><wpt lat=" " lon=" "/></gpx>',
+      'TF_TILESET_BUILD_INPUT_INVALID',
+      /waypoint 1: a point needs/u,
+    ],
+    [
+      'noplacemarks.kml',
+      inRoot(`<!-- ${'x'.repeat(5 * 1024 * 1024)} --><Document/>`),
+      'TF_TILESET_BUILD_EMPTY',
+      /no usable features/u,
+    ],
+  ];
+  for (const [name, content, code, message] of cases) {
+    await writeFile(join(directory, name), content);
+    const result = await build(directory, [name, '--json']);
+    assert.equal(result.code, 1, name);
+    assert.equal(failure(result).code, code, `${name}: ${result.stderr}`);
+    assert.match(failure(result).message, message, name);
+  }
+  await writeFile(
+    join(directory, 'encoding.gpx'),
+    Buffer.concat([
+      Buffer.from('<?xml version="1.0"?><gpx><name>'),
+      Buffer.from([0xff]),
+      Buffer.from('</name></gpx>'),
+    ]),
+  );
+  const badBytes = await build(directory, ['encoding.gpx', '--json']);
+  assert.equal(failure(badBytes).code, 'TF_TILESET_BUILD_INPUT_INVALID');
+  assert.match(failure(badBytes).message, /text encoding/u);
+  await assertNoTemporaryFiles(directory);
+});
+
+test('one feature cannot grow without limit in memory', async (t) => {
+  const directory = await workspace(t);
+  await writeFile(
+    join(directory, 'segments.gpx'),
+    `<gpx><trk>${'<trkseg/>'.repeat(5_000_001)}</trk></gpx>`,
+  );
+  const emptyParts = await build(directory, ['segments.gpx', '--json']);
+  assert.equal(failure(emptyParts).code, 'TF_TILESET_BUILD_INPUT_LIMIT');
+  assert.match(failure(emptyParts).message, /track 1: the feature has more than/u);
+
+  await writeFile(
+    join(directory, 'long.kml'),
+    `<kml><Placemark><LineString><coordinates>${'1,1 '.repeat(5_000_001)}</coordinates></LineString></Placemark></kml>`,
+  );
+  const result = await build(directory, ['long.kml', '--json']);
+  assert.equal(failure(result).code, 'TF_TILESET_BUILD_INPUT_LIMIT');
+  assert.match(failure(result).message, /Placemark 1: the feature has more than/u);
+});
+
+test('XML straddling read chunks stays intact, in any declared encoding', async (t) => {
+  const directory = await workspace(t);
+  // Each record is 50 characters, so 4 MiB boundaries land inside tags, entities and text.
+  const placemarks = Array.from(
+    {length: 120_000},
+    (_, index) =>
+      `<Placemark><name>é&amp;${String(index).padStart(6, '0')}</name><Point><coordinates>${(index % 3600) / 10 - 180},${(index % 1700) / 10 - 85}</coordinates></Point></Placemark>`,
+  ).join('\n');
+  await writeFile(join(directory, 'long.kml'), `<kml>${placemarks}</kml>`);
+  const long = await build(directory, ['long.kml', '--maxzoom', '4', '--json']);
+  assert.equal(long.code, 0, long.stderr);
+  assert.equal(JSON.parse(long.stdout).input.features, 120_000);
+
+  await writeFile(
+    join(directory, 'latin.gpx'),
+    Buffer.from(
+      `<?xml version="1.0" encoding="ISO-8859-1"?><gpx><wpt lat="41" lon="2"><name>Peñón</name></wpt></gpx>`,
+      'latin1',
+    ),
+  );
+  const latin = await build(directory, ['latin.gpx', '--maxzoom', '6', '--json']);
+  assert.equal(latin.code, 0, latin.stderr);
+  const decoded = await decodeZoom(join(directory, 'latin.pmtiles'), 6, 'latin');
+  assert.equal(decoded[0].properties.name, 'Peñón');
+
+  await writeFile(
+    join(directory, 'unicode.gpx'),
+    Buffer.concat([
+      Buffer.from([0xff, 0xfe]),
+      Buffer.from('<gpx><wpt lat="41" lon="2"><name>日本</name></wpt></gpx>', 'utf16le'),
+    ]),
+  );
+  const utf16 = await build(directory, ['unicode.gpx', '--maxzoom', '6', '--json']);
+  assert.equal(utf16.code, 0, utf16.stderr);
+  assert.equal(
+    (await decodeZoom(join(directory, 'unicode.pmtiles'), 6, 'unicode'))[0].properties.name,
+    '日本',
+  );
+});
+
+test('GPX waypoints, routes and tracks each become features', async (t) => {
+  const directory = await workspace(t);
+  await writeFile(
+    join(directory, 'trip.gpx'),
+    `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test" xmlns="http://www.topografix.com/GPX/1/1" xmlns:ext="urn:example">
+  <metadata><name>Not a feature</name><time>2026-01-01T00:00:00Z</time></metadata>
+  <wpt lat="40.4155" lon="-3.7074">
+    <ele>650.5</ele><time>2026-01-02T10:00:00Z</time><name>Plaza</name><desc>Centre</desc><sym>Flag</sym>
+    <extensions><ext:name>ignored</ext:name></extensions>
+  </wpt>
+  <rte><name>Way</name><number>7</number>
+    <rtept lat="40.3" lon="-3.8"/><rtept lat="40.5" lon="-3.6"/>
+  </rte>
+  <trk><name>Morning</name><type>run</type>
+    <trkseg>
+      <trkpt lat="41.2" lon="2.2"><ele>10</ele><time>2026-01-02T10:00:00Z</time></trkpt>
+      <trkpt lat="41.25" lon="2.25"><ele>12</ele></trkpt>
+    </trkseg>
+    <trkseg><trkpt lat="41.3" lon="2.3"/><trkpt lat="41.35" lon="2.35"/></trkseg>
+  </trk>
+  <rte><name>Empty</name></rte>
+</gpx>
+`,
+  );
+  const result = await build(directory, ['trip.gpx', '--maxzoom', '9', '--json']);
+  assert.equal(result.code, 0, result.stderr);
+  const document = JSON.parse(result.stdout);
+  assert.equal(document.input.format, 'gpx');
+  assert.equal(document.input.features, 3);
+  assert.equal(document.input.skipped.emptyGeometry, 1);
+  assert.equal(document.crs.label, 'GPX (WGS84 by definition)');
+  assert.ok(
+    document.warnings.includes('Elevation and time on GPX route and track points were ignored.'),
+  );
+  const decoded = await decodeZoom(join(directory, 'trip.pmtiles'), 9, 'trip');
+  const plaza = decoded.find((item) => item.properties.name === 'Plaza')!;
+  assert.deepEqual(
+    {...plaza.properties},
+    {desc: 'Centre', ele: 650.5, name: 'Plaza', sym: 'Flag', time: '2026-01-02T10:00:00Z'},
+  );
+  assertClose(plaza.geometry.coordinates, [-3.7074, 40.4155], 0.002);
+  const way = decoded.find((item) => item.properties.name === 'Way')!;
+  assert.equal(way.geometry.type, 'LineString');
+  assert.equal(way.properties.number, 7);
+  const morning = decoded.find((item) => item.properties.name === 'Morning')!;
+  assert.equal(morning.geometry.type, 'MultiLineString');
+  assert.equal(morning.geometry.coordinates.length, 2);
+  assert.equal(morning.properties.type, 'run');
+
+  await writeFile(join(directory, 'nolat.gpx'), '<gpx><wpt lon="2"/></gpx>');
+  const invalid = await build(directory, ['nolat.gpx', '--json']);
+  assert.equal(failure(invalid).code, 'TF_TILESET_BUILD_INPUT_INVALID');
+  assert.match(failure(invalid).message, /waypoint 1/u);
+  await writeFile(join(directory, 'odd.xml'), '<gpx><wpt lat="41" lon="2"/></gpx>');
+  const forced = await build(directory, ['odd.xml', '--format', 'gpx', '--maxzoom', '6', '--json']);
+  assert.equal(forced.code, 0, forced.stderr);
+});
+
+test('a GeoPackage layer decodes back with its ids, types and every WKB shape', async (t) => {
+  const directory = await workspace(t);
+  const polygon = [
+    [
+      [-3.9, 40.2],
+      [-3.5, 40.2],
+      [-3.5, 40.6],
+      [-3.9, 40.6],
+      [-3.9, 40.2],
+    ],
+    [
+      [-3.8, 40.3],
+      [-3.8, 40.4],
+      [-3.7, 40.4],
+      [-3.7, 40.3],
+      [-3.8, 40.3],
+    ],
+  ];
+  writeGeopackage(join(directory, 'city.gpkg'), [
+    {
+      columns:
+        'fid INTEGER PRIMARY KEY AUTOINCREMENT, geom BLOB, label TEXT, total INTEGER, ratio REAL, open BOOLEAN, photo BLOB, serial INTEGER, doubled INTEGER GENERATED ALWAYS AS (total * 2) VIRTUAL',
+      name: 'places',
+      rows: [
+        {
+          geometry: gpkgGeometry(wkb({coordinates: [-3.7074, 40.4155], type: 'Point'})),
+          id: 7,
+          values: ['Plaza', 3, 1.5, 1, Buffer.from([1, 2]), 2n ** 60n],
+        },
+        {
+          geometry: gpkgGeometry(
+            wkb(
+              {
+                coordinates: [
+                  [-3.8, 40.3],
+                  [-3.6, 40.5],
+                ],
+                type: 'LineString',
+              },
+              {littleEndian: false},
+            ),
+            {bigEndian: true, envelopeBytes: 32},
+          ),
+          id: 8,
+          values: ['Route', null, null, 0, null, null],
+        },
+        {
+          geometry: gpkgGeometry(wkb({coordinates: polygon, type: 'Polygon'}, {extra: 1000}), {
+            envelopeBytes: 48,
+          }),
+          id: 9,
+          values: ['Park', null, null, null, null, null],
+        },
+        {
+          geometry: gpkgGeometry(
+            wkb(
+              {
+                coordinates: [
+                  [2.1, 41.3],
+                  [2.2, 41.4],
+                ],
+                type: 'MultiPoint',
+              },
+              {extra: 3000},
+            ),
+            {envelopeBytes: 64},
+          ),
+          id: 10,
+          values: ['Pair', null, null, null, null, null],
+        },
+        {
+          geometry: gpkgGeometry(
+            wkb({
+              geometries: [
+                {coordinates: [2.3, 41.5], type: 'Point'},
+                {
+                  coordinates: [
+                    [
+                      [2.4, 41.6],
+                      [2.5, 41.7],
+                    ],
+                  ],
+                  type: 'MultiLineString',
+                },
+                {coordinates: [polygon], type: 'MultiPolygon'},
+              ],
+              type: 'GeometryCollection',
+            }),
+          ),
+          id: 11,
+          values: ['Bundle', null, null, null, null, null],
+        },
+        {geometry: null, id: 12, values: ['No geometry', null, null, null, null, null]},
+        {
+          geometry: gpkgGeometry(wkb({coordinates: [NaN, NaN], type: 'Point'})),
+          id: 13,
+          values: ['Empty point', null, null, null, null, null],
+        },
+        {
+          geometry: gpkgGeometry(Buffer.alloc(0), {empty: true}),
+          id: 14,
+          values: ['Flagged empty', null, null, null, null, null],
+        },
+      ],
+    },
+  ]);
+  const before = await readFile(join(directory, 'city.gpkg'));
+
+  const result = await build(directory, ['city.gpkg', '--maxzoom', '9', '--json']);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.stderr, '', 'node:sqlite must not add a warning to --json runs');
+  const document = JSON.parse(result.stdout);
+  assert.equal(document.input.format, 'geopackage');
+  assert.equal(document.layer.id, 'city');
+  assert.equal(document.input.skipped.emptyGeometry, 3);
+  assert.deepEqual(document.crs, {
+    authority: 'declared',
+    label: 'GeoPackage layer "places" (EPSG:4326)',
+    reprojected: false,
+  });
+  for (const expected of [
+    'Z and M values in the GeoPackage were ignored.',
+    'Binary (BLOB) attributes in the GeoPackage have no vector tile equivalent and were skipped.',
+    'Generated columns in the GeoPackage were ignored.',
+  ]) {
+    assert.ok(document.warnings.includes(expected), expected);
+  }
+
+  const decoded = await decodeZoom(join(directory, 'city.pmtiles'), 9, 'city');
+  const plaza = decoded.find((item) => item.properties.label === 'Plaza')!;
+  assert.equal(plaza.id, 7);
+  assert.deepEqual(
+    {...plaza.properties},
+    {label: 'Plaza', open: true, ratio: 1.5, serial: '1152921504606846976', total: 3},
+  );
+  assertClose(plaza.geometry.coordinates, [-3.7074, 40.4155], 0.002);
+  const route = decoded.find((item) => item.properties.label === 'Route')!;
+  assert.equal(route.id, 8);
+  assert.equal(route.properties.open, false);
+  assert.equal(route.geometry.type, 'LineString');
+  assert.ok(
+    decoded
+      .filter((item) => item.properties.label === 'Park')
+      .some((item) => item.geometry.type === 'Polygon' && item.geometry.coordinates.length === 2),
+    'the hole stays a hole',
+  );
+  const pair = decoded.filter((item) => item.properties.label === 'Pair');
+  assert.equal(distinctPositions(pair), 2);
+  assert.deepEqual(
+    [
+      ...new Set(
+        decoded
+          .filter((item) => item.properties.label === 'Bundle')
+          .map((item) => item.geometry.type),
+      ),
+    ].sort(),
+    ['LineString', 'Point', 'Polygon'],
+  );
+
+  // Reading must leave the input alone, including no -wal or -shm files beside it.
+  assert.deepEqual(await readFile(join(directory, 'city.gpkg')), before);
+  assert.deepEqual((await readdir(directory)).sort(), ['city.gpkg', 'city.pmtiles']);
+  const repeat = await build(directory, ['city.gpkg', '-o', 'again.pmtiles', '--maxzoom', '9']);
+  assert.equal(repeat.code, 0, repeat.stderr);
+  assert.deepEqual(
+    await readFile(join(directory, 'again.pmtiles')),
+    await readFile(join(directory, 'city.pmtiles')),
+  );
+});
+
+test('a GeoPackage with several layers asks which one, and names the output after it', async (t) => {
+  const directory = await workspace(t);
+  const point = gpkgGeometry(wkb({coordinates: [2, 41], type: 'Point'}));
+  writeGeopackage(join(directory, 'world.gpkg'), [
+    {name: 'roads', rows: [{geometry: point, id: 1}]},
+    {name: 'odd "name" table', rows: [{geometry: point, id: 2}]},
+  ]);
+
+  const ambiguous = await build(directory, ['world.gpkg', '--json']);
+  assert.equal(failure(ambiguous).code, 'TF_TILESET_BUILD_INPUT_LAYER_INVALID');
+  assert.match(failure(ambiguous).message, /--input-layer: odd "name" table, roads/u);
+
+  const unknown = await build(directory, ['world.gpkg', '--input-layer', 'rivers', '--json']);
+  assert.equal(failure(unknown).code, 'TF_TILESET_BUILD_INPUT_LAYER_INVALID');
+  assert.match(failure(unknown).message, /no feature table named "rivers".*roads/u);
+
+  const chosen = await build(directory, ['world.gpkg', '--input-layer', 'roads', '--json']);
+  assert.equal(chosen.code, 0, chosen.stderr);
+  assert.equal(JSON.parse(chosen.stdout).layer.id, 'roads');
+  assert.equal(JSON.parse(chosen.stdout).archive.path, 'world.pmtiles');
+
+  const quoted = await build(directory, [
+    'world.gpkg',
+    '--input-layer',
+    'odd "name" table',
+    '-o',
+    'quoted.pmtiles',
+    '--maxzoom',
+    '6',
+    '--json',
+  ]);
+  assert.equal(quoted.code, 0, quoted.stderr);
+  assert.equal(JSON.parse(quoted.stdout).layer.id, 'odd_name_table');
+  const decoded = await decodeZoom(join(directory, 'quoted.pmtiles'), 6, 'odd_name_table');
+  assert.equal(decoded[0].id, 2);
+
+  const named = await build(directory, [
+    'world.gpkg',
+    '--input-layer',
+    'roads',
+    '--layer',
+    'streets',
+    '-o',
+    'named.pmtiles',
+    '--json',
+  ]);
+  assert.equal(JSON.parse(named.stdout).layer.id, 'streets');
+
+  await writeFile(join(directory, 'plain.geojson'), collection([]));
+  const misplaced = await build(directory, ['plain.geojson', '--input-layer', 'roads', '--json']);
+  assert.equal(failure(misplaced).code, 'TF_TILESET_BUILD_INPUT_LAYER_INVALID');
+});
+
+test('GeoPackage CRSs follow the same policy as every other input', async (t) => {
+  const directory = await workspace(t);
+  const utm = [
+    {definition: utm30nPrj, organization: 'EPSG', organizationCode: 25830, srsId: 25830},
+  ];
+  const utmPoint = gpkgGeometry(wkb({coordinates: [440000, 4474000], type: 'Point'}), {
+    srsId: 25830,
+  });
+  writeGeopackage(
+    join(directory, 'utm.gpkg'),
+    [{name: 'sites', rows: [{geometry: utmPoint, id: 1}], srsId: 25830}],
+    utm,
+  );
+
+  const refused = await build(directory, ['utm.gpkg', '--json']);
+  assert.equal(failure(refused).code, 'TF_TILESET_BUILD_CRS_NOT_WGS84');
+  assert.match(failure(refused).message, /GeoPackage layer "sites" \(EPSG:25830\)/u);
+
+  const converted = await build(directory, ['utm.gpkg', '--reproject', '--maxzoom', '9', '--json']);
+  assert.equal(converted.code, 0, converted.stderr);
+  assert.equal(JSON.parse(converted.stdout).crs.reprojected, true);
+  const [site] = await decodeZoom(join(directory, 'utm.pmtiles'), 9, 'utm');
+  assertClose(site.geometry.coordinates, [-3.7072, 40.4145], 0.002);
+
+  const mercator = [
+    (-3.7 * 20037508.342789244) / 180,
+    Math.log(Math.tan(Math.PI / 4 + (40.4 * Math.PI) / 360)) * 6378137,
+  ];
+  writeGeopackage(
+    join(directory, 'web.gpkg'),
+    [
+      {
+        name: 'web',
+        rows: [
+          {
+            geometry: gpkgGeometry(wkb({coordinates: mercator, type: 'Point'}), {srsId: 3857}),
+            id: 1,
+          },
+        ],
+        srsId: 3857,
+      },
+    ],
+    [{definition: pseudoMercatorWkt, organization: 'EPSG', organizationCode: 3857, srsId: 3857}],
+  );
+  const web = await build(directory, ['web.gpkg', '--reproject', '--maxzoom', '9', '--json']);
+  assert.equal(web.code, 0, web.stderr);
+  const [spherical] = await decodeZoom(join(directory, 'web.pmtiles'), 9, 'web');
+  assertClose(spherical.geometry.coordinates, [-3.7, 40.4], 0.002);
+
+  writeGeopackage(
+    join(directory, 'nad27.gpkg'),
+    [{name: 'old', rows: [{geometry: utmPoint, id: 1}], srsId: 4267}],
+    [{definition: nad27Prj, organization: 'EPSG', organizationCode: 4267, srsId: 4267}],
+  );
+  const datum = await build(directory, ['nad27.gpkg', '--reproject', '--json']);
+  assert.equal(failure(datum).code, 'TF_TILESET_BUILD_DATUM_UNSUPPORTED');
+
+  for (const srsId of [-1, 0]) {
+    const name = `undefined${srsId}.gpkg`;
+    const point = gpkgGeometry(wkb({coordinates: [2, 41], type: 'Point'}), {srsId});
+    writeGeopackage(join(directory, name), [
+      {name: 'data', rows: [{geometry: point, id: 1}], srsId},
+    ]);
+    const unknown = await build(directory, [name, '--json']);
+    assert.equal(failure(unknown).code, 'TF_TILESET_BUILD_CRS_UNKNOWN', name);
+    const stated = await build(directory, [name, '--source-crs', 'EPSG:4326', '--json']);
+    assert.equal(stated.code, 0, stated.stderr);
+    assert.ok(
+      JSON.parse(stated.stdout).warnings.some((item: string) => item.includes('longitude 2.0000')),
+    );
+  }
+
+  const dangling = gpkgGeometry(wkb({coordinates: [2, 41], type: 'Point'}), {srsId: 999});
+  writeGeopackage(join(directory, 'dangling.gpkg'), [
+    {name: 'data', rows: [{geometry: dangling, id: 1}], srsId: 999},
+  ]);
+  assert.equal(
+    failure(await build(directory, ['dangling.gpkg', '--json'])).code,
+    'TF_TILESET_BUILD_CRS_UNKNOWN',
+  );
+
+  writeGeopackage(
+    join(directory, 'garbled.gpkg'),
+    [{name: 'data', rows: [{geometry: dangling, id: 1}], srsId: 999}],
+    [{definition: 'NOT WKT[', organization: 'NONE', organizationCode: 999, srsId: 999}],
+  );
+  assert.equal(
+    failure(await build(directory, ['garbled.gpkg', '--json'])).code,
+    'TF_TILESET_BUILD_CRS_UNREADABLE',
+  );
+
+  writeGeopackage(join(directory, 'mixed.gpkg'), [
+    {
+      name: 'data',
+      rows: [
+        {geometry: gpkgGeometry(wkb({coordinates: [2, 41], type: 'Point'})), id: 1},
+        {geometry: gpkgGeometry(wkb({coordinates: [3, 42], type: 'Point'}), {srsId: 3857}), id: 2},
+      ],
+    },
+  ]);
+  const mixed = await build(directory, ['mixed.gpkg', '--json']);
+  assert.equal(failure(mixed).code, 'TF_TILESET_BUILD_CRS_MIXED');
+  assert.match(failure(mixed).message, /row 2/u);
+  const overridden = await build(directory, ['mixed.gpkg', '--source-crs', 'EPSG:4326', '--json']);
+  assert.equal(overridden.code, 0, overridden.stderr);
+  await assertNoTemporaryFiles(directory);
+});
+
+test('hostile or broken GeoPackages stop with a stable code and never run their SQL', async (t) => {
+  const directory = await workspace(t);
+  await writeFile(join(directory, 'text.gpkg'), 'this is not a database, not even close to one');
+  const notDatabase = await build(directory, ['text.gpkg', '--json']);
+  assert.equal(failure(notDatabase).code, 'TF_TILESET_BUILD_INPUT_INVALID');
+
+  const empty = new DatabaseSync(join(directory, 'plain.gpkg'));
+  empty.exec('CREATE TABLE unrelated(a)');
+  empty.close();
+  const notGeopackage = await build(directory, ['plain.gpkg', '--json']);
+  assert.equal(failure(notGeopackage).code, 'TF_TILESET_BUILD_INPUT_INVALID');
+  assert.match(failure(notGeopackage).message, /not a GeoPackage/u);
+
+  // Would never finish if the build evaluated it.
+  const endless =
+    'WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c) SELECT max(x) AS a FROM c';
+  const point = gpkgGeometry(wkb({coordinates: [2, 41], type: 'Point'}));
+  const viewContents = join(directory, 'view-contents.gpkg');
+  writeGeopackage(viewContents, [{name: 'data', rows: [{geometry: point, id: 1}]}]);
+  const contents = new DatabaseSync(viewContents);
+  contents.exec(
+    `DROP TABLE gpkg_contents; CREATE VIEW gpkg_contents AS SELECT a AS table_name, 'features' AS data_type FROM (${endless})`,
+  );
+  contents.close();
+  const hostileMetadata = await build(directory, ['view-contents.gpkg', '--json']);
+  assert.equal(failure(hostileMetadata).code, 'TF_TILESET_BUILD_INPUT_INVALID');
+  assert.match(failure(hostileMetadata).message, /gpkg_contents/u);
+
+  const viewLayer = join(directory, 'view-layer.gpkg');
+  writeGeopackage(viewLayer, []);
+  const layered = new DatabaseSync(viewLayer);
+  layered.exec(`CREATE VIEW evil AS ${endless};
+    INSERT INTO gpkg_contents(table_name, data_type, srs_id) VALUES ('evil', 'features', 4326);
+    INSERT INTO gpkg_geometry_columns VALUES ('evil', 'a', 'POINT', 4326, 0, 0);`);
+  layered.close();
+  const hostileLayer = await build(directory, ['view-layer.gpkg', '--json']);
+  assert.equal(failure(hostileLayer).code, 'TF_TILESET_BUILD_INPUT_LAYER_INVALID');
+  assert.match(failure(hostileLayer).message, /views are not read/u);
+
+  const header = (code: number) => {
+    const bytes = Buffer.alloc(5);
+    bytes[0] = 1;
+    bytes.writeUInt32LE(code, 1);
+    return bytes;
+  };
+  const count = (value: number) => {
+    const bytes = Buffer.alloc(4);
+    bytes.writeUInt32LE(value);
+    return bytes;
+  };
+  let nested = wkb({coordinates: [2, 41], type: 'Point'});
+  for (let level = 0; level < 40; level += 1) {
+    nested = Buffer.concat([header(7), count(1), nested]);
+  }
+  const cases: [string, Buffer, string, RegExp][] = [
+    [
+      'magic',
+      Buffer.from('XXxxxxxxxxxxxxxx'),
+      'TF_TILESET_BUILD_INPUT_INVALID',
+      /row 1: the geometry has no/u,
+    ],
+    [
+      'short',
+      gpkgGeometry(Buffer.from([1, 1, 0])),
+      'TF_TILESET_BUILD_INPUT_INVALID',
+      /ends early/u,
+    ],
+    [
+      'huge-count',
+      gpkgGeometry(Buffer.concat([header(2), count(4_000_000_000)])),
+      'TF_TILESET_BUILD_INPUT_INVALID',
+      /ends early/u,
+    ],
+    [
+      'huge-parts',
+      gpkgGeometry(Buffer.concat([header(7), count(4_000_000_000)])),
+      'TF_TILESET_BUILD_INPUT_INVALID',
+      /ends early/u,
+    ],
+    ['nested', gpkgGeometry(nested), 'TF_TILESET_BUILD_INPUT_LIMIT', /nest/u],
+    ['unknown', gpkgGeometry(header(99)), 'TF_TILESET_BUILD_INPUT_INVALID', /unknown geometry/u],
+    [
+      'wrong-member',
+      gpkgGeometry(
+        Buffer.concat([
+          header(4),
+          count(1),
+          wkb({
+            coordinates: [
+              [1, 1],
+              [2, 2],
+            ],
+            type: 'LineString',
+          }),
+        ]),
+      ),
+      'TF_TILESET_BUILD_INPUT_INVALID',
+      /multi-geometry/u,
+    ],
+    ['curve', gpkgGeometry(header(8)), 'TF_TILESET_BUILD_FORMAT_UNSUPPORTED', /curved/u],
+    [
+      'extended',
+      gpkgGeometry(header(1), {flagBits: 0x20}),
+      'TF_TILESET_BUILD_FORMAT_UNSUPPORTED',
+      /extended/u,
+    ],
+  ];
+  for (const [name, geometry, code, message] of cases) {
+    const file = `${name}.gpkg`;
+    writeGeopackage(join(directory, file), [{name: 'data', rows: [{geometry, id: 1}]}]);
+    const result = await build(directory, [file, '--json']);
+    assert.equal(failure(result).code, code, `${name}: ${result.stderr}`);
+    assert.match(failure(result).message, message, name);
+  }
+
+  const textGeometry = join(directory, 'text-geometry.gpkg');
+  writeGeopackage(textGeometry, [{name: 'data', rows: [{geometry: 'POINT(1 1)', id: 1}]}]);
+  assert.equal(
+    failure(await build(directory, ['text-geometry.gpkg', '--json'])).code,
+    'TF_TILESET_BUILD_INPUT_INVALID',
+  );
+  await assertNoTemporaryFiles(directory);
+});
+
+test('a GeoPackage only needs the runtime check when one is actually read', async (t) => {
+  const directory = await workspace(t);
+  await writeFile(join(directory, 'a.gpkg'), 'x');
+  await writeFile(join(directory, 'a.geojson'), collection(gridPoints(1, 1)));
+  // Stands in for a Node.js 22 release from before the module was available without a flag.
+  const env = {
+    NODE_OPTIONS:
+      "--import=data:text/javascript,globalThis.o=process.getBuiltinModule;process.getBuiltinModule=(n)=>n==='node:sqlite'?undefined:globalThis.o(n)",
+  };
+  const refused = await runCli(directory, ['tileset', 'build', 'a.gpkg', '--json'], env);
+  assert.equal(failure(refused).code, 'TF_TILESET_BUILD_RUNTIME_UNSUPPORTED');
+  assert.match(failure(refused).message, /Node\.js 22\.13/u);
+  const other = await runCli(directory, ['tileset', 'build', 'a.geojson', '--json'], env);
+  assert.equal(other.code, 0, other.stderr);
+});
+
+test('every spelling of Pseudo-Mercator converts on the sphere it means', async (t) => {
+  const directory = await workspace(t);
+  const mercator = [
+    (-3.7 * 20037508.342789244) / 180,
+    Math.log(Math.tan(Math.PI / 4 + (40.4 * Math.PI) / 360)) * 6378137,
+  ];
+  const variants: GeopackageFixtureSrs[] = [
+    {definition: pseudoMercatorWkt, organization: 'EPSG', organizationCode: 900913, srsId: 900913},
+    {definition: pseudoMercatorWkt, organization: 'EPSG', organizationCode: 3785, srsId: 3785},
+    {definition: pseudoMercatorWkt, organization: 'CUSTOM', organizationCode: 77, srsId: 77},
+  ];
+  for (const srs of variants) {
+    const name = `web${srs.srsId}`;
+    writeGeopackage(
+      join(directory, `${name}.gpkg`),
+      [
+        {
+          name,
+          rows: [
+            {
+              geometry: gpkgGeometry(wkb({coordinates: mercator, type: 'Point'}), {
+                srsId: srs.srsId,
+              }),
+              id: 1,
+            },
+          ],
+          srsId: srs.srsId,
+        },
+      ],
+      [srs],
+    );
+    const result = await build(directory, [
+      `${name}.gpkg`,
+      '--reproject',
+      '--maxzoom',
+      '9',
+      '--json',
+    ]);
+    assert.equal(result.code, 0, result.stderr);
+    const [point] = await decodeZoom(join(directory, `${name}.pmtiles`), 9, name);
+    assertClose(point.geometry.coordinates, [-3.7, 40.4], 0.002);
+  }
+});
+
+test('a transaction left unfinished by a crashed writer is refused, not read in half', async (t) => {
+  const directory = await workspace(t);
+  const path = join(directory, 'crashed.gpkg');
+  const point = (x: number) => gpkgGeometry(wkb({coordinates: [x, 41], type: 'Point'}));
+  writeGeopackage(path, [
+    {
+      name: 'data',
+      rows: Array.from({length: 3000}, (_, index) => ({geometry: point(2), id: index + 1})),
+    },
+  ]);
+  const script = `
+    const {DatabaseSync} = process.getBuiltinModule('node:sqlite');
+    const database = new DatabaseSync(${JSON.stringify(path)});
+    database.exec('PRAGMA journal_mode=DELETE; PRAGMA cache_size=1; BEGIN; UPDATE data SET geom = zeroblob(600);');
+    process.kill(process.pid, 'SIGKILL');
+  `;
+  spawnSync(process.execPath, ['--no-warnings', '-e', script]);
+  assert.ok((await readFile(`${path}-journal`)).length > 0, 'the writer left a hot journal');
+  const result = await build(directory, ['crashed.gpkg', '--json']);
+  assert.equal(failure(result).code, 'TF_TILESET_BUILD_INPUT_INVALID');
+});
+
+test('pending edits in a GeoPackage write-ahead log are read', async (t) => {
+  const directory = await workspace(t);
+  const path = join(directory, 'live.gpkg');
+  const point = (x: number) => gpkgGeometry(wkb({coordinates: [x, 41], type: 'Point'}));
+  writeGeopackage(path, [{name: 'data', rows: [{geometry: point(2), id: 1}]}]);
+  const writer = new DatabaseSync(path);
+  t.after(() => writer.close());
+  writer.exec('PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;');
+  writer.prepare('INSERT INTO data(id, geom) VALUES (2, ?)').run(point(3));
+  assert.ok((await readFile(`${path}-wal`)).length > 0);
+  const result = await build(directory, ['live.gpkg', '--maxzoom', '6', '--json']);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).input.features, 2);
+});
+
+test('interrupting a GeoPackage read removes its temporary files and touches nothing else', async (t) => {
+  const directory = await workspace(t);
+  writeGeopackage(join(directory, 'big.gpkg'), [
+    {
+      name: 'data',
+      rows: Array.from({length: 300_000}, (_, index) => ({
+        geometry: gpkgGeometry(
+          wkb({coordinates: [(index % 900) / 10, (index % 700) / 10], type: 'Point'}),
+        ),
+        id: index + 1,
+      })),
+    },
+  ]);
+  const child = spawn(process.execPath, cliFixtureArguments(['tileset', 'build', 'big.gpkg']), {
+    cwd: directory,
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  await new Promise<void>((resolve) => {
+    child.stderr.on('data', (chunk) => {
+      if (String(chunk).includes('Reading features')) resolve();
+    });
+  });
+  child.kill('SIGINT');
+  const code = await new Promise((resolve) => child.on('close', resolve));
+  assert.equal(code, 130);
+  assert.deepEqual(await readdir(directory), ['big.gpkg']);
+});
+
+test('interrupting a KML read removes its temporary files', async (t) => {
+  const directory = await workspace(t);
+  const placemark = (index: number) =>
+    `<Placemark><name>n${index}</name><Point><coordinates>${(index % 900) / 10},${(index % 700) / 10}</coordinates></Point></Placemark>`;
+  await writeFile(
+    join(directory, 'big.kml'),
+    `<kml>${Array.from({length: 600_000}, (_, index) => placemark(index)).join('')}</kml>`,
+  );
+  const child = spawn(process.execPath, cliFixtureArguments(['tileset', 'build', 'big.kml']), {
+    cwd: directory,
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  await new Promise<void>((resolve) => {
+    child.stderr.on('data', (chunk) => {
+      if (String(chunk).includes('Reading features')) resolve();
+    });
+  });
+  child.kill('SIGINT');
+  const code = await new Promise((resolve) => child.on('close', resolve));
+  assert.equal(code, 130);
+  assert.deepEqual(await readdir(directory), ['big.kml']);
+});
+
 async function assertNoTemporaryFiles(directory: string): Promise<void> {
   const names = await readdir(directory);
   assert.deepEqual(
@@ -1148,12 +2243,23 @@ async function shapefileParts(directory: string): Promise<{dbf: Buffer; shp: Buf
 }
 
 /** A minimal zip with deflated members, so tests do not depend on a system tool. */
-async function writeZip(path: string, members: {data: Buffer; name: string}[]): Promise<void> {
+async function writeZip(
+  path: string,
+  members: {data: Buffer; declaredBytes?: number; name: string}[],
+): Promise<void> {
   const locals: Buffer[] = [];
   const centrals: Buffer[] = [];
   let offset = 0;
-  for (const {data, name} of members) {
+  for (const {data, declaredBytes = data.length, name} of members) {
     const compressed = deflateRawSync(data);
+    // Above 32 bits the size moves to a Zip64 extra field in the central directory.
+    const zip64 = declaredBytes > 0xffffffff;
+    const extra = Buffer.alloc(zip64 ? 12 : 0);
+    if (zip64) {
+      extra.writeUInt16LE(1, 0);
+      extra.writeUInt16LE(8, 2);
+      extra.writeBigUInt64LE(BigInt(declaredBytes), 4);
+    }
     const nameBytes = Buffer.from(name);
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0);
@@ -1171,10 +2277,11 @@ async function writeZip(path: string, members: {data: Buffer; name: string}[]): 
     central.writeUInt16LE(8, 10);
     central.writeUInt32LE(crc32(data), 16);
     central.writeUInt32LE(compressed.length, 20);
-    central.writeUInt32LE(data.length, 24);
+    central.writeUInt32LE(zip64 ? 0xffffffff : declaredBytes, 24);
     central.writeUInt16LE(nameBytes.length, 28);
+    central.writeUInt16LE(extra.length, 30);
     central.writeUInt32LE(offset, 42);
-    centrals.push(central, nameBytes);
+    centrals.push(central, nameBytes, extra);
     offset += local.length + nameBytes.length + compressed.length;
   }
   const directoryBytes = Buffer.concat(centrals);
@@ -1185,6 +2292,165 @@ async function writeZip(path: string, members: {data: Buffer; name: string}[]): 
   end.writeUInt32LE(directoryBytes.length, 12);
   end.writeUInt32LE(offset, 16);
   await writeFile(path, Buffer.concat([...locals, directoryBytes, end]));
+}
+
+/** Tiles repeat a point inside their buffer, so a feature is counted by where its points are. */
+function distinctPositions(features: DecodedFeature[]): number {
+  const points = features.flatMap(({geometry}) =>
+    geometry.type === 'MultiPoint' ? geometry.coordinates : [geometry.coordinates],
+  );
+  return new Set(points.map(([x, y]: number[]) => `${x.toFixed(3)},${y.toFixed(3)}`)).size;
+}
+
+type WkbInput = {coordinates?: any; geometries?: WkbInput[]; type: string};
+
+/** ISO WKB, written by hand so that the fixtures do not trust the code under test. */
+function wkb(geometry: WkbInput, options: {extra?: number; littleEndian?: boolean} = {}): Buffer {
+  const {extra = 0, littleEndian = true} = options;
+  const size = extra === 0 ? 2 : extra === 3000 ? 4 : 3;
+  const codes: Record<string, number> = {
+    GeometryCollection: 7,
+    LineString: 2,
+    MultiLineString: 5,
+    MultiPoint: 4,
+    MultiPolygon: 6,
+    Point: 1,
+    Polygon: 3,
+  };
+  const parts: Buffer[] = [];
+  const uint32 = (value: number) => {
+    const bytes = Buffer.alloc(4);
+    if (littleEndian) bytes.writeUInt32LE(value);
+    else bytes.writeUInt32BE(value);
+    parts.push(bytes);
+  };
+  const position = (values: number[]) => {
+    for (let index = 0; index < size; index += 1) {
+      const bytes = Buffer.alloc(8);
+      if (littleEndian) bytes.writeDoubleLE(values[index] ?? 7);
+      else bytes.writeDoubleBE(values[index] ?? 7);
+      parts.push(bytes);
+    }
+  };
+  const line = (values: number[][]) => {
+    uint32(values.length);
+    values.forEach(position);
+  };
+  const child = (value: WkbInput) => parts.push(wkb(value, options));
+  parts.push(Buffer.from([littleEndian ? 1 : 0]));
+  uint32(codes[geometry.type] + extra);
+  const {coordinates} = geometry;
+  switch (geometry.type) {
+    case 'Point':
+      position(coordinates);
+      break;
+    case 'LineString':
+      line(coordinates);
+      break;
+    case 'Polygon':
+      uint32(coordinates.length);
+      coordinates.forEach(line);
+      break;
+    case 'MultiPoint':
+      uint32(coordinates.length);
+      coordinates.forEach((item: unknown) => child({coordinates: item, type: 'Point'}));
+      break;
+    case 'MultiLineString':
+      uint32(coordinates.length);
+      coordinates.forEach((item: unknown) => child({coordinates: item, type: 'LineString'}));
+      break;
+    case 'MultiPolygon':
+      uint32(coordinates.length);
+      coordinates.forEach((item: unknown) => child({coordinates: item, type: 'Polygon'}));
+      break;
+    default:
+      uint32(geometry.geometries!.length);
+      geometry.geometries!.forEach(child);
+  }
+  return Buffer.concat(parts);
+}
+
+function gpkgGeometry(
+  body: Buffer,
+  options: {
+    bigEndian?: boolean;
+    empty?: boolean;
+    envelopeBytes?: number;
+    flagBits?: number;
+    srsId?: number;
+  } = {},
+): Buffer {
+  const {bigEndian = false, empty = false, envelopeBytes = 0, flagBits = 0, srsId = 4326} = options;
+  const kind = {0: 0, 32: 1, 48: 2, 64: 4}[envelopeBytes] ?? 0;
+  const header = Buffer.alloc(8 + envelopeBytes);
+  header.write('GP', 0, 'latin1');
+  header[3] = (bigEndian ? 0 : 1) | (kind << 1) | (empty ? 0x10 : 0) | flagBits;
+  if (bigEndian) header.writeInt32BE(srsId, 4);
+  else header.writeInt32LE(srsId, 4);
+  return Buffer.concat([header, body]);
+}
+
+type GeopackageFixtureLayer = {
+  columns?: string;
+  name: string;
+  rows: {geometry: Buffer | string | null; id: number; values?: unknown[]}[];
+  srsId?: number;
+};
+
+type GeopackageFixtureSrs = {
+  definition: string;
+  organization: string;
+  organizationCode: number;
+  srsId: number;
+};
+
+function writeGeopackage(
+  path: string,
+  layers: GeopackageFixtureLayer[],
+  extraSrs: GeopackageFixtureSrs[] = [],
+): void {
+  const database = new DatabaseSync(path);
+  const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
+  database.exec(`PRAGMA application_id = 1196444487;
+    CREATE TABLE gpkg_spatial_ref_sys (srs_name TEXT NOT NULL, srs_id INTEGER PRIMARY KEY, organization TEXT NOT NULL, organization_coordsys_id INTEGER NOT NULL, definition TEXT NOT NULL, description TEXT);
+    CREATE TABLE gpkg_contents (table_name TEXT PRIMARY KEY, data_type TEXT NOT NULL, identifier TEXT, description TEXT DEFAULT '', last_change TEXT, min_x REAL, min_y REAL, max_x REAL, max_y REAL, srs_id INTEGER);
+    CREATE TABLE gpkg_geometry_columns (table_name TEXT NOT NULL, column_name TEXT NOT NULL, geometry_type_name TEXT NOT NULL, srs_id INTEGER NOT NULL, z INTEGER NOT NULL, m INTEGER NOT NULL);
+    BEGIN;`);
+  const insertSrs = database.prepare(
+    'INSERT INTO gpkg_spatial_ref_sys VALUES (?, ?, ?, ?, ?, NULL)',
+  );
+  insertSrs.run('WGS 84', 4326, 'EPSG', 4326, wgs84Prj);
+  insertSrs.run('Undefined Cartesian', -1, 'NONE', -1, 'undefined');
+  insertSrs.run('Undefined geographic', 0, 'NONE', 0, 'undefined');
+  for (const srs of extraSrs) {
+    insertSrs.run(
+      `custom ${srs.srsId}`,
+      srs.srsId,
+      srs.organization,
+      srs.organizationCode,
+      srs.definition,
+    );
+  }
+  for (const layer of layers) {
+    const srsId = layer.srsId ?? 4326;
+    const columns = layer.columns ?? 'id INTEGER PRIMARY KEY AUTOINCREMENT, geom BLOB';
+    database.exec(`CREATE TABLE ${quote(layer.name)} (${columns})`);
+    database
+      .prepare("INSERT INTO gpkg_contents(table_name, data_type, srs_id) VALUES (?, 'features', ?)")
+      .run(layer.name, srsId);
+    database
+      .prepare("INSERT INTO gpkg_geometry_columns VALUES (?, 'geom', 'GEOMETRY', ?, 0, 0)")
+      .run(layer.name, srsId);
+    const width = (layer.rows[0]?.values?.length ?? 0) + 2;
+    const insert = database.prepare(
+      `INSERT INTO ${quote(layer.name)} VALUES (${Array.from({length: width}, () => '?').join(', ')})`,
+    );
+    for (const row of layer.rows) {
+      insert.run(row.id, row.geometry, ...((row.values ?? []) as never[]));
+    }
+  }
+  database.exec('COMMIT;');
+  database.close();
 }
 
 function feature(
@@ -1293,10 +2559,11 @@ async function build(directory: string, args: string[]) {
   return runCli(directory, ['tileset', 'build', ...args]);
 }
 
-async function runCli(directory: string, args: string[]) {
+async function runCli(directory: string, args: string[], env: Record<string, string> = {}) {
   return new Promise<{code: number | null; stderr: string; stdout: string}>((resolve, reject) => {
     const child = spawn(process.execPath, cliFixtureArguments(args), {
       cwd: directory,
+      env: {...process.env, ...env},
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '';

@@ -10,6 +10,7 @@ type BuildCommandOptions = {
   force?: boolean;
   format?: TilesetBuildFormat;
   include?: string;
+  inputLayer?: string;
   json?: boolean;
   latColumn?: string;
   layer?: string;
@@ -25,15 +26,25 @@ type BuildCommandOptions = {
   zipEntry?: string;
 };
 
-const formats: readonly string[] = ['csv', 'geojson', 'geojsonseq', 'shapefile'];
+const formats: readonly string[] = [
+  'csv',
+  'geojson',
+  'geojsonseq',
+  'geopackage',
+  'gpx',
+  'kml',
+  'shapefile',
+];
 
 export function registerTilesetBuildCommand(parent: Command): void {
   parent
     .command('build')
-    .description('Build a PMTiles archive locally from GeoJSON, CSV or Shapefile')
+    .description(
+      'Build a PMTiles archive locally from GeoJSON, CSV, Shapefile, GeoPackage, KML or GPX',
+    )
     .argument(
       '<input>',
-      'GeoJSON, newline-delimited GeoJSON, CSV, .shp, or .zip holding a Shapefile',
+      'GeoJSON, newline-delimited GeoJSON, CSV, .shp, .zip holding a Shapefile, .gpkg, .kml, .kmz or .gpx',
     )
     .option('-o, --output <path>', 'archive path (default: the input name with .pmtiles)')
     .option('--force', 'replace an existing output file')
@@ -45,7 +56,8 @@ export function registerTilesetBuildCommand(parent: Command): void {
     .option('--exclude <fields>', 'drop these comma-separated attributes')
     .option('--rank-by <field>', 'keep the highest values of this numeric attribute when thinning')
     .option('--rank-ascending', 'with --rank-by, keep the lowest values instead')
-    .option('--zip-entry <path>', 'the .shp to read from a zip holding several')
+    .option('--zip-entry <path>', 'the .shp or .kml to read from an archive holding several')
+    .option('--input-layer <name>', 'the feature table to read from a GeoPackage holding several')
     .option('--lon-column <name>', 'CSV longitude column')
     .option('--lat-column <name>', 'CSV latitude column')
     .option('--source-crs <crs>', 'state the input CRS: EPSG:<code>, proj string, WKT or .prj path')
@@ -81,6 +93,7 @@ export function registerTilesetBuildCommand(parent: Command): void {
           ...(options.force ? {force: true} : {}),
           ...(options.format === undefined ? {} : {format: options.format}),
           ...(options.include === undefined ? {} : {include: fieldList(options.include)}),
+          ...(options.inputLayer === undefined ? {} : {inputLayer: options.inputLayer}),
           ...(options.latColumn === undefined ? {} : {latColumn: options.latColumn}),
           ...(options.layer === undefined ? {} : {layer: options.layer}),
           ...(options.lonColumn === undefined ? {} : {lonColumn: options.lonColumn}),

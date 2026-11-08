@@ -16,13 +16,18 @@ import {FeatureIngest} from './ingest';
 import {TileArchiveWriter} from './pmtiles-writer';
 import {csvColumnsNameCoordinates, readCsv} from './read-csv';
 import {readGeojson, readGeojsonSequence} from './read-geojson';
+import {GeoPackageLayer} from './read-geopackage';
+import {readGpx} from './read-gpx';
+import {readKml} from './read-kml';
 import {readShapefile, shapefileCrsStatement} from './read-shapefile';
-import {ZippedShapefile} from './read-zip';
+import {fileChunks} from './read-xml';
+import {ZippedKml, ZippedShapefile} from './read-zip';
 import {FeatureSpool, SpoolDirectory} from './spool';
 import {buildPyramid, type ZoomStatistics} from './tiler';
 import {chooseMaxzoom} from './zoom';
 
-export type TilesetBuildFormat = 'csv' | 'geojson' | 'geojsonseq' | 'shapefile';
+export type TilesetBuildFormat =
+  'csv' | 'geojson' | 'geojsonseq' | 'geopackage' | 'gpx' | 'kml' | 'shapefile';
 
 export type TilesetBuildOptions = Readonly<{
   attribution?: string;
@@ -32,6 +37,7 @@ export type TilesetBuildOptions = Readonly<{
   format?: TilesetBuildFormat;
   include?: readonly string[];
   input: string;
+  inputLayer?: string;
   latColumn?: string;
   layer?: string;
   lonColumn?: string;
@@ -100,11 +106,26 @@ export async function buildTileset(options: TilesetBuildOptions): Promise<Tilese
       'Only Shapefiles can be read from a zip; extract other formats first.',
     );
   }
-  if (!zipped && options.zipEntry !== undefined) {
+  const kmz = isKmz(input);
+  if (kmz && format !== 'kml') {
+    throw new TilesetBuildError(
+      'TF_TILESET_BUILD_FORMAT_UNSUPPORTED',
+      'format',
+      'A .kmz file can only be read as KML.',
+    );
+  }
+  if (!zipped && !kmz && options.zipEntry !== undefined) {
     throw new TilesetBuildError(
       'TF_TILESET_BUILD_ZIP_ENTRY_INVALID',
       'zipEntry',
-      '--zip-entry only applies to a .zip input.',
+      '--zip-entry only applies to a .zip or .kmz input.',
+    );
+  }
+  if (format !== 'geopackage' && options.inputLayer !== undefined) {
+    throw new TilesetBuildError(
+      'TF_TILESET_BUILD_INPUT_LAYER_INVALID',
+      'inputLayer',
+      '--input-layer only applies to a GeoPackage input.',
     );
   }
   if (options.rankAscending && options.rankBy === undefined) {
@@ -131,12 +152,15 @@ export async function buildTileset(options: TilesetBuildOptions): Promise<Tilese
       `${outputOption} already exists. Pass --force to replace it.`,
     );
   }
-  const layer = chooseLayer(options.layer, input);
+  const layer = chooseLayer(options.layer, options.inputLayer, input);
   const zoomRange = checkZooms(options);
 
   const outputDirectory = dirname(output);
   checkFreeSpace(outputDirectory, zipped ? 0 : inputStat.size);
   const zip = zipped ? await ZippedShapefile.open(input, options.zipEntry) : null;
+  const zippedKml = kmz ? await ZippedKml.open(input, options.zipEntry) : null;
+  const geopackage =
+    format === 'geopackage' ? GeoPackageLayer.open(input, options.inputLayer) : null;
   const temporary = mkdtempSync(join(outputDirectory, '.tileflow-tileset-build-'));
   const removeTemporary = () => rmSync(temporary, {force: true, recursive: true});
   const interrupt = () => {
@@ -150,8 +174,10 @@ export async function buildTileset(options: TilesetBuildOptions): Promise<Tilese
   try {
     // Extracted files sit beside the temporary spool, so they count on top of its estimate.
     if (zip) checkFreeSpace(outputDirectory, zip.uncompressedBytes, zip.uncompressedBytes);
+    // A KMZ is streamed, not extracted, so only the spool needs room.
+    if (zippedKml) checkFreeSpace(outputDirectory, zippedKml.uncompressedBytes);
     const shapefile = zip ? await zip.extractProjection(temporary) : input;
-    const statement = await chooseCrsStatement(format, shapefile, options);
+    const statement = await chooseCrsStatement(format, shapefile, options, geopackage);
     // A GeoJSON file without a crs member is WGS84 by RFC 7946; a late member is checked below.
     const crs = resolveCrs(statement, options.reproject === true);
     if (zip) await zip.extractData(temporary);
@@ -181,6 +207,15 @@ export async function buildTileset(options: TilesetBuildOptions): Promise<Tilese
         break;
       case 'geojsonseq':
         await readGeojsonSequence(input, ingest);
+        break;
+      case 'geopackage':
+        await (geopackage as GeoPackageLayer).read(ingest, options.sourceCrs === undefined);
+        break;
+      case 'gpx':
+        await readGpx(fileChunks(input), ingest);
+        break;
+      case 'kml':
+        await readKml(zippedKml ? zippedKml.chunks() : fileChunks(input), ingest);
         break;
       case 'shapefile':
         await readShapefile(shapefile, ingest);
@@ -284,6 +319,8 @@ export async function buildTileset(options: TilesetBuildOptions): Promise<Tilese
   } finally {
     archive?.close();
     zip?.close();
+    zippedKml?.close();
+    geopackage?.close();
     process.removeListener('SIGINT', interrupt);
     process.removeListener('SIGTERM', interrupt);
     removeTemporary();
@@ -308,11 +345,18 @@ function detectFormat(path: string): TilesetBuildFormat {
     case '.shp':
     case '.zip':
       return 'shapefile';
+    case '.gpkg':
+      return 'geopackage';
+    case '.kml':
+    case '.kmz':
+      return 'kml';
+    case '.gpx':
+      return 'gpx';
     default:
       throw new TilesetBuildError(
         'TF_TILESET_BUILD_FORMAT_UNSUPPORTED',
         'input',
-        `Unsupported input extension "${extension}". Supported: .geojson, .json, .ndjson, .geojsonl, .csv, .tsv, .shp and a .zip holding a Shapefile. Use --format if the extension is misleading.`,
+        `Unsupported input extension "${extension}". Supported: .geojson, .json, .ndjson, .geojsonl, .csv, .tsv, .shp, a .zip holding a Shapefile, .gpkg, .kml, .kmz and .gpx. Use --format if the extension is misleading.`,
       );
   }
 }
@@ -321,11 +365,18 @@ async function chooseCrsStatement(
   format: TilesetBuildFormat,
   input: string,
   options: TilesetBuildOptions,
+  geopackage: GeoPackageLayer | null,
 ): Promise<CrsStatement> {
   if (options.sourceCrs !== undefined) return parseSourceCrsOption(options.sourceCrs);
   switch (format) {
     case 'shapefile':
       return shapefileCrsStatement(input);
+    case 'geopackage':
+      return (geopackage as GeoPackageLayer).crsStatement;
+    case 'gpx':
+      return wgs84Statement('format', 'GPX (WGS84 by definition)');
+    case 'kml':
+      return wgs84Statement('format', 'KML (WGS84 by definition)');
     case 'geojson':
     case 'geojsonseq':
       return wgs84Statement('format', 'GeoJSON (WGS84 by RFC 7946)');
@@ -353,6 +404,10 @@ function checkDocumentCrs(member: unknown, options: TilesetBuildOptions): void {
 
 function isZip(path: string): boolean {
   return extname(path).toLowerCase() === '.zip';
+}
+
+function isKmz(path: string): boolean {
+  return extname(path).toLowerCase() === '.kmz';
 }
 
 /** The name outputs and layers default to: `roads.shp.zip` means `roads`, as `roads.zip` does. */
@@ -385,10 +440,14 @@ function placementWarnings(
   return warnings;
 }
 
-function chooseLayer(requested: string | undefined, input: string): string {
+function chooseLayer(
+  requested: string | undefined,
+  inputLayer: string | undefined,
+  input: string,
+): string {
   const candidate =
     requested ??
-    inputStem(input)
+    (inputLayer ?? inputStem(input))
       .replace(/[^A-Za-z0-9._:-]+/gu, '_')
       .replace(/^[^A-Za-z0-9]+/u, '');
   if (!layerNamePattern.test(candidate)) {

@@ -24,6 +24,7 @@ const messages: Record<TileflowInteractionDiagnosticCode, string> = {
   DUPLICATE_ANNOTATION_ID: 'Annotation IDs must be unique.',
   INVALID_FIELD: 'An interaction field is invalid.',
   INVALID_ANNOTATION: 'An annotation is invalid.',
+  INVALID_DATA_LAYER: 'A data source or overlay is invalid.',
   INVALID_DOCUMENT: 'The interaction document is invalid.',
   LIMIT_EXCEEDED: 'The portable interaction limit was exceeded.',
   MISSING_VIEW: 'The interaction view is unavailable.',

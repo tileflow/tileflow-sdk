@@ -25,6 +25,17 @@ export type {
   TileflowMapLibreDomStateChangeReason,
   TileflowMapLibrePositioned,
 } from './maplibre-dom';
+export type {TileflowAnnotationClusterOptions} from './annotation-clusters';
+export {createTileflowMapLibreDataRuntime} from './maplibre-data';
+export type {
+  TileflowMapLibreDataFeature,
+  TileflowMapLibreDataInput,
+  TileflowMapLibreDataMap,
+  TileflowMapLibreDataOverlay,
+  TileflowMapLibreDataRuntime,
+  TileflowMapLibreDataRuntimeOptions,
+  TileflowMapLibreDataSource,
+} from './maplibre-data';
 export {createTileflowMapLibreInteractionCoordinator} from './maplibre-coordinator';
 export type {
   TileflowMapLibreInteractionCoordinator,

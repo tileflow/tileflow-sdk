@@ -637,3 +637,22 @@ test('target removal closes overlays and dispose is idempotent', () => {
   assert.equal(marker.removeCalls, 1);
   assert.throws(() => harness.runtime.reconcile([]), /disposed/u);
 });
+
+test('a hidden marker stays visible only while its popup is open', () => {
+  const harness = createHarness();
+  const input = annotation('clustered', {popup: {content: {kind: 'text', text: 'Details'}}});
+  harness.runtime.reconcile([input]);
+  const marker = markerElement(harness);
+
+  harness.runtime.setHiddenAnnotations(new Set(['clustered']));
+  assert.equal(marker.style.display, 'none');
+
+  harness.runtime.openPopup('clustered');
+  assert.equal(marker.style.display, '');
+
+  harness.runtime.closePopup();
+  assert.equal(marker.style.display, 'none');
+
+  harness.runtime.setHiddenAnnotations(new Set());
+  assert.equal(marker.style.display, '');
+});

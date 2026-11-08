@@ -275,6 +275,13 @@ wrapper. A bounded accessible marker is rendered when `renderMarker` is omitted.
 remain in native vector or GeoJSON layers and are selected through semantic rendered-feature
 queries rather than thousands of React marker views.
 
+`Map` also takes the web adapters' `dataSources`, `dataOverlays` and `annotationClusters`, with
+`geojsonSource()`, `clusterOverlay()` and `heatmapOverlay()` from `@tileflow/core/native`. Tapping a
+cluster zooms in unless the application controls `view`, and reports a `cluster` target through
+`onInteractionEvent`. Compiled clusters and heatmaps are checked by
+`tileflow validate --renderer native`. Polygon drawing with Terra Draw is web-only. See the
+[interactions reference](https://github.com/tileflow/tileflow-sdk/blob/main/packages/interactions/REFERENCE.md).
+
 The application owns persistent selection and its presentation. The SDK emits normalized
 annotation or POI targets but no popup, callout, tooltip, sheet, panel or modal renderer.
 

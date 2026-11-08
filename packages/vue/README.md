@@ -191,6 +191,26 @@ reconcile without recreating MapLibre. Text/field descriptors render as text; `v
 an application slot and never evaluates HTML. Tooltips must remain non-interactive; use a popup for
 links, buttons, or forms.
 
+## Cluster points and draw density
+
+Use `annotationClusters` for up to 1,000 annotations, or `dataSources` and `dataOverlays` for larger
+GeoJSON sets. Clicking a cluster zooms in and reports a `cluster` target through `@interaction-event`.
+
+<!-- docs:check -->
+
+```ts
+import {clusterOverlay, geojsonSource} from '@tileflow/core/runtime';
+
+export const dataSources = {stores: geojsonSource({cluster: true, clusterRadius: 50})};
+export const dataOverlays = {
+  stores: clusterOverlay({id: 'stores', placement: 'above-labels', source: 'stores'}),
+};
+```
+
+See the
+[interactions reference](https://github.com/tileflow/tileflow-sdk/blob/main/packages/interactions/REFERENCE.md)
+for heatmaps, events, and polygon drawing with Terra Draw.
+
 ## Display an existing image
 
 `mode="image"` renders an explicit `imageUrl` or derives an image URL from the selected manifest

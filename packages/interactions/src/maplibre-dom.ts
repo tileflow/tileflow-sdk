@@ -124,6 +124,8 @@ export type TileflowMapLibreDomRuntime<
   openPopup: (annotationId: string) => boolean;
   reconcile: (annotations: readonly TAnnotation[]) => void;
   setCustomRenderers: (renderers: TileflowMapLibreDomCustomRenderers) => void;
+  /** Hide markers that a cluster stands in for. An open popup keeps its own marker visible. */
+  setHiddenAnnotations: (annotationIds: ReadonlySet<string>) => void;
   setInteractionState: (state: TileflowInteractionState) => void;
   subscribeEvents: (
     listener: (event: TileflowAnnotationInteractionEvent<TAnnotation>) => void,
@@ -207,6 +209,17 @@ export function createTileflowMapLibreDomRuntime<
   let disposeStarted = false;
   let disposeComplete = false;
   let overlaySequence = 0;
+  let hiddenAnnotations: ReadonlySet<string> = new Set();
+
+  const applyAnnotationVisibility = (
+    instance: AnnotationInstance<TMap, TMarker, TAnnotation>,
+    annotationId: string,
+  ) => {
+    const hidden =
+      hiddenAnnotations.has(annotationId) && activePopup?.annotation.id !== annotationId;
+    if (hidden) closeTooltipVisual(annotationId);
+    instance.element.style.display = hidden ? 'none' : '';
+  };
 
   const emit = (
     type: TileflowAnnotationInteractionEvent<TAnnotation>['type'],
@@ -280,6 +293,7 @@ export function createTileflowMapLibreDomRuntime<
     }
     marker?.element.setAttribute('aria-expanded', 'false');
     marker?.element.removeAttribute('aria-controls');
+    if (marker) applyAnnotationVisibility(marker, current.annotation.id);
 
     const errors = safelyRunAll([() => current.overlay.remove(), () => current.shell.remove()]);
     publishRenderTargets();
@@ -451,6 +465,7 @@ export function createTileflowMapLibreDomRuntime<
     clearOverlayFailure(entry.definition.id, 'popup');
     entry.instance.element.setAttribute('aria-controls', shell.id);
     entry.instance.element.setAttribute('aria-expanded', 'true');
+    applyAnnotationVisibility(entry.instance, annotationId);
     publishRenderTargets();
     emit('popup:open', entry.definition, inputModality);
     closeButton.focus({preventScroll: true});
@@ -761,6 +776,7 @@ export function createTileflowMapLibreDomRuntime<
     container.className = 'tileflow-interaction-marker-content';
     element.append(container);
     configureAnnotationElement({annotation, container, element}, annotation);
+    if (hiddenAnnotations.has(annotation.id)) element.style.display = 'none';
 
     const marker = options.createMarker({annotation, element});
     const instance: AnnotationInstance<TMap, TMarker, TAnnotation> = {
@@ -1057,6 +1073,11 @@ export function createTileflowMapLibreDomRuntime<
         publishDiagnostics();
         publishRenderTargets();
       }
+    },
+    setHiddenAnnotations(annotationIds) {
+      assertRuntimeActive(disposeStarted);
+      hiddenAnnotations = annotationIds;
+      for (const entry of registry.entries()) applyAnnotationVisibility(entry.instance, entry.key);
     },
     setInteractionState(state) {
       assertRuntimeActive(disposeStarted);

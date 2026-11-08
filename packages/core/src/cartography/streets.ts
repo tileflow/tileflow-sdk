@@ -439,6 +439,7 @@ function compileSemanticStyleInternal(
       basemapLayers,
       mapId: config.id,
       overlays: validateBoundaryChoroplethOverlays(config.id, config.overlays, boundaryAreas),
+      sourceDefinitions: hostedSources.definitions,
       sourceIds: [
         ...Object.keys(hostedSources.definitions),
         ...(boundaryAreas ? [boundaryAreas.sourceId] : []),

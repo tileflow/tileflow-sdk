@@ -23,10 +23,12 @@ import {
   shallowRef,
   type SlotsType,
   Teleport,
+  toRaw,
   type VNodeChild,
   watch,
   watchEffect,
 } from 'vue';
+import type {TileflowGeoJsonSource, TileflowMapLibreOverlay} from '@tileflow/core';
 import {
   attachTileflowAtmosphere,
   attachTileflowFairUseNotice,
@@ -94,9 +96,12 @@ import {
   type TileflowInteractionViewContext,
 } from '@tileflow/interactions';
 import {
+  createTileflowMapLibreDataRuntime,
   createTileflowMapLibreDomRuntime,
   createTileflowMapLibreInteractionCoordinator,
   createTileflowMapLibreSemanticDomRuntime,
+  type TileflowAnnotationClusterOptions,
+  type TileflowMapLibreDataRuntime,
   type TileflowMapLibreDomRenderTarget,
   type TileflowMapLibreDomRuntime,
   type TileflowMapLibrePoiMap,
@@ -154,14 +159,23 @@ type TileflowMapStateInput =
 
 type TileflowMapInteractiveProps<TAnnotation extends TileflowAnnotation> = TileflowMapSharedProps &
   TileflowMapStateInput & {
+    /** Group `annotations` into accessible cluster buttons. Up to 1,000 annotations. */
+    annotationClusters?: TileflowAnnotationClusterOptions;
     annotations?: readonly TAnnotation[];
+    /** Overlays drawn over `dataSources` or compiled sources, keyed as in `defineMap`. */
+    dataOverlays?: Readonly<Record<string, TileflowMapLibreOverlay>>;
+    /** Application GeoJSON, keyed as in `defineMap`. A compiled source of the same key is filled. */
+    dataSources?: Readonly<Record<string, TileflowGeoJsonSource>>;
     interactions?: readonly TileflowInteractionBinding[];
     interactive?: boolean;
     mode?: 'interactive';
   };
 
 type TileflowMapImageProps = TileflowMapSharedProps & {
+  annotationClusters?: never;
   annotations?: never;
+  dataOverlays?: never;
+  dataSources?: never;
   defaultInteractionState?: never;
   interactionState?: never;
   interactions?: never;
@@ -177,7 +191,10 @@ export type TileflowMapProps<TAnnotation extends TileflowAnnotation = TileflowAn
 type RuntimeTileflowAnnotation = TileflowAnnotation<TileflowInteractionJsonValue>;
 type RuntimeTileflowMapProps = TileflowMapSharedProps &
   TileflowMapStyleSourceProps & {
+    annotationClusters?: TileflowAnnotationClusterOptions;
     annotations?: readonly RuntimeTileflowAnnotation[];
+    dataOverlays?: Readonly<Record<string, TileflowMapLibreOverlay>>;
+    dataSources?: Readonly<Record<string, TileflowGeoJsonSource>>;
     defaultInteractionState?: TileflowInteractionState;
     interactionState?: TileflowInteractionState;
     interactions?: readonly TileflowInteractionBinding[];
@@ -216,10 +233,13 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       type: String,
     },
     analytics: Object as PropType<TileflowAnalytics>,
+    annotationClusters: Object as PropType<TileflowAnnotationClusterOptions>,
     annotations: Array as unknown as PropType<readonly RuntimeTileflowAnnotation[]>,
     center: Array as unknown as PropType<[number, number]>,
     captureId: String,
     className: String,
+    dataOverlays: Object as PropType<Readonly<Record<string, TileflowMapLibreOverlay>>>,
+    dataSources: Object as PropType<Readonly<Record<string, TileflowGeoJsonSource>>>,
     defaultInteractionState: Object as PropType<TileflowInteractionState>,
     height: {
       default: 420,
@@ -280,6 +300,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     );
     const controlledInteractionOwnership = props.interactionState !== undefined;
     let annotationRuntime: TileflowMapLibreDomRuntime<RuntimeTileflowAnnotation> | null = null;
+    let dataRuntime: TileflowMapLibreDataRuntime<RuntimeTileflowAnnotation> | null = null;
     let semanticRuntime: TileflowMapLibreSemanticDomRuntime | null = null;
     let interactionRuntimesDisposing = false;
     let initializeSemanticRuntime: (() => void) | null = null;
@@ -341,7 +362,10 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     });
     const hasInteractionConfiguration = computed(
       () =>
+        props.annotationClusters !== undefined ||
         props.annotations !== undefined ||
+        props.dataOverlays !== undefined ||
+        props.dataSources !== undefined ||
         props.interactions !== undefined ||
         props.interactionState !== undefined ||
         props.defaultInteractionState !== undefined ||
@@ -738,6 +762,8 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       const controller = themeController;
       const scene = sceneAttachment;
       sceneAttachment = null;
+      dataRuntime?.dispose();
+      dataRuntime = null;
       const annotationInteractionsForMap = annotationRuntime;
       const semanticInteractionsForMap = semanticRuntime;
       const worldRequestBridge = mapWorldRequestBridge;
@@ -812,6 +838,28 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         );
       } catch {
         reportOverlayFailure('Unable to reconcile the Tileflow annotation runtime.');
+      }
+    };
+
+    /** Workers cannot clone reactive proxies, so raw data crosses that boundary. */
+    const syncDataRuntime = () => {
+      const resolution = annotationResolution.value;
+      if (!dataRuntime) return;
+      try {
+        dataRuntime.reconcile({
+          annotationClusters: props.annotationClusters,
+          annotations: resolution.ok && !isImageMode.value ? resolution.annotations : [],
+          dataOverlays: props.dataOverlays,
+          dataSources:
+            props.dataSources &&
+            Object.fromEntries(
+              Object.entries(toRaw(props.dataSources) as Record<string, TileflowGeoJsonSource>).map(
+                ([id, source]) => [id, {...toRaw(source), data: toRaw(source.data)}],
+              ),
+            ),
+        });
+      } catch {
+        reportOverlayFailure('Unable to reconcile the Tileflow data layers.');
       }
     };
 
@@ -1046,6 +1094,22 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         annotationRenderTargets.value = mapInteractions.getRenderTargets();
         syncInteractionRenderTargetReadiness();
         syncAnnotationRuntime();
+        // Created ahead of semantic POIs: a click on a cluster belongs to the cluster.
+        dataRuntime = createTileflowMapLibreDataRuntime<
+          MapLibreMap,
+          MapLibreMarker,
+          RuntimeTileflowAnnotation
+        >({
+          createMarker: ({element}) => new maplibregl.Marker({element}),
+          document: container.ownerDocument,
+          map,
+          onDiagnostic: (diagnostic) => emit('interactionDiagnostic', diagnostic),
+          onInteractionEvent(event) {
+            if (!interactionRuntimesDisposing) emit('interactionEvent', event);
+          },
+          setHiddenAnnotations: mapInteractions.setHiddenAnnotations,
+        });
+        syncDataRuntime();
       } catch {
         reportOverlayFailure('Unable to initialize the Tileflow annotation runtime.');
       }
@@ -1308,8 +1372,16 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     );
     watch(
       () => props.annotations,
-      () => syncAnnotationRuntime(),
+      () => {
+        syncAnnotationRuntime();
+        syncDataRuntime();
+      },
       {deep: true, flush: 'post'},
+    );
+    watch(
+      () => [props.annotationClusters, props.dataOverlays, props.dataSources],
+      () => syncDataRuntime(),
+      {flush: 'post'},
     );
     watch(
       () => props.interactions,

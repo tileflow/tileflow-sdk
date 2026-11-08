@@ -1,3 +1,4 @@
+import type {Map as MapLibreMap} from 'maplibre-gl';
 import type {TileflowAnnotation, TileflowInteractionState} from '@tileflow/interactions';
 import {
   configureTileflowMapLibre,
@@ -6,7 +7,6 @@ import {
   type TileflowMapLibreConfiguration,
   useBoundaryFeatureState,
 } from '../src/index';
-import type {Map as MapLibreMap} from 'maplibre-gl';
 
 const source = {map: 'main'};
 const mapLibreConfiguration = {
@@ -190,3 +190,18 @@ void boundaryHookCall;
 // @ts-expect-error feature-state rows join by a polygon key.
 const boundaryHookNuts: BoundaryHookParameters = [boundaryMap, {joinBy: 'nuts', rows: []}];
 void boundaryHookNuts;
+
+const clusteredProps: import('../src').MapProps = {
+  annotationClusters: {clusterRadius: 60, formatAriaLabel: (count) => `${count} tiendas`},
+  dataOverlays: {},
+  dataSources: {stores: {data: 'https://example.com/stores.geojson', kind: 'geojson'}},
+  source: {map: 'main'},
+};
+void clusteredProps;
+// @ts-expect-error image mode draws no runtime data.
+const imageData: import('../src').MapProps = {
+  dataSources: {},
+  mode: 'image',
+  source: {map: 'main'},
+};
+void imageData;

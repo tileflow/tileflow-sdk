@@ -411,10 +411,25 @@ export type TileflowResolvedMapTarget = {
   kind: 'map';
 };
 
+/** One clustered group of annotations or GeoJSON points. */
+export type TileflowResolvedClusterTarget = {
+  /** The annotations inside the group, when annotations were clustered. */
+  annotationIds?: readonly string[];
+  clusterId: number;
+  coordinate: TileflowInteractionCoordinate;
+  kind: 'cluster';
+  pointCount: number;
+  /** Cluster properties, including any `clusterProperties` aggregates. */
+  properties: Readonly<Record<string, TileflowInteractionJsonValue>>;
+  /** The GeoJSON source, when a source was clustered. */
+  source?: string;
+};
+
 export type TileflowResolvedInteractionTarget<
   TAnnotation extends TileflowAnnotation = TileflowAnnotation,
 > =
   | TileflowResolvedAnnotationTarget<TAnnotation>
+  | TileflowResolvedClusterTarget
   | TileflowResolvedSemanticFeatureTarget
   | TileflowResolvedStyleFeatureTarget
   | TileflowResolvedMapTarget;

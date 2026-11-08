@@ -11,7 +11,7 @@ const imports = (text: string) =>
     (match) => match[1]!,
   );
 
-test('the interaction foundation imports only portable root contracts and its private neutral modules', async () => {
+test('the interaction foundation imports only allowlisted portable dependencies and its private neutral modules', async () => {
   for (const name of modules) {
     const source = await readFile(new URL(`src/${name}.ts`, root), 'utf8');
     for (const specifier of imports(source)) {
@@ -35,7 +35,8 @@ test('the interaction foundation imports only portable root contracts and its pr
     for (const specifier of imports(source)) {
       assert.doesNotMatch(specifier, /maplibre|react|node:|browser|dom/iu);
       if (specifier.startsWith('./')) await visitRoot(specifier.slice(2));
-      else assert.equal(specifier, 'zod/mini');
+      // A closed list of portable JavaScript with no renderer or DOM; supercluster groups annotations.
+      else assert.ok(['supercluster', 'zod/mini'].includes(specifier), specifier);
     }
   };
   await visitRoot('index');

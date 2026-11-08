@@ -116,3 +116,13 @@ void Native.createNativePoiAdapter;
 void Native.Popup;
 // @ts-expect-error No selection component is exported.
 void Native.Callout;
+
+const clusteredNativeProps: Pick<
+  import('../src').MapProps,
+  'annotationClusters' | 'dataOverlays' | 'dataSources'
+> = {
+  annotationClusters: {clusterRadius: 60, formatAriaLabel: (count) => `${count} tiendas`},
+  dataOverlays: {},
+  dataSources: {stores: {data: 'https://example.com/stores.geojson', kind: 'geojson'}},
+};
+void clusteredNativeProps;

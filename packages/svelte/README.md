@@ -199,6 +199,26 @@ snippets reconciles existing runtimes rather than recreating MapLibre.
 Text/field descriptors render as text. A `view` names an application snippet; it is not serialized
 HTML. Keep tooltips non-interactive and put buttons, links, and forms in popups.
 
+## Cluster points and draw density
+
+Use `annotationClusters` for up to 1,000 annotations, or `dataSources` and `dataOverlays` for larger
+GeoJSON sets. Clicking a cluster zooms in and reports a `cluster` target through `onInteractionEvent`.
+
+<!-- docs:check -->
+
+```ts
+import {clusterOverlay, geojsonSource} from '@tileflow/core/runtime';
+
+export const dataSources = {stores: geojsonSource({cluster: true, clusterRadius: 50})};
+export const dataOverlays = {
+  stores: clusterOverlay({id: 'stores', placement: 'above-labels', source: 'stores'}),
+};
+```
+
+Pass plain data: `$state` proxies cannot reach MapLibre's worker, so use `$state.raw`. See the
+[interactions reference](https://github.com/tileflow/tileflow-sdk/blob/main/packages/interactions/REFERENCE.md)
+for heatmaps, events, and polygon drawing with Terra Draw.
+
 ## Display an existing image
 
 `mode="image"` displays an explicit `imageUrl` or derives an image URL from the selected manifest

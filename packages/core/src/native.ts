@@ -69,3 +69,9 @@ export {
   tileflowMobileDiscoveryMaximumBytes,
 } from './mobile-discovery';
 export type {TileflowMobileDiscovery} from './mobile-discovery';
+export {clusterOverlay, geojsonSource, heatmapOverlay} from './overlays';
+export type {
+  TileflowGeoJsonSource,
+  TileflowMapLibreOverlay,
+  TileflowOverlayPlacement,
+} from './overlays';

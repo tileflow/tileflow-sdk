@@ -8,6 +8,7 @@ import * as source from '../src/index';
 const execFileAsync = promisify(execFile);
 
 const runtimeExports = [
+  'createTileflowAnnotationClusterIndex',
   'initialTileflowInteractionState',
   'reduceTileflowInteractionState',
   'tileflowAnnotationSchema',

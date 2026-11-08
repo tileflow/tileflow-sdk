@@ -35,7 +35,8 @@ test('the interaction foundation imports only portable root contracts and its pr
     for (const specifier of imports(source)) {
       assert.doesNotMatch(specifier, /maplibre|react|node:|browser|dom/iu);
       if (specifier.startsWith('./')) await visitRoot(specifier.slice(2));
-      else assert.equal(specifier, 'zod/mini');
+      // Both are portable JavaScript with no renderer or DOM; supercluster groups annotations.
+      else assert.ok(['supercluster', 'zod/mini'].includes(specifier), specifier);
     }
   };
   await visitRoot('index');

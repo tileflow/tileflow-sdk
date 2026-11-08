@@ -161,14 +161,25 @@ per map, in `onLoad` (Vue `@load`, Svelte `on:load`), and call `draw.stop()` bef
 | Capability                                | React, Vue, Svelte | `tileflow preview`, `capture` | React Native |
 | ----------------------------------------- | ------------------ | ----------------------------- | ------------ |
 | Compiled GeoJSON clusters and heatmaps    | Yes                | Yes                           | Yes          |
-| Click or tap to expand a compiled cluster | Yes                | No                            | No           |
-| `dataSources`, `dataOverlays`             | Yes                | No                            | No           |
-| `annotationClusters`                      | Yes                | No                            | No           |
+| Click or tap to expand a compiled cluster | Yes                | No                            | Yes          |
+| `dataSources`, `dataOverlays`             | Yes                | No                            | Yes          |
+| `annotationClusters`                      | Yes                | No                            | Yes          |
 | Terra Draw                                | Yes                | No                            | No           |
 
-`mode="image"` draws no runtime layers and reports `UNSUPPORTED_MODE`. Compiled sources render in
-React Native through the map's style, but its `Map` has no data channel for them. Fill them in
-config, or use the iOS and Android SDKs directly, which expose `clusterExpansionZoom`.
+`mode="image"` draws no runtime layers and reports `UNSUPPORTED_MODE`.
+
+React Native takes the same three props and reports the same `cluster` and `style-feature` targets
+through `onInteractionEvent`. It differs in four ways:
+
+- Data reaches MapLibre React Native's own `GeoJSONSource`, which reuses a compiled source of the
+  same ID and returns after a theme change. A reused source keeps its compiled cluster options.
+- A tapped point reports the first point layer of its source as `layerId`.
+- A map with a controlled `view` reports the cluster but does not move the camera, because the
+  application owns the view. Use the target's coordinate to set it.
+- Annotation clusters are native buttons with `accessibilityRole="button"`, grouped by the same
+  `createTileflowAnnotationClusterIndex` as the web, so both platforms split at the same zooms.
+
+Terra Draw is a GL JS library and has no native equivalent here.
 
 Direct MapLibre consumers use `createTileflowMapLibreDataRuntime` from
 `@tileflow/interactions/maplibre`.

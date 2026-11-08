@@ -1,4 +1,9 @@
-import Supercluster from 'supercluster';
+import {
+  createTileflowAnnotationClusterIndex,
+  type TileflowAnnotationCluster,
+  type TileflowAnnotationClusterIndex,
+  type TileflowAnnotationClusterOptions,
+} from './annotation-clusters';
 import type {
   TileflowAnnotation,
   TileflowInteractionCoordinate,
@@ -13,9 +18,6 @@ import type {TileflowInteractionDiagnostic} from './validation';
 const clusterMetadataKey = 'tileflow:cluster';
 const overlayMetadataKey = 'tileflow:overlay';
 const placementMetadataKey = 'tileflow:overlay-placement-manifest';
-const defaultClusterMaxZoom = 14;
-const defaultClusterMinPoints = 2;
-const defaultClusterRadius = 50;
 /** Derived line-background stacks are drawn as cells, so they cannot set a cluster's count. */
 const lineBackgroundStack = / lines-v1-t\d+-l\d+-p\d+$/u;
 
@@ -30,19 +32,6 @@ export type TileflowMapLibreDataOverlay = Readonly<{
   layers: readonly (Json & Readonly<{id: string; type: string}>)[];
   placement: string;
   source: string;
-}>;
-
-export type TileflowAnnotationClusterOptions = Readonly<{
-  /** The last zoom that clusters; annotations are separate above it. Defaults to 14. */
-  clusterMaxZoom?: number;
-  /** The fewest annotations that form a cluster. Defaults to 2. */
-  clusterMinPoints?: number;
-  /** Cluster radius in CSS pixels. Defaults to 50. */
-  clusterRadius?: number;
-  /** Zoom in when a cluster is activated. Defaults to true. */
-  expandOnClick?: boolean;
-  /** The accessible name of a cluster. Defaults to `${count} places`. */
-  formatAriaLabel?: (count: number) => string;
 }>;
 
 export type TileflowMapLibreDataInput<TAnnotation extends TileflowAnnotation = TileflowAnnotation> =
@@ -146,7 +135,7 @@ export function createTileflowMapLibreDataRuntime<
   const clusterMarkers = new Map<number, ClusterMarker<TMarker>>();
   const reported = new Set<string>();
   let input: TileflowMapLibreDataInput<TAnnotation> = {};
-  let index: Supercluster<{id: string}> | undefined;
+  let index: TileflowAnnotationClusterIndex | undefined;
   let renderedZoom: number | undefined;
   let clusterLayers: readonly string[] = [];
   let pointLayers: readonly string[] = [];
@@ -382,40 +371,37 @@ export function createTileflowMapLibreDataRuntime<
     clusterMarkers.delete(id);
   };
 
-  const createClusterMarker = (cluster: Supercluster.ClusterFeature<Supercluster.AnyProps>) => {
-    const count = cluster.properties.point_count;
-    const coordinate = cluster.geometry.coordinates as [number, number];
-    const clusterId = cluster.properties.cluster_id;
+  const createClusterMarker = (cluster: TileflowAnnotationCluster) => {
     const settings = input.annotationClusters;
     const element = options.document.createElement('button');
     element.type = 'button';
     element.className = 'tileflow-interaction-cluster';
-    element.textContent = String(cluster.properties.point_count_abbreviated);
-    element.setAttribute('aria-label', settings?.formatAriaLabel?.(count) ?? `${count} places`);
+    element.textContent = cluster.label;
+    element.setAttribute(
+      'aria-label',
+      settings?.formatAriaLabel?.(cluster.pointCount) ?? `${cluster.pointCount} places`,
+    );
     element.setAttribute('data-tileflow-interaction', 'cluster');
     configureClusterStyles(element);
     const listener = () => {
-      const leaves = index?.getLeaves(clusterId, Infinity) ?? [];
       activateCluster(
         {
-          annotationIds: leaves.map((leaf) => leaf.properties.id),
-          clusterId,
-          coordinate,
+          annotationIds: cluster.annotationIds,
+          clusterId: cluster.clusterId,
+          coordinate: cluster.coordinate,
           kind: 'cluster',
-          pointCount: count,
-          properties: {point_count: count},
+          pointCount: cluster.pointCount,
+          properties: {point_count: cluster.pointCount},
         },
         'pointer',
       );
-      if (settings?.expandOnClick !== false && index) {
-        expand(coordinate, index.getClusterExpansionZoom(clusterId));
-      }
+      if (settings?.expandOnClick !== false) expand(cluster.coordinate, cluster.expansionZoom);
     };
     element.addEventListener('click', listener);
     const marker = options.createMarker({element});
-    marker.setLngLat(coordinate);
+    marker.setLngLat([cluster.coordinate[0], cluster.coordinate[1]]);
     marker.addTo(map);
-    clusterMarkers.set(clusterId, {element, listener, marker});
+    clusterMarkers.set(cluster.clusterId, {element, listener, marker});
   };
 
   /** Clusters come from the whole set at one integer zoom, so moving the map changes nothing. */
@@ -429,16 +415,8 @@ export function createTileflowMapLibreDataRuntime<
     }
     const zoom = Math.floor(map.getZoom());
     renderedZoom = zoom;
-    const hidden = new Set(input.annotations?.map(({id}) => id));
-    const clusters = new Map<number, Supercluster.ClusterFeature<Supercluster.AnyProps>>();
-    for (const feature of index.getClusters([-180, -90, 180, 90], zoom)) {
-      if ('cluster' in feature.properties) {
-        const cluster = feature as Supercluster.ClusterFeature<Supercluster.AnyProps>;
-        clusters.set(cluster.properties.cluster_id, cluster);
-      } else {
-        hidden.delete(feature.properties.id);
-      }
-    }
+    const view = index.at(zoom);
+    const clusters = new Map(view.clusters.map((cluster) => [cluster.clusterId, cluster]));
     let focusLost = false;
     for (const [id, entry] of [...clusterMarkers]) {
       if (clusters.has(id)) continue;
@@ -448,7 +426,7 @@ export function createTileflowMapLibreDataRuntime<
     for (const [id, cluster] of clusters) {
       if (!clusterMarkers.has(id)) createClusterMarker(cluster);
     }
-    options.setHiddenAnnotations?.(hidden);
+    options.setHiddenAnnotations?.(view.hiddenAnnotationIds);
     // A keyboard user keeps their place on the map when the button they pressed splits.
     if (focusLost) map.getCanvas().focus?.({preventScroll: true});
   };
@@ -462,19 +440,7 @@ export function createTileflowMapLibreDataRuntime<
     if (!settings) {
       index = undefined;
     } else {
-      const radius = settings.clusterRadius ?? defaultClusterRadius;
-      index = new Supercluster<{id: string}>({
-        extent: 512,
-        maxZoom: Math.floor(settings.clusterMaxZoom ?? defaultClusterMaxZoom),
-        minPoints: settings.clusterMinPoints ?? defaultClusterMinPoints,
-        radius,
-      }).load(
-        (input.annotations ?? []).map(({coordinate, id}) => ({
-          geometry: {coordinates: [coordinate[0], coordinate[1]], type: 'Point'},
-          properties: {id},
-          type: 'Feature',
-        })),
-      );
+      index = createTileflowAnnotationClusterIndex(input.annotations ?? [], settings);
       // A rebuilt index renumbers nothing it can promise to keep, so buttons are rebuilt.
       for (const [id, entry] of [...clusterMarkers]) removeClusterMarker(id, entry);
     }

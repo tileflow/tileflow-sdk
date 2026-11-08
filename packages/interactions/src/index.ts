@@ -54,6 +54,13 @@ export {
   reduceTileflowInteractionState,
   tileflowInteractionTargetRefsEqual,
 } from './reducer';
+export {createTileflowAnnotationClusterIndex} from './annotation-clusters';
+export type {
+  TileflowAnnotationCluster,
+  TileflowAnnotationClusterIndex,
+  TileflowAnnotationClusterOptions,
+  TileflowAnnotationClusterView,
+} from './annotation-clusters';
 export {tileflowInteractionReference} from './reference';
 export {validateTileflowAnnotations, validateTileflowInteractionBindings} from './validation';
 export type {

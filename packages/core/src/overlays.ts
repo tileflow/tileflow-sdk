@@ -1,6 +1,6 @@
 import {readTileflowCompilerProvenance} from './cartography/compiler-inspection';
 import {tileflowBandPlacementIndex, tileflowLayerSlots} from './cartography/contributions';
-import {isTileflowPortableId} from './portable-identity';
+import {isTileflowPortableId} from './portable-identity-rules';
 import {parseTileflowLineBackgroundFontStack} from './text-background';
 
 export const tileflowOverlayPlacements = [

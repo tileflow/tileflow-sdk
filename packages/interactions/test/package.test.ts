@@ -28,6 +28,7 @@ const runtimeExports = [
   'tileflowPoiCategories',
   'validateTileflowAnnotations',
   'validateTileflowInteractionBindings',
+  'withTileflowClusterLabelFont',
 ];
 
 test('publishes one focused root entry and its package metadata', async () => {

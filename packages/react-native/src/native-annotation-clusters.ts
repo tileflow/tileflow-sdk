@@ -5,6 +5,8 @@ import {
   type TileflowAnnotationClusterOptions,
 } from '@tileflow/interactions';
 
+export {withTileflowClusterLabelFont} from '@tileflow/interactions';
+
 /** The shared portable grouping, so native and web clusters split at the same zooms. */
 export function createNativeAnnotationClusters(
   annotations: readonly TileflowAnnotation[],

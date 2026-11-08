@@ -1,9 +1,8 @@
 import type {TileflowGeoJsonSource, TileflowMapLibreOverlay} from '@tileflow/core/native';
+import {withTileflowClusterLabelFont} from './native-annotation-clusters';
 
 const clusterMetadataKey = 'tileflow:cluster';
 const placementMetadataKey = 'tileflow:overlay-placement-manifest';
-/** Derived line-background stacks are drawn as cells, so they cannot set a cluster's count. */
-const lineBackgroundStack = / lines-v1-t\d+-l\d+-p\d+$/u;
 
 type Json = Readonly<Record<string, unknown>>;
 type Style = Readonly<{
@@ -130,7 +129,7 @@ export function planNativeDataLayers(input: {
     const beforeId = typeof anchor === 'string' && styleLayerIds.has(anchor) ? anchor : undefined;
     for (const layer of overlay.layers) {
       if (styleLayerIds.has(layer.id)) continue;
-      const prepared = withClusterFont(layer, styleLayers);
+      const prepared = withTileflowClusterLabelFont(layer, styleLayers);
       if (!prepared) {
         diagnostics.push({
           message: `Layer "${layer.id}" needs font: the style has no label font.`,
@@ -162,22 +161,4 @@ export function planNativeDataLayers(input: {
 
 function compare([left]: [string, unknown], [right]: [string, unknown]): number {
   return left < right ? -1 : left > right ? 1 : 0;
-}
-
-function withClusterFont(layer: Json, styleLayers: readonly Json[]): Json | undefined {
-  const metadata = layer.metadata as Json | undefined;
-  const layout = (layer.layout ?? {}) as Json;
-  if ((metadata?.[clusterMetadataKey] as Json | undefined)?.role !== 'count') return layer;
-  if (layout['text-font'] !== undefined) return layer;
-  for (const candidate of styleLayers) {
-    const font = (candidate.layout as Json | undefined)?.['text-font'];
-    if (
-      Array.isArray(font) &&
-      font.length > 0 &&
-      font.every((face) => typeof face === 'string' && !lineBackgroundStack.test(face))
-    ) {
-      return {...layer, layout: {...layout, 'text-font': font}};
-    }
-  }
-  return undefined;
 }

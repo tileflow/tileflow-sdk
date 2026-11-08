@@ -4,6 +4,7 @@ import {
   type TileflowAnnotationClusterIndex,
   type TileflowAnnotationClusterOptions,
 } from './annotation-clusters';
+import {withTileflowClusterLabelFont} from './cluster-label-font';
 import type {
   TileflowAnnotation,
   TileflowInteractionCoordinate,
@@ -18,8 +19,6 @@ import type {TileflowInteractionDiagnostic} from './validation';
 const clusterMetadataKey = 'tileflow:cluster';
 const overlayMetadataKey = 'tileflow:overlay';
 const placementMetadataKey = 'tileflow:overlay-placement-manifest';
-/** Derived line-background stacks are drawn as cells, so they cannot set a cluster's count. */
-const lineBackgroundStack = / lines-v1-t\d+-l\d+-p\d+$/u;
 
 type Json = Readonly<Record<string, unknown>>;
 
@@ -235,7 +234,7 @@ export function createTileflowMapLibreDataRuntime<
       const owned: string[] = overlays.get(id)?.layers ?? [];
       for (const layer of overlay.layers) {
         if (map.getLayer(layer.id)) continue;
-        const prepared = withClusterFont(layer, style?.layers ?? []);
+        const prepared = withTileflowClusterLabelFont(layer, style?.layers ?? []);
         if (!prepared) {
           report(`Layer "${layer.id}" needs font: the style has no label font.`, path);
           continue;
@@ -518,27 +517,6 @@ function clusterInputKey(input: TileflowMapLibreDataInput): string {
 
 function compareEntries([left]: [string, unknown], [right]: [string, unknown]): number {
   return left < right ? -1 : left > right ? 1 : 0;
-}
-
-function withClusterFont(
-  layer: TileflowMapLibreDataOverlay['layers'][number],
-  styleLayers: readonly Json[],
-): TileflowMapLibreDataOverlay['layers'][number] | undefined {
-  const metadata = layer.metadata as Json | undefined;
-  const layout = (layer.layout ?? {}) as Json;
-  if ((metadata?.[clusterMetadataKey] as Json | undefined)?.role !== 'count') return layer;
-  if (layout['text-font'] !== undefined) return layer;
-  for (const candidate of styleLayers) {
-    const font = (candidate.layout as Json | undefined)?.['text-font'];
-    if (
-      Array.isArray(font) &&
-      font.length > 0 &&
-      font.every((face) => typeof face === 'string' && !lineBackgroundStack.test(face))
-    ) {
-      return {...layer, layout: {...layout, 'text-font': font}};
-    }
-  }
-  return undefined;
 }
 
 function pointerModality(event: MapEvent): TileflowInteractionInputModality {

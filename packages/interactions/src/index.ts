@@ -55,6 +55,7 @@ export {
   tileflowInteractionTargetRefsEqual,
 } from './reducer';
 export {createTileflowAnnotationClusterIndex} from './annotation-clusters';
+export {withTileflowClusterLabelFont} from './cluster-label-font';
 export type {
   TileflowAnnotationCluster,
   TileflowAnnotationClusterIndex,

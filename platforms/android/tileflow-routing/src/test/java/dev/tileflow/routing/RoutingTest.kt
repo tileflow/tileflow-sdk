@@ -155,63 +155,6 @@ class RoutingTest {
         }
     }
 
-    private fun optimizedAnswer(order: List<Int>?): JSONObject {
-        val answer = Contract.response("routing.route")
-        val routes = answer.getJSONArray("routes")
-        routes.remove(1)
-        val legs = routes.getJSONObject(0).getJSONArray("legs")
-        fun leg(arrival: String) =
-            JSONObject(legs.getJSONObject(0).toString()).put("arriveAt", arrival)
-        routes
-            .getJSONObject(0)
-            .put(
-                "legs",
-                JSONArray(listOf(leg("2027-03-01T08:40-05:00"), leg("2027-03-01T08:55-06:00"))),
-            )
-        return answer.putOpt("locationOrder", order?.let(::JSONArray))
-    }
-
-    private val optimized =
-        TileflowRouteRequest(
-            listOf(start, end, start),
-            TileflowRoutingMode.DRIVING,
-            optimize = true,
-            departAt = "2027-03-01T08:30",
-        )
-
-    @Test
-    fun anOptimizedRouteSendsItsOptionsAndReadsItsOrderAndArrivals() {
-        StubApi().use { api ->
-            api.enqueue(optimizedAnswer(listOf(0, 1, 2)))
-            val response = runBlocking { api.routing().route(optimized) }
-            val body = JSONObject(api.take().body.readUtf8())
-            assertEquals(true, body.getBoolean("optimize"))
-            assertEquals("2027-03-01T08:30", body.getString("departAt"))
-            assertEquals(listOf(0, 1, 2), response.locationOrder)
-            assertEquals(
-                listOf("2027-03-01T08:40-05:00", "2027-03-01T08:55-06:00"),
-                response.routes[0].legs.map { it.arriveAt },
-            )
-        }
-    }
-
-    @Test
-    fun anOrderThatIsNotAWholeVisitIsInvalid() {
-        val orders = listOf(null, listOf(1, 0, 2), listOf(0, 0, 2), listOf(0, 2), listOf(0, 9, 2))
-        for (order in orders) {
-            StubApi().use { api ->
-                api.enqueue(optimizedAnswer(order))
-                val error = api.fails { route(optimized) }
-                assertEquals(TileflowServiceErrorKind.INVALID_RESPONSE, error.kind)
-            }
-        }
-        StubApi().use { api ->
-            api.enqueue(optimizedAnswer(listOf(0, 1, 2)))
-            val error = api.fails { route(optimized.copy(optimize = false)) }
-            assertEquals(TileflowServiceErrorKind.INVALID_RESPONSE, error.kind)
-        }
-    }
-
     @Test
     fun answersOutsideTheContractAreInvalid() {
         fun JSONObject.route() = getJSONArray("routes").getJSONObject(0)
@@ -277,11 +220,7 @@ class RoutingTest {
         val requests: List<suspend TileflowRouting.() -> Any> =
             listOf(
                 { route(TileflowRouteRequest(listOf(start), TileflowRoutingMode.DRIVING)) },
-                { route(TileflowRouteRequest(List(26) { start }, TileflowRoutingMode.DRIVING)) },
-                { route(route.copy(alternatives = 0, departAt = "2027-02-30T08:30")) },
-                { route(route.copy(alternatives = 0, departAt = "2027-03-01T24:00")) },
-                { route(route.copy(alternatives = 0, departAt = "2027-03-01 08:30")) },
-                { route(walking.copy(alternatives = 0, optimize = true)) },
+                { route(TileflowRouteRequest(List(6) { start }, TileflowRoutingMode.DRIVING)) },
                 { route(route.copy(alternatives = 3)) },
                 { route(route.copy(locations = listOf(start, end, start))) },
                 { route(route.copy(locations = listOf(start, TileflowPosition(-181.0, 0.0)))) },

@@ -80,17 +80,10 @@ public data class TileflowVehicle(
 )
 
 /**
- * The fastest route through 2 to 25 locations. The straight-line length of the locations is at
+ * The fastest route through 2 to 5 locations. The straight-line length of the locations is at
  * most 1,000 km driving or by truck, 300 km cycling and 100 km walking.
  *
  * @property alternatives 0 to 2 other routes, only between two locations.
- * @property optimize Visits the stops between the first and the last location in the fastest order
- *   the engine finds; repeat the first location to return to it. Every two locations must then be
- *   within the reach of a matrix, which replaces the length limit, and the answer states
- *   [TileflowRouteResponse.locationOrder].
- * @property departAt When the route leaves the first location, as `YYYY-MM-DDTHH:mm` in that
- *   location's local time. Each leg then states [TileflowRouteLeg.arriveAt]. Durations do not
- *   change, because routes exclude traffic.
  */
 public data class TileflowRouteRequest(
     public val locations: List<TileflowPosition>,
@@ -100,8 +93,6 @@ public data class TileflowRouteRequest(
     public val traffic: TileflowRoutingTraffic? = null,
     public val alternatives: Int = 0,
     public val language: TileflowRoutingLanguage? = null,
-    public val optimize: Boolean = false,
-    public val departAt: String? = null,
 )
 
 /**

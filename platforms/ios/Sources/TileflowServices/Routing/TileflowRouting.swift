@@ -17,15 +17,18 @@ public struct TileflowRouting: Sendable {
       configuration: configuration, session: session, policy: TileflowRoutingError.policy)
   }
 
-  /// The fastest route through two to five positions, with up to two alternatives between two
+  /// The fastest route through two to 25 positions, with up to two alternatives between two
   /// positions: its line, distance, duration, steps and whether it uses tolls, highways or ferries.
+  /// With `optimize`, the stops between the first and the last position follow the fastest order
+  /// the engine finds, stated by `locationOrder`.
   public func route(_ request: TileflowRouteRequest) async throws -> TileflowRouteResponse {
     try await run {
       let legs = request.locations.count - 1
       return try await call("route", try request.wireValue()) { json in
         let answer = try TileflowRouteResponse(json)
         guard answer.routes.count <= request.alternatives + 1,
-          answer.routes.allSatisfy({ $0.legs.count == legs })
+          answer.routes.allSatisfy({ $0.legs.count == legs }),
+          request.answersOrder(answer.locationOrder)
         else { throw ServiceJSONError.invalid }
         return answer
       }
@@ -226,7 +229,7 @@ public struct TileflowVehicle: Sendable, Equatable {
 }
 
 public struct TileflowRouteRequest: Sendable, Equatable {
-  /// Two to five positions, in travel order.
+  /// Two to 25 positions, in travel order.
   public var locations: [TileflowPosition]
   public var mode: TileflowRoutingMode
   /// Only for `truck`.
@@ -236,11 +239,19 @@ public struct TileflowRouteRequest: Sendable, Equatable {
   /// 0 to 2 alternatives, only between two locations.
   public var alternatives: Int
   public var language: TileflowRoutingLanguage?
+  /// Visits the stops between the first and the last location in the fastest order the engine
+  /// finds; repeat the first location to return to it. Every two locations must then be within the
+  /// reach of a matrix, which replaces the length limit.
+  public var optimize: Bool
+  /// When the route leaves the first location, as `YYYY-MM-DDTHH:mm` in that location's local time.
+  /// Each leg then states `arriveAt`. Durations do not change, because routes exclude traffic.
+  public var departAt: String?
 
   public init(
     locations: [TileflowPosition], mode: TileflowRoutingMode, vehicle: TileflowVehicle? = nil,
     avoid: [TileflowRoutingAvoidance] = [], traffic: TileflowRoutingTraffic? = nil,
-    alternatives: Int = 0, language: TileflowRoutingLanguage? = nil
+    alternatives: Int = 0, language: TileflowRoutingLanguage? = nil, optimize: Bool = false,
+    departAt: String? = nil
   ) {
     self.locations = locations
     self.mode = mode
@@ -249,18 +260,42 @@ public struct TileflowRouteRequest: Sendable, Equatable {
     self.traffic = traffic
     self.alternatives = alternatives
     self.language = language
+    self.optimize = optimize
+    self.departAt = departAt
+  }
+
+  /// Within the reach of a matrix to optimize, otherwise within the length of a route.
+  private var isWithinReach: Bool {
+    guard optimize else {
+      return zip(locations, locations.dropFirst()).reduce(0, { $0 + $1.0.distance(to: $1.1) })
+        <= mode.maximumRouteDistance
+    }
+    return locations.indices.allSatisfy { index in
+      locations[(index + 1)...].allSatisfy {
+        locations[index].distance(to: $0) <= mode.maximumMatrixDistance
+      }
+    }
+  }
+
+  /// An optimized route visits every location once, from the first to the last; no other states it.
+  func answersOrder(_ order: [Int]?) -> Bool {
+    guard optimize else { return order == nil }
+    guard let order else { return false }
+    let last = locations.count - 1
+    return order.sorted() == Array(0...last) && order.first == 0 && order.last == last
   }
 
   func wireValue() throws -> ServiceJSON {
-    guard (2...5).contains(locations.count), locations.allSatisfy(\.isValid),
+    guard (2...25).contains(locations.count), locations.allSatisfy(\.isValid),
       (0...2).contains(alternatives), alternatives == 0 || locations.count == 2,
-      zip(locations, locations.dropFirst()).reduce(0, { $0 + $1.0.distance(to: $1.1) })
-        <= mode.maximumRouteDistance
+      isWithinReach, departAt.map(RoutingWire.isLocalDateTime) ?? true
     else { throw TileflowRoutingError.invalid() }
     var body = try RoutingWire.travel(mode: mode, vehicle: vehicle, avoid: avoid, traffic: traffic)
     body["locations"] = .array(locations.map(ServiceJSON.position))
     if alternatives > 0 { body["alternatives"] = .number(Double(alternatives)) }
     if let language { body["language"] = .string(language.rawValue) }
+    if optimize { body["optimize"] = .bool(true) }
+    if let departAt { body["departAt"] = .string(departAt) }
     return .object(body)
   }
 }
@@ -405,6 +440,22 @@ public struct TileflowNearestRequest: Sendable, Equatable {
 }
 
 enum RoutingWire {
+  /// A wall-clock time, `YYYY-MM-DDTHH:mm`, that exists in the calendar.
+  static func isLocalDateTime(_ value: String) -> Bool {
+    guard value.matches("[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}") else { return false }
+    let parts = value.split(whereSeparator: { "-T:".contains($0) }).compactMap { Int($0) }
+    let (year, month, day, hour, minute) = (parts[0], parts[1], parts[2], parts[3], parts[4])
+    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
+    let days: Int
+    switch month {
+    case 2: days = leap ? 29 : 28
+    case 4, 6, 9, 11: days = 30
+    default: days = 31
+    }
+    return (1...12).contains(month) && (1...days).contains(day) && (0...23).contains(hour)
+      && (0...59).contains(minute)
+  }
+
   static func travel(
     mode: TileflowRoutingMode, vehicle: TileflowVehicle?, avoid: [TileflowRoutingAvoidance],
     traffic: TileflowRoutingTraffic?

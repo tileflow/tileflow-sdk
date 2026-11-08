@@ -293,6 +293,71 @@ final class ContractTests: XCTestCase {
     }
   }
 
+  private func optimizedAnswer(order: [Int]?) throws -> ServiceJSON {
+    let answer = contract.response("routing.route")
+    let route = try answer.required("routes").array()[0]
+    let leg = try route.required("legs").array()[0]
+    let legs = ["2027-03-01T08:40-05:00", "2027-03-01T08:55-06:00"].map {
+      leg.replacing(["arriveAt"], with: .string($0))
+    }
+    return
+      answer
+      .replacing(["routes"], with: .array([route.replacing(["legs"], with: .array(legs))]))
+      .replacing(["locationOrder"], with: order.map { .array($0.map { .number(Double($0)) }) })
+  }
+
+  private var optimizedRoute: TileflowRouteRequest {
+    let start = TileflowPosition(longitude: -80.2195, latitude: 25.7655)
+    let end = TileflowPosition(longitude: -80.1312, latitude: 25.7795)
+    return TileflowRouteRequest(
+      locations: [start, end, start], mode: .driving, optimize: true,
+      departAt: "2027-03-01T08:30")
+  }
+
+  func testAnOptimizedRouteSendsItsOptionsAndReadsItsOrderAndArrivals() async throws {
+    ServiceStub.serve(json: try optimizedAnswer(order: [0, 1, 2]))
+    let answer = try await routing.route(optimizedRoute)
+    let body = try ServiceJSON.parse(XCTUnwrap(ServiceStub.requests.first?.body))
+    XCTAssertEqual(try body.required("optimize").bool(), true)
+    XCTAssertEqual(try body.required("departAt").string(), "2027-03-01T08:30")
+    XCTAssertEqual(answer.locationOrder, [0, 1, 2])
+    XCTAssertEqual(
+      answer.routes[0].legs.map(\.arriveAt),
+      ["2027-03-01T08:40-05:00", "2027-03-01T08:55-06:00"])
+  }
+
+  func testAnOrderThatIsNotAWholeVisitIsRejected() async throws {
+    let request = optimizedRoute
+    for order: [Int]? in [nil, [1, 0, 2], [0, 0, 2], [0, 2], [0, 9, 2]] {
+      ServiceStub.serve(json: try optimizedAnswer(order: order))
+      let caught = await capture { [routing] in _ = try await routing.route(request) }
+      XCTAssertEqual(caught?.kind, .invalidResponse, "\(String(describing: order))")
+    }
+    var ordered = request
+    ordered.optimize = false
+    let unasked = ordered
+    ServiceStub.serve(json: try optimizedAnswer(order: [0, 1, 2]))
+    let caught = await capture { [routing] in _ = try await routing.route(unasked) }
+    XCTAssertEqual(caught?.kind, .invalidResponse)
+  }
+
+  func testRouteRequestsOutsideTheLimitsAreRejected() throws {
+    let start = TileflowPosition(longitude: -80.2195, latitude: 25.7655)
+    let far = TileflowPosition(longitude: -80.0, latitude: 25.7655)
+    XCTAssertNoThrow(
+      try TileflowRouteRequest(
+        locations: Array(repeating: start, count: 25), mode: .driving
+      ).wireValue())
+    let invalid = [
+      TileflowRouteRequest(locations: Array(repeating: start, count: 26), mode: .driving),
+      TileflowRouteRequest(locations: [start, far], mode: .walking, optimize: true),
+      TileflowRouteRequest(locations: [start, far], mode: .driving, departAt: "2027-02-30T08:30"),
+      TileflowRouteRequest(locations: [start, far], mode: .driving, departAt: "2027-03-01T24:00"),
+      TileflowRouteRequest(locations: [start, far], mode: .driving, departAt: "2027-03-01 08:30"),
+    ]
+    for request in invalid { XCTAssertThrowsError(try request.wireValue()) }
+  }
+
   func testAnswersThatBreakTheRequestsInvariantsAreRejected() async throws {
     let madrid = self.madrid
     // Two routes for a request without alternatives.

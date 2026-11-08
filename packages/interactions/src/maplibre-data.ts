@@ -484,6 +484,15 @@ export function createTileflowMapLibreDataRuntime<
       for (const stop of stops) stop();
       stopHover();
       for (const [id, entry] of [...clusterMarkers]) removeClusterMarker(id, entry);
+      // A map that outlives this runtime keeps nothing it added. During an adapter's teardown the
+      // map or the marker runtime may already be gone, and there is nothing left to restore.
+      try {
+        if (index) options.setHiddenAnnotations?.(new Set());
+      } catch {}
+      try {
+        for (const id of [...overlays.keys()]) removeOverlay(id);
+        for (const id of [...sources.keys()]) removeSource(id);
+      } catch {}
     },
     reconcile(next: TileflowMapLibreDataInput<TAnnotation>) {
       if (disposed) return;

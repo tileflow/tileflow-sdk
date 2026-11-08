@@ -582,7 +582,7 @@ test('removing annotationClusters shows every annotation and removes the buttons
 test('dispose removes listeners, buttons and pointer feedback', () => {
   const fake = createMap({layers: [labels]});
   fake.setZoom(4);
-  const {markers, runtime} = attach(fake);
+  const {hidden, markers, runtime} = attach(fake);
   runtime.reconcile({
     annotationClusters: {},
     annotations: nearby,
@@ -596,4 +596,7 @@ test('dispose removes listeners, buttons and pointer feedback', () => {
   assert.equal(fake.listenerCount(), 0);
   assert.ok(markers[0]!.removed);
   assert.equal(fake.layerListeners.size, 0);
+  assert.equal(fake.map.getLayer('stores-clusters'), undefined);
+  assert.equal(fake.map.getSource('stores'), undefined);
+  assert.equal(hidden.at(-1)?.size, 0);
 });

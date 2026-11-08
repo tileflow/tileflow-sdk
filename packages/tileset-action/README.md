@@ -1,7 +1,7 @@
 # Tileflow tileset action
 
-Builds a PMTiles tileset from GeoJSON, CSV or Shapefile data and publishes it to Tileflow from a
-GitHub workflow. Use it to refresh a tileset on a schedule, or whenever its data changes.
+Builds a PMTiles tileset from GeoJSON, CSV, Shapefile, GeoPackage, KML or GPX data and publishes it
+to Tileflow from a GitHub workflow. Use it to refresh a tileset on a schedule, or whenever its data changes.
 
 ## Set it up
 
@@ -96,16 +96,16 @@ action then needs no key or tileset ID, so it can check data changes in a pull r
 
 ## Inputs and outputs
 
-| Input                                                               | Meaning                                                                   |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `source`                                                            | Required. Local path or `https://` URL                                    |
-| `tileset-id`, `api-key`                                             | Required to publish                                                       |
-| `publish`                                                           | `true` by default. `false` uploads an artifact instead                    |
-| `tileflow-version`                                                  | Exact CLI version. When empty, uses the `tileflow` package in the project |
-| `source-crs`, `reproject`, `maxzoom`, `rank-by`, `include`, `layer` | Same as the matching `tileflow tileset build` options                     |
-| `format`, `lon-column`, `lat-column`                                | For files that the build can't identify on its own                        |
-| `name`, `attribution`                                               | Tileset display name and data attribution                                 |
-| `team`                                                              | Shown in the run notice only. The API key selects the Team                |
+| Input                                                                                           | Meaning                                                                   |
+| ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `source`                                                                                        | Required. Local path or `https://` URL                                    |
+| `tileset-id`, `api-key`                                                                         | Required to publish                                                       |
+| `publish`                                                                                       | `true` by default. `false` uploads an artifact instead                    |
+| `tileflow-version`                                                                              | Exact CLI version. When empty, uses the `tileflow` package in the project |
+| `source-crs`, `reproject`, `maxzoom`, `rank-by`, `include`, `layer`, `input-layer`, `zip-entry` | Same as the matching `tileflow tileset build` options                     |
+| `format`, `lon-column`, `lat-column`                                                            | For files that the build can't identify on its own                        |
+| `name`, `attribution`                                                                           | Tileset display name and data attribution                                 |
+| `team`                                                                                          | Shown in the run notice only. The API key selects the Team                |
 
 [`action.yml`](./action.yml) lists every input.
 

@@ -1,5 +1,5 @@
 name: Tileflow tileset
-description: Build a PMTiles tileset from GeoJSON, CSV or Shapefile data and publish it to Tileflow.
+description: Build a PMTiles tileset from vector data and publish it to Tileflow.
 author: Tileflow
 branding:
   icon: map
@@ -42,6 +42,12 @@ inputs:
     default: ''
   include:
     description: Comma-separated attributes to keep. Keeps all of them when empty.
+    default: ''
+  input-layer:
+    description: Feature table to read from a GeoPackage holding several.
+    default: ''
+  zip-entry:
+    description: The .shp or .kml to read from a .zip or .kmz holding several.
     default: ''
   layer:
     description: Source-layer name. Defaults to the source file name.
@@ -108,6 +114,8 @@ runs:
         TILEFLOW_TILESET_MAXZOOM: ${{ inputs.maxzoom }}
         TILEFLOW_TILESET_RANK_BY: ${{ inputs.rank-by }}
         TILEFLOW_TILESET_INCLUDE: ${{ inputs.include }}
+        TILEFLOW_TILESET_INPUT_LAYER: ${{ inputs.input-layer }}
+        TILEFLOW_TILESET_ZIP_ENTRY: ${{ inputs.zip-entry }}
         TILEFLOW_TILESET_LAYER: ${{ inputs.layer }}
         TILEFLOW_TILESET_FORMAT: ${{ inputs.format }}
         TILEFLOW_TILESET_LON_COLUMN: ${{ inputs.lon-column }}

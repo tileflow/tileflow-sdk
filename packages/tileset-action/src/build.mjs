@@ -10,6 +10,8 @@ const valueOptions = [
   ['TILEFLOW_TILESET_MAXZOOM', '--maxzoom'],
   ['TILEFLOW_TILESET_RANK_BY', '--rank-by'],
   ['TILEFLOW_TILESET_INCLUDE', '--include'],
+  ['TILEFLOW_TILESET_INPUT_LAYER', '--input-layer'],
+  ['TILEFLOW_TILESET_ZIP_ENTRY', '--zip-entry'],
   ['TILEFLOW_TILESET_LAYER', '--layer'],
   ['TILEFLOW_TILESET_FORMAT', '--format'],
   ['TILEFLOW_TILESET_LON_COLUMN', '--lon-column'],

@@ -146,6 +146,8 @@ describe('build', () => {
     await build({
       TILEFLOW_TILESET_ATTRIBUTION: 'Data © Example',
       TILEFLOW_TILESET_INCLUDE: 'name,kind',
+      TILEFLOW_TILESET_INPUT_LAYER: 'stores_2026',
+      TILEFLOW_TILESET_ZIP_ENTRY: 'data/stores.shp',
       TILEFLOW_TILESET_LAYER: '-stores',
       TILEFLOW_TILESET_MAXZOOM: '12',
       TILEFLOW_TILESET_RANK_BY: 'population',
@@ -167,6 +169,8 @@ describe('build', () => {
       '--maxzoom=12',
       '--rank-by=population',
       '--include=name,kind',
+      '--input-layer=stores_2026',
+      '--zip-entry=data/stores.shp',
       '--layer=-stores',
       '--attribution=Data © Example',
     ]) {

@@ -14,6 +14,8 @@ export type GeometryInput = Readonly<{coordinates?: unknown; geometries?: unknow
 const fieldNamePattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$/u;
 const maximumFields = 512;
 const maximumMercatorLatitude = 85.0511287798066;
+/** About 100 m: rounding at the edge of the world, not a sign of a wrong CRS. */
+const coordinateToleranceDegrees = 0.001;
 const sampleCapacity = 1 << 18;
 const unranked = -Infinity;
 const typeBits = {boolean: 1, number: 2, string: 4} as const;
@@ -49,6 +51,7 @@ export class FeatureIngest {
   #wideSegments = 0;
   #nonNumericIds = 0;
   #degenerateParts = 0;
+  #nudgedCoordinates = 0;
   #minLon = Infinity;
   #minLat = Infinity;
   #maxLon = -Infinity;
@@ -174,7 +177,12 @@ export class FeatureIngest {
     }
     if (this.#outsideMercator > 0) {
       this.#warnings.add(
-        `${this.#outsideMercator} point features past latitude ±85.05 were skipped; Web Mercator tiles cannot hold them.`,
+        `${this.#outsideMercator} points past latitude ±85.05 were skipped; Web Mercator tiles cannot hold them.`,
+      );
+    }
+    if (this.#nudgedCoordinates > 0) {
+      this.#warnings.add(
+        `${this.#nudgedCoordinates} coordinates up to ${coordinateToleranceDegrees}° past longitude ±180 or latitude ±90 were moved to that limit.`,
       );
     }
     if (this.#wideSegments > 0) {
@@ -224,15 +232,17 @@ export class FeatureIngest {
       case 'Point':
         this.#resetGeometry();
         if (isEmptyList(coordinates)) return this.skipEmpty();
-        this.#pushPosition(coordinates);
+        this.#pushPosition(coordinates, true);
+        if (this.#points.length === 0) return;
         this.#parts.push(1);
         return this.#commit(geometryType.point, 'Point', id);
       case 'MultiPoint': {
         this.#resetGeometry();
         const positions = this.#list(coordinates);
         if (positions.length === 0) return this.skipEmpty();
-        for (const position of positions) this.#pushPosition(position);
-        this.#parts.push(positions.length);
+        for (const position of positions) this.#pushPosition(position, true);
+        if (this.#points.length === 0) return;
+        this.#parts.push(this.#points.length / 2);
         return this.#commit(geometryType.point, 'Point', id);
       }
       case 'LineString':
@@ -270,6 +280,7 @@ export class FeatureIngest {
   #resetGeometry(): void {
     this.#points.length = 0;
     this.#parts.length = 0;
+    this.#clampedThisFeature = false;
   }
 
   #list(value: unknown): unknown[] {
@@ -294,6 +305,7 @@ export class FeatureIngest {
     const positions = this.#list(ring);
     if (positions.length === 0) return;
     const start = this.#points.length;
+    const clampedBefore = this.#clampedThisFeature;
     for (const position of positions) this.#pushPosition(position);
     this.#checkWideSegments(start);
     const points = this.#points;
@@ -304,6 +316,7 @@ export class FeatureIngest {
     }
     if (count < 3) {
       points.length = start;
+      this.#clampedThisFeature = clampedBefore;
       this.#degenerateParts += 1;
       return;
     }
@@ -321,14 +334,14 @@ export class FeatureIngest {
     }
   }
 
-  #pushPosition(position: unknown): void {
+  #pushPosition(position: unknown, dropPastMercator = false): void {
     if (!Array.isArray(position) || position.length < 2) {
       throw this.#invalid('a position must be [longitude, latitude]');
     }
-    this.#pushXY(position[0], position[1]);
+    this.#pushXY(position[0], position[1], dropPastMercator);
   }
 
-  #pushXY(sourceX: unknown, sourceY: unknown): void {
+  #pushXY(sourceX: unknown, sourceY: unknown, dropPastMercator: boolean): void {
     if (
       typeof sourceX !== 'number' ||
       typeof sourceY !== 'number' ||
@@ -343,8 +356,8 @@ export class FeatureIngest {
     if (
       !Number.isFinite(longitude) ||
       !Number.isFinite(latitude) ||
-      Math.abs(longitude) > 180 ||
-      Math.abs(latitude) > 90
+      Math.abs(longitude) > 180 + coordinateToleranceDegrees ||
+      Math.abs(latitude) > 90 + coordinateToleranceDegrees
     ) {
       throw new TilesetBuildError(
         'TF_TILESET_BUILD_COORDINATES_OUT_OF_RANGE',
@@ -353,6 +366,16 @@ export class FeatureIngest {
           ? `${this.location}: [${sourceX}, ${sourceY}] did not convert to a valid longitude and latitude. The stated CRS probably does not match the data.`
           : `${this.location}: [${sourceX}, ${sourceY}] is outside WGS84 longitude and latitude. The data looks projected or has swapped axes. State its CRS with --source-crs <crs> --reproject; the build will not guess.`,
       );
+    }
+    if (Math.abs(longitude) > 180 || Math.abs(latitude) > 90) {
+      longitude = Math.max(-180, Math.min(180, longitude));
+      latitude = Math.max(-90, Math.min(90, latitude));
+      this.#nudgedCoordinates += 1;
+    }
+    // A point past the limit has nowhere to go, unlike a shape, which is cut there.
+    if (dropPastMercator && Math.abs(latitude) > maximumMercatorLatitude) {
+      this.#outsideMercator += 1;
+      return;
     }
     if (longitude < this.#minLon) this.#minLon = longitude;
     if (longitude > this.#maxLon) this.#maxLon = longitude;
@@ -378,13 +401,8 @@ export class FeatureIngest {
   }
 
   #commit(type: number, typeName: string, id: number): void {
-    const clamped = this.#clampedThisFeature;
+    if (this.#clampedThisFeature) this.#clampedLatitude += 1;
     this.#clampedThisFeature = false;
-    if (clamped && type === geometryType.point) {
-      this.#outsideMercator += 1;
-      return;
-    }
-    if (clamped) this.#clampedLatitude += 1;
     if (this.rank) {
       if (this.#features === this.#rankKeys.length) {
         const grown = new Float64Array(this.#rankKeys.length * 2);

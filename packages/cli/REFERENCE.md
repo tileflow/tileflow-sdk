@@ -70,8 +70,10 @@ shifts but has no grid shifts:
   `TF_TILESET_BUILD_DATUM_UNSUPPORTED` rather than misplacing features by up to hundreds of metres.
   Pass a proj string with `+towgs84=` if you know the shift, or reproject first.
 
-Every coordinate is range-checked after any conversion. The first coordinate outside longitude
-±180 or latitude ±90 stops the build and names the feature, row or record. This catches most, but not
+Every coordinate is range-checked after any conversion. The first coordinate more than 0.001° outside
+longitude ±180 or latitude ±90 stops the build and names the feature, row or record; anything closer
+is moved to the limit and counted in `warnings`. A prime meridian other than Greenwich counts as a
+non-WGS84 CRS. This catches most, but not
 all, wrong statements: a small projected extent can fall in range, and swapped axes are only caught
 past latitude ±90.
 
@@ -179,31 +181,32 @@ are dropped with a warning.
 On failure the exit code is 1, stdout is empty, and stderr carries
 `{"error": {"code", "message", "path"}, "ok": false, "schemaVersion": 1}`.
 
-| Code                                        | Meaning                                                |
-| ------------------------------------------- | ------------------------------------------------------ |
-| `TF_TILESET_BUILD_INPUT_MISSING`            | The input file does not exist                          |
-| `TF_TILESET_BUILD_INPUT_INVALID`            | Malformed data or zip; names the feature or row        |
-| `TF_TILESET_BUILD_FORMAT_UNSUPPORTED`       | Unknown extension or MultiPatch Shapefile              |
-| `TF_TILESET_BUILD_ZIP_ENTRY_INVALID`        | Zip has no `.shp`, several, or not the one named       |
-| `TF_TILESET_BUILD_RANK_INVALID`             | `--rank-by` has no numeric values, or is missing       |
-| `TF_TILESET_BUILD_EMPTY`                    | No usable features                                     |
-| `TF_TILESET_BUILD_CRS_UNKNOWN`              | The input does not state its CRS                       |
-| `TF_TILESET_BUILD_CRS_NOT_WGS84`            | Stated CRS needs `--reproject`                         |
-| `TF_TILESET_BUILD_CRS_UNREADABLE`           | `--source-crs` or the declared CRS could not be parsed |
-| `TF_TILESET_BUILD_DATUM_UNSUPPORTED`        | No known shift from the datum to WGS84                 |
-| `TF_TILESET_BUILD_COORDINATES_OUT_OF_RANGE` | Coordinates are not WGS84 after any conversion         |
-| `TF_TILESET_BUILD_CSV_COLUMNS`              | Coordinate columns are missing or ambiguous            |
-| `TF_TILESET_BUILD_FIELD_CONFLICT`           | Two field names collide after renaming                 |
-| `TF_TILESET_BUILD_FIELDS_INVALID`           | `--include` and `--exclude` were combined              |
-| `TF_TILESET_BUILD_TOO_MANY_FIELDS`          | More than 512 fields; use `--include`                  |
-| `TF_TILESET_BUILD_LAYER_INVALID`            | The layer name is not valid                            |
-| `TF_TILESET_BUILD_ZOOM_INVALID`             | Zooms are out of range or reversed                     |
-| `TF_TILESET_BUILD_OUTPUT_EXISTS`            | The output exists; pass `--force`                      |
-| `TF_TILESET_BUILD_OUTPUT_INVALID`           | The output equals the input, or its folder is missing  |
-| `TF_TILESET_BUILD_TILE_TOO_LARGE`           | A tile cannot fit without losing features              |
-| `TF_TILESET_BUILD_TOO_MANY_TILES`           | More than 16 million tile entries; lower `--maxzoom`   |
-| `TF_TILESET_BUILD_ARCHIVE_TOO_LARGE`        | The archive exceeds the publishable 8 GB               |
-| `TF_TILESET_BUILD_DISK_FULL`                | Not enough free disk space                             |
+| Code                                        | Meaning                                                 |
+| ------------------------------------------- | ------------------------------------------------------- |
+| `TF_TILESET_BUILD_INPUT_MISSING`            | The input file does not exist                           |
+| `TF_TILESET_BUILD_INPUT_INVALID`            | Malformed data or zip; names the feature or row         |
+| `TF_TILESET_BUILD_FORMAT_UNSUPPORTED`       | Unknown extension or MultiPatch Shapefile               |
+| `TF_TILESET_BUILD_ZIP_ENTRY_INVALID`        | Zip has no `.shp`, several, or not the one named        |
+| `TF_TILESET_BUILD_RANK_INVALID`             | `--rank-by` has no numeric values, or is missing        |
+| `TF_TILESET_BUILD_EMPTY`                    | No usable features                                      |
+| `TF_TILESET_BUILD_CRS_UNKNOWN`              | The input does not state its CRS                        |
+| `TF_TILESET_BUILD_CRS_NOT_WGS84`            | Stated CRS needs `--reproject`                          |
+| `TF_TILESET_BUILD_CRS_UNREADABLE`           | `--source-crs` or the declared CRS could not be parsed  |
+| `TF_TILESET_BUILD_CRS_UNSUPPORTED`          | Geographic CRS measured in something other than degrees |
+| `TF_TILESET_BUILD_DATUM_UNSUPPORTED`        | No known shift from the datum to WGS84                  |
+| `TF_TILESET_BUILD_COORDINATES_OUT_OF_RANGE` | Coordinates are not WGS84 after any conversion          |
+| `TF_TILESET_BUILD_CSV_COLUMNS`              | Coordinate columns are missing or ambiguous             |
+| `TF_TILESET_BUILD_FIELD_CONFLICT`           | Two field names collide after renaming                  |
+| `TF_TILESET_BUILD_FIELDS_INVALID`           | `--include` and `--exclude` were combined               |
+| `TF_TILESET_BUILD_TOO_MANY_FIELDS`          | More than 512 fields; use `--include`                   |
+| `TF_TILESET_BUILD_LAYER_INVALID`            | The layer name is not valid                             |
+| `TF_TILESET_BUILD_ZOOM_INVALID`             | Zooms are out of range or reversed                      |
+| `TF_TILESET_BUILD_OUTPUT_EXISTS`            | The output exists; pass `--force`                       |
+| `TF_TILESET_BUILD_OUTPUT_INVALID`           | The output equals the input, or its folder is missing   |
+| `TF_TILESET_BUILD_TILE_TOO_LARGE`           | A tile cannot fit without losing features               |
+| `TF_TILESET_BUILD_TOO_MANY_TILES`           | More than 16 million tile entries; lower `--maxzoom`    |
+| `TF_TILESET_BUILD_ARCHIVE_TOO_LARGE`        | The archive exceeds the publishable 8 GB                |
+| `TF_TILESET_BUILD_DISK_FULL`                | Not enough free disk space                              |
 
 ### Limits
 

@@ -21,6 +21,7 @@ export type CrsStatement = Readonly<{
 }>;
 
 const wgs84Definition = '+proj=longlat +datum=WGS84 +no_defs';
+const radiansPerDegree = Math.PI / 180;
 
 /**
  * Datums whose realizations stay within a few metres of WGS84. proj4 carries no shift for them, so
@@ -42,7 +43,18 @@ export function resolveCrs(statement: CrsStatement, reproject: boolean): Resolve
 
   const parsed = parseDefinition(definition, label);
   const datum = String(parsed.datumCode ?? 'none').toLowerCase();
-  if (parsed.projName === 'longlat' && datum === 'wgs84') {
+  // proj4 reads grads as degrees in a geographic CRS, so conversion would misplace everything too.
+  const angularUnit = parsed.projName === 'longlat' ? parsed.UNIT?.convert : undefined;
+  if (angularUnit !== undefined && Math.abs(angularUnit - radiansPerDegree) > 1e-9) {
+    throw new TilesetBuildError(
+      'TF_TILESET_BUILD_CRS_UNSUPPORTED',
+      'crs',
+      `${label} measures coordinates in "${parsed.UNIT?.name}"; only degrees can be converted here. Reproject the data to WGS84 with another tool first.`,
+    );
+  }
+  // A non-Greenwich prime meridian shifts every longitude, however WGS84 the datum looks.
+  const greenwich = Math.abs(parsed.from_greenwich ?? 0) < 1e-12;
+  if (parsed.projName === 'longlat' && datum === 'wgs84' && greenwich) {
     return {authority, label, reprojected: false, transform: null};
   }
 
@@ -165,7 +177,9 @@ function epsgDefinition(code: number): string | null {
 type ParsedProjection = {
   datum?: {datum_type?: number};
   datumCode?: unknown;
+  from_greenwich?: number;
   projName?: unknown;
+  UNIT?: {convert?: number; name?: unknown};
 };
 
 function parseDefinition(definition: string, label: string): ParsedProjection {

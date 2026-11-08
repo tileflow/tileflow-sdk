@@ -837,6 +837,133 @@ test('Web Mercator limits and antimeridian crossings are reported, not hidden', 
   assert.match(warnings, /without geometry/u);
 });
 
+test('coordinates barely past the limits of the world are moved to them and reported', async (t) => {
+  const directory = await workspace(t);
+  await writeFile(
+    join(directory, 'edge.geojson'),
+    collection([
+      feature({coordinates: [-180.00003, 10], type: 'Point'}, 'edge'),
+      feature({coordinates: [20, 10], type: 'Point'}, 'inside'),
+    ]),
+  );
+  const result = await build(directory, ['edge.geojson', '--maxzoom', '4', '--json']);
+  assert.equal(result.code, 0, result.stderr);
+  const document = JSON.parse(result.stdout);
+  assert.equal(document.input.features, 2);
+  assert.equal(document.archive.bounds[0], -180);
+  assert.match(document.warnings.join(' '), /1 coordinates up to 0\.001° past/u);
+
+  await writeFile(
+    join(directory, 'far.geojson'),
+    collection([feature({coordinates: [-180.5, 10], type: 'Point'}, 'far')]),
+  );
+  const far = await build(directory, ['far.geojson', '--maxzoom', '4', '--json']);
+  assert.equal(failure(far).code, 'TF_TILESET_BUILD_COORDINATES_OUT_OF_RANGE');
+});
+
+test('a ring dropped near the pole does not take the next feature with it', async (t) => {
+  const directory = await workspace(t);
+  await writeFile(
+    join(directory, 'rings.geojson'),
+    collection([
+      feature(
+        {
+          coordinates: [
+            [
+              [10, 89],
+              [10, 89.5],
+              [10, 89],
+            ],
+          ],
+          type: 'Polygon',
+        },
+        'degenerate',
+      ),
+      feature({coordinates: [10, 10], type: 'Point'}, 'next'),
+    ]),
+  );
+  const result = await build(directory, ['rings.geojson', '--maxzoom', '4', '--json']);
+  assert.equal(result.code, 0, result.stderr);
+  const document = JSON.parse(result.stdout);
+  assert.equal(document.input.features, 1);
+  assert.deepEqual(document.input.skipped, {emptyGeometry: 1, outsideMercator: 0});
+  const [point] = await decodeZoom(join(directory, 'rings.pmtiles'), 4, 'rings');
+  assert.equal(point.properties.name, 'next');
+});
+
+test('a MultiPoint keeps the positions Web Mercator can hold', async (t) => {
+  const directory = await workspace(t);
+  await writeFile(
+    join(directory, 'multi.geojson'),
+    collection([
+      feature(
+        {
+          coordinates: [
+            [10, 89],
+            [11, 11],
+            [12, 12],
+          ],
+          type: 'MultiPoint',
+        },
+        'partial',
+      ),
+      feature(
+        {
+          coordinates: [
+            [30, 88],
+            [31, 87],
+          ],
+          type: 'MultiPoint',
+        },
+        'polar',
+      ),
+    ]),
+  );
+  const result = await build(directory, ['multi.geojson', '--maxzoom', '4', '--json']);
+  assert.equal(result.code, 0, result.stderr);
+  const document = JSON.parse(result.stdout);
+  assert.equal(document.input.features, 1);
+  assert.equal(document.input.skipped.outsideMercator, 3);
+  assertClose([...document.archive.bounds], [11, 11, 12, 12], 1e-6);
+  const decoded = await decodeZoom(join(directory, 'multi.pmtiles'), 4, 'multi');
+  assert.deepEqual([...new Set(decoded.map((item) => item.properties.name))], ['partial']);
+  assert.equal(decoded[0].geometry.type, 'MultiPoint');
+});
+
+test('prime meridians and angular units are not mistaken for plain WGS84', async (t) => {
+  const directory = await workspace(t);
+  await writeFile(join(directory, 'p.csv'), 'lon,lat\n1,45\n');
+  const paris =
+    'GEOGCS["Paris",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563]],PRIMEM["Paris",2.33722917],UNIT["degree",0.0174532925199433]]';
+  const refused = await build(directory, ['p.csv', '--source-crs', paris, '--json']);
+  assert.equal(failure(refused).code, 'TF_TILESET_BUILD_CRS_NOT_WGS84');
+  const converted = await build(directory, [
+    'p.csv',
+    '--source-crs',
+    paris,
+    '--reproject',
+    '--maxzoom',
+    '4',
+    '--json',
+  ]);
+  assert.equal(converted.code, 0, converted.stderr);
+  assertClose(JSON.parse(converted.stdout).archive.bounds.slice(0, 2), [3.337229, 45], 1e-5);
+
+  const grad =
+    'GEOGCS["Grad",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["grad",0.015707963267949]]';
+  for (const extra of [[], ['--reproject']]) {
+    const result = await build(directory, [
+      'p.csv',
+      '--source-crs',
+      grad,
+      '--force',
+      ...extra,
+      '--json',
+    ]);
+    assert.equal(failure(result).code, 'TF_TILESET_BUILD_CRS_UNSUPPORTED');
+  }
+});
+
 test('a zipped Shapefile builds without being extracted first', async (t) => {
   const directory = await workspace(t);
   const parts = await shapefileParts(directory);

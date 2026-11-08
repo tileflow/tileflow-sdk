@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
-import {mkdir, mkdtemp, readFile, rm, symlink, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {afterEach, beforeEach, describe, it} from 'node:test';
-import {parseApproval, runApprove} from '../src/approve.mjs';
+import {runApprove} from '../src/approve.mjs';
 import {runCapture} from '../src/capture.mjs';
 import {commentMarker, readUntrustedReport} from '../src/contract.mjs';
+import {githubApprovalInstructions, parseApproval} from '../src/github/provider.mjs';
 import {runPromote} from '../src/promote.mjs';
+import {createProvider} from '../src/provider.mjs';
 import {escapeText, renderReport, summarize} from '../src/render.mjs';
 import {runReport} from '../src/report.mjs';
 import {startFakeGitHub} from './fake-github.mjs';
@@ -121,6 +123,7 @@ describe('rendering', () => {
   it('keeps hostile values out of the rendered comment', () => {
     const body = renderReport({
       approvable: true,
+      approvalInstructions: githubApprovalInstructions(headSha),
       baselineEdits: [],
       imageBase: 'https://github.test/raw/1',
       runUrl: 'https://github.test/run',
@@ -149,6 +152,7 @@ describe('rendering', () => {
     assert.equal(summarize(noisy).state, 'success');
     const body = renderReport({
       approvable: true,
+      approvalInstructions: githubApprovalInstructions(headSha),
       baselineEdits: [],
       imageBase: 'x',
       report: noisy,
@@ -376,5 +380,105 @@ describe('publishing stages', () => {
     assert.equal(github.comments.length, 0);
     assert.equal(github.statuses.length, 0);
     assert.match(await readFile(summary, 'utf8'), /Tileflow visual review/);
+  });
+});
+
+describe('provider boundary', () => {
+  function memoryProvider() {
+    const files = new Map();
+    const log = {comments: [], published: [], statuses: []};
+    const changeRequest = {number: 7, headSha, baseBranch: 'main', open: true};
+    return {
+      log,
+      reference: (number) => `!${number}`,
+      captureCameFromChangeRequest: () => true,
+      approvalRequest: () => ({author: 'maintainer', requestedSha: headSha}),
+      acknowledgeApproval: async () => {},
+      approvalInstructions: () => ['Run the approve job.'],
+      canApprove: async () => true,
+      getChangeRequest: async () => changeRequest,
+      listChangedFiles: async () => ['.host-ci.yml', 'src/map.ts'],
+      isAutomationFile: (path) => path === '.host-ci.yml',
+      comment: async (_, body) => void log.comments.push(body),
+      upsertReport: async (_, body) => void log.comments.push(body),
+      setStatus: async (sha, state, description) =>
+        void log.statuses.push({sha, state, description}),
+      captureRunUrl: () => 'https://git.test/pipelines/99',
+      writeRunOutput: async () => {},
+      writeEvidence: async (added, _, removePrefixes = []) => {
+        for (const path of [...files.keys()]) {
+          if (removePrefixes.some((prefix) => path.startsWith(prefix))) files.delete(path);
+        }
+        for (const {path, bytes} of added) files.set(path, bytes);
+        return 'evidence-1';
+      },
+      readEvidenceJson: async (path) =>
+        files.has(path) ? JSON.parse(files.get(path).toString()) : null,
+      listEvidence: async (prefix) =>
+        new Map(
+          [...files.keys()]
+            .filter((path) => path.startsWith(prefix))
+            .map((path) => [path.slice(prefix.length), `handle:${path}`]),
+        ),
+      evidenceUrl: (id, path) => `https://git.test/${id}/${path}`,
+      publishBaselines: async (request) => {
+        log.published.push(request);
+        return {commit: 'c'.repeat(40)};
+      },
+    };
+  }
+
+  it('runs every publishing stage against a host that is not GitHub', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'tileflow-review-test-'));
+    const provider = memoryProvider();
+    const env = {
+      TILEFLOW_REVIEW_BASELINE_DIR: 'test/visual-baselines',
+      TILEFLOW_REVIEW_DRY_RUN: 'false',
+      TILEFLOW_REVIEW_HEAD_SHA: headSha,
+      TILEFLOW_REVIEW_MERGED: 'true',
+      TILEFLOW_REVIEW_OUTPUT: directory,
+      TILEFLOW_REVIEW_PULL_REQUEST: '7',
+      TILEFLOW_REVIEW_WORKING_DIRECTORY: '.',
+    };
+    try {
+      await writeArtifact(directory, report());
+      await runReport(env, provider);
+      assert.equal(provider.log.statuses.at(-1).state, 'failure');
+      assert.match(provider.log.comments[0], /Run the approve job\./);
+      assert.match(provider.log.comments[0], /\.host-ci\.yml/);
+      assert.doesNotMatch(provider.log.comments[0], /tileflow approve/);
+
+      await runApprove(env, provider);
+      assert.equal(provider.log.statuses.at(-1).state, 'success');
+
+      await runPromote(env, provider);
+      const [published] = provider.log.published;
+      assert.match(published.message, /!7/);
+      assert.deepEqual(
+        published.files.map(({path}) => path),
+        ['test/visual-baselines/madrid.png', 'test/visual-baselines/madrid.receipt.json'],
+      );
+      assert.equal(published.files[0].handle, `handle:pr-7/${headSha}/madrid.after.png`);
+    } finally {
+      process.exitCode = 0;
+      await rm(directory, {force: true, recursive: true});
+    }
+  });
+
+  it('rejects an unknown provider', () => {
+    assert.throws(() => createProvider({TILEFLOW_REVIEW_PROVIDER: 'svn'}), /Unsupported Git/);
+  });
+
+  it('keeps host APIs out of the shared stages', async () => {
+    const source = new URL('../src/', import.meta.url);
+    const entries = await readdir(source, {withFileTypes: true});
+    for (const entry of entries.filter((item) => item.isFile())) {
+      const text = await readFile(new URL(entry.name, source), 'utf8');
+      assert.doesNotMatch(
+        text,
+        /GITHUB_|\/pulls|\/issues\/|\/statuses\/|\/git\/|\.github\//,
+        entry.name,
+      );
+    }
   });
 });

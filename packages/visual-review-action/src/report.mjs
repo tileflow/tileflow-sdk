@@ -1,39 +1,21 @@
-import {appendFile} from 'node:fs/promises';
-import {
-  commentMarker,
-  readUntrustedImages,
-  readUntrustedReport,
-  statusContext,
-} from './contract.mjs';
-import {writeEvidence} from './evidence.mjs';
-import {createGitHub} from './github.mjs';
+import {readUntrustedImages, readUntrustedReport} from './contract.mjs';
+import {createProvider} from './provider.mjs';
 import {renderReport, summarize} from './render.mjs';
-
-const botLogin = 'github-actions[bot]';
 
 /**
  * Runs from the default branch with write access. It never checks out or executes pull request
  * code, and it treats the capture artifact purely as data to validate and display.
  */
-export async function runReport(env = process.env) {
-  const github = createGitHub(env);
+export async function runReport(env = process.env, provider = createProvider(env)) {
   const dryRun = env.TILEFLOW_REVIEW_DRY_RUN === 'true';
-  const branch = env.TILEFLOW_REVIEW_EVIDENCE_BRANCH;
   const headSha = env.TILEFLOW_REVIEW_HEAD_SHA;
-  if (!dryRun && env.TILEFLOW_REVIEW_RUN_EVENT !== 'pull_request') {
+  if (!dryRun && !provider.captureCameFromChangeRequest()) {
     console.log('The capture run did not come from a pull request. Nothing to report.');
     return;
   }
-  const runUrl = `${env.GITHUB_SERVER_URL}/${github.repository}/actions/runs/${env.TILEFLOW_REVIEW_RUN_ID}`;
+  const runUrl = provider.captureRunUrl();
   const setStatus = (state, description) =>
-    dryRun
-      ? undefined
-      : github.post(`/statuses/${headSha}`, {
-          context: statusContext,
-          description: description.slice(0, 140),
-          state,
-          target_url: runUrl,
-        });
+    dryRun ? undefined : provider.setStatus(headSha, state, description, runUrl);
 
   let report;
   let files;
@@ -55,27 +37,21 @@ export async function runReport(env = process.env) {
   let baselineEdits = [];
   let workflowEdits = [];
   if (!dryRun) {
-    const pullRequest = await github.get(`/pulls/${report.pullRequest}`);
-    if (pullRequest.head.sha !== headSha) {
+    const changeRequest = await provider.getChangeRequest(report.pullRequest);
+    if (changeRequest.headSha !== headSha) {
       console.log('The pull request has moved on. Skipping this stale capture.');
       return;
     }
-    const changed = await github.paginate(`/pulls/${report.pullRequest}/files`);
+    const changed = await provider.listChangedFiles(report.pullRequest);
     const baselinePath = repositoryPath(env);
-    baselineEdits = changed
-      .map(({filename}) => filename)
-      .filter((name) => name.startsWith(`${baselinePath}/`));
-    workflowEdits = changed
-      .map(({filename}) => filename)
-      .filter((name) => name.startsWith('.github/workflows/'));
+    baselineEdits = changed.filter((name) => name.startsWith(`${baselinePath}/`));
+    workflowEdits = changed.filter((name) => provider.isAutomationFile(name));
   }
 
   const evidencePath = `pr-${report.pullRequest}/${headSha}`;
   const approvable = baselineEdits.length === 0 && !report.failure;
   const sanitized = {...report, approvable};
-  const commit = await writeEvidence(
-    github,
-    branch,
+  const evidenceId = await provider.writeEvidence(
     [
       ...files.map(({name, bytes}) => ({path: `${evidencePath}/${name}`, bytes})),
       {
@@ -83,34 +59,24 @@ export async function runReport(env = process.env) {
         bytes: Buffer.from(`${JSON.stringify(sanitized, null, 2)}\n`),
       },
     ],
-    `Visual review evidence for #${report.pullRequest} at ${headSha.slice(0, 12)}`,
+    `Visual review evidence for ${provider.reference(report.pullRequest)} at ${headSha.slice(0, 12)}`,
   );
-  const imageBase = `${env.GITHUB_SERVER_URL}/${github.repository}/raw/${commit}/${evidencePath}`;
   const body = renderReport({
     approvable,
+    approvalInstructions: provider.approvalInstructions(headSha),
     baselineEdits,
-    imageBase,
+    imageBase: provider.evidenceUrl(evidenceId, evidencePath),
     report,
     runUrl,
     workflowEdits,
   });
   const summary = summarize(report, baselineEdits);
-  if (env.GITHUB_STEP_SUMMARY) await appendFile(env.GITHUB_STEP_SUMMARY, body);
-  if (env.GITHUB_OUTPUT) await appendFile(env.GITHUB_OUTPUT, `verdict=${summary.verdict}\n`);
+  await provider.writeRunOutput(body, summary.verdict);
 
   if (!dryRun) {
-    await upsertComment(github, report.pullRequest, body);
+    await provider.upsertReport(report.pullRequest, body);
     await setStatus(summary.state, summary.title);
   }
-}
-
-async function upsertComment(github, pullRequest, body) {
-  const comments = await github.paginate(`/issues/${pullRequest}/comments`);
-  const existing = comments.find(
-    (comment) => comment.user?.login === botLogin && comment.body?.startsWith(commentMarker),
-  );
-  if (existing) await github.patch(`/issues/comments/${existing.id}`, {body});
-  else await github.post(`/issues/${pullRequest}/comments`, {body});
 }
 
 export function repositoryPath(env) {

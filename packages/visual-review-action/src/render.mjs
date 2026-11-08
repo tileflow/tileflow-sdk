@@ -61,6 +61,7 @@ export function renderReport({
   imageBase,
   runUrl,
   approvable,
+  approvalInstructions = [],
 }) {
   const summary = summarize(report, baselineEdits);
   const icon = {error: '⚠️', failure: '❌', success: '✅'}[summary.state];
@@ -107,11 +108,7 @@ export function renderReport({
     lines.push(
       '### Approve these renders',
       '',
-      'If the renders above are intended, a maintainer can accept them for this commit:',
-      '',
-      '```',
-      `/tileflow approve ${report.headSha.slice(0, 12)}`,
-      '```',
+      ...approvalInstructions,
       '',
       'Baselines update after merge. A new push needs a new approval.',
       '',

@@ -5,6 +5,7 @@ import {homedir, tmpdir} from 'node:os';
 import {dirname, join, relative} from 'node:path';
 import {promisify} from 'node:util';
 import {evidenceFile, limits, needsApproval, reportFileName} from './contract.mjs';
+import {assertCaptureAllowed} from './provider.mjs';
 
 const execFile = promisify(execFileCallback);
 const lockfileInstallers = [
@@ -12,18 +13,13 @@ const lockfileInstallers = [
   {file: 'package-lock.json', command: 'npm', args: ['ci']},
   {file: 'yarn.lock', command: 'yarn', args: ['install', '--immutable'], corepack: true},
 ];
-const unsafeEvents = new Set(['issue_comment', 'pull_request_target', 'workflow_run']);
 
 /**
  * Runs inside the unprivileged pull request job. Config files are executable, so nothing here may
  * hold a write token, and the action refuses events that would grant one to pull request code.
  */
 export async function runCapture(env = process.env) {
-  if (unsafeEvents.has(env.GITHUB_EVENT_NAME)) {
-    throw new Error(
-      `Capture runs pull request code and must not run on ${env.GITHUB_EVENT_NAME}. Use pull_request.`,
-    );
-  }
+  assertCaptureAllowed(env);
   const options = {
     baselineDirectory: env.TILEFLOW_REVIEW_BASELINE_DIR,
     baseSha: env.TILEFLOW_REVIEW_BASE_SHA,

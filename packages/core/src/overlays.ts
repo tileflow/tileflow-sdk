@@ -168,14 +168,6 @@ export function geojsonSource(
   ) {
     throw new Error('Tileflow GeoJSON source data must be a FeatureCollection or an https:// URL.');
   }
-  if (
-    typeof data !== 'string' &&
-    new TextEncoder().encode(JSON.stringify(data)).byteLength > tileflowInlineGeoJsonByteLimit
-  ) {
-    throw new Error(
-      `Tileflow inline GeoJSON is limited to ${tileflowInlineGeoJsonByteLimit} bytes. Use an https:// URL or runtime dataSources.`,
-    );
-  }
   assertClusterOptions(options);
   const attribution = options.attribution?.trim();
   return Object.freeze({

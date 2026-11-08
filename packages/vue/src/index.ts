@@ -848,8 +848,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       try {
         dataRuntime.reconcile({
           annotationClusters: props.annotationClusters,
-          // A fresh list, because a deep annotation edit keeps the same array.
-          annotations: resolution.ok && !isImageMode.value ? [...resolution.annotations] : [],
+          annotations: resolution.ok && !isImageMode.value ? resolution.annotations : [],
           dataOverlays: props.dataOverlays,
           dataSources:
             props.dataSources &&

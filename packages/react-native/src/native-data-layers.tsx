@@ -145,19 +145,21 @@ export function NativeClusterMarker({
   label: string;
   onPress: () => void;
 }): ReactElement {
+  const press = (event?: {stopPropagation(): void}) => {
+    event?.stopPropagation();
+    onPress();
+  };
   return (
     <Marker
       id={`tileflow-cluster-${cluster.clusterId}`}
       lngLat={[cluster.coordinate[0], cluster.coordinate[1]]}
-      onPress={onPress}
+      accessible
+      accessibilityLabel={label}
+      accessibilityRole="button"
+      onAccessibilityTap={onPress}
+      onPress={press}
     >
-      <Pressable
-        accessibilityLabel={label}
-        accessibilityRole="button"
-        accessible
-        onPress={onPress}
-        style={bubble}
-      >
+      <Pressable accessible={false} onPress={press} style={bubble}>
         <Text style={count}>{cluster.label}</Text>
       </Pressable>
     </Marker>

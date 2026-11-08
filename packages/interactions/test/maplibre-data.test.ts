@@ -30,13 +30,13 @@ class FakeElement {
   readonly style: Record<string, string> = {};
   textContent = '';
   type = '';
-  private readonly listeners = new Map<string, () => void>();
+  private readonly listeners = new Map<string, (event: {detail: number}) => void>();
 
-  addEventListener(type: string, listener: () => void) {
+  addEventListener(type: string, listener: (event: {detail: number}) => void) {
     this.listeners.set(type, listener);
   }
-  click() {
-    this.listeners.get('click')?.();
+  click(detail = 1) {
+    this.listeners.get('click')?.({detail});
   }
   remove() {
     this.removed = true;
@@ -475,6 +475,69 @@ test('annotations collapse into a keyboard-reachable button that names its membe
   ]);
   assert.equal(fake.eased.length, 1);
   assert.ok(fake.eased[0]!.zoom > 4);
+});
+
+test('activating a cluster button from the keyboard reports the keyboard', () => {
+  const fake = createMap();
+  fake.setZoom(4);
+  const {events, markers, runtime} = attach(fake);
+  runtime.reconcile({annotationClusters: {}, annotations: nearby});
+
+  markers[0]!.element.click(0);
+  markers[0]!.element.click(1);
+
+  assert.deepEqual(
+    events.map((event) => event.inputModality),
+    ['keyboard', 'pointer'],
+  );
+});
+
+test('an equal annotation list and inline options keep the same buttons', () => {
+  const fake = createMap();
+  fake.setZoom(4);
+  const {markers, runtime} = attach(fake);
+  runtime.reconcile({annotationClusters: {clusterRadius: 60}, annotations: nearby});
+
+  runtime.reconcile({
+    annotationClusters: {clusterRadius: 60},
+    annotations: nearby.map((item) => ({...item})),
+  });
+
+  assert.equal(markers.length, 1);
+  assert.equal(markers[0]!.removed, false);
+});
+
+test('a moved annotation rebuilds its cluster and keeps keyboard focus on the map', () => {
+  const fake = createMap();
+  fake.setZoom(4);
+  const {markers, runtime} = attach(fake);
+  runtime.reconcile({annotationClusters: {}, annotations: nearby});
+  const element = markers[0]!.element;
+  element.ownerDocument.activeElement = element;
+
+  runtime.reconcile({
+    annotationClusters: {},
+    annotations: [...nearby.slice(0, 2), annotation('c', [-3.7003, 40.4003])],
+  });
+
+  assert.ok(markers[0]!.removed);
+  assert.equal(markers.length, 2);
+  assert.equal(fake.canvas.focusCalls, 1);
+});
+
+test('a new accessible name reaches existing cluster buttons', () => {
+  const fake = createMap();
+  fake.setZoom(4);
+  const {markers, runtime} = attach(fake);
+  runtime.reconcile({annotationClusters: {}, annotations: nearby});
+
+  runtime.reconcile({
+    annotationClusters: {formatAriaLabel: (count) => `${count} tiendas`},
+    annotations: nearby,
+  });
+
+  assert.equal(markers.length, 1);
+  assert.equal(markers[0]!.element.attributes.get('aria-label'), '3 tiendas');
 });
 
 test('zooming past a cluster brings its annotations back and restores keyboard focus', () => {

@@ -120,16 +120,6 @@ test('rejects source and heatmap inputs MapLibre could not use', () => {
   );
   assert.throws(
     () =>
-      geojsonSource({
-        data: {
-          features: [{note: 'x'.repeat(tileflowInlineGeoJsonByteLimit)}],
-          type: 'FeatureCollection',
-        },
-      }),
-    /limited to/u,
-  );
-  assert.throws(
-    () =>
       heatmapOverlay({
         colors: [
           [0.5, '#000'],
@@ -178,6 +168,17 @@ test('compiles heatmaps over GeoJSON sources and hosted vector tilesets', () => 
   ]);
   const ids = style.layers.map(({id}) => id);
   assert.ok(ids.includes('stores-heat'));
+});
+
+test('the inline GeoJSON limit applies to config, not to runtime data', () => {
+  const large = {
+    features: [{note: 'x'.repeat(tileflowInlineGeoJsonByteLimit)}],
+    type: 'FeatureCollection',
+  } as const;
+  const source = geojsonSource({cluster: true, data: large});
+
+  assert.equal(source.kind, 'geojson');
+  assert.throws(() => parseTileflowMap(clusteredMap(source)), /inline GeoJSON/u);
 });
 
 test('semantic config validates and inherits GeoJSON sources like other keyed resources', () => {

@@ -109,8 +109,9 @@ type MapEvent = Readonly<{
 
 type ClusterMarker<TMarker> = Readonly<{
   element: HTMLButtonElement;
-  listener: () => void;
+  listener: (event: MouseEvent) => void;
   marker: TMarker;
+  pointCount: number;
 }>;
 
 /**
@@ -135,6 +136,7 @@ export function createTileflowMapLibreDataRuntime<
   const clusterMarkers = new Map<number, ClusterMarker<TMarker>>();
   const reported = new Set<string>();
   let input: TileflowMapLibreDataInput<TAnnotation> = {};
+  let annotationClusterKey = '';
   let index: TileflowAnnotationClusterIndex | undefined;
   let renderedZoom: number | undefined;
   let clusterLayers: readonly string[] = [];
@@ -364,6 +366,10 @@ export function createTileflowMapLibreDataRuntime<
     );
   };
 
+  const isFocused = ({element}: ClusterMarker<TMarker>) =>
+    element.ownerDocument?.activeElement === element;
+  const hasFocusedClusterMarker = () => [...clusterMarkers.values()].some(isFocused);
+
   const removeClusterMarker = (id: number, entry: ClusterMarker<TMarker>) => {
     entry.element.removeEventListener('click', entry.listener);
     entry.marker.remove();
@@ -371,19 +377,18 @@ export function createTileflowMapLibreDataRuntime<
     clusterMarkers.delete(id);
   };
 
+  const clusterLabel = (count: number) =>
+    input.annotationClusters?.formatAriaLabel?.(count) ?? `${count} places`;
+
   const createClusterMarker = (cluster: TileflowAnnotationCluster) => {
-    const settings = input.annotationClusters;
     const element = options.document.createElement('button');
     element.type = 'button';
     element.className = 'tileflow-interaction-cluster';
     element.textContent = cluster.label;
-    element.setAttribute(
-      'aria-label',
-      settings?.formatAriaLabel?.(cluster.pointCount) ?? `${cluster.pointCount} places`,
-    );
+    element.setAttribute('aria-label', clusterLabel(cluster.pointCount));
     element.setAttribute('data-tileflow-interaction', 'cluster');
     configureClusterStyles(element);
-    const listener = () => {
+    const listener = (event: MouseEvent) => {
       activateCluster(
         {
           annotationIds: cluster.annotationIds,
@@ -393,15 +398,23 @@ export function createTileflowMapLibreDataRuntime<
           pointCount: cluster.pointCount,
           properties: {point_count: cluster.pointCount},
         },
-        'pointer',
+        // Browsers report a click from Enter or Space with a detail of zero.
+        event.detail === 0 ? 'keyboard' : 'pointer',
       );
-      if (settings?.expandOnClick !== false) expand(cluster.coordinate, cluster.expansionZoom);
+      if (input.annotationClusters?.expandOnClick !== false) {
+        expand(cluster.coordinate, cluster.expansionZoom);
+      }
     };
     element.addEventListener('click', listener);
     const marker = options.createMarker({element});
     marker.setLngLat([cluster.coordinate[0], cluster.coordinate[1]]);
     marker.addTo(map);
-    clusterMarkers.set(cluster.clusterId, {element, listener, marker});
+    clusterMarkers.set(cluster.clusterId, {
+      element,
+      listener,
+      marker,
+      pointCount: cluster.pointCount,
+    });
   };
 
   /** Clusters come from the whole set at one integer zoom, so moving the map changes nothing. */
@@ -420,7 +433,7 @@ export function createTileflowMapLibreDataRuntime<
     let focusLost = false;
     for (const [id, entry] of [...clusterMarkers]) {
       if (clusters.has(id)) continue;
-      focusLost ||= entry.element.ownerDocument?.activeElement === entry.element;
+      focusLost ||= isFocused(entry);
       removeClusterMarker(id, entry);
     }
     for (const [id, cluster] of clusters) {
@@ -437,14 +450,24 @@ export function createTileflowMapLibreDataRuntime<
 
   const syncAnnotationClusters = () => {
     const settings = input.annotationClusters;
+    let focusLost = false;
     if (!settings) {
       index = undefined;
     } else {
       index = createTileflowAnnotationClusterIndex(input.annotations ?? [], settings);
       // A rebuilt index renumbers nothing it can promise to keep, so buttons are rebuilt.
+      focusLost = hasFocusedClusterMarker();
       for (const [id, entry] of [...clusterMarkers]) removeClusterMarker(id, entry);
     }
     renderAnnotationClusters();
+    if (focusLost) map.getCanvas().focus?.({preventScroll: true});
+  };
+
+  /** A changed locale reaches existing buttons without splitting them. */
+  const refreshClusterLabels = () => {
+    for (const {element, pointCount} of clusterMarkers.values()) {
+      element.setAttribute('aria-label', clusterLabel(pointCount));
+    }
   };
 
   const stops = [
@@ -464,16 +487,24 @@ export function createTileflowMapLibreDataRuntime<
     },
     reconcile(next: TileflowMapLibreDataInput<TAnnotation>) {
       if (disposed) return;
-      // Options written inline are new objects each render; only a real change rebuilds buttons.
-      const annotationsChanged =
-        next.annotations !== input.annotations ||
-        JSON.stringify(next.annotationClusters) !== JSON.stringify(input.annotationClusters);
+      // Lists and options written inline are new objects each render; only a real change rebuilds.
+      const key = clusterInputKey(next);
+      const changed = key !== annotationClusterKey;
+      annotationClusterKey = key;
       input = next;
       reported.clear();
       syncStyle();
-      if (annotationsChanged) syncAnnotationClusters();
+      if (changed) syncAnnotationClusters();
+      else refreshClusterLabels();
     },
   });
+}
+
+/** Only what changes the groups: annotation positions and the clustering options. */
+function clusterInputKey(input: TileflowMapLibreDataInput): string {
+  if (!input.annotationClusters) return '';
+  const positions = (input.annotations ?? []).map(({coordinate, id}) => [id, ...coordinate]);
+  return JSON.stringify([input.annotationClusters, positions]);
 }
 
 function compareEntries([left]: [string, unknown], [right]: [string, unknown]): number {

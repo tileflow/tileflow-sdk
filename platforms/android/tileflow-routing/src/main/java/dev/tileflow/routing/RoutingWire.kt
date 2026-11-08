@@ -13,6 +13,25 @@ import org.json.JSONObject
 
 /** Validates Routing requests and encodes them as the API expects. */
 internal object RoutingWire {
+    private val localDateTime = Regex("[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}")
+
+    /** A wall-clock time, `YYYY-MM-DDTHH:mm`, that exists in the calendar. */
+    private fun isLocalDateTime(value: String): Boolean {
+        if (!localDateTime.matches(value)) return false
+        val (year, month, day, hour, minute) = value.split('-', 'T', ':').map(String::toInt)
+        val leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
+        val days =
+            when (month) {
+                2 -> if (leap) 29 else 28
+                4,
+                6,
+                9,
+                11 -> 30
+                else -> 31
+            }
+        return month in 1..12 && day in 1..days && hour in 0..23 && minute in 0..59
+    }
+
     private fun maximumDistance(mode: TileflowRoutingMode): Double =
         when (mode) {
             TileflowRoutingMode.DRIVING,
@@ -36,11 +55,27 @@ internal object RoutingWire {
         requireRequest(request.alternatives == 0 || request.locations.size == 2) {
             "Alternatives are available only between two locations."
         }
-        requireRequest(
-            request.locations.zipWithNext(TileflowGeo::distanceMeters).sum() <=
-                maximumDistance(request.mode)
-        ) {
-            "The locations are too far apart for ${request.mode.wireName}."
+        if (request.optimize) {
+            val limit = maximumMatrixDistance(request.mode)
+            requireRequest(
+                request.locations.withIndex().all { (index, a) ->
+                    request.locations.drop(index + 1).all { b ->
+                        TileflowGeo.distanceMeters(a, b) <= limit
+                    }
+                }
+            ) {
+                "Two locations are too far apart to optimize for ${request.mode.wireName}."
+            }
+        } else {
+            requireRequest(
+                request.locations.zipWithNext(TileflowGeo::distanceMeters).sum() <=
+                    maximumDistance(request.mode)
+            ) {
+                "The locations are too far apart for ${request.mode.wireName}."
+            }
+        }
+        requireRequest(request.departAt?.let(::isLocalDateTime) ?: true) {
+            "Give the departure as a real YYYY-MM-DDTHH:mm, local to the first location."
         }
         return JSONObject()
             .put("locations", TileflowJson.positions(request.locations))
@@ -50,6 +85,8 @@ internal object RoutingWire {
             .putOpt("traffic", request.traffic?.wireName)
             .putOpt("alternatives", request.alternatives.takeIf { it > 0 })
             .putOpt("language", request.language?.wireName)
+            .putOpt("optimize", true.takeIf { request.optimize })
+            .putOpt("departAt", request.departAt)
     }
 
     fun isochrone(request: TileflowIsochroneRequest): JSONObject {
@@ -189,6 +226,8 @@ internal object RoutingWire {
 
 /** Reads Routing answers and checks them against the request. */
 internal object RoutingDecoding {
+    private val arrival = Regex("[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}")
+
     private val RELEASE_ID = Regex("^[a-z0-9][a-z0-9._-]{0,126}[a-z0-9]$")
 
     private class Answer(
@@ -219,13 +258,26 @@ internal object RoutingDecoding {
             routes.size <= request.alternatives + 1 &&
                 routes.all { it.legs.size == request.locations.size - 1 }
         )
+        val order = root.optArray("locationOrder")?.let { array -> array.map(array::long) }
+        requireResponse(answersOrder(order, request))
         return TileflowRouteResponse(
             routes,
             answer.network,
             answer.attribution,
             answer.traffic,
             answer.units,
+            order?.map(Long::toInt),
         )
+    }
+
+    /** An optimized route visits each location once, first to last; no other route states it. */
+    private fun answersOrder(order: List<Long>?, request: TileflowRouteRequest): Boolean {
+        if (!request.optimize) return order == null
+        val last = request.locations.size - 1L
+        return order != null &&
+            order.sorted() == (0L..last).toList() &&
+            order.first() == 0L &&
+            order.last() == last
     }
 
     fun isochrone(
@@ -342,11 +394,12 @@ internal object RoutingDecoding {
             hasFerries = value.boolean("hasFerries"),
             geometry = line(value.obj("geometry")),
             legs =
-                value.array("legs").sized(1..4).mapObjects { leg ->
+                value.array("legs").sized(1..24).mapObjects { leg ->
                     TileflowRouteLeg(
                         meters(leg, "distance"),
                         meters(leg, "duration"),
                         leg.array("steps").sized(1..2_000).mapObjects(::step),
+                        leg.optString("arriveAt")?.also { requireResponse(arrival.matches(it)) },
                     )
                 },
         )

@@ -115,6 +115,8 @@ public data class TileflowRouteLeg(
     public val distance: Double,
     public val duration: Double,
     public val steps: List<TileflowRouteStep>,
+    /** With a departure time: when the leg ends, as local time with its UTC offset. */
+    public val arriveAt: String? = null,
 )
 
 /**
@@ -146,6 +148,8 @@ public data class TileflowRoute(
  *
  * @property attribution The credit to show with the routes.
  * @property units The API units the operation consumed.
+ * @property locationOrder With [TileflowRouteRequest.optimize]: the requested index of each
+ *   location, in the order the route visits them.
  */
 public data class TileflowRouteResponse(
     public val routes: List<TileflowRoute>,
@@ -153,6 +157,7 @@ public data class TileflowRouteResponse(
     public val attribution: String,
     public val traffic: TileflowRoutingTrafficKind,
     public val units: Int,
+    public val locationOrder: List<Int>? = null,
 )
 
 /** The area reachable within [minutes]: one or more polygons, each a list of closed rings. */

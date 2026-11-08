@@ -100,6 +100,8 @@ public struct TileflowRouteLeg: Sendable, Hashable {
   public var distance: Double
   public var duration: Double
   public var steps: [TileflowRouteStep]
+  /// With a departure time: when the leg ends, as local time with its UTC offset.
+  public var arriveAt: String?
 }
 
 public struct TileflowRoute: Sendable, Hashable {
@@ -125,6 +127,8 @@ public struct TileflowRouteResponse: Sendable, Hashable {
   public var attribution: String
   public var traffic: TileflowRoutingTrafficKind
   public var units: Int
+  /// With `optimize`: the requested index of each location, in the order the route visits them.
+  public var locationOrder: [Int]?
 }
 
 /// The area reachable within a time: one or more polygons, each an outer ring followed by holes.
@@ -246,15 +250,19 @@ extension TileflowRouteResponse {
           hasHighways: try route.required("hasHighways").bool(),
           hasFerries: try route.required("hasFerries").bool(),
           geometry: try RoutingDecoding.line(route.required("geometry")),
-          legs: try route.required("legs").array(count: 1...4).map { leg in
+          legs: try route.required("legs").array(count: 1...24).map { leg in
             TileflowRouteLeg(
               distance: try RoutingDecoding.meters(leg.required("distance")),
               duration: try RoutingDecoding.meters(leg.required("duration")),
-              steps: try leg.required("steps").array(count: 1...2000).map(RoutingDecoding.step))
+              steps: try leg.required("steps").array(count: 1...2000).map(RoutingDecoding.step),
+              arriveAt: try leg.optional("arriveAt").map(RoutingDecoding.arrival))
           })
       },
       network: answer.network, attribution: answer.attribution, traffic: answer.traffic,
-      units: answer.units)
+      units: answer.units,
+      locationOrder: try json.optional("locationOrder")?.array(count: 2...25).map {
+        try $0.integer(0...24)
+      })
   }
 }
 
@@ -340,6 +348,14 @@ extension TileflowNearestResponse {
 }
 
 enum RoutingDecoding {
+  static func arrival(_ json: ServiceJSON) throws -> String {
+    let value = try json.string()
+    guard value.matches("[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}") else {
+      throw ServiceJSONError.invalid
+    }
+    return value
+  }
+
   static func meters(_ json: ServiceJSON) throws -> Double {
     try json.number(0 ... .greatestFiniteMagnitude)
   }

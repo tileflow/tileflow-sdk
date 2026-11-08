@@ -93,8 +93,8 @@ for (const index of answer.locationOrder ?? []) console.log(stops[index]);
 
 The legs of the route follow `locationOrder`. Every two locations must lie within the reach of a
 [matrix](#calculate-a-travel-time-matrix) for the mode: 200 km driving, 10 km walking or
-cycling. An optimized route counts more API units than a route in the given order: 5 plus one per
-location.
+cycling. An optimized route counts 10 API units, whatever its locations; a route in the given
+order counts 5.
 
 ## Choose a departure time
 

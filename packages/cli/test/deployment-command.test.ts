@@ -162,7 +162,9 @@ test('a refusal keeps the server code', async (t) => {
 
   assert.equal(process.exitCode, 1);
   process.exitCode = 0;
-  assert.equal(JSON.parse(output.stderr).error.code, 'TF_DEPLOYMENT_SOURCE_INCOMPATIBLE');
+  const {error} = JSON.parse(output.stderr);
+  assert.equal(error.code, 'TF_DEPLOYMENT_SOURCE_INCOMPATIBLE');
+  assert.equal(error.nextSteps[0].command, `tileflow deployments list --map-id ${mapId}`);
 });
 
 test('tileset restore names the current version it expects', async (t) => {
@@ -186,6 +188,7 @@ test('tileset restore names the current version it expects', async (t) => {
           tileset: {
             currentVersion: 1,
             id: 'tls_0123456789abcdef0123456789abcdef',
+            outcome: 'restored',
             previousVersion: 2,
             slug: 'stores',
           },
@@ -207,4 +210,108 @@ test('tileset restore names the current version it expects', async (t) => {
   assert.equal(output.requests.at(-1)!.path, '/v1/tilesets/stores/restore');
   assert.deepEqual(JSON.parse(output.requests.at(-1)!.body!), {expectedCurrentVersion: 2});
   assert.match(output.stdout, /stores is at version 1 again/u);
+});
+
+const resourceId = 'tls_0123456789abcdef0123456789abcdef';
+const tilesetDetail = {
+  schemaVersion: 1,
+  tileset: {
+    attribution: null,
+    currentVersion: 2,
+    dependencies: [],
+    dependencyNextCursor: null,
+    id: resourceId,
+    name: 'Stores',
+    slug: 'stores',
+    state: 'active',
+  },
+};
+const upload = {byteCount: 42, expiresAt: '2026-11-09T10:00:00.000Z', id: 'upl_a', state: 'uploading'};
+
+function tilesetProgram() {
+  const command = new Command().name('tileflow').exitOverride();
+  registerTilesetCommands(command, {
+    defaultApiUrl: 'https://api.tileflow.dev',
+    loadAuthConfig: (async () => {
+      throw new Error('account state must not be loaded');
+    }) as never,
+  });
+  return command;
+}
+
+test('a restore blocked by an upload tells an agent exactly how to clear it', async (t) => {
+  const output = capture(t, (request) =>
+    request.method === 'GET'
+      ? Response.json(tilesetDetail)
+      : Response.json(
+          {code: 'TF_TILESET_UPLOAD_IN_PROGRESS', error: 'Another Tileset upload is in progress', upload},
+          {status: 409},
+        ),
+  );
+
+  await output.run(() =>
+    tilesetProgram().parseAsync(['node', 'tileflow', 'tileset', 'restore', 'stores', '--api-key', apiKey, '--json']),
+  );
+
+  assert.equal(process.exitCode, 1);
+  process.exitCode = 0;
+  const {error} = JSON.parse(output.stderr);
+  assert.deepEqual(error.upload, upload);
+  assert.deepEqual(
+    error.nextSteps.map((step: {command: string}) => step.command),
+    ['tileflow tileset upload abort stores', 'tileflow tileset restore stores'],
+  );
+});
+
+test('a repaired restore says nothing was swapped', async (t) => {
+  const output = capture(t, (request) =>
+    request.method === 'GET'
+      ? Response.json(tilesetDetail)
+      : Response.json({
+          schemaVersion: 1,
+          tileset: {currentVersion: 2, id: resourceId, outcome: 'repaired', previousVersion: null, slug: 'stores'},
+        }),
+  );
+
+  await output.run(() =>
+    tilesetProgram().parseAsync(['node', 'tileflow', 'tileset', 'restore', 'stores', '--api-key', apiKey]),
+  );
+
+  assert.equal(process.exitCode ?? 0, 0, output.stderr);
+  assert.match(output.stdout, /Nothing was swapped/u);
+});
+
+test('upload abort finds the active upload and aborts that one', async (t) => {
+  const output = capture(t, (request) => {
+    if (request.method === 'DELETE') return Response.json({state: 'aborted', uploadId: upload.id});
+    return request.path.endsWith('/uploads')
+      ? Response.json({schemaVersion: 1, upload})
+      : Response.json(tilesetDetail);
+  });
+
+  await output.run(() =>
+    tilesetProgram().parseAsync(['node', 'tileflow', 'tileset', 'upload', 'abort', 'stores', '--api-key', apiKey, '--json']),
+  );
+
+  assert.equal(process.exitCode ?? 0, 0, output.stderr);
+  assert.equal(output.requests.at(-1)!.path, `/v1/tilesets/${resourceId}/uploads/upl_a`);
+  const document = JSON.parse(output.stdout);
+  assert.equal(document.aborted, true);
+  assert.equal(document.nextSteps[0].command, 'tileflow tileset restore stores');
+});
+
+test('upload abort with nothing in progress succeeds without deleting', async (t) => {
+  const output = capture(t, (request) =>
+    request.path.endsWith('/uploads')
+      ? Response.json({schemaVersion: 1, upload: null})
+      : Response.json(tilesetDetail),
+  );
+
+  await output.run(() =>
+    tilesetProgram().parseAsync(['node', 'tileflow', 'tileset', 'upload', 'abort', 'stores', '--api-key', apiKey, '--json']),
+  );
+
+  assert.equal(process.exitCode ?? 0, 0, output.stderr);
+  assert.equal(JSON.parse(output.stdout).aborted, false);
+  assert.ok(output.requests.every((request) => request.method === 'GET'));
 });

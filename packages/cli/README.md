@@ -304,7 +304,19 @@ npx tileflow tileset restore stores --team @acme
 ```
 
 The restore is refused while an upload to that tileset is in progress, and while a live Map needs
-data the previous version lacks. Restore or republish that Map first.
+data the previous version lacks. Restore or republish that Map first. An upload that nothing is
+still sending can be cleared; it may belong to a teammate or a CI run, so check first:
+
+```bash
+npx tileflow tileset upload abort stores --team @acme
+```
+
+These commands are written for agents as well as people. With `--json`, a success has a `nextSteps`
+array and a failure has `error.code`, `error.message` and `error.nextSteps`. Each step has a
+`description` and, when one exists, the exact `command` to run. A failure blocked by an upload also
+has `error.upload`, so you can see its state and expiry before aborting it. If a tileset restore
+ends with `TF_TILESET_DELIVERY_PENDING`, run the same command again: it finishes the saved restore
+and never swaps twice, and reports `outcome: "repaired"`.
 
 ## Team Icon Sets and repository locks
 

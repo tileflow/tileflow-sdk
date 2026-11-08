@@ -772,33 +772,40 @@ test('one degenerate ring or line is reported without stopping the build', async
   assert.match(document.warnings.join(' '), /2 rings or lines with too few positions/u);
 });
 
-test('interrupting a build removes its temporary files', async (t) => {
-  const directory = await workspace(t);
-  await writeFile(
-    join(directory, 'big.ndjson'),
-    Array.from({length: 300_000}, (_, index) =>
-      JSON.stringify(
-        feature(
-          {coordinates: [(index % 900) / 10, (index % 700) / 10], type: 'Point'},
-          `n${index}`,
+// On Windows, child.kill() ends the process at once, so its signal handler cannot be exercised.
+const signalsReachHandlers = process.platform !== 'win32';
+
+test(
+  'interrupting a build removes its temporary files',
+  {skip: !signalsReachHandlers},
+  async (t) => {
+    const directory = await workspace(t);
+    await writeFile(
+      join(directory, 'big.ndjson'),
+      Array.from({length: 300_000}, (_, index) =>
+        JSON.stringify(
+          feature(
+            {coordinates: [(index % 900) / 10, (index % 700) / 10], type: 'Point'},
+            `n${index}`,
+          ),
         ),
-      ),
-    ).join('\n'),
-  );
-  const child = spawn(process.execPath, cliFixtureArguments(['tileset', 'build', 'big.ndjson']), {
-    cwd: directory,
-    stdio: ['ignore', 'ignore', 'pipe'],
-  });
-  await new Promise<void>((resolve) => {
-    child.stderr.on('data', (chunk) => {
-      if (String(chunk).includes('Reading features')) resolve();
+      ).join('\n'),
+    );
+    const child = spawn(process.execPath, cliFixtureArguments(['tileset', 'build', 'big.ndjson']), {
+      cwd: directory,
+      stdio: ['ignore', 'ignore', 'pipe'],
     });
-  });
-  child.kill('SIGINT');
-  const code = await new Promise((resolve) => child.on('close', resolve));
-  assert.equal(code, 130);
-  assert.deepEqual(await readdir(directory), ['big.ndjson']);
-});
+    await new Promise<void>((resolve) => {
+      child.stderr.on('data', (chunk) => {
+        if (String(chunk).includes('Reading features')) resolve();
+      });
+    });
+    child.kill('SIGINT');
+    const code = await new Promise((resolve) => child.on('close', resolve));
+    assert.equal(code, 130);
+    assert.deepEqual(await readdir(directory), ['big.ndjson']);
+  },
+);
 
 test('Web Mercator limits and antimeridian crossings are reported, not hidden', async (t) => {
   const directory = await workspace(t);

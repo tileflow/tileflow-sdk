@@ -1251,6 +1251,12 @@ test('archives with too many tiles to flag as clustered still pass inspection', 
   assert.ok(JSON.parse(result.stdout).archive.tileContents > 262_144);
   const header = await readFile(join(directory, 'tiles.pmtiles'));
   assert.equal(header[96], 0, 'the header must not promise clustering');
+
+  // The tiles are laid out in order, so the same archive is valid when it does promise clustering.
+  header[96] = 1;
+  await writeFile(join(directory, 'clustered.pmtiles'), header);
+  const inspected = await runCli(directory, ['tileset', 'inspect', 'clustered.pmtiles', '--json']);
+  assert.equal(inspected.code, 0, inspected.stderr);
 });
 
 test('archives record what generated them', async (t) => {

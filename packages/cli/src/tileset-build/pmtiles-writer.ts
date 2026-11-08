@@ -8,9 +8,9 @@ const headerBytes = 127;
 const rootLimitBytes = 16_384 - headerBytes;
 const maximumEntries = 16_000_000;
 /**
- * Validators hold about 128 bytes per distinct tile range of a clustered archive within a 32 MiB
- * budget, so at 262,144 ranges both the local inspector and the hosted check reject it. Past this
- * margin the tiles keep their TileID layout and the archive is flagged unclustered, which is valid.
+ * Hosted validation may still hold about 128 bytes per distinct tile range of a clustered archive
+ * within a 32 MiB budget, which rejects it at 262,144 ranges. Past this margin the tiles keep their
+ * TileID layout and the archive is flagged unclustered, which every validator accepts.
  */
 const maximumClusteredContents = 200_000;
 const deduplicatedTileBytes = 4096;

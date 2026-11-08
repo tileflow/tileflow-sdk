@@ -3,6 +3,7 @@ import {rename} from 'node:fs/promises';
 import {basename, dirname, extname, join, resolve} from 'node:path';
 import {serializeCanonicalJson} from '@tileflow/core';
 import {inspectTileflowPmtiles} from '@tileflow/dev/tilesets';
+import {getCliVersion} from '../cli-version';
 import {
   type CrsStatement,
   parseSourceCrsOption,
@@ -16,6 +17,7 @@ import {TileArchiveWriter} from './pmtiles-writer';
 import {csvColumnsNameCoordinates, readCsv} from './read-csv';
 import {readGeojson, readGeojsonSequence} from './read-geojson';
 import {readShapefile, shapefileCrsStatement} from './read-shapefile';
+import {ZippedShapefile} from './read-zip';
 import {FeatureSpool, SpoolDirectory} from './spool';
 import {buildPyramid, type ZoomStatistics} from './tiler';
 import {chooseMaxzoom} from './zoom';
@@ -38,8 +40,11 @@ export type TilesetBuildOptions = Readonly<{
   name?: string;
   onProgress?: (message: string) => void;
   output?: string;
+  rankAscending?: boolean;
+  rankBy?: string;
   reproject?: boolean;
   sourceCrs?: string;
+  zipEntry?: string;
 }>;
 
 export type TilesetBuildResult = Readonly<{
@@ -74,6 +79,7 @@ const maximumZoom = 16;
 const layerNamePattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$/u;
 const minimumFreeBytes = 64 * 1024 * 1024;
 const maximumArchiveBytes = 8_000_000_000;
+const nullIslandDegrees = 1;
 
 export async function buildTileset(options: TilesetBuildOptions): Promise<TilesetBuildResult> {
   const input = resolve(options.input);
@@ -86,8 +92,30 @@ export async function buildTileset(options: TilesetBuildOptions): Promise<Tilese
       `Input file not found: ${options.input}.`,
     );
   }
+  const zipped = isZip(input);
+  if (zipped && format !== 'shapefile') {
+    throw new TilesetBuildError(
+      'TF_TILESET_BUILD_FORMAT_UNSUPPORTED',
+      'format',
+      'Only Shapefiles can be read from a zip; extract other formats first.',
+    );
+  }
+  if (!zipped && options.zipEntry !== undefined) {
+    throw new TilesetBuildError(
+      'TF_TILESET_BUILD_ZIP_ENTRY_INVALID',
+      'zipEntry',
+      '--zip-entry only applies to a .zip input.',
+    );
+  }
+  if (options.rankAscending && options.rankBy === undefined) {
+    throw new TilesetBuildError(
+      'TF_TILESET_BUILD_RANK_INVALID',
+      'rankBy',
+      '--rank-ascending needs --rank-by.',
+    );
+  }
   const outputOption =
-    options.output ?? join(dirname(options.input), `${basename(input, extname(input))}.pmtiles`);
+    options.output ?? join(dirname(options.input), `${inputStem(input)}.pmtiles`);
   const output = resolve(outputOption);
   if (output === input) {
     throw new TilesetBuildError(
@@ -106,12 +134,9 @@ export async function buildTileset(options: TilesetBuildOptions): Promise<Tilese
   const layer = chooseLayer(options.layer, input);
   const zoomRange = checkZooms(options);
 
-  const statement = await chooseCrsStatement(format, input, options);
-  // A GeoJSON file without a crs member is WGS84 by RFC 7946; a late member is checked below.
-  const crs = resolveCrs(statement, options.reproject === true);
-
   const outputDirectory = dirname(output);
-  checkFreeSpace(outputDirectory, inputStat.size);
+  checkFreeSpace(outputDirectory, zipped ? 0 : inputStat.size);
+  const zip = zipped ? await ZippedShapefile.open(input, options.zipEntry) : null;
   const temporary = mkdtempSync(join(outputDirectory, '.tileflow-tileset-build-'));
   const removeTemporary = () => rmSync(temporary, {force: true, recursive: true});
   const interrupt = () => {
@@ -123,15 +148,26 @@ export async function buildTileset(options: TilesetBuildOptions): Promise<Tilese
 
   let archive: TileArchiveWriter | null = null;
   try {
+    // Extracted files sit beside the temporary spool, so they count on top of its estimate.
+    if (zip) checkFreeSpace(outputDirectory, zip.uncompressedBytes, zip.uncompressedBytes);
+    const shapefile = zip ? await zip.extractProjection(temporary) : input;
+    const statement = await chooseCrsStatement(format, shapefile, options);
+    // A GeoJSON file without a crs member is WGS84 by RFC 7946; a late member is checked below.
+    const crs = resolveCrs(statement, options.reproject === true);
+    if (zip) await zip.extractData(temporary);
+
     const directory = new SpoolDirectory(temporary);
-    const root = new FeatureSpool(directory);
+    const spool = new FeatureSpool(directory);
     const ingest = new FeatureIngest(
-      root,
+      spool,
       {
         exclude: options.exclude ? new Set(options.exclude) : null,
         include: options.include ? new Set(options.include) : null,
       },
       crs.transform,
+      options.rankBy === undefined
+        ? null
+        : {ascending: options.rankAscending === true, field: options.rankBy},
     );
     if (crs.warning) ingest.warn(crs.warning);
 
@@ -147,7 +183,7 @@ export async function buildTileset(options: TilesetBuildOptions): Promise<Tilese
         await readGeojsonSequence(input, ingest);
         break;
       case 'shapefile':
-        await readShapefile(input, ingest);
+        await readShapefile(shapefile, ingest);
         break;
     }
 
@@ -158,6 +194,8 @@ export async function buildTileset(options: TilesetBuildOptions): Promise<Tilese
     options.onProgress?.(`Tiling ${summary.features} features through zoom ${maxzoom}.`);
 
     archive = new TileArchiveWriter(join(temporary, 'tiles.bin'));
+    // Tiles keep the first features per cell, so this order is what decides which ones survive.
+    const root = ingest.rankedSpool(spool);
     const zooms = await buildPyramid(root, {
       archive,
       directory,
@@ -185,6 +223,7 @@ export async function buildTileset(options: TilesetBuildOptions): Promise<Tilese
         ...(options.description ? {description: options.description} : {}),
         format: 'pbf',
         generator: 'tileflow tileset build',
+        generator_version: getCliVersion(),
         name,
         type: 'overlay',
         vector_layers: [{fields: fieldMetadata, id: layer, maxzoom, minzoom: zoomRange.minzoom}],
@@ -226,7 +265,11 @@ export async function buildTileset(options: TilesetBuildOptions): Promise<Tilese
       },
       layer: {fields: summary.fields, id: layer},
       schemaVersion: 1,
-      warnings: [...summary.warnings, ...inspection.warnings.map((warning) => warning.message)],
+      warnings: [
+        ...summary.warnings,
+        ...placementWarnings(bounds, crs.label, options.sourceCrs !== undefined || crs.reprojected),
+        ...inspection.warnings.map((warning) => warning.message),
+      ],
       zooms: zooms.filter((item) => item.zoom >= zoomRange.minzoom),
     };
   } catch (error) {
@@ -240,6 +283,7 @@ export async function buildTileset(options: TilesetBuildOptions): Promise<Tilese
     throw error;
   } finally {
     archive?.close();
+    zip?.close();
     process.removeListener('SIGINT', interrupt);
     process.removeListener('SIGTERM', interrupt);
     removeTemporary();
@@ -262,18 +306,13 @@ function detectFormat(path: string): TilesetBuildFormat {
     case '.tsv':
       return 'csv';
     case '.shp':
-      return 'shapefile';
     case '.zip':
-      throw new TilesetBuildError(
-        'TF_TILESET_BUILD_FORMAT_UNSUPPORTED',
-        'input',
-        'Extract the archive first and point the build at its .shp file. The .dbf and .prj files must stay beside it.',
-      );
+      return 'shapefile';
     default:
       throw new TilesetBuildError(
         'TF_TILESET_BUILD_FORMAT_UNSUPPORTED',
         'input',
-        `Unsupported input extension "${extension}". Supported: .geojson, .json, .ndjson, .geojsonl, .csv, .tsv and .shp. Use --format if the extension is misleading.`,
+        `Unsupported input extension "${extension}". Supported: .geojson, .json, .ndjson, .geojsonl, .csv, .tsv, .shp and a .zip holding a Shapefile. Use --format if the extension is misleading.`,
       );
   }
 }
@@ -312,10 +351,44 @@ function checkDocumentCrs(member: unknown, options: TilesetBuildOptions): void {
   );
 }
 
+function isZip(path: string): boolean {
+  return extname(path).toLowerCase() === '.zip';
+}
+
+/** The name outputs and layers default to: `roads.shp.zip` means `roads`, as `roads.zip` does. */
+function inputStem(path: string): string {
+  const stem = basename(path, extname(path));
+  return isZip(path) ? stem.replace(/\.shp$/iu, '') : stem;
+}
+
+/**
+ * A wrong CRS can still land inside valid coordinates, so nothing downstream can catch it. Say where
+ * the data ended up whenever a person stated the CRS, and flag the one place that is rarely real.
+ */
+function placementWarnings(
+  bounds: readonly [number, number, number, number],
+  label: string,
+  stated: boolean,
+): string[] {
+  const warnings: string[] = [];
+  const [west, south, east, north] = bounds.map((value) => value.toFixed(4));
+  if (stated) {
+    warnings.push(
+      `With ${label}, the features cover longitude ${west} to ${east} and latitude ${south} to ${north}. If that is not where the data belongs, the stated CRS is wrong.`,
+    );
+  }
+  if (bounds.every((value) => Math.abs(value) <= nullIslandDegrees)) {
+    warnings.push(
+      `Every feature is within ${nullIslandDegrees}° of longitude 0, latitude 0, in the Gulf of Guinea. Check for a wrong CRS or placeholder zero coordinates.`,
+    );
+  }
+  return warnings;
+}
+
 function chooseLayer(requested: string | undefined, input: string): string {
   const candidate =
     requested ??
-    basename(input, extname(input))
+    inputStem(input)
       .replace(/[^A-Za-z0-9._:-]+/gu, '_')
       .replace(/^[^A-Za-z0-9]+/u, '');
   if (!layerNamePattern.test(candidate)) {
@@ -347,7 +420,7 @@ function checkZooms(options: TilesetBuildOptions): {maxzoom?: number; minzoom: n
   return {...(maxzoom === undefined ? {} : {maxzoom}), minzoom};
 }
 
-function checkFreeSpace(directory: string, inputBytes: number): void {
+function checkFreeSpace(directory: string, inputBytes: number, extractedBytes = 0): void {
   if (!existsSync(directory)) {
     throw new TilesetBuildError(
       'TF_TILESET_BUILD_OUTPUT_INVALID',
@@ -356,7 +429,7 @@ function checkFreeSpace(directory: string, inputBytes: number): void {
     );
   }
   const volume = statfsSync(directory);
-  const required = Math.max(minimumFreeBytes, inputBytes * 2);
+  const required = Math.max(minimumFreeBytes, inputBytes * 2) + extractedBytes;
   const available = Number(volume.bavail) * Number(volume.bsize);
   if (available < required) {
     throw new TilesetBuildError(

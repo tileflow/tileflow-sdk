@@ -6,6 +6,7 @@ import {mkdir, mkdtemp, readdir, readFile, rm, writeFile} from 'node:fs/promises
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
+import {crc32, deflateRawSync} from 'node:zlib';
 import {PbfReader} from 'pbf';
 import {PMTiles, type Source} from 'pmtiles';
 import {cliFixtureArguments} from '../../../test-support/cli-fixture';
@@ -717,7 +718,7 @@ test('invalid requests fail fast with stable codes and keep existing output', as
   const cases: Array<[string[], string, RegExp?]> = [
     [['missing.geojson'], 'TF_TILESET_BUILD_INPUT_MISSING'],
     [['a.gpkg'], 'TF_TILESET_BUILD_FORMAT_UNSUPPORTED', /\.shp/u],
-    [['a.zip'], 'TF_TILESET_BUILD_FORMAT_UNSUPPORTED', /Extract/u],
+    [['a.zip'], 'TF_TILESET_BUILD_INPUT_INVALID', /zip could not be read/u],
     [['a.geojson', '-o', 'taken.pmtiles'], 'TF_TILESET_BUILD_OUTPUT_EXISTS', /--force/u],
     [['a.geojson', '-o', 'a.geojson'], 'TF_TILESET_BUILD_OUTPUT_INVALID'],
     [['a.geojson', '--maxzoom', '40'], 'TF_TILESET_BUILD_ZOOM_INVALID'],
@@ -828,6 +829,363 @@ test('Web Mercator limits and antimeridian crossings are reported, not hidden', 
   assert.match(warnings, /antimeridian/u);
   assert.match(warnings, /without geometry/u);
 });
+
+test('a zipped Shapefile builds without being extracted first', async (t) => {
+  const directory = await workspace(t);
+  const parts = await shapefileParts(directory);
+  await writeZip(join(directory, 'parks.shp.zip'), [
+    {data: Buffer.from('ignored'), name: '__MACOSX/data/._parks.shp'},
+    {data: parts.shp, name: 'data/PARKS.SHP'},
+    {data: parts.dbf, name: 'data/PARKS.dbf'},
+    {data: Buffer.from(wgs84Prj), name: 'data/parks.prj'},
+    {data: Buffer.from('readme'), name: 'data/README.txt'},
+  ]);
+
+  const result = await build(directory, ['parks.shp.zip', '--maxzoom', '8', '--json']);
+  assert.equal(result.code, 0, result.stderr);
+  const document = JSON.parse(result.stdout);
+  assert.equal(document.input.format, 'shapefile');
+  assert.equal(document.archive.path, 'parks.pmtiles');
+  assert.equal(document.layer.id, 'parks');
+  assert.equal(document.crs.authority, 'declared');
+  const [park] = await decodeZoom(join(directory, 'parks.pmtiles'), 8, 'parks');
+  assert.deepEqual({...park.properties}, {NAME: 'Retiro', OPEN: true, SIZE: 118.5});
+  assert.equal(park.geometry.coordinates.length, 2);
+  await assertNoTemporaryFiles(directory);
+});
+
+test('a zip holding several Shapefiles asks which one, and bad zips fail clearly', async (t) => {
+  const directory = await workspace(t);
+  const parts = await shapefileParts(directory);
+  await writeZip(join(directory, 'many.zip'), [
+    {data: parts.shp, name: 'a/parks.shp'},
+    {data: parts.dbf, name: 'a/parks.dbf'},
+    {data: Buffer.from(wgs84Prj), name: 'a/parks.prj'},
+    {data: parts.shp, name: 'b/lakes.shp'},
+  ]);
+  const ambiguous = await build(directory, ['many.zip', '--json']);
+  assert.equal(failure(ambiguous).code, 'TF_TILESET_BUILD_ZIP_ENTRY_INVALID');
+  assert.match(failure(ambiguous).message, /a\/parks\.shp, b\/lakes\.shp/u);
+  const missing = await build(directory, ['many.zip', '--zip-entry', 'nope.shp', '--json']);
+  assert.equal(failure(missing).code, 'TF_TILESET_BUILD_ZIP_ENTRY_INVALID');
+  const chosen = await build(directory, [
+    'many.zip',
+    '--zip-entry',
+    'a/parks.shp',
+    '--maxzoom',
+    '8',
+    '--json',
+  ]);
+  assert.equal(chosen.code, 0, chosen.stderr);
+  assert.equal(JSON.parse(chosen.stdout).input.features, 1);
+
+  await writeZip(join(directory, 'empty.zip'), [{data: Buffer.from('x'), name: 'notes.txt'}]);
+  const empty = await build(directory, ['empty.zip', '--json']);
+  assert.equal(failure(empty).code, 'TF_TILESET_BUILD_ZIP_ENTRY_INVALID');
+
+  await writeFile(join(directory, 'broken.zip'), 'this is not a zip');
+  const broken = await build(directory, ['broken.zip', '--json']);
+  assert.equal(failure(broken).code, 'TF_TILESET_BUILD_INPUT_INVALID');
+
+  await writeZip(join(directory, 'escape.zip'), [{data: parts.shp, name: '../escape.shp'}]);
+  const escape = await build(directory, ['escape.zip', '--json']);
+  assert.equal(failure(escape).code, 'TF_TILESET_BUILD_INPUT_INVALID');
+  assert.deepEqual(
+    (await readdir(join(directory, '..'))).filter((name) => name === 'escape.shp'),
+    [],
+  );
+
+  await writeZip(join(directory, 'noprj.zip'), [{data: parts.shp, name: 'parks.shp'}]);
+  const unknown = await build(directory, ['noprj.zip', '--json']);
+  assert.equal(failure(unknown).code, 'TF_TILESET_BUILD_CRS_UNKNOWN');
+  await assertNoTemporaryFiles(directory);
+
+  const notZip = await build(directory, ['many.zip', '--format', 'csv', '--json']);
+  assert.equal(failure(notZip).code, 'TF_TILESET_BUILD_FORMAT_UNSUPPORTED');
+});
+
+test('the resulting location is reported, so a wrong CRS statement can be noticed', async (t) => {
+  const directory = await workspace(t);
+  await writeFile(join(directory, 'utm.csv'), 'x,y\n440000,4474000\n441000,4475000\n');
+  const converted = await build(directory, [
+    'utm.csv',
+    '--lon-column',
+    'x',
+    '--lat-column',
+    'y',
+    '--source-crs',
+    'EPSG:32630',
+    '--reproject',
+    '--maxzoom',
+    '8',
+    '--json',
+  ]);
+  assert.equal(converted.code, 0, converted.stderr);
+  const warnings: string[] = JSON.parse(converted.stdout).warnings;
+  assert.ok(
+    warnings.some((item) =>
+      /longitude -3\.\d+ to -3\.\d+ and latitude 40\.\d+ to 40\.\d+/u.test(item),
+    ),
+    warnings.join('; '),
+  );
+
+  // Degrees read as UTM metres are all valid numbers, and land next to the zone origin.
+  await writeFile(join(directory, 'wrong.csv'), 'x,y\n-3.7,40.4\n-3.6,40.5\n');
+  const misread = await build(directory, [
+    'wrong.csv',
+    '--lon-column',
+    'x',
+    '--lat-column',
+    'y',
+    '--source-crs',
+    'EPSG:32631',
+    '--reproject',
+    '--maxzoom',
+    '8',
+    '--json',
+  ]);
+  assert.equal(misread.code, 0, misread.stderr);
+  assert.ok(
+    JSON.parse(misread.stdout).warnings.some((item: string) => /latitude -?0\.0+/u.test(item)),
+  );
+
+  await writeFile(
+    join(directory, 'zero.geojson'),
+    collection([feature({coordinates: [0, 0], type: 'Point'}, 'placeholder')]),
+  );
+  const zero = await build(directory, ['zero.geojson', '--maxzoom', '8', '--json']);
+  assert.match(JSON.parse(zero.stdout).warnings.join(' '), /placeholder zero coordinates/u);
+
+  await writeFile(
+    join(directory, 'plain.geojson'),
+    collection([feature({coordinates: [-3.7, 40.4], type: 'Point'}, 'Madrid')]),
+  );
+  const plain = await build(directory, ['plain.geojson', '--maxzoom', '8', '--json']);
+  assert.deepEqual(JSON.parse(plain.stdout).warnings, []);
+  const human = await build(directory, ['plain.geojson', '--maxzoom', '8', '--force']);
+  assert.match(human.stdout, /Bounds: -3\.7000, 40\.4000, -3\.7000, 40\.4000/u);
+});
+
+test('--rank-by decides which features survive thinning', async (t) => {
+  const directory = await workspace(t);
+  // Listed from least to most important, so input order would keep the wrong ones.
+  const features = Array.from({length: 40_000}, (_, index) =>
+    feature(
+      {coordinates: [(index % 200) / 2000, Math.floor(index / 200) / 2000], type: 'Point'},
+      String(index),
+      {properties: {name: String(index), score: index}},
+    ),
+  );
+  await writeFile(join(directory, 'ranked.geojson'), collection(features));
+
+  const descending = await build(directory, [
+    'ranked.geojson',
+    '--maxzoom',
+    '10',
+    '--rank-by',
+    'score',
+    '--include',
+    'name',
+    '--json',
+  ]);
+  assert.equal(descending.code, 0, descending.stderr);
+  const top = await decodeZoom(join(directory, 'ranked.pmtiles'), 0, 'ranked');
+  assert.ok(top.length < 40_000);
+  assert.ok(top.some((item) => item.properties.name === '39999'));
+  assert.ok(!top.some((item) => item.properties.name === '0'));
+  // The ranking attribute does not have to be kept in the tiles.
+  assert.deepEqual(Object.keys(top[0].properties), ['name']);
+
+  const ascending = await build(directory, [
+    'ranked.geojson',
+    '--maxzoom',
+    '10',
+    '--rank-by',
+    'score',
+    '--rank-ascending',
+    '--force',
+    '--json',
+  ]);
+  assert.equal(ascending.code, 0, ascending.stderr);
+  const bottom = await decodeZoom(join(directory, 'ranked.pmtiles'), 0, 'ranked');
+  assert.ok(bottom.some((item) => item.properties.name === '0'));
+  assert.ok(!bottom.some((item) => item.properties.name === '39999'));
+  const complete = await decodeZoom(join(directory, 'ranked.pmtiles'), 10, 'ranked');
+  assert.equal(new Set(complete.map((item) => item.properties.name)).size, 40_000);
+});
+
+test('ranking reports features it cannot rank and refuses a field with no numbers', async (t) => {
+  const directory = await workspace(t);
+  await writeFile(
+    join(directory, 'mixed.geojson'),
+    collection([
+      feature({coordinates: [1, 1], type: 'Point'}, 'a', {properties: {score: 2}}),
+      feature({coordinates: [2, 2], type: 'Point'}, 'b', {properties: {score: 'high'}}),
+    ]),
+  );
+  const partial = await build(directory, [
+    'mixed.geojson',
+    '--maxzoom',
+    '8',
+    '--rank-by',
+    'score',
+    '--json',
+  ]);
+  assert.equal(partial.code, 0, partial.stderr);
+  assert.match(
+    JSON.parse(partial.stdout).warnings.join(' '),
+    /1 features have no numeric "score"/u,
+  );
+
+  const absent = await build(directory, [
+    'mixed.geojson',
+    '--maxzoom',
+    '8',
+    '--rank-by',
+    'nothing',
+    '--force',
+    '--json',
+  ]);
+  assert.equal(failure(absent).code, 'TF_TILESET_BUILD_RANK_INVALID');
+
+  const orphan = await build(directory, ['mixed.geojson', '--rank-ascending', '--force', '--json']);
+  assert.equal(failure(orphan).code, 'TF_TILESET_BUILD_RANK_INVALID');
+  const notZip = await build(directory, ['mixed.geojson', '--zip-entry', 'a.shp', '--json']);
+  assert.equal(failure(notZip).code, 'TF_TILESET_BUILD_ZIP_ENTRY_INVALID');
+});
+
+for (const [label, extra] of [
+  ['the input order', []],
+  ['a rank', ['--rank-by', 'score']],
+] as const) {
+  test(`points kept at a zoom stay at every higher zoom, ranked by ${label}`, async (t) => {
+    const directory = await workspace(t);
+    // Long unique text pushes the top tiles past their byte budget, not only their pixel grid.
+    const features = Array.from({length: 30_000}, (_, index) => {
+      const hash = createHash('sha256').update(String(index)).digest('hex');
+      return feature(
+        {
+          coordinates: [
+            (parseInt(hash.slice(0, 6), 16) / 2 ** 24) * 3,
+            (parseInt(hash.slice(6, 12), 16) / 2 ** 24) * 3,
+          ],
+          type: 'Point',
+        },
+        `${index}-${hash.repeat(4)}`,
+        {properties: {name: `${index}-${hash.repeat(4)}`, score: parseInt(hash.slice(12, 18), 16)}},
+      );
+    });
+    await writeFile(join(directory, 'nested.geojson'), collection(features));
+    const result = await build(directory, ['nested.geojson', '--maxzoom', '9', ...extra, '--json']);
+    assert.equal(result.code, 0, result.stderr);
+    assert.ok(JSON.parse(result.stdout).zooms[0].thinnedFeatures > 0);
+
+    let previous: Set<unknown> | null = null;
+    for (let zoom = 0; zoom <= 9; zoom += 1) {
+      const decoded = await decodeZoom(join(directory, 'nested.pmtiles'), zoom, 'nested');
+      const names = new Set(decoded.map((item) => item.properties.name));
+      if (previous) {
+        const lost = [...previous].filter((name) => !names.has(name));
+        assert.equal(lost.length, 0, `z${zoom} lost ${lost.length} of ${previous.size} features`);
+      }
+      previous = names;
+    }
+  });
+}
+
+test('archives with too many tiles to flag as clustered still pass inspection', async (t) => {
+  const directory = await workspace(t);
+  // One point per zoom 10 tile, each with its own id, so that no two tiles share their bytes.
+  const rows = ['lon,lat,id'];
+  const size = 2 ** 10;
+  for (let y = 100; y < 560; y += 1) {
+    for (let x = 100; x < 560; x += 1) {
+      const latitude =
+        (Math.atan(Math.sinh(Math.PI * (1 - (2 * (y + 0.5)) / size))) * 180) / Math.PI;
+      rows.push(
+        `${(((x + 0.5) / size) * 360 - 180).toFixed(6)},${latitude.toFixed(6)},${rows.length}`,
+      );
+    }
+  }
+  await writeFile(join(directory, 'tiles.csv'), rows.join('\n'));
+  const result = await build(directory, ['tiles.csv', '--maxzoom', '10', '--json']);
+  assert.equal(result.code, 0, result.stderr);
+  assert.ok(JSON.parse(result.stdout).archive.tileContents > 262_144);
+  const header = await readFile(join(directory, 'tiles.pmtiles'));
+  assert.equal(header[96], 0, 'the header must not promise clustering');
+});
+
+test('archives record what generated them', async (t) => {
+  const directory = await workspace(t);
+  await writeFile(
+    join(directory, 'mark.geojson'),
+    collection([feature({coordinates: [10, 10], type: 'Point'}, 'a')]),
+  );
+  const result = await build(directory, ['mark.geojson', '--maxzoom', '8', '--json']);
+  assert.equal(result.code, 0, result.stderr);
+  const archive = new PMTiles(fileSource(await readFile(join(directory, 'mark.pmtiles'))));
+  const metadata = (await archive.getMetadata()) as Record<string, unknown>;
+  assert.equal(metadata.generator, 'tileflow tileset build');
+  assert.match(String(metadata.generator_version), /^\d+\.\d+\.\d+/u);
+});
+
+async function assertNoTemporaryFiles(directory: string): Promise<void> {
+  const names = await readdir(directory);
+  assert.deepEqual(
+    names.filter((name) => name.startsWith('.tileflow-tileset-build-')),
+    [],
+  );
+}
+
+async function shapefileParts(directory: string): Promise<{dbf: Buffer; shp: Buffer}> {
+  const scratch = join(directory, 'scratch-source');
+  await mkdir(scratch);
+  await writeShapefile(join(scratch, 'parks'));
+  return {
+    dbf: await readFile(join(scratch, 'parks.dbf')),
+    shp: await readFile(join(scratch, 'parks.shp')),
+  };
+}
+
+/** A minimal zip with deflated members, so tests do not depend on a system tool. */
+async function writeZip(path: string, members: {data: Buffer; name: string}[]): Promise<void> {
+  const locals: Buffer[] = [];
+  const centrals: Buffer[] = [];
+  let offset = 0;
+  for (const {data, name} of members) {
+    const compressed = deflateRawSync(data);
+    const nameBytes = Buffer.from(name);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(8, 8);
+    local.writeUInt32LE(crc32(data), 14);
+    local.writeUInt32LE(compressed.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(nameBytes.length, 26);
+    locals.push(local, nameBytes, compressed);
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(8, 10);
+    central.writeUInt32LE(crc32(data), 16);
+    central.writeUInt32LE(compressed.length, 20);
+    central.writeUInt32LE(data.length, 24);
+    central.writeUInt16LE(nameBytes.length, 28);
+    central.writeUInt32LE(offset, 42);
+    centrals.push(central, nameBytes);
+    offset += local.length + nameBytes.length + compressed.length;
+  }
+  const directoryBytes = Buffer.concat(centrals);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(members.length, 8);
+  end.writeUInt16LE(members.length, 10);
+  end.writeUInt32LE(directoryBytes.length, 12);
+  end.writeUInt32LE(offset, 16);
+  await writeFile(path, Buffer.concat([...locals, directoryBytes, end]));
+}
 
 function feature(
   geometry: GeoJsonGeometry,

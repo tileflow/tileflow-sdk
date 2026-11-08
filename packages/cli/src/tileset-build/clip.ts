@@ -121,6 +121,7 @@ export function clipRecordInto(
   output[start + field.propertyBytes] = propertyBytes;
   output[start + field.idLow] = words[offset + field.idLow];
   output[start + field.idHigh] = words[offset + field.idHigh];
+  output[start + field.kept] = words[offset + field.kept];
   output.set(current.parts.subarray(0, current.partCount), start + headerWords);
   output.set(
     current.coordinates.subarray(0, current.pointCount * 2),

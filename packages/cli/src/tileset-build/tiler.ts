@@ -11,7 +11,10 @@ const targetCompressedBytes = 500 * 1024;
 /** A tile this far over budget is abandoned early, so one pass cannot exhaust memory. */
 const maximumBufferedBytes = 64 * 1024 * 1024;
 const maximumAttempts = 7;
-const selectionCellsPerAxis = 512;
+const tileCellsPerAxis = 512;
+/** The tile buffer is whole cells wide, so a feature near an edge wins or loses as in its own tile. */
+const bufferCells = (tileBufferUnits * tileCellsPerAxis) / 4096;
+const selectionCellsPerAxis = tileCellsPerAxis + bufferCells * 2;
 /** Below the last zoom, points sharing a cell draw on top of each other; one is enough. */
 const pointsPerCell = 1;
 const minimumFeaturesToThinPoints = 2048;
@@ -58,6 +61,8 @@ class Pyramid {
   readonly #encoder: TileEncoder;
   readonly #cellCounts = new Uint32Array(selectionCellsPerAxis ** 2);
   readonly #cellSeen = new Uint32Array(selectionCellsPerAxis ** 2);
+  /** Which records of the tile just encoded were drawn; read while clipping its children. */
+  #drawn = new Uint8Array(0);
   #visited = 0;
 
   constructor(
@@ -100,7 +105,12 @@ class Pyramid {
       children.push(new FeatureSpool(this.options.directory));
       boxes.push(tileBox(z + 1, x * 2 + (index & 1), y * 2 + (index >> 1)));
     }
+    const encoded = z >= minzoom;
+    let record = 0;
     spool.forEach((words, offset) => {
+      // Children must draw what this tile drew, which is what makes thinning nest across zooms.
+      words[offset + field.kept] = encoded ? this.#drawn[record] : 0;
+      record += 1;
       for (let index = 0; index < 4; index += 1) {
         clipRecordInto(words, offset, boxes[index], children[index]);
       }
@@ -131,12 +141,16 @@ class Pyramid {
 
     const pointCap =
       !lastZoom && spool.count > minimumFeaturesToThinPoints ? pointsPerCell : Infinity;
-    const unit = 2 ** (31 - z) / selectionCellsPerAxis;
-    const originX = x * 2 ** (31 - z);
-    const originY = y * 2 ** (31 - z);
+    const unit = 2 ** (31 - z) / tileCellsPerAxis;
+    const originX = x * 2 ** (31 - z) - bufferCells * unit;
+    const originY = y * 2 ** (31 - z) - bufferCells * unit;
     const dotWorldSpan = dotSpan * 2 ** (19 - z);
     let featureLimit = Infinity;
+    let honorParent = true;
+    if (this.#drawn.length < spool.count) this.#drawn = new Uint8Array(spool.count * 2);
+    const drawn = this.#drawn;
     for (let attempt = 0; ; attempt += 1) {
+      drawn.fill(0, 0, spool.count);
       const quota = featureLimit === Infinity ? Infinity : this.#quotaFor(featureLimit);
       const cellShare = quota === Infinity ? 1 : this.#cellShareFor(quota, featureLimit);
       const trackCells = quota !== Infinity || pointCap !== Infinity;
@@ -144,18 +158,24 @@ class Pyramid {
       encoder.begin(z, x, y, encodeOptions);
       let thinned = 0;
       let abandoned = false;
+      let record = -1;
+      let optional = 0;
       spool.forEach((words, offset) => {
+        record += 1;
         if (abandoned) return;
+        const required = honorParent && words[offset + field.kept] === 1;
         if (trackCells) {
           const cell = selectionCell(words, offset, originX, originY, unit);
           const cap = isDot(words, offset, dotWorldSpan) ? Math.min(pointCap, quota) : quota;
-          if (this.#cellSeen[cell] >= cap || cellRank(cell) >= cellShare) {
+          if (!required && (this.#cellSeen[cell] >= cap || cellRank(cell) >= cellShare)) {
             thinned += 1;
             return;
           }
           this.#cellSeen[cell] += 1;
         }
         if (encoder.add(words, offset)) {
+          drawn[record] = 1;
+          if (!required) optional += 1;
           if (encoder.approximateBytes <= maximumBufferedBytes) {
             if (!lastZoom || encoder.approximateBytes <= maximumTileBytes) return;
           }
@@ -168,8 +188,10 @@ class Pyramid {
       if (encoder.featureCount === 0) return null;
       const tile = encoder.finish();
       const size = lastZoom ? tile.length : measuredSize(tile);
-      const fits = size <= targetCompressedBytes && tile.length <= maximumTileBytes;
-      if (lastZoom || (fits && !abandoned)) {
+      const decodable = !abandoned && tile.length <= maximumTileBytes;
+      // The byte target is a preference: past it, keeping what the parent drew still wins.
+      const settled = optional === 0 || attempt === maximumAttempts;
+      if (lastZoom || (decodable && (size <= targetCompressedBytes || settled))) {
         stats.tiles += 1;
         stats.features += encoder.featureCount;
         stats.thinnedFeatures += thinned;
@@ -177,6 +199,7 @@ class Pyramid {
         return tile;
       }
       if (attempt === maximumAttempts) throw tooLarge(z, x, y);
+      if (optional === 0) honorParent = false;
       if (featureLimit === Infinity) {
         this.#countCells(spool, originX, originY, unit, pointCap, dotWorldSpan);
       }

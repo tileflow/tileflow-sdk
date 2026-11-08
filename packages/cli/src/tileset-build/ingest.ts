@@ -7,12 +7,15 @@ export type FieldSelection = Readonly<{
   include: ReadonlySet<string> | null;
 }>;
 
+export type RankSelection = Readonly<{ascending: boolean; field: string}>;
+
 export type GeometryInput = Readonly<{coordinates?: unknown; geometries?: unknown; type?: unknown}>;
 
 const fieldNamePattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$/u;
 const maximumFields = 512;
 const maximumMercatorLatitude = 85.0511287798066;
 const sampleCapacity = 1 << 18;
+const unranked = -Infinity;
 const typeBits = {boolean: 1, number: 2, string: 4} as const;
 
 export type IngestSummary = Readonly<{
@@ -53,6 +56,10 @@ export class FeatureIngest {
   #types = new Set<string>();
   #sampleStride = 1;
   #sampleSeen = 0;
+  #rankKeys = new Float64Array(0);
+  #currentRank = unranked;
+  #ranked = 0;
+  #unrankedFeatures = 0;
   /** Bounded, evenly thinned vertex sample used to choose a maximum zoom. */
   sample = new Int32Array(sampleCapacity * 2);
   sampleCount = 0;
@@ -63,8 +70,10 @@ export class FeatureIngest {
     private readonly spool: FeatureSpool,
     private readonly selection: FieldSelection,
     transform: CoordinateTransform | null,
+    private readonly rank: RankSelection | null = null,
   ) {
     this.#transform = transform;
+    if (rank) this.#rankKeys = new Float64Array(1024);
   }
 
   get featureCount(): number {
@@ -89,12 +98,29 @@ export class FeatureIngest {
       return;
     }
     this.#encodeProperties(properties);
+    if (this.rank) this.#readRank(properties[this.rank.field]);
     const numericId = this.#numericId(id);
     this.#addGeometry(geometry, numericId);
   }
 
   skipEmpty(): void {
     this.#emptyGeometry += 1;
+  }
+
+  /** The features in descending priority, or the input order when no rank was requested. */
+  rankedSpool(spool: FeatureSpool): FeatureSpool {
+    if (!this.rank) return spool;
+    return spool.reordered(this.#rankKeys.subarray(0, spool.count));
+  }
+
+  #readRank(value: unknown): void {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      this.#currentRank = this.rank?.ascending ? -value : value;
+      this.#ranked += 1;
+    } else {
+      this.#currentRank = unranked;
+      this.#unrankedFeatures += 1;
+    }
   }
 
   /** Summarize the pass and finalize names that downstream tile consumers accept. */
@@ -104,6 +130,18 @@ export class FeatureIngest {
         'TF_TILESET_BUILD_TOO_MANY_FIELDS',
         'input.fields',
         `The input has ${this.#keys.size} attribute fields; the limit is ${maximumFields}. Pick what maps need with --include.`,
+      );
+    }
+    if (this.rank && this.#features > 0 && this.#ranked === 0) {
+      throw new TilesetBuildError(
+        'TF_TILESET_BUILD_RANK_INVALID',
+        'rankBy',
+        `No feature has a numeric value in "${this.rank.field}". --rank-by needs a numeric attribute.`,
+      );
+    }
+    if (this.#unrankedFeatures > 0) {
+      this.#warnings.add(
+        `${this.#unrankedFeatures} features have no numeric "${this.rank?.field}" and are the first to be thinned.`,
       );
     }
     if (this.#features === 0) {
@@ -347,6 +385,14 @@ export class FeatureIngest {
       return;
     }
     if (clamped) this.#clampedLatitude += 1;
+    if (this.rank) {
+      if (this.#features === this.#rankKeys.length) {
+        const grown = new Float64Array(this.#rankKeys.length * 2);
+        grown.set(this.#rankKeys);
+        this.#rankKeys = grown;
+      }
+      this.#rankKeys[this.#features] = this.#currentRank;
+    }
 
     const points = this.#points;
     const partCount = this.#parts.length;
@@ -383,6 +429,7 @@ export class FeatureIngest {
     words[offset + field.propertyBytes] = this.#propertyLength;
     words[offset + field.idLow] = id % 2 ** 32;
     words[offset + field.idHigh] = Math.floor(id / 2 ** 32);
+    words[offset + field.kept] = 0;
     for (let index = 0; index < partCount; index += 1) {
       words[offset + headerWords + index] = this.#parts[index];
     }

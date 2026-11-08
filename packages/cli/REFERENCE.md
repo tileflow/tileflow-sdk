@@ -26,10 +26,10 @@ npx tileflow tileset build ./data/stores.geojson -o ./data/stores.pmtiles --json
 | GeoJSON                   | `.geojson`, `.json`                                          | FeatureCollection, Feature or geometry. Streamed.                      |
 | Newline-delimited GeoJSON | `.ndjson`, `.geojsonl`, `.geojsons`, `.geojsonseq`, `.jsonl` | One Feature or geometry per line; RFC 8142 separators are accepted.    |
 | CSV                       | `.csv`, `.tsv`                                               | UTF-8 with a header row. Comma, semicolon, tab or pipe delimited.      |
-| Shapefile                 | `.shp`                                                       | Reads `.dbf`, `.prj` and `.cpg` beside it. Z and M values are ignored. |
+| Shapefile                 | `.shp`, or `.zip` holding one                                | Reads `.dbf`, `.prj` and `.cpg` beside it. Z and M values are ignored. |
 
-Pass `--format csv|geojson|geojsonseq|shapefile` when the extension is misleading. Zipped Shapefiles
-must be extracted first. Other formats, such as GeoPackage, KML or FlatGeobuf, are not supported.
+Pass `--format csv|geojson|geojsonseq|shapefile` when the extension is misleading. A zip with several
+Shapefiles needs `--zip-entry <path>` to choose one. Other formats inside a zip are not read. Other formats, such as GeoPackage, KML or FlatGeobuf, are not supported.
 
 CSV coordinate columns are found by name: `lon`, `lng`, `long`, `longitude`, `lat`, `latitude`, in
 any case. Use `--lon-column` and `--lat-column` for anything else. Columns are typed as a whole, so a
@@ -75,6 +75,10 @@ Every coordinate is range-checked after any conversion. The first coordinate out
 all, wrong statements: a small projected extent can fall in range, and swapped axes are only caught
 past latitude ±90.
 
+To make those visible, whenever you state a CRS or the build converts one, `warnings` says where the
+features ended up. Every build also warns if all features sit within 1° of longitude 0, latitude 0.
+Human output always prints the bounds, and `--json` reports them as `archive.bounds`.
+
 ### Options
 
 | Option                 | Meaning                                                          |
@@ -86,6 +90,9 @@ past latitude ±90.
 | `--maxzoom <zoom>`     | Highest zoom to write, up to 16. Chosen from the data by default |
 | `--include <fields>`   | Keep only these comma-separated attributes, by source name       |
 | `--exclude <fields>`   | Drop these comma-separated attributes, by source name            |
+| `--rank-by <field>`    | Thin the lowest values of this numeric attribute first           |
+| `--rank-ascending`     | With `--rank-by`, thin the highest values first                  |
+| `--zip-entry <path>`   | The `.shp` to read from a zip holding several                    |
 | `--lon-column <name>`  | CSV longitude column                                             |
 | `--lat-column <name>`  | CSV latitude column                                              |
 | `--source-crs <crs>`   | State the input CRS                                              |
@@ -106,9 +113,19 @@ Rings with fewer than three distinct positions and lines with a single position 
 counted in `warnings`. Every other feature reaches the maximum zoom. Below it, tiles stay within about 500 KiB compressed:
 
 - Points that land on the same pixel keep only the first, so sparse areas stay complete while dense
-  areas thin out. Polygons too small for a zoom render as a tiny mark and thin the same way.
+  areas thin out. "First" is input order, or the best value with `--rank-by`. Polygons too small for
+  a zoom render as a tiny mark and thin the same way.
 - Lines and polygons are simplified to the tile resolution, and lines smaller than that drop out.
 - A tile still over budget thins its densest cells further.
+
+Thinning nests: a feature drawn at one zoom is drawn at every higher zoom, so features appear as you
+zoom in and do not flicker. A tile can exceed the 500 KiB target to honour this. Only a tile that
+would pass 6 MB drops features its parent drew.
+
+`--rank-by` accepts any numeric attribute, whether or not it stays in the tiles. Features without a
+number there thin first and are counted in `warnings`; a field with no numbers fails. Features are
+written to tiles in rank order, which also gives the best ones first claim on label placement. Ranking
+holds about 24 extra bytes per feature in memory.
 
 `zooms[].thinnedFeatures` counts the features left out of tiles at each zoom. It is always zero at the
 maximum zoom unless a geometry rounds away there. Zooming past the maximum reuses the last tiles.
@@ -165,8 +182,10 @@ On failure the exit code is 1, stdout is empty, and stderr carries
 | Code                                        | Meaning                                                |
 | ------------------------------------------- | ------------------------------------------------------ |
 | `TF_TILESET_BUILD_INPUT_MISSING`            | The input file does not exist                          |
-| `TF_TILESET_BUILD_INPUT_INVALID`            | Malformed data; the message names the feature or row   |
-| `TF_TILESET_BUILD_FORMAT_UNSUPPORTED`       | Unknown extension, zip file or MultiPatch Shapefile    |
+| `TF_TILESET_BUILD_INPUT_INVALID`            | Malformed data or zip; names the feature or row        |
+| `TF_TILESET_BUILD_FORMAT_UNSUPPORTED`       | Unknown extension or MultiPatch Shapefile              |
+| `TF_TILESET_BUILD_ZIP_ENTRY_INVALID`        | Zip has no `.shp`, several, or not the one named       |
+| `TF_TILESET_BUILD_RANK_INVALID`             | `--rank-by` has no numeric values, or is missing       |
 | `TF_TILESET_BUILD_EMPTY`                    | No usable features                                     |
 | `TF_TILESET_BUILD_CRS_UNKNOWN`              | The input does not state its CRS                       |
 | `TF_TILESET_BUILD_CRS_NOT_WGS84`            | Stated CRS needs `--reproject`                         |
@@ -190,14 +209,13 @@ On failure the exit code is 1, stdout is empty, and stderr carries
 
 Features are spooled to disk rather than held in memory; a 5 million point, 777 MB GeoJSON file peaked
 under 600 MB. A single very large feature must fit in memory on its own. Temporary files sit beside the
-output and are removed on exit, including Ctrl-C. Allow free space of about twice the input. Tiling
+output and are removed on exit, including Ctrl-C. Allow free space of about twice the input, or three times the uncompressed Shapefile for a zip. Tiling
 runs on one thread, with compression on the thread pool, so plan for up to a minute per million simple
 features.
 
 The build does not merge adjacent polygons at low zooms, cluster points, or join attributes. Polygons
 are simplified independently, so neighbours that share a border can show hairline gaps at low zooms.
-Thinning keeps the first feature in a pixel, not the most important one, and does not carry counts for
-heatmaps, so sort the input if some features matter more. Features crossing the antimeridian must be
+Thinning does not carry counts for heatmaps. Features crossing the antimeridian must be
 split first; a warning flags segments wider than 180°. Web Mercator stops at latitude ±85.05: polygons
 and lines are cut there, and points past it are skipped.
 

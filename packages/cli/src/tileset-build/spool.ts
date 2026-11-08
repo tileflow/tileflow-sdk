@@ -18,8 +18,10 @@ export const field = {
   propertyBytes: 8,
   idLow: 9,
   idHigh: 10,
+  /** 1 when the parent tile drew this feature, so that this tile must too. */
+  kept: 11,
 } as const;
-export const headerWords = 11;
+export const headerWords = 12;
 export const worldSize = 2 ** 31;
 
 export const geometryType = {line: 2, point: 1, polygon: 3} as const;
@@ -98,6 +100,70 @@ export class FeatureSpool {
     } finally {
       closeSync(descriptor);
     }
+  }
+
+  /**
+   * Rewrite the records from the highest key to the lowest, keeping input order between equals, and
+   * dispose of this spool. Holds about 24 bytes per record in memory; the records stay on disk.
+   */
+  reordered(keys: Float64Array): FeatureSpool {
+    const sizes = new Uint32Array(this.count);
+    let visited = 0;
+    this.forEach((words, offset) => {
+      sizes[visited] = words[offset + field.words];
+      visited += 1;
+    });
+    const order = new Uint32Array(this.count);
+    for (let index = 0; index < order.length; index += 1) order[index] = index;
+    order.sort((left, right) => keys[right] - keys[left] || 0 || left - right);
+    const positions = new Float64Array(this.count);
+    let position = 0;
+    for (const index of order) {
+      positions[index] = position;
+      position += sizes[index];
+    }
+
+    const target = new FeatureSpool(this.directory);
+    target.count = this.count;
+    if (this.#path === null) {
+      target.words = new Int32Array(position);
+      target.length = position;
+      visited = 0;
+      this.forEach((words, offset) => {
+        target.words.set(words.subarray(offset, offset + sizes[visited]), positions[visited]);
+        visited += 1;
+      });
+      this.dispose();
+      return target;
+    }
+
+    target.#path = this.directory.nextFile();
+    const descriptor = openSync(target.#path, 'w');
+    try {
+      visited = 0;
+      this.forEach((words, offset) => {
+        const bytes = new Uint8Array(
+          words.buffer,
+          words.byteOffset + offset * 4,
+          sizes[visited] * 4,
+        );
+        let written = 0;
+        while (written < bytes.length) {
+          written += writeSync(
+            descriptor,
+            bytes,
+            written,
+            bytes.length - written,
+            positions[visited] * 4 + written,
+          );
+        }
+        visited += 1;
+      });
+    } finally {
+      closeSync(descriptor);
+    }
+    this.dispose();
+    return target;
   }
 
   dispose(): void {

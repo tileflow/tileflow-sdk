@@ -18,8 +18,11 @@ type BuildCommandOptions = {
   minzoom?: string;
   name?: string;
   output?: string;
+  rankAscending?: boolean;
+  rankBy?: string;
   reproject?: boolean;
   sourceCrs?: string;
+  zipEntry?: string;
 };
 
 const formats: readonly string[] = ['csv', 'geojson', 'geojsonseq', 'shapefile'];
@@ -28,7 +31,10 @@ export function registerTilesetBuildCommand(parent: Command): void {
   parent
     .command('build')
     .description('Build a PMTiles archive locally from GeoJSON, CSV or Shapefile')
-    .argument('<input>', 'GeoJSON, newline-delimited GeoJSON, CSV or .shp file')
+    .argument(
+      '<input>',
+      'GeoJSON, newline-delimited GeoJSON, CSV, .shp, or .zip holding a Shapefile',
+    )
     .option('-o, --output <path>', 'archive path (default: the input name with .pmtiles)')
     .option('--force', 'replace an existing output file')
     .option('--layer <name>', 'source-layer name (default: from the input file name)')
@@ -37,6 +43,9 @@ export function registerTilesetBuildCommand(parent: Command): void {
     .option('--maxzoom <zoom>', 'highest zoom to write (default: chosen from the data)')
     .option('--include <fields>', 'keep only these comma-separated attributes')
     .option('--exclude <fields>', 'drop these comma-separated attributes')
+    .option('--rank-by <field>', 'keep the highest values of this numeric attribute when thinning')
+    .option('--rank-ascending', 'with --rank-by, keep the lowest values instead')
+    .option('--zip-entry <path>', 'the .shp to read from a zip holding several')
     .option('--lon-column <name>', 'CSV longitude column')
     .option('--lat-column <name>', 'CSV latitude column')
     .option('--source-crs <crs>', 'state the input CRS: EPSG:<code>, proj string, WKT or .prj path')
@@ -82,8 +91,11 @@ export function registerTilesetBuildCommand(parent: Command): void {
             ? {}
             : {onProgress: (message: string) => process.stderr.write(`${message}\n`)}),
           ...(options.output === undefined ? {} : {output: options.output}),
+          ...(options.rankAscending ? {rankAscending: true} : {}),
+          ...(options.rankBy === undefined ? {} : {rankBy: options.rankBy}),
           ...(options.reproject ? {reproject: true} : {}),
           ...(options.sourceCrs === undefined ? {} : {sourceCrs: options.sourceCrs}),
+          ...(options.zipEntry === undefined ? {} : {zipEntry: options.zipEntry}),
         });
         if (options.json) {
           process.stdout.write(`${serializeCanonicalJson(result)}\n`);
@@ -96,6 +108,7 @@ export function registerTilesetBuildCommand(parent: Command): void {
         console.log(`  Zooms: ${archive.minzoom}-${archive.maxzoom}`);
         console.log(`  Size: ${archive.byteCount} bytes in ${archive.tileContents} tiles`);
         console.log(`  CRS: ${crs.label}${crs.reprojected ? ', reprojected to WGS84' : ''}`);
+        console.log(`  Bounds: ${archive.bounds.map((value) => value.toFixed(4)).join(', ')}`);
         const thinned = result.zooms.reduce((total, zoom) => total + zoom.thinnedFeatures, 0);
         if (thinned > 0) {
           console.log(`  Thinned below zoom ${archive.maxzoom}: ${thinned} tile features`);

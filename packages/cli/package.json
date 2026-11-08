@@ -57,11 +57,13 @@
     "picocolors": "^1.1.1",
     "pmtiles": "4.5.0",
     "proj4": "2.22.0",
+    "yauzl": "3.4.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
     "@mapbox/vector-tile": "3.0.0",
     "@types/pngjs": "6.0.5",
+    "@types/yauzl": "3.4.0",
     "pbf": "5.1.2",
     "pngjs": "7.0.0"
   }

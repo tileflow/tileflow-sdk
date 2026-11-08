@@ -8,10 +8,11 @@ const headerBytes = 127;
 const rootLimitBytes = 16_384 - headerBytes;
 const maximumEntries = 16_000_000;
 /**
- * The tileset inspector tracks every entry of a clustered archive within a fixed budget. Past this
- * size the bytes are still in TileID order, but the header makes no clustering promise.
+ * Validators hold about 128 bytes per distinct tile range of a clustered archive within a 32 MiB
+ * budget, so at 262,144 ranges both the local inspector and the hosted check reject it. Past this
+ * margin the tiles keep their TileID layout and the archive is flagged unclustered, which is valid.
  */
-const maximumClusteredEntries = 400_000;
+const maximumClusteredContents = 200_000;
 const deduplicatedTileBytes = 4096;
 const maximumKnownContents = 2_000_000;
 const concurrentCompression = 8;
@@ -221,7 +222,7 @@ export class TileArchiveWriter {
     const metadataOffset = rootOffset + root.length;
     const leafOffset = metadataOffset + metadataBytes.length;
     const dataOffset = leafOffset + leaves.length;
-    const clustered = entries.length <= maximumClusteredEntries;
+    const clustered = contentOrder.length <= maximumClusteredContents;
     const header = Buffer.alloc(headerBytes);
     header.write('PMTiles', 0, 'latin1');
     header[7] = 3;

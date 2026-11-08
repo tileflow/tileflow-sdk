@@ -152,6 +152,55 @@ export function statementFromGeojsonCrs(member: unknown): CrsStatement {
   return {authority: 'declared', definition, label: `GeoJSON crs ${name}`};
 }
 
+export type GeopackageSrs = Readonly<{
+  definition: string | null;
+  /** WKT2 from the optional `definition_12_063` column. */
+  definition12063: string | null;
+  organization: string | null;
+  organizationCode: number | null;
+  srsId: number;
+}>;
+
+/**
+ * A row of `gpkg_spatial_ref_sys`, or nothing when the layer points at a missing one. srs_id -1 and 0
+ * are the records the standard reserves for undefined coordinates, so they state nothing.
+ */
+export function statementFromGeopackageSrs(
+  layer: string,
+  srs: GeopackageSrs | undefined,
+): CrsStatement {
+  if (!srs || srs.srsId === -1 || srs.srsId === 0) {
+    return {
+      authority: 'declared',
+      definition: null,
+      label: `GeoPackage layer "${layer}"`,
+    };
+  }
+  const epsg = srs.organization?.toUpperCase() === 'EPSG' ? srs.organizationCode : null;
+  const label =
+    epsg === null
+      ? `GeoPackage layer "${layer}" (srs_id ${srs.srsId})`
+      : `GeoPackage layer "${layer}" (EPSG:${epsg})`;
+  // proj4 reads a Pseudo-Mercator WKT without its PROJ4 extension as ellipsoidal, tens of kilometres off.
+  const pseudoMercator =
+    epsg === 3857 ||
+    epsg === 3785 ||
+    epsg === 900913 ||
+    /^PROJCS\["[^"]*pseudo[ _-]?mercator/iu.test(srs.definition ?? '');
+  const exact = pseudoMercator ? epsgDefinition(3857) : epsg === 4326 ? wgs84Definition : null;
+  const known = epsg === null ? null : epsgDefinition(epsg);
+  return {
+    authority: 'declared',
+    definition: exact ?? statedWkt(srs.definition) ?? known ?? statedWkt(srs.definition12063),
+    label,
+  };
+}
+
+function statedWkt(value: string | null): string | null {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.toLowerCase() !== 'undefined' ? trimmed : null;
+}
+
 export const wgs84Statement = (
   authority: CrsStatement['authority'],
   label: string,

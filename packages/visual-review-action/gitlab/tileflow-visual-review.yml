@@ -37,7 +37,7 @@ spec:
     - mkdir -p /tmp/tileflow-review
     - >-
       curl -fsSL "https://codeload.github.com/tileflow/tileflow-sdk/tar.gz/$[[ inputs.action_ref ]]"
-      | tar -xz -C /tmp/tileflow-review --strip-components=3 --wildcards
+      | tar -xz -C /tmp/tileflow-review --strip-components=4 --wildcards
       "*/packages/visual-review-action/src/*"
     - export TILEFLOW_REVIEW_HEAD_SHA="${CI_MERGE_REQUEST_SOURCE_BRANCH_SHA:-$CI_COMMIT_SHA}"
     - export TILEFLOW_REVIEW_BASE_SHA="${CI_MERGE_REQUEST_TARGET_BRANCH_SHA:-$CI_MERGE_REQUEST_DIFF_BASE_SHA}"

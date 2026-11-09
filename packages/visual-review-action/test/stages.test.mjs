@@ -666,6 +666,17 @@ describe('GitLab provider', () => {
     );
   });
 
+  it('unpacks the sources where the CI template runs them', async () => {
+    const template = await readFile(
+      new URL('../gitlab/tileflow-visual-review.yml', import.meta.url),
+      'utf8',
+    );
+    const strip = Number(template.match(/--strip-components=(\d+)/)[1]);
+    const archived = 'tileflow-sdk-abc/packages/visual-review-action/src/main.mjs';
+    assert.equal(archived.split('/').slice(strip).join('/'), 'main.mjs');
+    assert.match(template, /node \/tmp\/tileflow-review\/main\.mjs capture/);
+  });
+
   it('neutralizes every GitLab reference in report text', () => {
     const decoded = escapeText('!12 ~bug %v1 $3 &4').replace(/&#(\d+);/g, (_, code) =>
       String.fromCodePoint(Number(code)),

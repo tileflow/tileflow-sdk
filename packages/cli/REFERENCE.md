@@ -280,3 +280,48 @@ output after the same validation.
 Account-backed authorization renews automatically. Hashing reuses a 16 MiB buffer, and up to four parts stream concurrently with reusable buffers.
 Administratively disabled uploads return `TF_TILESET_UPLOAD_DISABLED` without retrying. Temporary
 service failures retain bounded retries.
+
+## Restore
+
+Deployments are immutable. Restoring one publishes its content again as a new version of the Map, so
+the deployment it replaces stays in the history and can be restored in turn:
+
+```bash
+npx tileflow deployments list --map-id map_AbCdEfGhIjKlMnOp
+npx tileflow deployments restore 12 --map-id map_AbCdEfGhIjKlMnOp
+```
+
+Allowed websites are not part of a deployment and do not change. A restore is refused when the data
+the version needs has since changed, and the refusal names the source. Your repository still holds
+what you replaced, so the next `tileflow deploy` publishes that again unless you revert it.
+
+A tileset keeps its current and previous versions. Restoring swaps them for every Map that uses the
+tileset, with no deployment, and restoring again undoes it:
+
+```bash
+npx tileflow tileset restore stores --team @acme
+```
+
+The restore is refused while an upload to that tileset is in progress, and while a live Map needs
+data the previous version lacks. Restore or republish that Map first. An upload that nothing is
+still sending can be cleared; it may belong to a teammate or a CI run, so check first:
+
+```bash
+npx tileflow tileset upload abort stores --team @acme
+```
+
+These commands are written for agents as well as people. With `--json`, a success has a `nextSteps`
+array and a failure has `error.code`, `error.message` and `error.nextSteps`. Each step has a
+`description` and, when one exists, the exact `command` to run. A failure blocked by an upload also
+has `error.upload`, so you can see its state and expiry before aborting it. If a tileset restore
+ends with `TF_TILESET_DELIVERY_PENDING`, run the same command again: it finishes the saved restore
+and never swaps twice, and reports `outcome: "repaired"`.
+
+## Icon lock commands
+
+The lock commands inspect the `iconSet()` references your config declares. They are the only
+commands that resolve `latest`, and the only ones that write the lock. `install` fills in declared
+references that have no pin, `update` moves selected references to their current latest revision,
+and `pin` selects one exact revision. Every requested reference is resolved before a single
+compare-and-swap write of the whole snapshot, so a concurrent writer fails the command instead of
+losing its pins. No lock command rewrites `tileflow.config.ts`.

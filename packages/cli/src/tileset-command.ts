@@ -23,6 +23,12 @@ import {
   publishPreparedTeamTilesetUpload,
   TeamTilesetUploadError,
 } from './tileset-upload';
+import {
+  type BlockingUpload,
+  emitGuidedFailure,
+  printNextSteps,
+  tilesetRestoreSteps,
+} from './restore-guidance';
 
 type HostedTilesetOptions = HostedTeamOptions;
 
@@ -270,6 +276,199 @@ export function registerTilesetCommands(
     });
 
   tileset
+    .command('restore')
+    .description("Make a tileset's previous version current again, for every Map that uses it")
+    .argument('<id>', 'Team-local logical ID or opaque resource ID')
+    .option('--team <team>', 'target Team as @team')
+    .addOption(hostedApiUrlOption())
+    .addOption(hostedApiKeyOption('Team data API key'))
+    .option('--json', 'print deterministic schema-version-1 JSON')
+    .action(async (id: string, options: HostedTilesetOptions) => {
+      const commands = tilesetCommands(id, options);
+      const refuse = (code: string, message: string, upload?: BlockingUpload) =>
+        emitGuidedFailure(
+          options.json,
+          code,
+          message,
+          tilesetRestoreSteps({...commands, code, upload}),
+          upload ? {upload} : {},
+        );
+      try {
+        if (!isTilesetId(id))
+          return emitFailure(options.json, 'invalid_tileset_id', 'Tileset ID is invalid.');
+        const authority = await resolveTeamAuthority(options, ['tilesets:write'], dependencies);
+        if (!authority) return;
+        const path = `/v1/tilesets/${encodeURIComponent(id)}`;
+        const detail = await authorizedTeamRequest(authority, path, 'GET');
+        if (!detail.ok) {
+          return refuse(`http_${detail.status}`, `Tileset status failed (${detail.status}).`);
+        }
+        const expectedCurrentVersion = tilesetDetailResponseSchema.parse(detail.body).tileset
+          .currentVersion;
+        if (expectedCurrentVersion === null) {
+          return refuse('no_previous_version', `${id} has no previous version to restore.`);
+        }
+        const response = await authorizedTeamRequest(authority, `${path}/restore`, 'POST', {
+          body: JSON.stringify({expectedCurrentVersion}),
+          headers: {'Content-Type': 'application/json'},
+        });
+        if (!response.ok) {
+          const failure = tilesetRestoreFailureSchema.safeParse(response.body);
+          const body = failure.success ? failure.data : {};
+          return refuse(
+            body.code ?? `http_${response.status}`,
+            body.error
+              ? `${body.error.replace(/\.$/u, '')}.`
+              : `Tileset restore failed (${response.status}).`,
+            body.upload,
+          );
+        }
+        const restored = tilesetRestoreResponseSchema.parse(response.body).tileset;
+        const nextSteps =
+          restored.outcome === 'repaired'
+            ? [
+                {
+                  description:
+                    'That finished an earlier change. Nothing was swapped this time; run restore again only if you still want to go back a version.',
+                  command: commands.status,
+                },
+              ]
+            : [
+                {
+                  description: `To undo, run the same command: it swaps versions ${restored.currentVersion} and ${restored.previousVersion} back.`,
+                  command: commands.restore,
+                },
+                {
+                  description:
+                    'Publishing a new version retires the one this restore replaced, so check the archive first.',
+                },
+              ];
+        if (options.json) {
+          return emitJson({
+            command: 'tileset restore',
+            nextSteps,
+            ok: true,
+            schemaVersion: 1,
+            tileset: restored,
+          });
+        }
+        console.log(
+          restored.outcome === 'repaired'
+            ? `${pc.green('✓')} ${pc.bold(id)} is at version ${restored.currentVersion}, and readers have caught up.`
+            : `${pc.green('✓')} ${pc.bold(id)} is at version ${restored.currentVersion} again; version ${restored.previousVersion} is its previous one. Maps read it within minutes, without deploying.`,
+        );
+        printNextSteps(nextSteps);
+      } catch {
+        emitFailure(options.json, 'tileset_restore_failed', 'Tileset restore failed.');
+      }
+    });
+
+  tileset
+    .command('upload')
+    .description('Manage an upload that has not been published')
+    .command('abort')
+    .description('Abort the upload in progress on one tileset, so a restore or publish can proceed')
+    .argument('<id>', 'Team-local logical ID or opaque resource ID')
+    .option('--team <team>', 'target Team as @team')
+    .addOption(hostedApiUrlOption())
+    .addOption(hostedApiKeyOption('Team data API key'))
+    .option('--json', 'print deterministic schema-version-1 JSON')
+    .action(async (id: string, options: HostedTilesetOptions) => {
+      const commands = tilesetCommands(id, options);
+      const check = [{description: 'Check the tileset.', command: commands.status}];
+      try {
+        if (!isTilesetId(id))
+          return emitFailure(options.json, 'invalid_tileset_id', 'Tileset ID is invalid.');
+        const authority = await resolveTeamAuthority(options, ['tilesets:write'], dependencies);
+        if (!authority) return;
+        const detail = await authorizedTeamRequest(
+          authority,
+          `/v1/tilesets/${encodeURIComponent(id)}`,
+          'GET',
+        );
+        if (!detail.ok) {
+          return emitGuidedFailure(
+            options.json,
+            `http_${detail.status}`,
+            `Tileset status failed (${detail.status}).`,
+            check,
+          );
+        }
+        const tilesetId = tilesetDetailResponseSchema.parse(detail.body).tileset.id;
+        const uploads = `/v1/tilesets/${encodeURIComponent(tilesetId)}/uploads`;
+        const active = await authorizedTeamRequest(authority, uploads, 'GET');
+        if (!active.ok) {
+          return emitGuidedFailure(
+            options.json,
+            `http_${active.status}`,
+            `Reading the upload failed (${active.status}).`,
+            check,
+          );
+        }
+        const {upload} = activeUploadResponseSchema.parse(active.body);
+        const proceed = [
+          {
+            description: 'Restore the previous version if that was the aim.',
+            command: commands.restore,
+          },
+        ];
+        if (!upload) {
+          if (options.json) {
+            return emitJson({
+              aborted: false,
+              command: 'tileset upload abort',
+              nextSteps: proceed,
+              ok: true,
+              schemaVersion: 1,
+              upload: null,
+            });
+          }
+          console.log(pc.gray(`No upload is in progress on ${id}.`));
+          return printNextSteps(proceed);
+        }
+        const response = await authorizedTeamRequest(
+          authority,
+          `${uploads}/${encodeURIComponent(upload.id)}`,
+          'DELETE',
+        );
+        if (!response.ok) {
+          const failure = tilesetRestoreFailureSchema.safeParse(response.body);
+          const body = failure.success ? failure.data : {};
+          return emitGuidedFailure(
+            options.json,
+            body.code ?? `http_${response.status}`,
+            body.error
+              ? `${body.error.replace(/\.$/u, '')}.`
+              : `Aborting upload ${upload.id} failed (${response.status}).`,
+            [
+              {
+                description: `Upload ${upload.id} was ${upload.state}. A late stage finishes on its own: wait a minute, then check it.`,
+                command: commands.status,
+              },
+            ],
+            {upload},
+          );
+        }
+        if (options.json) {
+          return emitJson({
+            aborted: true,
+            command: 'tileset upload abort',
+            nextSteps: proceed,
+            ok: true,
+            schemaVersion: 1,
+            upload,
+          });
+        }
+        console.log(
+          `${pc.green('✓')} Aborted upload ${upload.id} on ${pc.bold(id)}. No published version changed.`,
+        );
+        printNextSteps(proceed);
+      } catch {
+        emitFailure(options.json, 'tileset_upload_abort_failed', 'Aborting the upload failed.');
+      }
+    });
+
+  tileset
     .command('purge')
     .description('Permanently purge one unreferenced Team tileset')
     .argument('<id>', 'Team-local logical ID or opaque resource ID')
@@ -326,6 +525,16 @@ export function registerTilesetCommands(
         emitFailure(options.json, 'tileset_purge_failed', 'Tileset purge failed.');
       }
     });
+}
+
+/** The exact commands a next step names, carrying the same tileset and Team as this one. */
+function tilesetCommands(id: string, options: HostedTilesetOptions) {
+  const team = options.team ? ` --team ${options.team}` : '';
+  return {
+    abort: `tileflow tileset upload abort ${id}${team}`,
+    restore: `tileflow tileset restore ${id}${team}`,
+    status: `tileflow tileset status ${id}${team}`,
+  };
 }
 
 async function fetchAllTeamTilesets(authority: HostedTeamAuthority) {
@@ -443,6 +652,36 @@ const tilesetDependencySchema = z
     sourceId: safeIdentifierSchema,
   })
   .strict();
+export const tilesetRestoreResponseSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    tileset: z
+      .object({
+        currentVersion: z.number().int().positive(),
+        id: physicalTilesetIdSchema,
+        outcome: z.enum(['repaired', 'restored']),
+        previousVersion: z.number().int().positive().nullable(),
+        slug: z.string().min(1).max(128),
+      })
+      .strict(),
+  })
+  .strict();
+const blockingUploadSchema = z
+  .object({
+    byteCount: z.number().int().nonnegative(),
+    expiresAt: z.string().min(1).max(64),
+    id: z.string().min(1).max(128),
+    state: z.string().min(1).max(32),
+  })
+  .strict();
+const activeUploadResponseSchema = z
+  .object({schemaVersion: z.literal(1), upload: blockingUploadSchema.nullable()})
+  .strict();
+const tilesetRestoreFailureSchema = z.object({
+  code: z.string().max(80).optional(),
+  error: z.string().max(400).optional(),
+  upload: blockingUploadSchema.optional(),
+});
 const tilesetDetailResponseSchema = z
   .object({
     schemaVersion: z.literal(1),

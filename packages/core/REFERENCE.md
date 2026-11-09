@@ -272,6 +272,12 @@ for runtime data, click-to-expand, and React Native support.
 `bathymetry({vectorLayers: {...}})` declares contour/name layers. `marine: 'nautical'` adds
 navigation marks, flashing lights, and a "Not for navigation" notice.
 
+`circular_feature` optionally retains `network` (a normalized road-network string; coverage is
+partial) and `official` (a numeric path-status indicator). For paths, footways, cycleways and
+bridleways, `official=0` means OSM marks the way `informal=yes`; `official=1` means `informal=no`
+or a recorded operator, unless `informal=yes`. Absence means unknown or not applicable.
+This indicator does not establish legal recognition or public access.
+
 World attribution credits Tileflow and OpenStreetMap; other vector data keeps its owner's
 attribution.
 

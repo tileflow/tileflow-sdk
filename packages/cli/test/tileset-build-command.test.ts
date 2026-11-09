@@ -477,6 +477,99 @@ test('an unknown CRS cannot be stated by accident', async (t) => {
   assert.equal(failure(text).code, 'TF_TILESET_BUILD_CRS_UNREADABLE');
 });
 
+test('a triangular tile stays empty outside its diagonal at higher zooms', async (t) => {
+  const directory = await workspace(t);
+  const latitude = 40.979898069620134;
+  await writeFile(
+    join(directory, 'triangle.geojson'),
+    JSON.stringify({
+      type: 'Polygon',
+      coordinates: [
+        [
+          [-45, latitude],
+          [45, latitude],
+          [45, -latitude],
+          [-45, latitude],
+        ],
+      ],
+    }),
+  );
+
+  const result = await build(directory, ['triangle.geojson', '--maxzoom', '6', '--json']);
+  assert.equal(result.code, 0, result.stderr);
+  const archive = new PMTiles(fileSource(await readFile(join(directory, 'triangle.pmtiles'))));
+  assert.ok(await archive.getZxy(6, 31, 28));
+  assert.equal(await archive.getZxy(6, 28, 31), undefined);
+});
+
+for (const mismatch of ['truncated', 'missing', 'extra', 'deleted'] as const) {
+  test(`Shapefile conversion accounts for DBF rows marked ${mismatch}`, async (t) => {
+    const directory = await workspace(t);
+    const stem = join(directory, 'parks');
+    await writeShapefile(stem);
+    const dbf = await readFile(stem + '.dbf');
+    const header = dbf.readUInt16LE(8);
+    const width = dbf.readUInt16LE(10);
+    let data = dbf;
+    if (mismatch === 'truncated') data = dbf.subarray(0, header + 2 * width - 1);
+    if (mismatch === 'missing') {
+      dbf.writeUInt32LE(1, 4);
+      data = dbf.subarray(0, header + width);
+    }
+    if (mismatch === 'extra') {
+      dbf.writeUInt32LE(3, 4);
+      data = Buffer.concat([dbf.subarray(0, header + 2 * width), dbf.subarray(header + width)]);
+    }
+    if (mismatch === 'deleted') dbf[header + width] = 0x2a;
+    await writeFile(stem + '.dbf', data);
+
+    const result = await build(directory, [
+      'parks.shp',
+      '--source-crs',
+      'EPSG:4326',
+      '--maxzoom',
+      '0',
+      '--json',
+    ]);
+    if (mismatch === 'extra') {
+      assert.equal(result.code, 0, result.stderr);
+      const document = JSON.parse(result.stdout);
+      assert.equal(document.input.features, 1);
+      assert.match(document.warnings.join(' '), /1 extra.*row/iu);
+    } else if (mismatch === 'deleted') {
+      assert.equal(failure(result).code, 'TF_TILESET_BUILD_EMPTY');
+    } else {
+      assert.equal(result.code, 1);
+      assert.equal(failure(result).code, 'TF_TILESET_BUILD_INPUT_INVALID');
+      assert.match(failure(result).message, /record 2/iu);
+    }
+  });
+}
+
+for (const [code, point] of [
+  [4258, [-3.7, 40.4]],
+  [4269, [-73.99, 40.75]],
+] as const) {
+  test(`EPSG:${code} reprojects geographic points using the coincident datum`, async (t) => {
+    const directory = await workspace(t);
+    await writeFile(join(directory, 'site.csv'), `lon,lat\n${point.join(',')}\n`);
+    const result = await build(directory, [
+      'site.csv',
+      '--source-crs',
+      `EPSG:${code}`,
+      '--reproject',
+      '--maxzoom',
+      '0',
+      '--json',
+    ]);
+    assert.equal(result.code, 0, result.stderr);
+    const document = JSON.parse(result.stdout);
+    assertClose(document.archive.bounds, [...point, ...point], 1e-6);
+    assert.equal(document.crs.reprojected, true);
+    assert.match(document.warnings.join(' '), /coincident/iu);
+  });
+}
+
 test('features are clipped into every tile they cross', async (t) => {
   const directory = await workspace(t);
   await writeFile(

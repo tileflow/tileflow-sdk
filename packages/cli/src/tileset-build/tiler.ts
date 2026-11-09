@@ -304,16 +304,25 @@ function isSolidTile(spool: FeatureSpool, box: Box): boolean {
     ) {
       return;
     }
-    // Spanning the box is not enough: a diamond does too. Every vertex must sit on a corner.
+    // A closed ring on the perimeter covers the box if it winds around it once. Its net
+    // travel on the left edge is then one height, including the closing segment.
     const start = offset + headerWords + 1;
-    solid = true;
-    for (let index = 0; index < words[offset + field.points]; index += 1) {
-      const px = words[start + index * 2];
-      const py = words[start + index * 2 + 1];
-      if ((px !== box.minX && px !== box.maxX) || (py !== box.minY && py !== box.maxY)) {
-        solid = false;
+    const end = start + words[offset + field.points] * 2;
+    let previousX = words[end - 2];
+    let previousY = words[end - 1];
+    let leftEdgeTravel = 0;
+    for (let cursor = start; cursor < end; cursor += 2) {
+      const x = words[cursor];
+      const y = words[cursor + 1];
+      if (previousX === x && (x === box.minX || x === box.maxX)) {
+        if (x === box.minX) leftEdgeTravel += y - previousY;
+      } else if (previousY !== y || (y !== box.minY && y !== box.maxY)) {
+        return;
       }
+      previousX = x;
+      previousY = y;
     }
+    solid = Math.abs(leftEdgeTravel) === box.maxY - box.minY;
   });
   return solid;
 }

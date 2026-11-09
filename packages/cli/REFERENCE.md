@@ -251,6 +251,9 @@ output and are removed on exit, including Ctrl-C. Allow free space of about twic
 runs on one thread, with compression on the thread pool, so plan for up to a minute per million simple
 features.
 
+If a Shapefile has a DBF, each shape record needs a matching attribute row. A missing or truncated
+row stops the build. Deleted rows are skipped, and extra rows produce a warning.
+
 KML and GPX are streamed. A document with a DOCTYPE or entity declaration is refused, because neither
 format needs one and it is how entity-expansion attacks work. Only the five predefined XML entities
 and numeric character references are decoded. One tag can hold 1 MiB and 256 attributes, elements can

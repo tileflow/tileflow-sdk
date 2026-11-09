@@ -32,10 +32,11 @@ export function shapefileCrsStatement(path: string): CrsStatement {
 
 export async function readShapefile(path: string, ingest: FeatureIngest): Promise<void> {
   const shp = openSync(path, 'r');
-  const dbfPath = sidecar(path, '.dbf');
-  const table = dbfPath ? openDbf(dbfPath, sidecar(path, '.cpg')) : null;
-  if (!table) ingest.warn('No .dbf file was found, so features have no attributes.');
+  let table: ReturnType<typeof openDbf> | null = null;
   try {
+    const dbfPath = sidecar(path, '.dbf');
+    if (dbfPath) table = openDbf(dbfPath, sidecar(path, '.cpg'));
+    else ingest.warn('No .dbf file was found, so features have no attributes.');
     const header = Buffer.allocUnsafe(shapeHeaderBytes);
     if (
       readSync(shp, header, 0, shapeHeaderBytes, 0) !== shapeHeaderBytes ||
@@ -68,6 +69,11 @@ export async function readShapefile(path: string, ingest: FeatureIngest): Promis
       const row = table?.next();
       if (row === null) continue; // Deleted in the .dbf.
       ingest.add(decodeShape(content, index), row ?? {});
+    }
+    if (table && table.remainingRows > 0) {
+      ingest.warn(
+        `The .dbf has ${table.remainingRows} extra attribute ${table.remainingRows === 1 ? 'row' : 'rows'} after the last Shapefile record.`,
+      );
     }
   } finally {
     closeSync(shp);
@@ -244,13 +250,28 @@ type DbfField = Readonly<{length: number; name: string; offset: number; type: st
 
 function openDbf(path: string, cpgPath: string | null) {
   const descriptor = openSync(path, 'r');
-  const header = Buffer.allocUnsafe(32);
-  readSync(descriptor, header, 0, 32, 0);
+  try {
+    return readDbfTable(descriptor, cpgPath);
+  } catch (error) {
+    closeSync(descriptor);
+    throw error;
+  }
+}
+
+function readDbfTable(descriptor: number, cpgPath: string | null) {
+  const header = Buffer.alloc(32);
+  if (readSync(descriptor, header, 0, header.length, 0) !== header.length) {
+    throw invalid('record 1: the .dbf header is incomplete.');
+  }
   const records = header.readUInt32LE(4);
   const headerBytes = header.readUInt16LE(8);
   const recordBytes = header.readUInt16LE(10);
+  if (headerBytes < 33 || recordBytes < 1)
+    throw invalid('record 1: the .dbf row layout is invalid.');
   const descriptors = Buffer.allocUnsafe(headerBytes - 32);
-  readSync(descriptor, descriptors, 0, descriptors.length, 32);
+  if (readSync(descriptor, descriptors, 0, descriptors.length, 32) !== descriptors.length) {
+    throw invalid('record 1: the .dbf field descriptors are incomplete.');
+  }
   const encoding = cpgPath ? readFileSync(cpgPath, 'utf8').trim() : 'utf-8';
   const decoder = createDecoder(encoding);
   const fields: DbfField[] = [];
@@ -272,12 +293,15 @@ function openDbf(path: string, cpgPath: string | null) {
   let index = 0;
   return {
     close: () => closeSync(descriptor),
+    get remainingRows() {
+      return records - index;
+    },
     /** One row of attributes, `null` for a deleted row. */
     next(): Record<string, unknown> | null {
-      if (index >= records) return {};
+      if (index >= records) throw invalid(`record ${index + 1}: the .dbf has no matching row.`);
       index += 1;
       const row = stream.read(recordBytes);
-      if (!row) return {};
+      if (!row || row[0] === 0x1a) throw invalid(`record ${index}: the .dbf row is incomplete.`);
       if (row[0] === 0x2a) return null;
       const properties: Record<string, unknown> = {};
       for (const item of fields) {

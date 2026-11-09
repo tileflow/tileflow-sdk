@@ -314,8 +314,11 @@ These commands are written for agents as well as people. With `--json`, a succes
 array and a failure has `error.code`, `error.message` and `error.nextSteps`. Each step has a
 `description` and, when one exists, the exact `command` to run. A failure blocked by an upload also
 has `error.upload`, so you can see its state and expiry before aborting it. If a tileset restore
-ends with `TF_TILESET_DELIVERY_PENDING`, run the same command again: it finishes the saved restore
-and never swaps twice, and reports `outcome: "repaired"`.
+ends with `TF_TILESET_DELIVERY_PENDING` or its outcome is uncertain, follow the retry in `nextSteps`.
+It passes `--expected-current-version <n>` from the original operation. The server can repair pending
+delivery or report that the version has already changed. Check status before starting a new restore.
+To cancel the upload named in a refusal, use its `--upload-id <id>` step. If that upload has ended,
+the command leaves any replacement upload alone.
 
 ## Icon lock commands
 

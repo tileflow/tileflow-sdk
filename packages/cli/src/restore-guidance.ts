@@ -98,11 +98,29 @@ const windingDownStates = new Set(['aborting', 'expiring', 'publishing', 'reject
 /** Refusals of `tileset restore`. `commands` already carries the tileset and Team. */
 export function tilesetRestoreSteps(input: {
   abort: string;
+  attemptedVersion: number | undefined;
+  pinned: boolean;
+  uncertain: boolean;
   code: string;
   restore: string;
   status: string;
   upload?: BlockingUpload | undefined;
 }): NextStep[] {
+  const boundRestore = `${input.restore} --expected-current-version ${input.attemptedVersion}`;
+  if (
+    input.attemptedVersion !== undefined &&
+    (input.uncertain ||
+      input.code === 'TF_TILESET_DELIVERY_PENDING' ||
+      input.code === 'TF_TILESET_RESTORE_UNAVAILABLE')
+  ) {
+    return [
+      {description: 'Check which version is current.', command: input.status},
+      {
+        description: 'Retry the original restore using its expected version.',
+        command: boundRestore,
+      },
+    ];
+  }
   switch (input.code) {
     case 'TF_TILESET_UPLOAD_IN_PROGRESS':
       if (!input.upload || windingDownStates.has(input.upload.state)) {
@@ -110,18 +128,18 @@ export function tilesetRestoreSteps(input: {
           {
             description:
               'The upload is finishing on its own. Wait a minute, then repeat the restore.',
-            command: input.restore,
+            command: input.pinned ? boundRestore : input.restore,
           },
         ];
       }
       return [
         {
           description: `Upload ${input.upload.id} is ${input.upload.state} and expires at ${input.upload.expiresAt}. It may belong to a teammate or a CI run: abort it only if nothing is still uploading.`,
-          command: input.abort,
+          command: `${input.abort} --upload-id ${input.upload.id}`,
         },
         {
           description: 'After aborting, or once the upload ends, repeat the restore.',
-          command: input.restore,
+          command: input.pinned ? boundRestore : input.restore,
         },
       ];
     case 'no_previous_version':
@@ -135,8 +153,9 @@ export function tilesetRestoreSteps(input: {
     case 'TF_TILESET_CURRENT_VERSION_CHANGED':
       return [
         {
-          description:
-            'The current version moved while restoring. Read it, then repeat the restore if it is still what you want.',
+          description: input.pinned
+            ? 'Nothing was swapped. The original restore may have finished, or another change updated the current version.'
+            : 'The current version moved while restoring. Read it, then repeat the restore if it is still what you want.',
           command: input.status,
         },
       ];
@@ -147,15 +166,6 @@ export function tilesetRestoreSteps(input: {
           description:
             'Restore or redeploy the live Map that needs the newer data, then repeat this restore.',
           command: 'tileflow deployments list --map-id <map>',
-        },
-      ];
-    case 'TF_TILESET_DELIVERY_PENDING':
-    case 'TF_TILESET_RESTORE_UNAVAILABLE':
-      return [
-        {
-          description:
-            'Repeat the same command. It finishes a saved restore and never swaps twice.',
-          command: input.restore,
         },
       ];
     case 'TF_TILESET_PURGING':

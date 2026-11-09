@@ -287,7 +287,7 @@ test('a restore blocked by an upload tells an agent exactly how to clear it', as
   assert.deepEqual(error.upload, upload);
   assert.deepEqual(
     error.nextSteps.map((step: {command: string}) => step.command),
-    ['tileflow tileset upload abort stores', 'tileflow tileset restore stores'],
+    ['tileflow tileset upload abort stores --upload-id upl_a', 'tileflow tileset restore stores'],
   );
 });
 

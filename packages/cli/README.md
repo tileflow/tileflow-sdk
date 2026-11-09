@@ -281,6 +281,20 @@ current at stable URLs. Purge requires confirmation and may be blocked by retain
 prepared icon identities; they do not turn package directories into a separate hosted library.
 Use the installed command's help for exact arguments and supported JSON output.
 
+## Restore an earlier version
+
+Restoring a deployment publishes its content again as a new version of the Map. Restoring a tileset
+swaps its current and previous versions for every Map that uses it:
+
+```bash
+npx tileflow deployments list --map-id map_AbCdEfGhIjKlMnOp
+npx tileflow deployments restore 12 --map-id map_AbCdEfGhIjKlMnOp
+npx tileflow tileset restore stores --team @acme
+```
+
+See the [reference](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/REFERENCE.md#restore)
+for refusals, clearing an abandoned upload and JSON output.
+
 ## Team Icon Sets and repository locks
 
 Two intentionally separate families cover shared icons. `icon-set` manages the remote Team catalog
@@ -301,13 +315,6 @@ bounded Team reads. `archive` and `unarchive` change only catalog state and neve
 revisions. `purge <slug> --version <n>` additionally requires `--idempotency-key`, an exact
 `--confirm @team/set@version`, and `--acknowledge-unknown-locks`, because repository locks that were
 never deployed are not discoverable and already-downloaded public bytes cannot be revoked.
-
-The lock commands inspect the `iconSet()` references your config declares. They are the only
-commands that resolve `latest`, and the only ones that write the lock. `install` fills in declared
-references that have no pin, `update` moves selected references to their current latest revision,
-and `pin` selects one exact revision. Every requested reference is resolved before a single
-compare-and-swap write of the whole snapshot, so a concurrent writer fails the command instead of
-losing its pins. No lock command rewrites `tileflow.config.ts`.
 
 `validate`, `build`, `preview`, `deploy`, `icons list` and `icons diff` read the lock and never
 resolve a catalog head. `--cache-dir` chooses the verified artifact cache root and `--offline` fails

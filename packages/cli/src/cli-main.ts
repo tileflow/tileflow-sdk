@@ -90,6 +90,7 @@ import {withTileflowConfigSecretsHidden} from './config-execution';
 import {registerConfigInspectCommand} from './config-inspect-command';
 import {registerCoordinatesCommands} from './coordinates-command';
 import {allowsStoredDeployCredential, resolveDeploySource} from './deploy-source';
+import {registerDeploymentCommands} from './deployment-command';
 import {registerDescribeCommand} from './describe-command';
 import {
   defaultTileflowDevHost,
@@ -1564,6 +1565,17 @@ program
 
     printMapStatus(status, api.apiUrl);
   });
+
+registerDeploymentCommands(program, {
+  resolveApi: (options, behavior) => {
+    const source = resolveDeploySource(process.env);
+    return requireApiOptions(options, {
+      ...behavior,
+      allowStoredCredential: allowsStoredDeployCredential(source),
+      assertExplicitKeyMap: true,
+    });
+  },
+});
 
 const iconsCommand = program.command('icons').description('Inspect managed Tileflow icons');
 

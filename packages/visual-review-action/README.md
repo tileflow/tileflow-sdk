@@ -1,11 +1,11 @@
 # Tileflow visual review action
 
-Shows map changes inside a pull request: which committed scenes changed, before and after images,
-a semantic diff from `tileflow semantic-diff`, and a pass or fail status from
-`tileflow visual diff --fail-on changed`. Reviewers need no Tileflow account, and neither does the
-repository.
+Shows map changes inside a GitHub pull request or a GitLab merge request: which committed scenes
+changed, before and after images, a semantic diff from `tileflow semantic-diff`, and a pass or fail
+status from `tileflow visual diff --fail-on changed`. Reviewers need no Tileflow account, and
+neither does the repository.
 
-## Set it up
+## Set it up on GitHub
 
 Your project needs committed scenes, a lockfile and an exact `tileflow` devDependency. Copy these
 two workflows into `.github/workflows/` and replace `COMMIT_SHA` with a full commit of this action:
@@ -17,6 +17,37 @@ two workflows into `.github/workflows/` and replace `COMMIT_SHA` with a full com
 In the repository settings, make `Tileflow visual review` a required status check. No baselines are
 needed to start: the first pull request reports every scene as new, and approving it creates them.
 Baselines render on GitHub-hosted Ubuntu, so renders from a laptop will not match them.
+
+## Set it up on GitLab
+
+The GitLab template reviews merge requests from the same project. It doesn't run on forks, because
+a parent pipeline for a fork exposes the parent project's variables.
+
+1. Create a project access token with the Developer role and the `api` scope.
+2. Add it as a masked CI/CD variable named `TILEFLOW_REVIEW_TOKEN`, with the environment scope
+   `tileflow-visual-review`. The capture job refuses to run if it receives this token.
+3. Add the [template](./gitlab/tileflow-visual-review.yml) to `.gitlab-ci.yml`, and replace both
+   `COMMIT_SHA` values with the same full commit of this action:
+
+   ```yaml
+   include:
+     - remote: https://raw.githubusercontent.com/tileflow/tileflow-sdk/COMMIT_SHA/packages/visual-review-action/gitlab/tileflow-visual-review.yml
+       inputs:
+         action_ref: COMMIT_SHA
+   ```
+
+4. In the merge request settings, turn on **Pipelines must succeed**.
+
+Runners must allow the unprivileged user namespaces that the Chromium sandbox needs. The review
+works as described in the next section, with these differences:
+
+- To approve, someone with at least the Developer role runs the manual
+  `tileflow-visual-review-approve` job in the latest pipeline of the merge request.
+- Merging starts a pipeline on the default branch, which updates the baselines. The token can't
+  push to a protected branch, so the baselines arrive as a merge request instead.
+- Baselines render in the `image` input of the template, so renders from a laptop won't match them.
+
+The other inputs are listed at the top of the template.
 
 ## How a review works
 
@@ -49,6 +80,7 @@ Tileflow configs are executable, so pull request code is treated as hostile:
 - The publish workflow never checks out pull request code. It validates the evidence as data,
   escapes all text it displays, and takes approvals only from people with write access.
 - Baselines come from the base commit, never from the pull request.
+- On GitLab, only the publish jobs can read the token, and they don't fetch merge request code.
 
 A malicious pull request controls its own capture job, so it can forge what its report shows. The
 status catches honest mistakes, not attackers: always read the config diff of an untrusted pull

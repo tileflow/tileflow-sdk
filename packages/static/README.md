@@ -242,8 +242,8 @@ Other bounded Hosted JSON failures throw `StaticMapError`. It preserves HTTP `st
 absent fields are `null`. `StaticMapRequestError` extends the same class. Malformed, oversized, or
 unsafe remote documents remain generic errors and are never reflected to the caller.
 
-`STATIC_MAPS_PLAN_UNAVAILABLE` is a non-retryable Starter requirement. Its `requiredPlan` is
-`starter-v1`; select a Starter Team or use a non-static fallback. It occurs before a Static Maps
+`STATIC_MAPS_PLAN_UNAVAILABLE` is a non-retryable Pro requirement. Its `requiredPlan` is
+`starter-v1`; select a Pro Team or use a non-static fallback. It occurs before a Static Maps
 operation or API-unit charge. A different `403` is a credential or Map-coverage failure.
 
 ## API entry points
@@ -273,7 +273,7 @@ Create one idempotency key per intentional create/precache action and retain it 
 retries. Reusing the key with the same normalized scene returns the stored result; reusing it with a
 different scene returns 409. A successful paid operation reports `unitCost: 15`, shared
 `remainingUnits`, its durable `operationId`, cache reuse, hash, and immutable image URL. An
-unbounded Starter service reports `remainingUnits: null`. Creation helpers require the single strict
+unbounded Pro service reports `remainingUnits: null`. Creation helpers require the single strict
 result contract, including `resultVersion: 1` and attribution. A live
 equal-hash render may return `202`; the helper polls with the same body/key within its bounded wait.
 `maxWaitMs` is the total client completion budget, including network, response parsing, and polling
@@ -286,7 +286,7 @@ Framework adapters can call `prepareStaticMapRequest(scene)` once and pass its r
 the same normalized scene for its `sceneKey` and HTTP body, so equivalent omitted/explicit defaults
 deduplicate consistently without duplicating the polling implementation.
 
-Free cannot initiate Static Maps work. Starter consumes 15 shared API units for each successful
+Free cannot initiate Static Maps work. Pro consumes 15 shared API units for each successful
 logical operation, including a distinct-key cache reuse. Downloading an immutable PNG, JPEG, or WebP
 consumes zero units.
 

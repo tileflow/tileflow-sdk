@@ -80,6 +80,7 @@ export function createGitHubProvider(env) {
       const pullRequest = await github.get(`/pulls/${number}`);
       return {
         number,
+        author: pullRequest.user?.login,
         headSha: pullRequest.head.sha,
         baseBranch: pullRequest.base.ref,
         open: pullRequest.state === 'open',

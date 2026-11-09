@@ -85,8 +85,9 @@ A POI's optional `name` is its establishment title; `label` and `address` descri
 Categories and business-chain labels appear only when supplied. Missing metadata does not establish
 opening status, freshness or completeness. Co-located businesses are not merged.
 
-Display every attribution entry and URL. Results are temporary by default. Persistent Search is
-disabled. In a compatible, enabled service, `geocode` and `geocodeReverse` accept
+Display every attribution entry and URL. Results are temporary by default. Do not cache temporary
+results or use them to build a permanent place catalog. Do not persist provider references.
+Persistent Search is disabled. In a compatible, enabled service, `geocode` and `geocodeReverse` accept
 `retention: 'persistent'`. Check `getGeocodingStorageEstimate(options)` before sending a request.
 Pass its `unitsPerRequest` as `expectedUnits` to reject a changed estimate. Store only results
 acknowledged with `retention: 'persistent'`. Publishable credentials cannot request persistent results or retrieve the storage estimate. Autocomplete and opaque references stay temporary.

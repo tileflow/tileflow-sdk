@@ -2,13 +2,13 @@ import {commentMarker, evidenceFile, needsApproval} from './contract.mjs';
 
 /**
  * Encodes anything that could become Markdown or HTML. Report text originates in pull request code,
- * and GitHub finds mentions, issue references and links after decoding entities, so those also get
- * a zero-width space that keeps them readable but inert.
+ * and Git hosts find mentions, references and links after decoding entities, so those also get a
+ * zero-width space that keeps them readable but inert. GitLab also links `!`, `~`, `%`, `$` and `&`.
  */
 export function escapeText(value) {
   return String(value)
     .replace(/\s+/g, ' ')
-    .replace(/[@#]|:\/\/|www\./gi, (match) => `${match.slice(0, 1)}\u200b${match.slice(1)}`)
+    .replace(/[@#!~%$&]|:\/\/|www\./gi, (match) => `${match.slice(0, 1)}\u200b${match.slice(1)}`)
     .replace(/[^A-Za-z0-9 .,:/=+-]/gu, (character) => `&#${character.codePointAt(0)};`);
 }
 
@@ -63,6 +63,7 @@ export function renderReport({
   runUrl,
   approvable,
   approvalInstructions = [],
+  changeRequestNoun = 'pull request',
 }) {
   const summary = summarize(report, baselineEdits);
   const icon = {error: '⚠️', failure: '❌', success: '✅'}[summary.state];
@@ -73,7 +74,7 @@ export function renderReport({
   }
   if (baselineEdits.length > 0) {
     lines.push(
-      'This pull request edits baseline files directly. Baselines change only through approval, ',
+      `This ${changeRequestNoun} edits baseline files directly. Baselines change only through approval, `,
       `so revert these files: ${baselineEdits.map(escapeText).join(', ')}`,
       '',
     );
@@ -81,7 +82,7 @@ export function renderReport({
   if (workflowEdits.length > 0) {
     lines.push(
       '> [!WARNING]',
-      '> This pull request edits workflow files, so this result may not be trustworthy: ',
+      `> This ${changeRequestNoun} edits workflow files, so this result may not be trustworthy: `,
       `> ${workflowEdits.map(escapeText).join(', ')}`,
       '',
     );

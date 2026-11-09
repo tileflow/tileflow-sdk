@@ -64,6 +64,7 @@ export async function runReport(env = process.env, provider = createProvider(env
   const body = renderReport({
     approvable,
     approvalInstructions: provider.approvalInstructions(headSha),
+    changeRequestNoun: provider.changeRequestNoun,
     baselineEdits,
     imageBase: provider.evidenceUrl(evidenceId, evidencePath),
     report,

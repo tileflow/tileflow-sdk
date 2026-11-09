@@ -12,6 +12,7 @@ import {createProvider} from '../src/provider.mjs';
 import {escapeText, renderReport, summarize} from '../src/render.mjs';
 import {runReport} from '../src/report.mjs';
 import {startFakeGitHub} from './fake-github.mjs';
+import {startFakeGitLab} from './fake-gitlab.mjs';
 
 const headSha = 'a'.repeat(40);
 const baseSha = 'b'.repeat(40);
@@ -391,6 +392,8 @@ describe('provider boundary', () => {
     return {
       log,
       reference: (number) => `!${number}`,
+      changeRequestNoun: 'change',
+      closedChangeRequests: async () => [{number: 7, merged: true}],
       captureCameFromChangeRequest: () => true,
       approvalRequest: () => ({author: 'maintainer', requestedSha: headSha}),
       acknowledgeApproval: async () => {},
@@ -480,5 +483,193 @@ describe('provider boundary', () => {
         entry.name,
       );
     }
+  });
+});
+
+describe('GitLab provider', () => {
+  let gitlab;
+  let directory;
+  let env;
+
+  beforeEach(async () => {
+    gitlab = await startFakeGitLab();
+    gitlab.seedBranch('main', {'README.md': 'map', 'test/visual-baselines/keep.png': 'old'});
+    gitlab.mergeRequests.set(7, {iid: 7, sha: headSha, state: 'opened', target_branch: 'main'});
+    gitlab.members[21] = 30;
+    directory = await mkdtemp(join(tmpdir(), 'tileflow-review-test-'));
+    env = {
+      CI_API_V4_URL: gitlab.url,
+      CI_COMMIT_SHA: headSha,
+      CI_DEFAULT_BRANCH: 'main',
+      CI_JOB_MANUAL: 'true',
+      CI_PIPELINE_ID: '77',
+      CI_PIPELINE_SOURCE: 'merge_request_event',
+      CI_PIPELINE_URL: 'https://gitlab.test/acme/maps/-/pipelines/77',
+      CI_PROJECT_ID: '42',
+      CI_PROJECT_URL: 'https://gitlab.test/acme/maps',
+      GITLAB_USER_ID: '21',
+      GITLAB_USER_LOGIN: 'maintainer',
+      TILEFLOW_REVIEW_BASELINE_DIR: 'test/visual-baselines',
+      TILEFLOW_REVIEW_DRY_RUN: 'false',
+      TILEFLOW_REVIEW_EVIDENCE_BRANCH: 'tileflow-visual-review',
+      TILEFLOW_REVIEW_HEAD_SHA: headSha,
+      TILEFLOW_REVIEW_OUTPUT: directory,
+      TILEFLOW_REVIEW_PROVIDER: 'gitlab',
+      TILEFLOW_REVIEW_PULL_REQUEST: '7',
+      TILEFLOW_REVIEW_TOKEN: 'test-token',
+      TILEFLOW_REVIEW_WORKING_DIRECTORY: '.',
+    };
+    process.exitCode = 0;
+  });
+
+  afterEach(async () => {
+    process.exitCode = 0;
+    await gitlab.close();
+    await rm(directory, {force: true, recursive: true});
+  });
+
+  const lastStatus = () => gitlab.statuses.at(-1);
+  const evidence = () => [...gitlab.files('tileflow-visual-review').keys()];
+  const merge = () => {
+    gitlab.mergeRequests.get(7).state = 'merged';
+  };
+
+  it('takes a change from report to approval to merged baselines', async () => {
+    await writeArtifact(directory, report());
+    await runReport(env);
+    assert.equal(lastStatus().state, 'failed');
+    assert.equal(lastStatus().pipeline_id, 77);
+    assert.equal(gitlab.notes.length, 1);
+    assert.match(gitlab.notes[0].body, /acme\/maps\/-\/raw\/\w{40}\/pr-7\/a+\/madrid\.after\.png/);
+    assert.match(gitlab.notes[0].body, /tileflow-visual-review-approve/);
+    assert.doesNotMatch(gitlab.notes[0].body, /tileflow approve/);
+    assert.match(gitlab.branches.get('tileflow-visual-review').message, /\[ci skip\]/);
+
+    await runReport(env);
+    assert.equal(gitlab.notes.length, 1, 'a rerun updates the same note');
+
+    await runApprove(env);
+    assert.equal(lastStatus().state, 'success');
+    assert.match(lastStatus().description, /Approved by maintainer/);
+
+    merge();
+    await runPromote(env);
+    assert.deepEqual(gitlab.files('main').get('test/visual-baselines/madrid.png'), png());
+    assert.match(gitlab.branches.get('main').message, /!7[\s\S]*\[ci skip\]/);
+    assert.equal(
+      evidence().some((path) => path.startsWith('pr-7/') || path.startsWith('approvals/')),
+      false,
+    );
+    assert.ok(gitlab.notes.at(-1).body.startsWith('Baselines updated in'));
+  });
+
+  it('updates a baseline that already exists', async () => {
+    gitlab.branches.get('main').tree.set('test/visual-baselines/madrid.png', 'previous');
+    gitlab.blobs.set('previous', Buffer.from('old'));
+    await writeArtifact(directory, report());
+    await runReport(env);
+    await runApprove(env);
+    merge();
+    await runPromote(env);
+    assert.deepEqual(gitlab.files('main').get('test/visual-baselines/madrid.png'), png());
+  });
+
+  it('leaves open merge requests alone and clears closed ones without promoting', async () => {
+    await writeArtifact(directory, report());
+    await runReport(env);
+    await runApprove(env);
+    await runPromote(env);
+    assert.ok(evidence().some((path) => path.startsWith('pr-7/')));
+    assert.equal(gitlab.files('main').has('test/visual-baselines/madrid.png'), false);
+
+    gitlab.mergeRequests.get(7).state = 'closed';
+    await runPromote(env);
+    assert.equal(gitlab.files('main').has('test/visual-baselines/madrid.png'), false);
+    assert.equal(
+      evidence().some((path) => path.startsWith('pr-7/')),
+      false,
+    );
+  });
+
+  it('proposes baselines as a merge request on a protected branch', async () => {
+    await writeArtifact(directory, report());
+    await runReport(env);
+    await runApprove(env);
+    merge();
+    gitlab.protectedBranches.add('main');
+    await runPromote(env);
+    const head = 'tileflow-visual-review-baselines/mr-7';
+    assert.deepEqual(gitlab.files(head).get('test/visual-baselines/madrid.png'), png());
+    assert.equal(lastStatus().state, 'success');
+    assert.equal(lastStatus().ref, head);
+    assert.equal(lastStatus().pipeline_id, undefined);
+    assert.match(gitlab.notes.at(-1).body, /waiting in !900/);
+  });
+
+  it('ignores a forged note when updating its report', async () => {
+    gitlab.notes.push({id: 900, iid: 7, body: `${commentMarker} forged`, author: {id: 1}});
+    await writeArtifact(directory, report());
+    await runReport(env);
+    assert.equal(gitlab.notes.length, 2);
+    assert.match(gitlab.notes[0].body, /forged/);
+  });
+
+  it('refuses an approver below the Developer role', async () => {
+    gitlab.members[21] = 20;
+    await writeArtifact(directory, report());
+    await runReport(env);
+    await runApprove(env);
+    assert.equal(process.exitCode, 1);
+    assert.equal(lastStatus().state, 'failed');
+    assert.match(gitlab.notes.at(-1).body, /Approval not recorded/);
+  });
+
+  it('records nothing unless the job was started by hand', async () => {
+    await writeArtifact(directory, report());
+    await runReport(env);
+    await runApprove({...env, CI_JOB_MANUAL: undefined});
+    assert.equal(lastStatus().state, 'failed');
+    assert.equal(
+      evidence().some((path) => path.startsWith('approvals/')),
+      false,
+    );
+  });
+
+  it('fails hand-edited baselines and flags pipeline edits', async () => {
+    gitlab.diffs.set(7, [
+      {new_path: 'test/visual-baselines/madrid.png', old_path: 'test/visual-baselines/madrid.png'},
+      {new_path: '.gitlab-ci.yml', old_path: '.gitlab-ci.yml'},
+    ]);
+    await writeArtifact(directory, report());
+    await runReport(env);
+    assert.match(lastStatus().description, /Baselines edited by hand/);
+    assert.match(gitlab.notes[0].body, /This merge request edits baseline files/);
+    assert.match(gitlab.notes[0].body, /edits workflow files/);
+  });
+
+  it('refuses to capture with the token, on other events or from a fork', async () => {
+    const safe = {
+      CI_MERGE_REQUEST_PROJECT_ID: '42',
+      CI_MERGE_REQUEST_SOURCE_PROJECT_ID: '42',
+      CI_PIPELINE_SOURCE: 'merge_request_event',
+      CI_PROJECT_ID: '42',
+      TILEFLOW_REVIEW_PROVIDER: 'gitlab',
+    };
+    await assert.rejects(runCapture({...safe, TILEFLOW_REVIEW_TOKEN: 'x'}), /must not receive/);
+    await assert.rejects(
+      runCapture({...safe, CI_PIPELINE_SOURCE: 'push'}),
+      /merge request pipeline/,
+    );
+    await assert.rejects(
+      runCapture({...safe, CI_MERGE_REQUEST_SOURCE_PROJECT_ID: '43'}),
+      /same project only/,
+    );
+  });
+
+  it('neutralizes every GitLab reference in report text', () => {
+    const decoded = escapeText('!12 ~bug %v1 $3 &4').replace(/&#(\d+);/g, (_, code) =>
+      String.fromCodePoint(Number(code)),
+    );
+    assert.doesNotMatch(decoded, /[!~%$&][0-9a-z]/);
   });
 });

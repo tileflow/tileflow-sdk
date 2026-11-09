@@ -6,24 +6,25 @@ import {repositoryPath} from './report.mjs';
  * and receipt files into the baseline directory: the bytes the reviewer saw, nothing rendered anew.
  */
 export async function runPromote(env = process.env, provider = createProvider(env)) {
-  const number = Number(env.TILEFLOW_REVIEW_PULL_REQUEST);
-  const approvalPath = `approvals/pr-${number}.json`;
-  const approval = await provider.readEvidenceJson(approvalPath);
-  if (approval && env.TILEFLOW_REVIEW_MERGED === 'true') {
-    const changeRequest = await provider.getChangeRequest(number);
-    if (changeRequest.headSha === approval.headSha) {
-      await promote(provider, env, changeRequest, approval);
-    } else {
-      await provider.comment(
-        number,
-        `Baselines were not updated: the approval covered ${approval.headSha.slice(0, 12)}, but ${changeRequest.headSha.slice(0, 12)} merged.`,
-      );
+  for (const {number, merged} of await provider.closedChangeRequests()) {
+    const approvalPath = `approvals/pr-${number}.json`;
+    const approval = await provider.readEvidenceJson(approvalPath);
+    if (approval && merged) {
+      const changeRequest = await provider.getChangeRequest(number);
+      if (changeRequest.headSha === approval.headSha) {
+        await promote(provider, env, changeRequest, approval);
+      } else {
+        await provider.comment(
+          number,
+          `Baselines were not updated: the approval covered ${approval.headSha.slice(0, 12)}, but ${changeRequest.headSha.slice(0, 12)} merged.`,
+        );
+      }
     }
+    await provider.writeEvidence([], `Close visual review for ${provider.reference(number)}`, [
+      `pr-${number}/`,
+      approvalPath,
+    ]);
   }
-  await provider.writeEvidence([], `Close visual review for ${provider.reference(number)}`, [
-    `pr-${number}/`,
-    approvalPath,
-  ]);
 }
 
 async function promote(provider, env, {baseBranch, number}, approval) {

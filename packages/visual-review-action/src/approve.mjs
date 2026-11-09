@@ -24,7 +24,7 @@ export async function runApprove(env = process.env, provider = createProvider(en
     return refuse('only people with write access to this repository can approve.');
   }
   const {headSha, open} = await provider.getChangeRequest(number);
-  if (!open) return refuse('this pull request is closed.');
+  if (!open) return refuse(`this ${provider.changeRequestNoun} is closed.`);
   if (!headSha.startsWith(requestedSha)) {
     return refuse(
       `the command names ${requestedSha}, but the current commit is ${headSha.slice(0, 12)}. Review the latest report.`,
@@ -62,6 +62,6 @@ export async function runApprove(env = process.env, provider = createProvider(en
   await provider.acknowledgeApproval(true);
   await provider.comment(
     number,
-    `Approved ${scenes.length} ${scenes.length === 1 ? 'scene' : 'scenes'} at ${headSha.slice(0, 12)}. Baselines update when this pull request merges.`,
+    `Approved ${scenes.length} ${scenes.length === 1 ? 'scene' : 'scenes'} at ${headSha.slice(0, 12)}. Baselines update when this ${provider.changeRequestNoun} merges.`,
   );
 }

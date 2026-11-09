@@ -1,4 +1,5 @@
 import {assertGitHubCaptureAllowed, createGitHubProvider} from './github/provider.mjs';
+import {assertGitLabCaptureAllowed, createGitLabProvider} from './gitlab/provider.mjs';
 
 /**
  * Everything the review stages need from a Git host. Stages stay host-neutral and call only these
@@ -12,7 +13,9 @@ import {assertGitHubCaptureAllowed, createGitHubProvider} from './github/provide
  * - `canApprove(author)`: whether the host grants that person write access.
  *
  * Change request:
+ * - `changeRequestNoun`: what the host calls it in sentences, such as `pull request`.
  * - `reference(number)`: how the host writes a link to it, such as `#7` or `!7`.
+ * - `closedChangeRequests()`: `{number, merged}` for each closed one still holding evidence.
  * - `getChangeRequest(number)`: `{number, headSha, baseBranch, open}`.
  * - `listChangedFiles(number)`: changed paths, from the host and never from the checkout.
  * - `isAutomationFile(path)`: whether a path can change what the host's CI runs.
@@ -33,6 +36,10 @@ const providers = {
   github: {
     assertCaptureAllowed: assertGitHubCaptureAllowed,
     create: createGitHubProvider,
+  },
+  gitlab: {
+    assertCaptureAllowed: assertGitLabCaptureAllowed,
+    create: createGitLabProvider,
   },
 };
 

@@ -47,6 +47,13 @@ export function createGitHubProvider(env) {
     reference,
     comment,
     setStatus,
+    changeRequestNoun: 'pull request',
+    closedChangeRequests: async () => [
+      {
+        number: Number(env.TILEFLOW_REVIEW_PULL_REQUEST),
+        merged: env.TILEFLOW_REVIEW_MERGED === 'true',
+      },
+    ],
     approvalInstructions: githubApprovalInstructions,
     isAutomationFile: (path) => path.startsWith('.github/workflows/'),
     captureCameFromChangeRequest: () => env.TILEFLOW_REVIEW_RUN_EVENT === 'pull_request',

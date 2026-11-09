@@ -9,7 +9,6 @@ const chunkBytes = 4 * 1024 * 1024;
 export type TileJob = Readonly<{
   directory: string;
   generatorVersion: string;
-  gzipOperatingSystemByte: number | null;
   gzipWorkers: number;
   input: File;
   layer: string;
@@ -24,7 +23,7 @@ self.onmessage = async ({data: job}: MessageEvent<TileJob>) => {
   try {
     storage = await OpfsStorage.open(job.directory);
     pool = job.gzipWorkers > 0 ? new GzipPool(job.gzipWorkers, '/gzip-worker.js') : null;
-    const platform = browserPlatform(storage, pool, job.gzipOperatingSystemByte);
+    const platform = browserPlatform(storage, pool);
     const directory = new SpoolDirectory(platform.storage);
     const spool = new FeatureSpool(directory);
     const ingest = new FeatureIngest(spool, {exclude: null, include: null}, null, null);

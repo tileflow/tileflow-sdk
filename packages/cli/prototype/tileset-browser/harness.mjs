@@ -1,6 +1,7 @@
 // Measures the GeoJSON tiling prototype in a real browser and writes one JSON report per run.
 // Usage: node harness.mjs --browser chrome|firefox|safari --dataset points --data-dir <dir>
-//   [--gzip-workers 3] [--cpu 50] [--gzip-os 19] [--out <dir>] [--generator-version <v>] [--clean]
+//   [--gzip-workers 3] [--cpu 50] [--no-upload] [--out <dir>] [--generator-version <v>] [--clean]
+// Refuses to continue when the disk holding --out drops below 15 GB free.
 import {execFileSync, spawn} from 'node:child_process';
 import {
   createReadStream,
@@ -27,11 +28,13 @@ const {values} = parseArgs({
     cpu: {type: 'string'},
     'data-dir': {type: 'string'},
     dataset: {type: 'string', default: 'points'},
+    foreground: {type: 'boolean', default: false},
     'generator-version': {type: 'string', default: '0.0.0-development'},
-    'gzip-os': {type: 'string'},
     'gzip-workers': {type: 'string', default: '0'},
     label: {type: 'string'},
+    'no-upload': {type: 'boolean', default: false},
     out: {type: 'string', default: join(tmpdir(), 'tileflow-browser-build')},
+    'timeout-seconds': {type: 'string', default: '1200'},
     'profile-dir': {type: 'string'},
   },
 });
@@ -101,6 +104,9 @@ const server = createServer(async (request, response) => {
       events.push({at: Date.now(), event: 'seeded', ...(await json(request))});
       startedAt = Date.now();
       onRunStarted();
+    } else if (url.pathname === '/progress') {
+      const {message} = await json(request);
+      events.push({at: Date.now() - startedAt, message});
     } else if (url.pathname === '/archive') {
       archivePath = join(outDirectory, `${label}.pmtiles`);
       await pipeline(request, createWriteStream(archivePath));
@@ -124,8 +130,8 @@ const query = new URLSearchParams({
   inputSize: String(statSync(inputPath).size),
   version: values['generator-version'],
 });
-if (values['gzip-os'] !== undefined) query.set('gzipOs', values['gzip-os']);
 if (values.clean) query.set('clean', '1');
+if (values['no-upload']) query.set('upload', '0');
 const pageUrl = `http://127.0.0.1:${port}/?${query}`;
 
 // Browser processes
@@ -192,7 +198,7 @@ if (values.browser === 'chrome') {
   contentProcesses = (table) =>
     descendants(table, child.pid).filter((row) => row.command.includes('-isForBrowser'));
 } else {
-  execFileSync('open', ['-g', '-a', 'Safari', pageUrl]);
+  execFileSync('open', [...(values.foreground ? [] : ['-g']), '-a', 'Safari', pageUrl]);
   contentProcesses = (table) =>
     table.filter((row) => row.command.includes('com.apple.WebKit.WebContent'));
 }
@@ -202,7 +208,6 @@ const baseline = new Map();
 let peakRss = 0;
 let peakPid = null;
 const samples = [];
-let throttled = [];
 let sampleTimer = null;
 
 function sample() {
@@ -225,42 +230,37 @@ function sample() {
 }
 sampleTimer = setInterval(sample, 500);
 
+let dutyProcess = null;
+let dutyReport = null;
+
 function onRunStarted() {
   if (values.cpu === undefined || values.browser === 'safari') return;
-  // A duty cycle over all the content processes: their threads get `cpu` percent of the wall clock.
-  const running = Number(values.cpu);
-  const periodMs = 100;
-  const targets = () => contentProcesses(processTable()).map((row) => row.pid);
-  const cycle = () => {
-    throttled = targets();
-    for (const pid of throttled) {
-      try {
-        process.kill(pid, 'SIGSTOP');
-      } catch {}
-    }
-    setTimeout(
-      () => {
-        for (const pid of throttled) {
-          try {
-            process.kill(pid, 'SIGCONT');
-          } catch {}
-        }
-      },
-      periodMs * (1 - running / 100),
-    );
-  };
-  dutyTimer = setInterval(cycle, periodMs);
+  const targets = contentProcesses(processTable()).map((row) => String(row.pid));
+  dutyProcess = spawn(process.execPath, [join(here, 'duty-cycle.mjs'), values.cpu, ...targets], {
+    stdio: ['ignore', 'pipe', 'inherit'],
+  });
+  dutyProcess.stdout.on('data', (data) => {
+    dutyReport = JSON.parse(String(data));
+  });
 }
-let dutyTimer = null;
 
-function stopThrottle() {
-  if (dutyTimer) clearInterval(dutyTimer);
-  for (const pid of throttled) {
-    try {
-      process.kill(pid, 'SIGCONT');
-    } catch {}
-  }
+async function stopThrottle() {
+  if (!dutyProcess) return;
+  const exited = new Promise((success) => dutyProcess.once('exit', success));
+  dutyProcess.kill('SIGTERM');
+  await exited;
 }
+
+function freeBytes() {
+  const row = execFileSync('df', ['-k', outDirectory]).toString().trim().split('\n').at(-1);
+  return Number(row.trim().split(/\s+/)[3]) * 1024;
+}
+const minimumFreeBytes = 15 * 1024 ** 3;
+const diskGuard = setInterval(() => {
+  if (freeBytes() < minimumFreeBytes) {
+    rejectDone(new Error('Stopped: fewer than 15 GB are free on the output disk.'));
+  }
+}, 2000);
 
 // Result
 let report;
@@ -268,7 +268,10 @@ try {
   const outcome = await Promise.race([
     done,
     new Promise((_, failure) =>
-      setTimeout(() => failure(new Error('timed out after 20 min')), 1_200_000),
+      setTimeout(
+        () => failure(new Error(`timed out after ${values['timeout-seconds']} s`)),
+        Number(values['timeout-seconds']) * 1000,
+      ),
     ),
   ]);
   report = {
@@ -298,7 +301,8 @@ try {
   report = {browser: values.browser, dataset: values.dataset, failed: String(error), label};
 } finally {
   clearInterval(sampleTimer);
-  stopThrottle();
+  clearInterval(diskGuard);
+  await stopThrottle();
   server.close();
   if (child) {
     const exited = new Promise((success) => child.once('exit', success));
@@ -308,10 +312,11 @@ try {
     await new Promise((success) => setTimeout(success, 1000));
   }
 }
+report.dutyCycle = dutyReport;
+report.lastEvents = events.slice(-4);
 report.rssTimeline = samples.filter((_, index) => index % 2 === 0);
 writeFileSync(join(outDirectory, `${label}.json`), `${JSON.stringify(report, null, 2)}\n`);
-const {rssTimeline: _timeline, ...printable} = report;
-console.log(JSON.stringify(printable, null, 2));
+console.log(JSON.stringify({...report, rssTimeline: undefined}, null, 2));
 if (values.browser !== 'safari' && values['profile-dir'] === undefined) {
   rmSync(profile, {recursive: true, force: true, maxRetries: 5, retryDelay: 500});
 }

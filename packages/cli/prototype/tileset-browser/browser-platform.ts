@@ -6,7 +6,14 @@ type SyncHandle = FileSystemSyncAccessHandle;
 const spoolSlots = 96;
 const archiveName = 'archive.pmtiles';
 
-export type BrowserStorageReport = {peakBytes: number; slotsInUseAtPeak: number};
+export type BrowserStorageReport = {
+  peakBytes: number;
+  readMs: number;
+  reads: number;
+  slotsInUseAtPeak: number;
+  writeMs: number;
+  writes: number;
+};
 
 /**
  * OPFS can only open a file asynchronously, but the tiler spills to disk from a synchronous call.
@@ -20,6 +27,10 @@ export class OpfsStorage {
   #peakBytes = 0;
   #inUse = 0;
   #inUseAtPeak = 0;
+  #readMs = 0;
+  #reads = 0;
+  #writeMs = 0;
+  #writes = 0;
 
   private constructor(readonly directory: FileSystemDirectoryHandle) {}
 
@@ -47,10 +58,13 @@ export class OpfsStorage {
     this.#inUse += 1;
     let size = 0;
     const write = (source: Uint8Array, position: number) => {
+      const started = performance.now();
       let written = 0;
       while (written < source.length) {
         written += handle.write(source.subarray(written), {at: position + written});
       }
+      this.#writeMs += performance.now() - started;
+      this.#writes += 1;
       const end = position + source.length;
       if (end > size) {
         this.#liveBytes += end - size;
@@ -73,13 +87,26 @@ export class OpfsStorage {
         this.#inUse -= 1;
         this.#free.push(handle);
       },
-      read: (target, position) => handle.read(target, {at: position}),
+      read: (target, position) => {
+        const started = performance.now();
+        const bytes = handle.read(target, {at: position});
+        this.#readMs += performance.now() - started;
+        this.#reads += 1;
+        return bytes;
+      },
       write,
     };
   }
 
   report(): BrowserStorageReport {
-    return {peakBytes: this.#peakBytes, slotsInUseAtPeak: this.#inUseAtPeak};
+    return {
+      peakBytes: this.#peakBytes,
+      readMs: Math.round(this.#readMs),
+      reads: this.#reads,
+      slotsInUseAtPeak: this.#inUseAtPeak,
+      writeMs: Math.round(this.#writeMs),
+      writes: this.#writes,
+    };
   }
 
   /** Close every handle so the files can be read or removed. */
@@ -127,11 +154,14 @@ export class GzipPool {
   constructor(count: number, url: string) {
     for (let index = 0; index < count; index += 1) {
       const worker = new Worker(url);
-      worker.onmessage = ({data}: MessageEvent<{id: number; output: Uint8Array}>) => {
+      worker.onmessage = ({
+        data,
+      }: MessageEvent<{failure?: string; id: number; output: Uint8Array}>) => {
         this.#loads[index] -= 1;
         const waiting = this.#waiting.get(data.id) as Waiting;
         this.#waiting.delete(data.id);
-        waiting.resolve(data.output);
+        if (data.failure) waiting.reject(new Error(data.failure));
+        else waiting.resolve(data.output);
       };
       worker.onerror = (event) => {
         for (const waiting of this.#waiting.values()) waiting.reject(new Error(event.message));
@@ -244,24 +274,10 @@ export function sha1Identity(bytes: Uint8Array): string {
   );
 }
 
-export function browserPlatform(
-  storage: OpfsStorage,
-  gzipPool: GzipPool | null,
-  gzipOperatingSystemByte: number | null,
-): TilesetPlatform {
-  const compress = gzipPool
-    ? (bytes: Uint8Array) => gzipPool.gzip(bytes)
-    : (bytes: Uint8Array) => gzipWithCompressionStream(bytes);
+export function browserPlatform(storage: OpfsStorage, gzipPool: GzipPool | null): TilesetPlatform {
   return {
     digest: sha1Identity,
-    gzip:
-      gzipOperatingSystemByte === null
-        ? compress
-        : (bytes) =>
-            compress(bytes).then((output) => {
-              output[9] = gzipOperatingSystemByte;
-              return output;
-            }),
+    gzip: gzipPool ? (bytes) => gzipPool.gzip(bytes) : (bytes) => gzipWithCompressionStream(bytes),
     storage,
     yield: messagePortYield(),
   };

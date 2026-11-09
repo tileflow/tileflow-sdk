@@ -1,6 +1,7 @@
 const parameters = new URLSearchParams(location.search);
 const dataset = parameters.get('dataset') as string;
-const directoryName = `tileflow-build-${dataset}`;
+// Unique per run, because a tab that never finished keeps its files locked.
+const directoryName = `tileflow-build-${dataset}-${Date.now()}`;
 
 async function post(path: string, body: unknown): Promise<void> {
   await fetch(path, {
@@ -30,15 +31,14 @@ async function run(): Promise<void> {
   const finished = new Promise<Record<string, unknown>>((resolve, reject) => {
     worker.onerror = (event) => reject(new Error(event.message));
     worker.onmessage = ({data}: MessageEvent<Record<string, unknown>>) => {
+      if (data.phase === 'progress') void post('/progress', data);
       if (data.phase === 'done') resolve(data);
       else if (data.phase === 'failed') reject(new Error(String(data.message)));
     };
   });
-  const gzipByte = parameters.get('gzipOs');
   worker.postMessage({
     directory: directoryName,
     generatorVersion: parameters.get('version'),
-    gzipOperatingSystemByte: gzipByte === null ? null : Number(gzipByte),
     gzipWorkers: Number(parameters.get('gzipWorkers') ?? 0),
     input,
     layer: dataset,
@@ -60,6 +60,11 @@ async function run(): Promise<void> {
     await root.removeEntry(`${dataset}.input`);
   }
 }
+
+// When the harness has gone, stop the workers instead of leaving a tab running.
+setInterval(() => {
+  fetch('/').catch(() => location.replace('about:blank'));
+}, 5000);
 
 run().catch((error: unknown) => {
   void post('/failed', {

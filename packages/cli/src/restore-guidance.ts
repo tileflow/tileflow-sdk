@@ -1,4 +1,7 @@
+import {type Command, CommanderError} from 'commander';
 import pc from 'picocolors';
+import {defaultTileflowApiUrl} from '@tileflow/dev/config';
+import {configureJsonErrors} from './cli-program';
 import {emitFailure} from './hosted-team';
 
 /**
@@ -27,10 +30,28 @@ export function emitGuidedFailure(
   if (!json) printNextSteps(nextSteps, console.error);
 }
 
-const credentialSteps = (scope: string): NextStep[] => [
+export function emitRestoreFailure(
+  json: boolean | undefined,
+  code: string,
+  message: string,
+  context: Record<string, unknown> = {},
+) {
+  emitGuidedFailure(json, code, message, [], context);
+}
+
+/** The origin comes from the resolved authority. Quote uncommon host characters for the shell. */
+export function apiOriginOption(origin: string, defaultOrigin = defaultTileflowApiUrl): string {
+  if (origin === defaultOrigin) return '';
+  const argument = /^[A-Za-z0-9.:/-]+$/u.test(origin)
+    ? origin
+    : "'" + origin.replaceAll("'", "'\\''") + "'";
+  return ` --api-url ${argument}`;
+}
+
+const credentialSteps = (scope: string, originOption: string): NextStep[] => [
   {
     description: `Use a credential with the ${scope} scope, or sign in as someone who can manage this Team's content.`,
-    command: 'tileflow login',
+    command: `tileflow login${originOption}`,
   },
 ];
 
@@ -38,9 +59,11 @@ const credentialSteps = (scope: string): NextStep[] => [
 export function deploymentRestoreSteps(input: {
   code: string;
   mapId: string;
-  version?: number;
+  apiUrl: string;
 }): NextStep[] {
-  const list = `tileflow deployments list --map-id ${input.mapId}`;
+  const origin = apiOriginOption(input.apiUrl);
+  const target = `--map-id ${input.mapId}${origin}`;
+  const list = `tileflow deployments list ${target}`;
   switch (input.code) {
     case 'TF_DEPLOYMENT_CURRENT_CHANGED':
       return [
@@ -57,7 +80,10 @@ export function deploymentRestoreSteps(input: {
     case 'TF_DEPLOYMENT_ASSETS_UNAVAILABLE':
       return [
         {description: 'Choose another retained version.', command: list},
-        {description: 'Or publish the map again from its repository.', command: 'tileflow deploy'},
+        {
+          description: 'Or publish the map again from its repository.',
+          command: `tileflow deploy ${target}`,
+        },
       ];
     case 'TF_DEPLOYMENT_SOURCE_INCOMPATIBLE':
       return [
@@ -65,11 +91,10 @@ export function deploymentRestoreSteps(input: {
         {
           description:
             'Or publish the data named in this error to its tileset, then repeat the restore.',
-          command: 'tileflow tileset publish <archive> --id <tileset>',
         },
       ];
     case 'nothing_published':
-      return [{description: 'Publish the map first.', command: 'tileflow deploy'}];
+      return [{description: 'Publish the map first.', command: `tileflow deploy ${target}`}];
     case 'TF_MAP_UNAVAILABLE':
       return [
         {
@@ -80,7 +105,7 @@ export function deploymentRestoreSteps(input: {
     case 'TF_DEPLOYMENT_RESTORE_FORBIDDEN':
     case 'http_401':
     case 'http_403':
-      return credentialSteps('styles:write');
+      return credentialSteps('styles:write', origin);
     default:
       return [{description: 'Check what is live before trying again.', command: list}];
   }
@@ -99,6 +124,7 @@ const windingDownStates = new Set(['aborting', 'expiring', 'publishing', 'reject
 export function tilesetRestoreSteps(input: {
   abort: string;
   attemptedVersion: number | undefined;
+  origin: string;
   pinned: boolean;
   uncertain: boolean;
   code: string;
@@ -147,7 +173,6 @@ export function tilesetRestoreSteps(input: {
       return [
         {
           description: 'There is nothing to go back to. Publish a corrected archive instead.',
-          command: 'tileflow tileset publish <archive> --id <tileset>',
         },
       ];
     case 'TF_TILESET_CURRENT_VERSION_CHANGED':
@@ -165,15 +190,46 @@ export function tilesetRestoreSteps(input: {
         {
           description:
             'Restore or redeploy the live Map that needs the newer data, then repeat this restore.',
-          command: 'tileflow deployments list --map-id <map>',
         },
       ];
     case 'TF_TILESET_PURGING':
       return [{description: 'This tileset is being purged, so it cannot be restored.'}];
     case 'http_401':
     case 'http_403':
-      return credentialSteps('tilesets:write');
+      return credentialSteps('tilesets:write', input.origin);
     default:
       return [{description: 'Check the tileset before trying again.', command: input.status}];
+  }
+}
+
+export function isRestoreJsonCommand(args: readonly string[]) {
+  const [group, subcommand, operation] = args;
+  return (
+    args.includes('--json') &&
+    ((group === 'deployments' && (subcommand === 'list' || subcommand === 'restore')) ||
+      (group === 'tileset' &&
+        (subcommand === 'restore' || (subcommand === 'upload' && operation === 'abort'))))
+  );
+}
+
+export async function parseRestoreJson(program: Command): Promise<void> {
+  configureJsonErrors(program);
+  try {
+    await program.parseAsync();
+  } catch (error) {
+    if (error instanceof CommanderError) {
+      if (error.exitCode !== 0)
+        emitRestoreFailure(
+          true,
+          'invalid_command_arguments',
+          'Invalid command arguments. Check the command help.',
+        );
+    } else {
+      emitRestoreFailure(
+        true,
+        'hosted_request_failed',
+        'The command could not complete its Hosted request.',
+      );
+    }
   }
 }

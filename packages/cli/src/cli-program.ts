@@ -10,3 +10,8 @@ export function createCliProgram(): Command {
     .showSuggestionAfterError()
     .addHelpText('after', '\n  -V, --version  output the version number\n');
 }
+
+export function configureJsonErrors(command: Command): void {
+  command.exitOverride().configureOutput({writeErr: () => {}});
+  for (const child of command.commands) configureJsonErrors(child);
+}

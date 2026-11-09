@@ -318,7 +318,9 @@ ends with `TF_TILESET_DELIVERY_PENDING` or its outcome is uncertain, follow the 
 It passes `--expected-current-version <n>` from the original operation. The server can repair pending
 delivery or report that the version has already changed. Check status before starting a new restore.
 To cancel the upload named in a refusal, use its `--upload-id <id>` step. If that upload has ended,
-the command leaves any replacement upload alone.
+the command leaves any replacement upload alone. While cancellation is pending, the command reports
+`aborted: false`, the returned upload state and a status check. Recovery commands carry the selected
+API origin and resource. Team-scoped commands keep the selected Team or the opaque tileset ID.
 
 ## Icon lock commands
 

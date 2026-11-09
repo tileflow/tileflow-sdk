@@ -870,7 +870,7 @@ function numericDetails(value: unknown) {
   return Object.freeze(details);
 }
 
-function parseUploadSession(value: unknown): TeamTilesetUploadSession {
+export function parseUploadSession(value: unknown): TeamTilesetUploadSession {
   return uploadSessionSchema.parse(value);
 }
 

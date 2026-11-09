@@ -634,6 +634,7 @@ function storesDetail(version: number) {
 function managementSession(
   t: import('node:test').TestContext,
   respond: (path: string, init: RequestInit) => Response,
+  accountOrigin?: string,
 ) {
   const originalExitCode = process.exitCode;
   t.after(() => {
@@ -661,10 +662,24 @@ function managementSession(
     registerTilesetCommands(program, {
       defaultApiUrl: 'https://api.example.test',
       loadAuthConfig: async () => {
-        throw new Error('Unexpected account lookup');
+        if (!accountOrigin) throw new Error('Unexpected account lookup');
+        return {
+          version: 2,
+          sessions: {
+            [accountOrigin]: {
+              account: {id: 'usr_ada', email: 'ada@example.test', name: 'Ada'},
+              accountSession: `tf_session_${'a'.repeat(64)}`,
+              apiOrigin: accountOrigin,
+              createdAt: new Date().toISOString(),
+              expiresAt: new Date(Date.now() + 3600000).toISOString(),
+              sessionId: 'cli_ada',
+            },
+          },
+        };
       },
     });
-    await program.parseAsync([...args, '--api-key', `tf_live_${'a'.repeat(48)}`, '--json'], {
+    const auth = accountOrigin ? [] : ['--api-key', `tf_live_${'a'.repeat(48)}`];
+    await program.parseAsync([...args, ...auth, '--json'], {
       from: 'user',
     });
     assert.equal(Boolean(stdout) !== Boolean(stderr), true, 'expected a single JSON document');
@@ -716,7 +731,7 @@ for (const delivered of [true, false]) {
     assert.equal(swaps, 1);
     if (delivered) {
       assert.equal(second.error.code, 'TF_TILESET_CURRENT_VERSION_CHANGED');
-      assert.deepEqual(nextCommands(second.error), ['tileflow tileset status stores']);
+      assert.deepEqual(nextCommands(second.error), [`tileflow tileset status ${storesId}`]);
     } else {
       assert.equal(second.tileset.outcome, 'repaired');
     }
@@ -736,8 +751,8 @@ for (const failure of ['transport', 'unreadable', 'server', 'unavailable'] as co
     });
     const {error} = await run(['tileset', 'restore', 'stores']);
     assert.deepEqual(nextCommands(error), [
-      'tileflow tileset status stores',
-      'tileflow tileset restore stores --expected-current-version 9',
+      `tileflow tileset status ${storesId}`,
+      `tileflow tileset restore ${storesId} --expected-current-version 9`,
     ]);
   });
 }
@@ -776,10 +791,102 @@ test('abort keeps the upload identity from the restore refusal', async (t) => {
   });
   const {error} = await run(['tileset', 'restore', 'stores']);
   const [abort] = nextCommands(error);
-  assert.equal(abort, 'tileflow tileset upload abort stores --upload-id upl_a');
+  assert.equal(abort, `tileflow tileset upload abort ${storesId} --upload-id upl_a`);
   const refused = await run(abort!.split(' ').slice(1));
   assert.equal(refused.error.code, 'tileset_upload_changed');
   assert.equal(deletes, 0);
+});
+
+for (const state of ['aborting', 'aborted', 'wrong-id', 'invalid'] as const) {
+  test(`abort reports the verified upload result for ${state}`, async (t) => {
+    const id = 'tsu_0123456789abcdef0123456789abcdef';
+    const run = managementSession(t, (path, init) => {
+      if (init.method === 'DELETE') {
+        if (state === 'invalid') return Response.json({state: 'aborted', uploadId: id});
+        return Response.json(
+          uploadSession(
+            {
+              byteCount: 42,
+              contentHash: 'a'.repeat(64),
+              contentHashAlgorithm: 'sha256-fixed-parts-v1',
+              parts: [],
+              partSize: 16_777_216,
+            },
+            {
+              state: state === 'wrong-id' ? 'aborted' : state,
+              uploadId: state === 'wrong-id' ? 'tsu_11111111111111111111' : id,
+              partCount: 1,
+            },
+          ),
+        );
+      }
+      if (path.endsWith('/uploads'))
+        return Response.json({schemaVersion: 1, upload: {...activeUpload, id}});
+      return storesDetail(1);
+    });
+    const document = await run(['tileset', 'upload', 'abort', 'stores', '--upload-id', id]);
+    if (state === 'wrong-id' || state === 'invalid') {
+      assert.ok(document.error.code);
+      assert.ok(Array.isArray(document.error.nextSteps));
+    } else {
+      assert.equal(document.aborted, state === 'aborted');
+      assert.equal(document.upload.state, state);
+      if (state === 'aborting')
+        assert.match(nextCommands(document).join(' '), /^tileflow tileset status \S+$/u);
+    }
+  });
+}
+
+test('a Team restore keeps the selected origin and Team in every continuation', async (t) => {
+  const origin = 'https://staging.example.test';
+  const team = {id: 'org_acme', name: 'Acme', slug: 'acme'};
+  const env = ['CI', 'GITHUB_ACTIONS', 'GITLAB_CI', 'TILEFLOW_API_KEY'] as const;
+  for (const name of env) {
+    const before = process.env[name];
+    delete process.env[name];
+    t.after(() => {
+      if (before !== undefined) process.env[name] = before;
+    });
+  }
+  const run = managementSession(
+    t,
+    (path, init) => {
+      if (path === '/v1/cli/teams') return Response.json({schemaVersion: 1, teams: [team]});
+      if (path === '/v1/cli/team-capabilities')
+        return Response.json({
+          schemaVersion: 1,
+          capability: `tf_cap_${'1'.repeat(80)}`,
+          expiresAt: new Date(Date.now() + 300000).toISOString(),
+          reference: '@acme',
+          scopes: ['tilesets:write'],
+          team,
+        });
+      if (init.method === 'POST')
+        return Response.json(
+          {code: 'TF_TILESET_UPLOAD_IN_PROGRESS', upload: activeUpload},
+          {status: 409},
+        );
+      return storesDetail(2);
+    },
+    origin,
+  );
+  const {error} = await run([
+    'tileset',
+    'restore',
+    'stores',
+    '--team',
+    '@acme',
+    '--api-url',
+    origin,
+  ]);
+  assert.equal(error.code, 'TF_TILESET_UPLOAD_IN_PROGRESS');
+  const commands = nextCommands(error);
+  assert.ok(commands.length > 0);
+  for (const command of commands) {
+    assert.match(command, /--team @acme/u);
+    assert.ok(command.includes(`--api-url ${origin}`));
+    assert.doesNotMatch(command, /tf_live|tf_cap|tf_session|--api-key/u);
+  }
 });
 
 function inventoryItem(logicalName: string) {

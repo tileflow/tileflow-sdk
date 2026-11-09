@@ -14,8 +14,10 @@ import {
   resolveTeamAuthority,
 } from './hosted-team';
 import {
+  apiOriginOption,
   type BlockingUpload,
   emitGuidedFailure,
+  emitRestoreFailure,
   printNextSteps,
   tilesetRestoreSteps,
 } from './restore-guidance';
@@ -24,6 +26,7 @@ import {
   createHostedTeamTilesetUploadTransport,
   inspectNodeTeamTilesetArchive,
   openNodeTeamTilesetArchive,
+  parseUploadSession,
   type PositionedUploadFile,
   prepareTeamTilesetUpload,
   publishPreparedTeamTilesetUpload,
@@ -286,7 +289,7 @@ export function registerTilesetCommands(
     .option('--json', 'print deterministic schema-version-1 JSON')
     .action(
       async (id: string, options: HostedTilesetOptions & {expectedCurrentVersion?: string}) => {
-        const commands = tilesetCommands(id, options);
+        let commands: ReturnType<typeof tilesetCommands> | undefined;
         let attemptedVersion: number | undefined;
         const pinned = options.expectedCurrentVersion !== undefined;
         const refuse = (
@@ -299,12 +302,21 @@ export function registerTilesetCommands(
             options.json,
             code,
             message,
-            tilesetRestoreSteps({...commands, code, upload, attemptedVersion, pinned, uncertain}),
+            commands
+              ? tilesetRestoreSteps({
+                  ...commands,
+                  code,
+                  upload,
+                  attemptedVersion,
+                  pinned,
+                  uncertain,
+                })
+              : [],
             upload ? {upload} : {},
           );
         try {
           if (!isTilesetId(id))
-            return emitFailure(options.json, 'invalid_tileset_id', 'Tileset ID is invalid.');
+            return emitRestoreFailure(options.json, 'invalid_tileset_id', 'Tileset ID is invalid.');
           const requestedVersion = Number(options.expectedCurrentVersion);
           if (
             options.expectedCurrentVersion !== undefined &&
@@ -319,15 +331,23 @@ export function registerTilesetCommands(
               [],
             );
           }
-          const authority = await resolveTeamAuthority(options, ['tilesets:write'], dependencies);
+          const authority = await resolveTeamAuthority(
+            options,
+            ['tilesets:write'],
+            dependencies,
+            emitRestoreFailure,
+          );
           if (!authority) return;
+          commands = tilesetCommands(id, authority, dependencies.defaultApiUrl);
           const path = `/v1/tilesets/${encodeURIComponent(id)}`;
           const detail = await authorizedTeamRequest(authority, path, 'GET');
           if (!detail.ok) {
             return refuse(`http_${detail.status}`, `Tileset status failed (${detail.status}).`);
           }
-          const currentVersion = tilesetDetailResponseSchema.parse(detail.body).tileset
-            .currentVersion;
+          const selected = tilesetDetailResponseSchema.parse(detail.body).tileset;
+          const currentVersion = selected.currentVersion;
+          if (!authority.team)
+            commands = tilesetCommands(selected.id, authority, dependencies.defaultApiUrl);
           const expectedCurrentVersion = pinned ? requestedVersion : currentVersion;
           if (expectedCurrentVersion === null) {
             return refuse('no_previous_version', `${id} has no previous version to restore.`);
@@ -394,7 +414,7 @@ export function registerTilesetCommands(
               undefined,
               true,
             );
-          emitFailure(options.json, 'tileset_restore_failed', 'Tileset restore failed.');
+          emitRestoreFailure(options.json, 'tileset_restore_failed', 'Tileset restore failed.');
         }
       },
     );
@@ -411,13 +431,18 @@ export function registerTilesetCommands(
     .addOption(hostedApiKeyOption('Team data API key'))
     .option('--json', 'print deterministic schema-version-1 JSON')
     .action(async (id: string, options: HostedTilesetOptions & {uploadId?: string}) => {
-      const commands = tilesetCommands(id, options);
-      const check = [{description: 'Check the tileset.', command: commands.status}];
       try {
         if (!isTilesetId(id))
-          return emitFailure(options.json, 'invalid_tileset_id', 'Tileset ID is invalid.');
-        const authority = await resolveTeamAuthority(options, ['tilesets:write'], dependencies);
+          return emitRestoreFailure(options.json, 'invalid_tileset_id', 'Tileset ID is invalid.');
+        const authority = await resolveTeamAuthority(
+          options,
+          ['tilesets:write'],
+          dependencies,
+          emitRestoreFailure,
+        );
         if (!authority) return;
+        let commands = tilesetCommands(id, authority, dependencies.defaultApiUrl);
+        const check = () => [{description: 'Check the tileset.', command: commands.status}];
         const detail = await authorizedTeamRequest(
           authority,
           `/v1/tilesets/${encodeURIComponent(id)}`,
@@ -428,10 +453,12 @@ export function registerTilesetCommands(
             options.json,
             `http_${detail.status}`,
             `Tileset status failed (${detail.status}).`,
-            check,
+            check(),
           );
         }
         const tilesetId = tilesetDetailResponseSchema.parse(detail.body).tileset.id;
+        if (!authority.team)
+          commands = tilesetCommands(tilesetId, authority, dependencies.defaultApiUrl);
         const uploads = `/v1/tilesets/${encodeURIComponent(tilesetId)}/uploads`;
         const active = await authorizedTeamRequest(authority, uploads, 'GET');
         if (!active.ok) {
@@ -439,7 +466,7 @@ export function registerTilesetCommands(
             options.json,
             `http_${active.status}`,
             `Reading the upload failed (${active.status}).`,
-            check,
+            check(),
           );
         }
         const {upload} = activeUploadResponseSchema.parse(active.body);
@@ -468,7 +495,7 @@ export function registerTilesetCommands(
             options.json,
             'tileset_upload_changed',
             'The active upload changed. Nothing was aborted.',
-            check,
+            check(),
             {upload},
           );
         }
@@ -495,22 +522,47 @@ export function registerTilesetCommands(
             {upload},
           );
         }
+        const result = parseUploadSession(response.body);
+        if (result.state === 'published' || result.uploadId !== upload.id) {
+          return emitGuidedFailure(
+            options.json,
+            'tileset_upload_abort_unconfirmed',
+            'The cancellation response did not identify the requested upload.',
+            check(),
+          );
+        }
+        const aborted = result.state === 'aborted';
+        const nextSteps = aborted ? proceed : check();
+        const updated = {
+          ...upload,
+          state: result.state,
+          byteCount: result.byteCount,
+          expiresAt: result.expiresAt,
+        };
         if (options.json) {
           return emitJson({
-            aborted: true,
+            aborted,
             command: 'tileset upload abort',
-            nextSteps: proceed,
+            nextSteps,
             ok: true,
             schemaVersion: 1,
-            upload,
+            upload: updated,
           });
         }
-        console.log(
-          `${pc.green('✓')} Aborted upload ${upload.id} on ${pc.bold(id)}. No published version changed.`,
-        );
-        printNextSteps(proceed);
+        const ended = result.state === 'expired' || result.state === 'rejected';
+        const message = aborted
+          ? `Aborted upload ${upload.id} on ${id}.`
+          : ended
+            ? `Upload ${upload.id} is ${result.state}.`
+            : `Cancellation of upload ${upload.id} is pending (${result.state}).`;
+        console.log(message);
+        printNextSteps(nextSteps);
       } catch {
-        emitFailure(options.json, 'tileset_upload_abort_failed', 'Aborting the upload failed.');
+        emitRestoreFailure(
+          options.json,
+          'tileset_upload_abort_failed',
+          'Aborting the upload failed.',
+        );
       }
     });
 
@@ -574,12 +626,14 @@ export function registerTilesetCommands(
 }
 
 /** The exact commands a next step names, carrying the same tileset and Team as this one. */
-function tilesetCommands(id: string, options: HostedTilesetOptions) {
-  const team = options.team ? ` --team ${options.team}` : '';
+function tilesetCommands(id: string, authority: HostedTeamAuthority, defaultApiUrl: string) {
+  const origin = apiOriginOption(authority.apiOrigin, defaultApiUrl);
+  const target = `${id}${authority.team ? ` --team @${authority.team.slug}` : ''}${origin}`;
   return {
-    abort: `tileflow tileset upload abort ${id}${team}`,
-    restore: `tileflow tileset restore ${id}${team}`,
-    status: `tileflow tileset status ${id}${team}`,
+    abort: `tileflow tileset upload abort ${target}`,
+    restore: `tileflow tileset restore ${target}`,
+    status: `tileflow tileset status ${target}`,
+    origin,
   };
 }
 

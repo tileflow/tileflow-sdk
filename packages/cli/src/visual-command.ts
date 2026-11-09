@@ -34,6 +34,7 @@ import {
   writeAtomicFileSet,
 } from './capture-output';
 import {withTileflowConfigSecretsHidden} from './config-execution';
+import {registerVisualApprovalCommands} from './visual-approval-command';
 import {
   assertTileflowVisualRegionFits,
   parseTileflowVisualRegion,
@@ -218,6 +219,7 @@ export function registerVisualCommands(
         process.exitCode = 1;
       }
     });
+  registerVisualApprovalCommands(visual);
   return visual;
 }
 

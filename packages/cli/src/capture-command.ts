@@ -139,6 +139,8 @@ export type TileflowCaptureFailureJsonV1 = {
     | 'visual.analyze'
     | 'visual.diff'
     | 'visual.update'
+    | 'visual.report'
+    | 'visual.approve'
     | 'compare';
   status: 'failed';
   code: string;

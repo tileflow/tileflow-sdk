@@ -23,8 +23,11 @@ export async function runApprove(env = process.env, provider = createProvider(en
   if (!(await provider.canApprove(author))) {
     return refuse('only people with write access to this repository can approve.');
   }
-  const {headSha, open} = await provider.getChangeRequest(number);
+  const {author: openedBy, headSha, open} = await provider.getChangeRequest(number);
   if (!open) return refuse(`this ${provider.changeRequestNoun} is closed.`);
+  if (env.TILEFLOW_REVIEW_SEPARATE_APPROVER === 'true' && sameAccount(author, openedBy)) {
+    return refuse(`the person who opened this ${provider.changeRequestNoun} cannot approve it.`);
+  }
   if (!headSha.startsWith(requestedSha)) {
     return refuse(
       `the command names ${requestedSha}, but the current commit is ${headSha.slice(0, 12)}. Review the latest report.`,
@@ -65,3 +68,5 @@ export async function runApprove(env = process.env, provider = createProvider(en
     `Approved ${scenes.length} ${scenes.length === 1 ? 'scene' : 'scenes'} at ${headSha.slice(0, 12)}. Baselines update when this ${provider.changeRequestNoun} merges.`,
   );
 }
+
+const sameAccount = (left, right) => left.toLowerCase() === right?.toLowerCase();

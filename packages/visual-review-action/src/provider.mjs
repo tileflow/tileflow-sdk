@@ -16,7 +16,7 @@ import {assertGitLabCaptureAllowed, createGitLabProvider} from './gitlab/provide
  * - `changeRequestNoun`: what the host calls it in sentences, such as `pull request`.
  * - `reference(number)`: how the host writes a link to it, such as `#7` or `!7`.
  * - `closedChangeRequests()`: `{number, merged}` for each closed one still holding evidence.
- * - `getChangeRequest(number)`: `{number, headSha, baseBranch, open}`.
+ * - `getChangeRequest(number)`: `{number, author, headSha, baseBranch, open}`.
  * - `listChangedFiles(number)`: changed paths, from the host and never from the checkout.
  * - `isAutomationFile(path)`: whether a path can change what the host's CI runs.
  * - `comment(number, body)` and `upsertReport(number, body)`: the second keeps one sticky report.

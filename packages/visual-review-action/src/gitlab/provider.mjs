@@ -156,6 +156,7 @@ export function createGitLabProvider(env) {
       const mergeRequest = await gitlab.get(`/merge_requests/${number}`);
       return {
         number,
+        author: mergeRequest.author?.username,
         headSha: mergeRequest.sha,
         baseBranch: mergeRequest.target_branch,
         open: mergeRequest.state === 'opened',

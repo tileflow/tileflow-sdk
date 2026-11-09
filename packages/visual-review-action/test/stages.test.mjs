@@ -321,6 +321,24 @@ describe('publishing stages', () => {
     assert.equal(github.files('tileflow-visual-review').has('approvals/pr-7.json'), false);
   });
 
+  it('refuses the pull request author when a separate approver is required', async () => {
+    github.pulls.get(7).user = {login: 'Maintainer'};
+    await writeArtifact(directory, report());
+    await runReport(env);
+    await runApprove({...env, TILEFLOW_REVIEW_SEPARATE_APPROVER: 'true'});
+    assert.equal(process.exitCode, 1);
+    assert.equal(github.files('tileflow-visual-review').has('approvals/pr-7.json'), false);
+    assert.match(github.comments.at(-1).body, /opened this pull request cannot approve/);
+  });
+
+  it('accepts someone else when a separate approver is required', async () => {
+    github.pulls.get(7).user = {login: 'contributor'};
+    await writeArtifact(directory, report());
+    await runReport(env);
+    await runApprove({...env, TILEFLOW_REVIEW_SEPARATE_APPROVER: 'true'});
+    assert.equal(lastStatus().state, 'success');
+  });
+
   it('refuses an approval for a commit that is no longer the head', async () => {
     await writeArtifact(directory, report());
     await runReport(env);
@@ -634,6 +652,15 @@ describe('GitLab provider', () => {
     assert.equal(process.exitCode, 1);
     assert.equal(lastStatus().state, 'failed');
     assert.match(gitlab.notes.at(-1).body, /Approval not recorded/);
+  });
+
+  it('refuses the merge request author when a separate approver is required', async () => {
+    gitlab.mergeRequests.get(7).author = {username: env.GITLAB_USER_LOGIN};
+    await writeArtifact(directory, report());
+    await runReport(env);
+    await runApprove({...env, TILEFLOW_REVIEW_SEPARATE_APPROVER: 'true'});
+    assert.equal(process.exitCode, 1);
+    assert.match(gitlab.notes.at(-1).body, /opened this merge request cannot approve/);
   });
 
   it('records nothing unless the job was started by hand', async () => {

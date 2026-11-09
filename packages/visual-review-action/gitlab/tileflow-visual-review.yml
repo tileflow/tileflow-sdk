@@ -21,6 +21,9 @@ spec:
       default: '0.0001'
     evidence_branch:
       default: tileflow-visual-review
+    separate_approver:
+      description: Set to true so the person who opened a merge request cannot approve it.
+      default: 'false'
 ---
 .tileflow-visual-review-base:
   stage: $[[ inputs.stage ]]
@@ -30,6 +33,7 @@ spec:
     TILEFLOW_REVIEW_WORKING_DIRECTORY: $[[ inputs.working_directory ]]
     TILEFLOW_REVIEW_BASELINE_DIR: $[[ inputs.baseline_dir ]]
     TILEFLOW_REVIEW_EVIDENCE_BRANCH: $[[ inputs.evidence_branch ]]
+    TILEFLOW_REVIEW_SEPARATE_APPROVER: $[[ inputs.separate_approver ]]
     TILEFLOW_REVIEW_OUTPUT: $CI_PROJECT_DIR/.tileflow-visual-review
     TILEFLOW_REVIEW_PULL_REQUEST: $CI_MERGE_REQUEST_IID
     TILEFLOW_REVIEW_DRY_RUN: 'false'

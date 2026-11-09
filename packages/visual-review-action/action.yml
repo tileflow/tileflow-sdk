@@ -26,6 +26,9 @@ inputs:
       Largest share of exactly changed pixels treated as renderer noise, and only when no pixel
       changed perceptually. Use 0 to fail on any exact difference.
     default: '0.0001'
+  separate-approver:
+    description: Set to true on the approve mode so the person who opened a pull request cannot approve it.
+    default: 'false'
   evidence-branch:
     description: Branch that stores review images, approvals and proposed baselines.
     default: tileflow-visual-review
@@ -126,6 +129,7 @@ runs:
         TILEFLOW_REVIEW_WORKING_DIRECTORY: ${{ inputs.working-directory }}
         TILEFLOW_REVIEW_BASELINE_DIR: ${{ inputs.baseline-dir }}
         TILEFLOW_REVIEW_EVIDENCE_BRANCH: ${{ inputs.evidence-branch }}
+        TILEFLOW_REVIEW_SEPARATE_APPROVER: ${{ inputs.separate-approver }}
         TILEFLOW_REVIEW_DRY_RUN: ${{ inputs.dry-run }}
         TILEFLOW_REVIEW_PULL_REQUEST: ${{ inputs.pull-request }}
         TILEFLOW_REVIEW_HEAD_SHA: ${{ inputs.head-sha }}

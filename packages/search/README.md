@@ -15,9 +15,9 @@ Use Node.js 22, a browser or another runtime with `fetch`. Live requests require
 Search and a Team credential with `geocoding:read`: a publishable credential in websites and apps,
 or a server credential on your server.
 
-Free Teams, Starter trials and complimentary access run Search within their period's API units, up
+Free Teams, Pro trials and complimentary access run Search within their period's API units, up
 to 100,000 Search units, while Search without payment is open; a finite evaluation grant can extend
-them. Paid Starter runs Search within its shared API allowance and excess.
+them. Paid Pro runs Search within its shared API allowance and excess.
 Installing this package does not enable the service or grant access.
 
 ## Call Search from a browser or app
@@ -246,7 +246,7 @@ retention, Advanced features and caller-selected provider options are rejected b
 | Each Nearby page                      |               10 |             30 |
 
 `searchOperationUnits(operation, include)` returns the same weights. Valid empty responses consume
-the same units. Three autocomplete calls and one resolution consume 22 units. These are part of Starter's shared API allowance, with no separate Search credits or
+the same units. Three autocomplete calls and one resolution consume 22 units. These are part of Pro's shared API allowance, with no separate Search credits or
 commercial search session. Hovering, displaying results and moving a map do not call Search.
 
 `GeocodingError` exposes `status`, nullable `code`, nullable `requestId` and nullable bounded
@@ -255,10 +255,10 @@ cancellation. Network failures can leave server completion uncertain.
 
 | Code                                                             | Action                                                                |
 | ---------------------------------------------------------------- | --------------------------------------------------------------------- |
-| `GEOCODING_PLAN_UNAVAILABLE`                                     | Use paid Starter or request an eligible evaluation.                   |
+| `GEOCODING_PLAN_UNAVAILABLE`                                     | Use paid Pro or request an eligible evaluation.                       |
 | `GEOCODING_EVALUATION_REQUIRED` / `GEOCODING_EVALUATION_EXPIRED` | Ask the Team's operator to review evaluation access.                  |
 | `GEOCODING_EVALUATION_EXHAUSTED`                                 | Stop requests; review evaluation limits.                              |
-| `GEOCODING_UNPAID_LIMIT_REACHED`                                 | Search without payment reached its period limit; upgrade to Starter.  |
+| `GEOCODING_UNPAID_LIMIT_REACHED`                                 | Search without payment reached its period limit; upgrade to Pro.      |
 | `GEOCODING_UNPAID_BUDGET_EXHAUSTED`                              | Search without payment is paused; retry after `retryAfterSeconds`.    |
 | `GEOCODING_SUSPENDED`                                            | Search is suspended for the Team; contact support.                    |
 | `GEOCODING_SPENDING_LIMIT_REACHED`                               | The Team reached its spending limit; raise it or wait for the period. |

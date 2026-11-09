@@ -72,7 +72,7 @@ export function resolveCrs(statement: CrsStatement, reproject: boolean): Resolve
   // `+nadgrids=@null` is how proj strings spell Web Mercator's spherical shortcut: no shift is correct.
   const hasShift =
     datumType === 1 || datumType === 2 || datumType === 4 || definition.includes('+nadgrids=@null');
-  const coincident = !hasShift && coincidentDatumPattern.test(datum);
+  const coincident = (!hasShift || datumType === 4) && coincidentDatumPattern.test(datum);
   if (!hasShift && !coincident) {
     throw new TilesetBuildError(
       'TF_TILESET_BUILD_DATUM_UNSUPPORTED',
@@ -211,8 +211,10 @@ function epsgDefinition(code: number): string | null {
   if (code === 3857 || code === 900913) {
     return '+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +no_defs';
   }
-  if (code === 4258) return '+proj=longlat +ellps=GRS80 +datum=none +title=ETRS89 +no_defs';
-  if (code === 4269) return '+proj=longlat +ellps=GRS80 +datum=none +title=NAD83 +no_defs';
+  if (code === 4258)
+    return '+proj=longlat +ellps=GRS80 +datum=ETRS89 +towgs84=0,0,0,0,0,0,0 +no_defs';
+  if (code === 4269)
+    return '+proj=longlat +ellps=GRS80 +datum=NAD83 +towgs84=0,0,0,0,0,0,0 +no_defs';
   const zone = code % 100;
   if (code >= 32601 && code <= 32660) return `+proj=utm +zone=${zone} +datum=WGS84 +no_defs`;
   if (code >= 32701 && code <= 32760) return `+proj=utm +zone=${zone} +south +datum=WGS84 +no_defs`;

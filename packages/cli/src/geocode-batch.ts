@@ -20,6 +20,7 @@ export async function geocodeCsv(
     confirm(): Promise<boolean>;
     log(message: string): void;
     fetch?: typeof fetch;
+    wait?: (ms: number) => Promise<void>;
   },
 ) {
   if (!options.apiKey)
@@ -67,16 +68,21 @@ export async function geocodeCsv(
 
     checkpoint.acceptEstimate(unconfirmed > 0);
     if (estimate) {
-      await dispatchRows(checkpoint.jobs, Number(options.concurrency), async (address) =>
-        geocode(
-          {
-            query: address,
-            limit: 1,
-            retention: 'persistent',
-            expectedUnits: estimate.unitsPerRequest,
-          },
-          {...credentials, signal: AbortSignal.timeout(30_000)},
-        ),
+      await dispatchRows(
+        checkpoint.jobs,
+        Number(options.concurrency),
+        io.wait ?? delay,
+        io.log,
+        async (address) =>
+          geocode(
+            {
+              query: address,
+              limit: 1,
+              retention: 'persistent',
+              expectedUnits: estimate.unitsPerRequest,
+            },
+            {...credentials, signal: AbortSignal.timeout(30_000)},
+          ),
       );
     }
 
@@ -101,33 +107,83 @@ export async function geocodeCsv(
 async function dispatchRows(
   jobs: ReturnType<typeof openGeocodingCheckpoint>['jobs'],
   concurrency: number,
+  wait: (ms: number) => Promise<void>,
+  log: (message: string) => void,
   lookup: (address: string) => ReturnType<typeof geocode>,
 ) {
-  let stopped = false;
-  async function worker() {
-    while (!stopped) {
-      const address = jobs.claim();
-      if (address === undefined) return;
-      try {
-        const response = await lookupWithRetry(address, lookup, () => stopped);
-        jobs.complete(address, response);
-      } catch (error) {
-        stopped = true;
-        // A transport failure, unreadable success or lost acknowledgment may already be billed.
-        if (confirmedFailure(error)) jobs.release(address);
-        else
-          throw new Error(
-            'Usage is unconfirmed. Check Team usage before resubmitting with --retry-unconfirmed.',
-            {cause: error},
-          );
-        throw error;
+  const retries = new Map<string, number>();
+  let waitsWithoutProgress = 0;
+
+  for (;;) {
+    let stopped = false;
+    let burst: {until: number; error: GeocodingError} | undefined;
+
+    async function worker() {
+      while (!stopped) {
+        const address = jobs.claim();
+        if (address === undefined) return;
+
+        try {
+          const response = await lookup(address);
+          jobs.complete(address, response);
+          retries.delete(address);
+          waitsWithoutProgress = 0;
+        } catch (error) {
+          if (!confirmedFailure(error)) {
+            stopped = true;
+            throw new Error(
+              'Usage is unconfirmed. Check Team usage before resubmitting with --retry-unconfirmed.',
+              {cause: error},
+            );
+          }
+
+          if (
+            error instanceof GeocodingError &&
+            error.code === 'GEOCODING_PICK_LIMIT_EXCEEDED' &&
+            error.retryAfterSeconds !== null &&
+            error.retryAfterSeconds <= 120
+          ) {
+            const until = performance.now() + error.retryAfterSeconds * 1000;
+            if (!burst || until > burst.until) burst = {until, error};
+            stopped = true;
+            jobs.release(address);
+            return;
+          }
+
+          const used = retries.get(address) ?? 0;
+          const ms = ordinaryRetryDelay(error, used);
+          if (ms === undefined) {
+            stopped = true;
+            jobs.release(address);
+            throw error;
+          }
+
+          retries.set(address, used + 1);
+          log(`Retrying a geocoding request in ${ms} ms.`);
+          try {
+            await wait(ms);
+          } finally {
+            jobs.release(address);
+          }
+        }
       }
     }
+
+    // Drain in-flight lookups before another worker can claim a throttled row.
+    const workers = await Promise.allSettled(Array.from({length: concurrency}, worker));
+    const failed = workers.find((result) => result.status === 'rejected');
+    if (failed?.status === 'rejected') throw failed.reason;
+    if (!burst) return;
+
+    const seconds = Math.max(0, Math.ceil((burst.until - performance.now()) / 1000));
+    log(`Search rate limit reached. Pausing for ${seconds} s.`);
+    await wait(seconds * 1000);
+    waitsWithoutProgress++;
+    if (waitsWithoutProgress >= 5) {
+      log('Stopped after five rate-limit waits without a completed lookup. Rerun to resume.');
+      throw burst.error;
+    }
   }
-  // Finish checkpointing already-dispatched work even when a different row stops the batch.
-  const workers = await Promise.allSettled(Array.from({length: concurrency}, worker));
-  const failed = workers.find((result) => result.status === 'rejected');
-  if (failed?.status === 'rejected') throw failed.reason;
 }
 
 function confirmedFailure(error: unknown): boolean {
@@ -136,33 +192,19 @@ function confirmedFailure(error: unknown): boolean {
   return [400, 401, 403, 404, 405, 413, 415, 422, 429].includes(error.status);
 }
 
-async function lookupWithRetry(
-  address: string,
-  lookup: (address: string) => ReturnType<typeof geocode>,
-  stopped: () => boolean,
-) {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await lookup(address);
-    } catch (error) {
-      if (
-        !(error instanceof GeocodingError) ||
-        !error.code ||
-        ![
-          'GEOCODING_UPSTREAM_THROTTLED',
-          'GEOCODING_UPSTREAM_TIMEOUT',
-          'GEOCODING_UPSTREAM_UNAVAILABLE',
-          'GEOCODING_PICK_LIMIT_EXCEEDED',
-        ].includes(error.code) ||
-        stopped() ||
-        attempt >= 2
-      )
-        throw error;
-      const ms =
-        error.retryAfterSeconds === null ? 250 * 2 ** attempt : error.retryAfterSeconds * 1000;
-      if (ms > 30_000) throw error;
-      await delay(ms);
-      if (stopped()) throw error;
-    }
-  }
+function ordinaryRetryDelay(error: unknown, used: number): number | undefined {
+  if (
+    !(error instanceof GeocodingError) ||
+    !error.code ||
+    used >= 2 ||
+    ![
+      'GEOCODING_UPSTREAM_THROTTLED',
+      'GEOCODING_UPSTREAM_TIMEOUT',
+      'GEOCODING_UPSTREAM_UNAVAILABLE',
+      'GEOCODING_PICK_LIMIT_EXCEEDED',
+    ].includes(error.code)
+  )
+    return undefined;
+  const ms = error.retryAfterSeconds === null ? 250 * 2 ** used : error.retryAfterSeconds * 1000;
+  return ms <= 30_000 ? ms : undefined;
 }

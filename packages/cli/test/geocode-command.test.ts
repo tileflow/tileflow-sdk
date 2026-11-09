@@ -58,8 +58,14 @@ function provider(lookup: (address: string) => Promise<Response> | Response) {
   }) satisfies typeof fetch;
 }
 
-function refusal(code: string, status: number) {
-  return Response.json({code, error: 'Synthetic refusal'}, {status, headers: {'Retry-After': '0'}});
+function refusal(code: string, status: number, seconds: number | null = 0) {
+  return Response.json(
+    {code, error: 'Synthetic refusal'},
+    {
+      status,
+      headers: seconds === null ? {} : {'Retry-After': String(seconds)},
+    },
+  );
 }
 
 test('CLI confirms before sending addresses and builds a PMTiles layer from ordered CSV rows', async (t) => {
@@ -278,4 +284,146 @@ test('quoted address column names can contain other CSV delimiters', async (t) =
     {...confirmed, fetch},
   );
   assert.equal(JSON.parse(await readFile(output, 'utf8')).features[0].properties.id, '001');
+});
+
+test('a minute burst pauses both workers, then resumes every address exactly once', async (t) => {
+  t.mock.method(performance, 'now', () => 0);
+  const {input, options} = await workspace(t, 'address\nA\nB\nC\nD\n');
+  const complete: string[] = [];
+  const waits: number[] = [];
+  const messages: string[] = [];
+  const cStarted = Promise.withResolvers<void>();
+  let resumed = false;
+  let refused = false;
+  const fetch = provider(async (address) => {
+    if (address === 'B' && !refused) {
+      await cStarted.promise;
+      refused = true;
+      return refusal('GEOCODING_PICK_LIMIT_EXCEEDED', 429, 60);
+    }
+    if (address === 'C') {
+      cStarted.resolve();
+      await delay(5);
+    }
+    if (address === 'D' || (address === 'B' && refused)) assert.ok(resumed);
+    complete.push(address);
+    return Response.json(stored());
+  });
+  await geocodeCsv(
+    input,
+    {...options, concurrency: '2'},
+    {
+      ...confirmed,
+      fetch,
+      log: (message) => messages.push(message),
+      wait: async (ms: number) => {
+        waits.push(ms);
+        await delay(10);
+        resumed = true;
+      },
+    },
+  );
+  assert.deepEqual(waits, [60_000]);
+  assert.equal(messages.filter((message) => message.includes('60')).length, 1);
+  assert.deepEqual(complete.sort(), ['A', 'B', 'C', 'D']);
+});
+
+test('a daily limit releases the row for the next run without a wait', async (t) => {
+  const {input, options} = await workspace(t, 'address\nFirst\nSecond\n');
+  const calls: string[] = [];
+  const fetch = provider((address) => {
+    calls.push(address);
+    return calls.length === 2
+      ? refusal('GEOCODING_PICK_LIMIT_EXCEEDED', 429, 3600)
+      : Response.json(stored());
+  });
+  const io = {...confirmed, fetch, wait: async () => assert.fail('unexpected wait')};
+  await assert.rejects(geocodeCsv(input, options, io), {code: 'GEOCODING_PICK_LIMIT_EXCEEDED'});
+  await geocodeCsv(input, options, io);
+  assert.deepEqual(calls, ['First', 'Second', 'Second']);
+});
+
+test('five shared burst waits without progress stop cleanly and leave every row resumable', async (t) => {
+  t.mock.method(performance, 'now', () => 0);
+  const {input, options} = await workspace(t, 'address\nA\nB\n');
+  const waits: number[] = [];
+  const calls: string[] = [];
+  let limited = true;
+  const fetch = provider((address) => {
+    calls.push(address);
+    return limited ? refusal('GEOCODING_PICK_LIMIT_EXCEEDED', 429, 120) : Response.json(stored());
+  });
+  const io = {
+    ...confirmed,
+    fetch,
+    wait: async (ms: number) => {
+      waits.push(ms);
+    },
+  };
+  const parallel = {...options, concurrency: '2'};
+  await assert.rejects(geocodeCsv(input, parallel, io), {code: 'GEOCODING_PICK_LIMIT_EXCEEDED'});
+  assert.deepEqual(waits, Array(5).fill(120_000));
+  limited = false;
+  calls.length = 0;
+  await geocodeCsv(input, parallel, io);
+  assert.deepEqual(calls.sort(), ['A', 'B']);
+});
+
+test('completed rows reset the burst streak and ordinary retries retain their limits', async (t) => {
+  t.mock.method(performance, 'now', () => 0);
+  const {input, options} = await workspace(t, 'address\nA\nB\n');
+  const attempts = new Map<string, number>();
+  const waits: number[] = [];
+  const fetch = provider((address) => {
+    const attempt = (attempts.get(address) ?? 0) + 1;
+    attempts.set(address, attempt);
+    if (attempt <= 2) return refusal('GEOCODING_PICK_LIMIT_EXCEEDED', 429, null);
+    if (attempt <= 6) return refusal('GEOCODING_PICK_LIMIT_EXCEEDED', 429, 60);
+    return Response.json(stored(false));
+  });
+  await geocodeCsv(input, options, {
+    ...confirmed,
+    fetch,
+    wait: async (ms: number) => {
+      waits.push(ms);
+    },
+  });
+  assert.deepEqual(
+    waits,
+    [...Array(2)].flatMap(() => [250, 500, 60_000, 60_000, 60_000, 60_000]),
+  );
+});
+
+test('normal retries stop at two attempts after the first failure and honor the 30-second cap', async (t) => {
+  for (const [code, seconds, expectedWaits] of [
+    ['GEOCODING_PICK_LIMIT_EXCEEDED', null, [250, 500]],
+    ['GEOCODING_UPSTREAM_THROTTLED', 30, [30_000, 30_000]],
+    ['GEOCODING_UPSTREAM_THROTTLED', 31, []],
+  ] as const) {
+    const {input, options} = await workspace(t, 'address\nA\n');
+    const waits: number[] = [];
+    const signals = new Set<AbortSignal | null | undefined>();
+    const send = provider(() => refusal(code, 429, seconds));
+    const fetch: typeof globalThis.fetch = (resource, init) => {
+      if (init?.method === 'POST') signals.add(init.signal);
+      return send(resource, init);
+    };
+    await assert.rejects(
+      geocodeCsv(input, options, {
+        ...confirmed,
+        fetch,
+        wait: async (ms) => {
+          waits.push(ms);
+        },
+      }),
+      {code},
+    );
+    assert.deepEqual(waits, expectedWaits);
+    assert.equal(signals.size, expectedWaits.length + 1);
+    assert.ok([...signals].every((signal) => signal instanceof AbortSignal));
+    await geocodeCsv(input, options, {
+      ...confirmed,
+      fetch: provider(() => Response.json(stored())),
+    });
+  }
 });

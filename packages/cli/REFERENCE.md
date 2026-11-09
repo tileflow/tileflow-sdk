@@ -12,8 +12,9 @@ version-specific behavior; the GitHub `main` branch can contain unreleased chang
 `tileflow tileset build <input>` turns local vector data into a PMTiles archive ready for
 `tileflow tileset publish`. It runs on your machine, needs no account and no extra tools, and sends
 nothing anywhere. Success means the archive already passed the validation `publish` applies. Build
-output is deterministic: the same input and options produce the same bytes, so republishing unchanged
-data reports `unchanged`.
+output is deterministic: the same input, options and CLI version produce the same tiles and metadata on any
+system, and the same bytes as long as Node.js compresses the same way, so republishing unchanged data reports
+`unchanged`.
 
 ```sh
 npx tileflow tileset build ./data/stores.geojson -o ./data/stores.pmtiles --json
@@ -112,28 +113,101 @@ Human output always prints the bounds, and `--json` reports them as `archive.bou
 
 ### Options
 
-| Option                 | Meaning                                                          |
-| ---------------------- | ---------------------------------------------------------------- |
-| `-o, --output <path>`  | Archive path. Defaults to the input name with `.pmtiles`         |
-| `--force`              | Replace an existing output                                       |
-| `--layer <name>`       | Source-layer name. Defaults to the input file name               |
-| `--minzoom <zoom>`     | Lowest zoom to write. Defaults to 0                              |
-| `--maxzoom <zoom>`     | Highest zoom to write, up to 16. Chosen from the data by default |
-| `--include <fields>`   | Keep only these comma-separated attributes, by source name       |
-| `--exclude <fields>`   | Drop these comma-separated attributes, by source name            |
-| `--rank-by <field>`    | Thin the lowest values of this numeric attribute first           |
-| `--rank-ascending`     | With `--rank-by`, thin the highest values first                  |
-| `--zip-entry <path>`   | The `.shp` or `.kml` to read from an archive holding several     |
-| `--input-layer <name>` | The feature table to read from a GeoPackage holding several      |
-| `--lon-column <name>`  | CSV longitude column                                             |
-| `--lat-column <name>`  | CSV latitude column                                              |
-| `--source-crs <crs>`   | State the input CRS                                              |
-| `--reproject`          | Convert a stated non-WGS84 CRS to WGS84                          |
-| `--name <name>`        | Archive display name                                             |
-| `--description <text>` | Archive description                                              |
-| `--attribution <text>` | Attribution stored in the archive                                |
-| `--format <format>`    | Override format detection                                        |
-| `--json`               | Print one schema-version-1 JSON document on stdout               |
+| Option                  | Meaning                                                          |
+| ----------------------- | ---------------------------------------------------------------- |
+| `-o, --output <path>`   | Archive path. Defaults to the input name with `.pmtiles`         |
+| `--force`               | Replace an existing output                                       |
+| `--layer <name>`        | Source-layer name. Defaults to the input file name               |
+| `--minzoom <zoom>`      | Lowest zoom to write. Defaults to 0                              |
+| `--maxzoom <zoom>`      | Highest zoom to write, up to 16. Chosen from the data by default |
+| `--include <fields>`    | Keep only these comma-separated attributes, by source name       |
+| `--exclude <fields>`    | Drop these comma-separated attributes, by source name            |
+| `--rank-by <field>`     | Thin the lowest values of this numeric attribute first           |
+| `--rank-ascending`      | With `--rank-by`, thin the highest values first                  |
+| `--zip-entry <path>`    | The `.shp` or `.kml` to read from an archive holding several     |
+| `--input-layer <name>`  | The feature table to read from a GeoPackage holding several      |
+| `--lon-column <name>`   | CSV longitude column                                             |
+| `--lat-column <name>`   | CSV latitude column                                              |
+| `--source-crs <crs>`    | State the input CRS                                              |
+| `--reproject`           | Convert a stated non-WGS84 CRS to WGS84                          |
+| `--name <name>`         | Archive display name                                             |
+| `--description <text>`  | Archive description                                              |
+| `--attribution <text>`  | Attribution stored in the archive                                |
+| `--format <format>`     | Override format detection                                        |
+| `--feature-id <field>`  | Use this attribute as the feature ID                             |
+| `--hash-feature-id`     | With `--feature-id`, hash each value into an integer ID          |
+| `--recipe <path>`       | Read every build setting from a recipe file                      |
+| `--print-recipe`        | Print the recipe these options make, without building            |
+| `--progress <format>`   | Report progress on stderr as `text` or `ndjson`                  |
+| `--inspect`             | Report format, CRS and fields as JSON, without tiling            |
+| `--sample-features <n>` | Features `--inspect` reads. Defaults to 10000                    |
+| `--json`                | Print one schema-version-1 JSON document on stdout               |
+
+`--json` turns text progress off unless you also pass `--progress`. With `--progress ndjson`, each stderr
+line is one object with `stage` (`reading`, `tiling`, `archiving` or `validating`), `message`, and
+`features` or `tiles` when known.
+
+`--inspect` reads a sample and prints what is still undecided, instead of failing on the first thing
+a build would refuse. It always prints JSON: `crs.status` is `wgs84`, `needs-reproject`, `unknown`, `unsupported` or
+`out-of-range`; `sample.sourceBounds` and up to 2,000 `sample.coordinates` hold the positions as stored in the file; `fields` and a suggested `recipe`
+follow. A zip or GeoPackage holding several candidates returns `choices`, and a CSV without
+recognizable coordinate columns returns `columns`. Nothing is written beside the input.
+
+### Recipes
+
+A recipe is a JSON file that holds every build setting, so a repeatable build can be reviewed in a
+pull request and run the same way anywhere. Options are a shorthand for a recipe:
+
+```sh
+npx tileflow tileset build ./data/parcels.shp --reproject --include ref,area_m2 --print-recipe > ./data/parcels.tileset.json
+npx tileflow tileset build ./data/parcels.shp --recipe ./data/parcels.tileset.json --json
+```
+
+```json
+{
+  "$schema": "https://tileflow.dev/schemas/tileset-recipe/v1.json",
+  "layers": {
+    "parcels": {
+      "featureId": {"field": "gid"},
+      "fields": {"include": ["ref", "area_m2"]},
+      "maxzoom": "auto",
+      "minzoom": 0,
+      "rank": {"by": "area_m2", "order": "descending"},
+      "source": "parcels"
+    }
+  },
+  "metadata": {"attribution": "© Example", "name": "Parcels"},
+  "sources": {
+    "parcels": {
+      "crs": {"from": "EPSG:25830", "reproject": true},
+      "zipEntry": "cadastre/parcels.shp"
+    }
+  },
+  "version": 1
+}
+```
+
+| Recipe field                                  | Option                                     |
+| --------------------------------------------- | ------------------------------------------ |
+| Key of `layers`                               | `--layer`                                  |
+| `layers.*.minzoom`, `maxzoom`                 | `--minzoom`, `--maxzoom`                   |
+| `layers.*.fields.include`, `exclude`          | `--include`, `--exclude`                   |
+| `layers.*.rank`                               | `--rank-by`, `--rank-ascending`            |
+| `layers.*.featureId`                          | `--feature-id`, `--hash-feature-id`        |
+| `sources.*.format`, `layer`, `zipEntry`       | `--format`, `--input-layer`, `--zip-entry` |
+| `sources.*.csv.lon`, `lat`                    | `--lon-column`, `--lat-column`             |
+| `sources.*.crs.from`, `reproject`             | `--source-crs`, `--reproject`              |
+| `metadata.name`, `description`, `attribution` | `--name`, `--description`, `--attribution` |
+
+The input file stays on the command line. `sources` and `layers` each hold exactly one entry in version 1.
+Unknown fields are refused, and `--recipe` cannot be combined with an option from this table.
+`sources.*.crs.from` accepts `EPSG:<code>`, a proj string or WKT, never a path. `--print-recipe` replaces a
+`.prj` path with its contents. The schema ships at `schemas/tileset-recipe.v1.json` in this package.
+
+Every build reports its resolved recipe as `recipe` in the JSON output, with `maxzoom` as a number. Reusing that
+recipe gives the same zoom even if automatic zoom changes in a later version. The archive metadata records
+`tileflow_recipe_hash` and `tileflow_source_hash`, and `source.sha256` in the JSON output holds the source
+digest. For a Shapefile outside a zip, the digest covers the `.shp`, `.dbf`, `.prj` and `.cpg`.
 
 ### Zooms and thinning
 
@@ -172,7 +246,11 @@ is omitted. Field names outside letters, digits, `.`, `_`, `:` and `-` are renam
 removed and other characters replaced by `_`; `layer.fields` maps each `sourceName` to its `name`, and
 a warning lists the change. Two names that collide stop the build. A field with mixed types is
 declared `Mixed`. Non-negative integer GeoJSON `id` values become vector tile feature IDs; other ids
-are dropped with a warning.
+are dropped with a warning. Each entry in `layer.fields` also reports `count`, `min` and `max` for numbers,
+up to 64 distinct `values` of up to 64 characters, and `valuesComplete`. The archive metadata carries the same
+values as `tilestats`. `--feature-id` reads the ID from an attribute instead, for any format, and fails if no
+feature has a usable value. Add `--hash-feature-id` to turn text keys into stable integers. Vector tiles store
+only integers, and two different values can collide once a dataset reaches tens of millions of features.
 
 ### JSON output
 
@@ -200,7 +278,14 @@ are dropped with a warning.
     "fields": [{"name": "name", "sourceName": "name", "type": "String"}],
     "id": "stores"
   },
+  "recipe": {
+    "$schema": "...",
+    "layers": {"stores": {"maxzoom": 10, "minzoom": 0, "source": "stores"}},
+    "sources": {"stores": {}},
+    "version": 1
+  },
   "schemaVersion": 1,
+  "source": {"sha256": "9f2a..."},
   "warnings": [],
   "zooms": [
     {"features": 900, "largestTileBytes": 9120, "thinnedFeatures": 300, "tiles": 1, "zoom": 0}
@@ -222,6 +307,12 @@ On failure the exit code is 1, stdout is empty, and stderr carries
 | `TF_TILESET_BUILD_ZIP_ENTRY_INVALID`        | Archive has no data file, several, or not the one named        |
 | `TF_TILESET_BUILD_INPUT_LAYER_INVALID`      | GeoPackage has no feature table, several, or not the one named |
 | `TF_TILESET_BUILD_RANK_INVALID`             | `--rank-by` has no numeric values, or is missing               |
+| `TF_TILESET_BUILD_FEATURE_ID_INVALID`       | `--feature-id` has no usable value, or is missing              |
+| `TF_TILESET_BUILD_RECIPE_INVALID`           | The recipe is not valid                                        |
+| `TF_TILESET_BUILD_RECIPE_UNREADABLE`        | The recipe file cannot be read                                 |
+| `TF_TILESET_BUILD_RECIPE_CONFLICT`          | `--recipe` was combined with a setting it already holds        |
+| `TF_TILESET_BUILD_PROGRESS_INVALID`         | `--progress` is not `text` or `ndjson`                         |
+| `TF_TILESET_BUILD_OPTION_INVALID`           | A numeric option is not a positive integer                     |
 | `TF_TILESET_BUILD_EMPTY`                    | No usable features                                             |
 | `TF_TILESET_BUILD_CRS_UNKNOWN`              | The input does not state its CRS                               |
 | `TF_TILESET_BUILD_CRS_NOT_WGS84`            | Stated CRS needs `--reproject`                                 |
@@ -266,8 +357,11 @@ A KMZ is streamed without being extracted. Its KML document can expand to 4 GiB,
 A GeoPackage is opened read-only and runs none of its own SQL. Tables must be plain tables, so views
 and virtual tables are not read. On early Node.js 22 releases, reading a GeoPackage in
 write-ahead-log mode can leave `-wal` and `-shm` files beside it. A GeoPackage with a rollback journal
-left by an interrupted writer is refused until a tool that can write to it recovers it. One feature
-can hold 5 million positions and parts in KML, GPX and GeoPackage.
+left by an interrupted writer is refused until a tool that can write to it recovers it.
+
+One feature can hold 5 million positions and parts in every format, and one GeoJSON feature or Shapefile
+record can take 256 MiB. The first bytes of a file must match its format, so a renamed file is refused
+before parsing.
 
 The build does not merge adjacent polygons at low zooms, cluster points, or join attributes. Polygons
 are simplified independently, so neighbours that share a border can show hairline gaps at low zooms.

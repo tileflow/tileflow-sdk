@@ -152,6 +152,7 @@ describe('build', () => {
       TILEFLOW_TILESET_MAXZOOM: '12',
       TILEFLOW_TILESET_RANK_BY: 'population',
       TILEFLOW_TILESET_REPROJECT: 'true',
+      TILEFLOW_TILESET_RECIPE: 'stores.tileset.json',
       TILEFLOW_TILESET_SOURCE_CRS: 'EPSG:25830',
     });
 
@@ -164,6 +165,7 @@ describe('build', () => {
     for (const argument of [
       `--output=${path}`,
       '--json',
+      '--recipe=stores.tileset.json',
       '--source-crs=EPSG:25830',
       '--reproject',
       '--maxzoom=12',

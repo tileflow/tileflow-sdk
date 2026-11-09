@@ -1,0 +1,171 @@
+{
+  "$id": "https://tileflow.dev/schemas/tileset-recipe/v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "layers": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "featureId": {
+            "type": "object",
+            "properties": {
+              "field": {
+                "type": "string",
+                "minLength": 1
+              },
+              "hash": {
+                "type": "boolean"
+              }
+            },
+            "required": ["field"],
+            "additionalProperties": false
+          },
+          "fields": {
+            "type": "object",
+            "properties": {
+              "exclude": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "include": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          "maxzoom": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "auto"
+              },
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 16
+              }
+            ]
+          },
+          "minzoom": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 16
+          },
+          "rank": {
+            "type": "object",
+            "properties": {
+              "by": {
+                "type": "string",
+                "minLength": 1
+              },
+              "order": {
+                "type": "string",
+                "enum": ["ascending", "descending"]
+              }
+            },
+            "required": ["by"],
+            "additionalProperties": false
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": ["source"],
+        "additionalProperties": false
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "attribution": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "sources": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "crs": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "string",
+                "minLength": 1
+              },
+              "reproject": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          },
+          "csv": {
+            "type": "object",
+            "properties": {
+              "lat": {
+                "type": "string",
+                "minLength": 1
+              },
+              "lon": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false
+          },
+          "format": {
+            "type": "string",
+            "enum": ["csv", "geojson", "geojsonseq", "geopackage", "gpx", "kml", "shapefile"]
+          },
+          "layer": {
+            "type": "string",
+            "minLength": 1
+          },
+          "zipEntry": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "version": {
+      "type": "number",
+      "const": 1
+    }
+  },
+  "required": ["layers", "sources", "version"],
+  "additionalProperties": false
+}

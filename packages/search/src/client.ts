@@ -20,9 +20,12 @@ import {
   type GeocodingForwardResponse,
   geocodingForwardResponseSchema,
   geocodingLimits,
+  type GeocodingRetention,
   type GeocodingReverseRequest,
   geocodingReverseRequestSchema,
   type GeocodingReverseResponse,
+  type GeocodingStorageEstimate,
+  geocodingStorageEstimateSchema,
   type ResolveSuggestionRequest,
   resolveSuggestionRequestSchema,
   type ResolveSuggestionResponse,
@@ -40,6 +43,9 @@ export const GEOCODING_ERROR_CODES = [
   'GEOCODING_CURSOR_EXPIRED',
   'GEOCODING_ABORTED',
   'GEOCODING_DISABLED',
+  'GEOCODING_PERSISTENCE_DISABLED',
+  'GEOCODING_PERSISTENCE_UNSUPPORTED',
+  'GEOCODING_ESTIMATE_CHANGED',
   'GEOCODING_INVALID_REQUEST',
   'GEOCODING_INVALID_SUGGESTION',
   'GEOCODING_ORIGIN_NOT_ALLOWED',
@@ -72,6 +78,9 @@ const geocodingErrorStatuses: Record<GeocodingErrorCode, number> = {
   GEOCODING_CURSOR_EXPIRED: 410,
   GEOCODING_ABORTED: 499,
   GEOCODING_DISABLED: 503,
+  GEOCODING_PERSISTENCE_DISABLED: 403,
+  GEOCODING_PERSISTENCE_UNSUPPORTED: 422,
+  GEOCODING_ESTIMATE_CHANGED: 409,
   GEOCODING_INVALID_REQUEST: 400,
   GEOCODING_INVALID_SUGGESTION: 400,
   GEOCODING_ORIGIN_NOT_ALLOWED: 403,
@@ -163,7 +172,6 @@ export async function geocode(
   }
   // Contacts and opening hours come from a text search inside bounds, not from geocoding.
   if (!parsedRequest.data.bounds) rejectContactDetails(parsedRequest.data.include);
-  const units = searchOperationUnits('forward', parsedRequest.data.include);
 
   return requestGeocoding(
     '/v1/geocoding/forward',
@@ -171,7 +179,7 @@ export async function geocode(
     options,
     geocodingForwardResponseSchema,
     (response) =>
-      response.usage.units === units &&
+      matchesGeocodingUsage('forward', parsedRequest.data, response) &&
       response.results.length <= (parsedRequest.data.limit ?? geocodingLimits.defaultLimit),
   );
 }
@@ -185,7 +193,6 @@ export async function geocodeReverse(
     throw new Error('Invalid Tileflow geocoding request');
   }
   rejectContactDetails(parsedRequest.data.include);
-  const units = searchOperationUnits('reverse', parsedRequest.data.include);
 
   return requestGeocoding(
     '/v1/geocoding/reverse',
@@ -193,9 +200,37 @@ export async function geocodeReverse(
     options,
     geocodingForwardResponseSchema,
     (response) =>
-      response.usage.units === units &&
+      matchesGeocodingUsage('reverse', parsedRequest.data, response) &&
       response.results.length <= parsedRequest.data.limit &&
       containsOnlyKinds(response, parsedRequest.data.kinds),
+  );
+}
+
+function matchesGeocodingUsage(
+  operation: 'forward' | 'reverse',
+  request: {retention: GeocodingRetention; expectedUnits?: number; include?: readonly string[]},
+  response: GeocodingForwardResponse,
+) {
+  if (request.retention === 'persistent')
+    return (
+      response.retention === 'persistent' &&
+      (request.expectedUnits === undefined || request.expectedUnits === response.usage.units)
+    );
+  return (
+    response.retention === undefined &&
+    response.usage.units === searchOperationUnits(operation, request.include)
+  );
+}
+
+/** Read the current persistent weight before submitting any addresses. */
+export function getGeocodingStorageEstimate(
+  options: GeocodeOptions,
+): Promise<GeocodingStorageEstimate> {
+  return requestGeocoding(
+    '/v1/geocoding/storage',
+    undefined,
+    options,
+    geocodingStorageEstimateSchema,
   );
 }
 
@@ -203,6 +238,11 @@ export async function autocomplete(
   request: AutocompleteRequest,
   options: GeocodeOptions,
 ): Promise<AutocompleteResponse> {
+  if (request && 'retention' in request && request.retention === 'persistent')
+    throw new GeocodingError('Autocomplete does not support persistent results', {
+      code: 'GEOCODING_PERSISTENCE_UNSUPPORTED',
+      status: 422,
+    });
   const parsedRequest = autocompleteRequestSchema.safeParse(request);
   if (!parsedRequest.success) {
     throw new Error('Invalid Tileflow geocoding request');
@@ -287,7 +327,8 @@ async function requestGeocoding<T>(
     | '/v1/geocoding/resolve'
     | '/v1/geocoding/reverse'
     | '/v1/geocoding/nearby'
-    | '/v1/geocoding/categories',
+    | '/v1/geocoding/categories'
+    | '/v1/geocoding/storage',
   request: unknown,
   options: GeocodeOptions,
   responseSchema: z.ZodType<T>,

@@ -16,7 +16,7 @@ export {
   parseTileflowStyleFamily,
   tileflowStyleFamilyLimits,
 } from './style-family';
-export {clusterOverlay, geojsonSource, heatmapOverlay} from './overlays';
+export {clusterOverlay, geojsonSource, heatmapOverlay, maplibreOverlay} from './overlays';
 export type {TileflowStyleFamily} from './style-family';
 export {loadTileflowStyleFamily} from './style-family-loader';
 export {applyTileflowColorOverrides} from './color-program-runtime';

@@ -1,5 +1,6 @@
 import {defineMap} from '../src/maps/define';
 import type {TileflowMapScene, TileflowMapShot, TileflowStandaloneMap} from '../src/maps/types';
+import {geojsonSource} from '../src/overlays';
 
 type IsNever<T> = [T] extends [never] ? true : false;
 type Assert<T extends true> = T;
@@ -31,3 +32,12 @@ export type DefineMapExactKeyTests = [
   Assert<IsNever<StandaloneMapExplicitSceneMapArgument['scenes']['proof']['map']>>,
   Assert<IsNever<StandaloneMapExplicitShotMapArgument['shots']['proof']['map']>>,
 ];
+
+// Typed GeoJSON interfaces have no index signature, and applications pass them directly.
+interface TypedPointFeature {
+  geometry: {coordinates: number[]; type: 'Point'};
+  properties: {name: string} | null;
+  type: 'Feature';
+}
+const typedFeatures: TypedPointFeature[] = [];
+void geojsonSource({data: {features: typedFeatures, type: 'FeatureCollection'}});

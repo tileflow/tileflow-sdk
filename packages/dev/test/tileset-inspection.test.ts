@@ -302,6 +302,49 @@ test('accepts non-overlapping PMTiles sections in any spec-v3 physical order', a
   assert.equal(inspection.contract.counts.addressedTiles, 1);
 });
 
+test('clustered validation scales past the former distinct-tile ceiling and still rejects gaps', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'tileflow-tileset-inspect-clustered-'));
+  const archivePath = join(directory, 'clustered.pmtiles');
+  const tilesPerLeaf = 150_000;
+
+  await writeFile(archivePath, createDistinctClusteredPmtiles(tilesPerLeaf, false));
+  const inspection = await inspectTileflowPmtiles(archivePath, {sample: false});
+  assert.equal(inspection.contract.counts.addressedTiles, tilesPerLeaf * 2);
+
+  await writeFile(archivePath, createDistinctClusteredPmtiles(tilesPerLeaf, true));
+  await assert.rejects(
+    inspectTileflowPmtiles(archivePath, {sample: false}),
+    (error: unknown) =>
+      error instanceof Error &&
+      (error as Error & {code?: string}).code === 'TF_TILESET_ARCHIVE_INVALID',
+  );
+});
+
+test('clustered archives may reuse earlier bytes but cannot extend past the frontier', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'tileflow-tileset-inspect-reuse-'));
+  const archivePath = join(directory, 'clustered.pmtiles');
+
+  // Three tiles: the third reuses the first's ten bytes.
+  await writeFile(
+    archivePath,
+    createClusteredLeafPmtiles(new Uint8Array([3, 0, 1, 1, 1, 1, 1, 10, 10, 10, 1, 0, 1]), 3, 20),
+  );
+  const inspection = await inspectTileflowPmtiles(archivePath, {sample: false});
+  assert.equal(inspection.contract.counts.addressedTiles, 3);
+
+  // The third tile starts inside the second but ends beyond everything laid out so far.
+  await writeFile(
+    archivePath,
+    createClusteredLeafPmtiles(new Uint8Array([3, 0, 1, 1, 1, 1, 1, 10, 10, 10, 1, 0, 16]), 3, 40),
+  );
+  await assert.rejects(
+    inspectTileflowPmtiles(archivePath, {sample: false}),
+    (error: unknown) =>
+      error instanceof Error &&
+      (error as Error & {code?: string}).code === 'TF_TILESET_ARCHIVE_INVALID',
+  );
+});
+
 test('sampling is determined by structural limits rather than wall-clock timing', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'tileflow-tileset-inspect-clock-'));
   const archivePath = join(directory, 'clock.pmtiles');
@@ -319,6 +362,81 @@ test('sampling is determined by structural limits rather than wall-clock timing'
 
   assert.equal(inspection.observation?.featuresRead, 2);
 });
+
+function createClusteredLeafPmtiles(
+  leaf: Uint8Array,
+  tileCount: number,
+  tileBytes: number,
+  root = new Uint8Array([1, 0, 0, ...encodeVarint(leaf.byteLength), 1]),
+) {
+  const metadata = new TextEncoder().encode('{}');
+  const rootOffset = 127;
+  const metadataOffset = rootOffset + root.byteLength;
+  const leafOffset = metadataOffset + metadata.byteLength;
+  const tileOffset = leafOffset + leaf.byteLength;
+  const bytes = new Uint8Array(tileOffset + tileBytes);
+  const view = new DataView(bytes.buffer);
+  bytes.set(new TextEncoder().encode('PMTiles'), 0);
+  view.setUint8(7, 3);
+  [
+    rootOffset,
+    root.byteLength,
+    metadataOffset,
+    metadata.byteLength,
+    leafOffset,
+    leaf.byteLength,
+    tileOffset,
+    tileBytes,
+    tileCount,
+    tileCount,
+    tileCount,
+  ].forEach((value, index) => setUint64(view, 8 + index * 8, value));
+  view.setUint8(96, 1);
+  view.setUint8(97, 1);
+  view.setUint8(98, 1);
+  view.setUint8(99, 1);
+  view.setUint8(101, 12);
+  view.setInt32(102, -1_800_000_000, true);
+  view.setInt32(106, -850_000_000, true);
+  view.setInt32(110, 1_800_000_000, true);
+  view.setInt32(114, 850_000_000, true);
+  bytes.set(root, rootOffset);
+  bytes.set(metadata, metadataOffset);
+  bytes.set(leaf, leafOffset);
+  return bytes;
+}
+
+/** Two leaves of one-byte tiles in TileID order; `gapBeforeLast` leaves a hole before the end. */
+function createDistinctClusteredPmtiles(tilesPerLeaf: number, gapBeforeLast: boolean) {
+  const createLeaf = (firstTile: number, lastOffset: number) => {
+    const leaf: number[] = [...encodeVarint(tilesPerLeaf), ...encodeVarint(firstTile)];
+    for (let index = 1; index < tilesPerLeaf; index += 1) leaf.push(1);
+    for (let index = 0; index < tilesPerLeaf * 2; index += 1) leaf.push(1);
+    // PMTiles stores offset + 1, with 0 meaning "immediately after the previous entry".
+    leaf.push(...encodeVarint(firstTile + 1));
+    for (let index = 1; index < tilesPerLeaf - 1; index += 1) leaf.push(0);
+    leaf.push(...encodeVarint(lastOffset));
+    return new Uint8Array(leaf);
+  };
+  const tileCount = tilesPerLeaf * 2;
+  const first = createLeaf(0, 0);
+  const second = createLeaf(tilesPerLeaf, gapBeforeLast ? tileCount + 1 : 0);
+  const leaves = new Uint8Array(first.byteLength + second.byteLength);
+  leaves.set(first);
+  leaves.set(second, first.byteLength);
+  const root = new Uint8Array([
+    2,
+    0,
+    ...encodeVarint(tilesPerLeaf),
+    0,
+    0,
+    ...encodeVarint(first.byteLength),
+    ...encodeVarint(second.byteLength),
+    1,
+    0,
+  ]);
+  return createClusteredLeafPmtiles(leaves, tileCount, tileCount + 8, root);
+}
 
 function createPmtiles(
   metadata: Record<string, unknown>,

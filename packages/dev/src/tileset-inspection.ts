@@ -601,6 +601,21 @@ async function validatePmtilesDirectoryTree(
   const processedContexts = new Set<string>();
   const decompressDirectory = createSectionDecompressor(budget);
   let clusteredEnd = 0;
+  // Tiles are visited in TileID order, so one frontier is the whole state: a tile either extends it
+  // or reuses bytes already behind it. Retaining each range would reject valid archives on tile
+  // count alone.
+  const advanceClusteredFrontier = (offset: number, length: number) => {
+    const end = offset + length;
+    if (offset === clusteredEnd) {
+      clusteredEnd = end;
+    } else if (offset > clusteredEnd || end > clusteredEnd) {
+      throw inspectionError(
+        'TF_TILESET_ARCHIVE_INVALID',
+        'archive',
+        'PMTiles clustered contents are not contiguous in TileID order.',
+      );
+    }
+  };
   let addressedTiles = 0;
   let totalEntries = 0;
   let tileEntries = 0;
@@ -609,18 +624,7 @@ async function validatePmtilesDirectoryTree(
     signal?.throwIfAborted();
     const item = pending.pop()!;
     if (item.kind === 'clustered-content') {
-      // TileID order makes one frontier the whole state: a tile either extends it or reuses bytes
-      // already behind it. Remembering each range would reject valid archives on tile count alone.
-      const end = item.offset + item.length;
-      if (item.offset === clusteredEnd) {
-        clusteredEnd = end;
-      } else if (item.offset > clusteredEnd || end > clusteredEnd) {
-        throw inspectionError(
-          'TF_TILESET_ARCHIVE_INVALID',
-          'archive',
-          'PMTiles clustered contents are not contiguous in TileID order.',
-        );
-      }
+      advanceClusteredFrontier(item.offset, item.length);
       continue;
     }
     const current = item;
@@ -726,11 +730,16 @@ async function validatePmtilesDirectoryTree(
         addressedTiles += entry.runLength;
         tileEntries += 1;
         if (header.clustered) {
-          nextItems.push({
-            kind: 'clustered-content',
-            length: entry.length,
-            offset: entry.offset,
-          });
+          // A tile after a leaf pointer must wait for that leaf's tiles; the rest are next in order.
+          if (nextItems.length === 0) {
+            advanceClusteredFrontier(entry.offset, entry.length);
+          } else {
+            nextItems.push({
+              kind: 'clustered-content',
+              length: entry.length,
+              offset: entry.offset,
+            });
+          }
         }
       }
       if (!Number.isSafeInteger(addressedTiles) || !Number.isSafeInteger(tileEntries)) {

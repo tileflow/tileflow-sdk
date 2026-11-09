@@ -19,11 +19,11 @@ export async function readCsv(
   ingest: FeatureIngest,
   options: CsvOptions,
 ): Promise<void> {
-  const delimiter = detectDelimiter(path);
+  const delimiter = detectCsvDelimiter(path);
   // A first pass types columns as a whole: "01234" in one row must not make the rest numeric.
   let header: string[] | null = null;
   let types: ColumnType[] = [];
-  await forEachRow(path, delimiter, (row, line) => {
+  await forEachCsvRow(path, delimiter, (row, line) => {
     if (!header) {
       header = row;
       types = row.map(() => null);
@@ -49,7 +49,7 @@ export async function readCsv(
   const latitude = coordinateColumn(columns, options.latColumn, latitudeNames, 'latitude');
 
   let isHeader = true;
-  await forEachRow(path, delimiter, (row, line) => {
+  await forEachCsvRow(path, delimiter, (row, line) => {
     if (isHeader) {
       isHeader = false;
       return;
@@ -88,7 +88,7 @@ export async function csvColumnsNameCoordinates(
 ): Promise<boolean> {
   if (options.lonColumn || options.latColumn) return true;
   let names: string[] = [];
-  await forEachRow(path, detectDelimiter(path), (row) => {
+  await forEachCsvRow(path, detectCsvDelimiter(path), (row) => {
     names = row;
     return 'stop';
   });
@@ -168,16 +168,35 @@ function typedValue(value: string, type: ColumnType): boolean | number | string 
   return value;
 }
 
-function detectDelimiter(path: string): string {
+export function detectCsvDelimiter(path: string): string {
   const descriptor = openSync(path, 'r');
   const buffer = Buffer.allocUnsafe(65_536);
-  const bytes = readSync(descriptor, buffer, 0, buffer.length, 0);
-  closeSync(descriptor);
-  const firstLine = buffer.subarray(0, bytes).toString('utf8').split(/\r?\n/u, 1)[0] ?? '';
+  const counts = new Map([',', ';', '\t', '|'].map((delimiter) => [delimiter, 0]));
+  let quoted = false;
+  try {
+    let done = false;
+    while (!done) {
+      const bytes = readSync(descriptor, buffer, 0, buffer.length, null);
+      if (!bytes) break;
+      for (const byte of buffer.subarray(0, bytes)) {
+        const character = String.fromCharCode(byte);
+        if (character === '"') quoted = !quoted;
+        else if (!quoted) {
+          if (character === '\n' || character === '\r') {
+            done = true;
+            break;
+          }
+          const count = counts.get(character);
+          if (count !== undefined) counts.set(character, count + 1);
+        }
+      }
+    }
+  } finally {
+    closeSync(descriptor);
+  }
   let best = ',';
   let bestCount = 0;
-  for (const candidate of [',', ';', '\t', '|']) {
-    const count = firstLine.split(candidate).length - 1;
+  for (const [candidate, count] of counts) {
     if (count > bestCount) {
       best = candidate;
       bestCount = count;
@@ -187,7 +206,7 @@ function detectDelimiter(path: string): string {
 }
 
 /** RFC 4180 parsing with quoted delimiters and newlines, streamed in chunks. */
-async function forEachRow(
+export async function forEachCsvRow(
   path: string,
   delimiter: string,
   visit: (row: string[], line: number) => 'stop' | void,

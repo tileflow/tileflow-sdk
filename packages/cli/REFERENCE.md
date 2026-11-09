@@ -7,6 +7,23 @@ For step-by-step guides, see the [Tileflow documentation](https://tileflow.dev/d
 This reference ships with the package. Use the copy included in your installed release for
 version-specific behavior; the GitHub `main` branch can contain unreleased changes.
 
+## geocode
+
+`tileflow geocode <file.csv>` converts addresses to GeoJSON points on an enabled persistent
+Search service. Persistent Search is disabled by default. The command requires Node.js 22.13 or
+later with `node:sqlite` and a Team credential with `geocoding:read` in `TILEFLOW_API_KEY`.
+
+Use `--address-columns street city postcode` to combine columns in order. The default column is
+`address`. Choose the GeoJSON path with `-o`. The CLI estimates shared API units for distinct
+remaining addresses and prompts before sending them. `--yes` accepts the estimate. Concurrency
+defaults to two requests and accepts one to eight.
+
+The GeoJSON preserves source columns and attribution. Pass the printed attribution to
+`tileset build --attribution`. The adjacent `.unmatched.csv` lists missing points by CSV line.
+Keep the adjacent `.geocode.sqlite` checkpoint private. Repeating the command with the same input,
+columns, endpoint and credential reuses completed rows. After an unconfirmed request, review
+Team usage before selecting `--retry-unconfirmed`. A repeated request may consume units again.
+
 ## tileset build
 
 `tileflow tileset build <input>` turns local vector data into a PMTiles archive ready for

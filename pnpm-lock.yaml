@@ -200,6 +200,9 @@ importers:
       '@tileflow/maps':
         specifier: workspace:>=0.1.0-alpha.16 <0.1.0-beta.0
         version: link:../maps
+      '@tileflow/search':
+        specifier: workspace:>=0.1.0-alpha.16 <0.1.0-beta.0
+        version: link:../search
       commander:
         specifier: ^15.0.0
         version: 15.0.0

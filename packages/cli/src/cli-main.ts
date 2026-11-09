@@ -99,6 +99,7 @@ import {
   tileflowDevOrigin,
 } from './dev-host';
 import {registerFeatureInspectCommand} from './feature-inspect-command';
+import {registerGeocodeCommand} from './geocode-command';
 import {
   apiProfileCanTargetMap,
   assertHostedStyleBudget,
@@ -162,6 +163,7 @@ const defaultManifestPath = defaultTileflowManifestPath;
 registerDescribeCommand(program);
 registerLanguageCommand(program);
 registerTilesetCommands(program, {defaultApiUrl, loadAuthConfig});
+registerGeocodeCommand(program);
 registerIconSetCommands(program, {defaultApiUrl, loadAuthConfig});
 registerModelCommands(program, {defaultApiUrl, loadAuthConfig});
 

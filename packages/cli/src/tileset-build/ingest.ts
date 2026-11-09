@@ -1,5 +1,11 @@
+import {createHash} from 'node:crypto';
 import type {CoordinateTransform} from './crs';
-import {TilesetBuildError} from './errors';
+import {
+  featureTooLarge,
+  maximumFeaturePositions,
+  SampleComplete,
+  TilesetBuildError,
+} from './errors';
 import {FeatureSpool, field, geometryType, headerWords, worldSize} from './spool';
 
 export type FieldSelection = Readonly<{
@@ -8,6 +14,8 @@ export type FieldSelection = Readonly<{
 }>;
 
 export type RankSelection = Readonly<{ascending: boolean; field: string}>;
+
+export type FeatureIdSelection = Readonly<{field: string; hash?: boolean}>;
 
 export type GeometryInput = Readonly<{coordinates?: unknown; geometries?: unknown; type?: unknown}>;
 
@@ -19,15 +27,40 @@ const coordinateToleranceDegrees = 0.001;
 const sampleCapacity = 1 << 18;
 const unranked = -Infinity;
 const typeBits = {boolean: 1, number: 2, string: 4} as const;
+/** Enough to offer every category of a real attribute, and cheap to keep in the archive. */
+const maximumFieldValues = 64;
+const maximumFieldValueCharacters = 64;
+/** 53 bits is what a JavaScript number holds exactly, and what `#numericId` accepts. */
+const largestHashedId = BigInt(Number.MAX_SAFE_INTEGER);
+
+export type FieldValue = boolean | number | string;
+
+export type FieldSummary = Readonly<{
+  /** Features with a value here. */
+  count: number;
+  max?: number;
+  min?: number;
+  name: string;
+  sourceName: string;
+  type: 'Boolean' | 'Number' | 'String' | 'Mixed';
+  /** Distinct short values, in sorted order. */
+  values: readonly FieldValue[];
+  /** False when a value was too long or there were more than `values` can hold. */
+  valuesComplete: boolean;
+}>;
+
+type FieldStatistics = {
+  complete: boolean;
+  count: number;
+  max: number;
+  min: number;
+  values: Set<FieldValue>;
+};
 
 export type IngestSummary = Readonly<{
   bounds: readonly [number, number, number, number];
   features: number;
-  fields: readonly Readonly<{
-    name: string;
-    sourceName: string;
-    type: 'Boolean' | 'Number' | 'String' | 'Mixed';
-  }>[];
+  fields: readonly FieldSummary[];
   geometryTypes: readonly string[];
   skipped: Readonly<{emptyGeometry: number; outsideMercator: number}>;
   warnings: readonly string[];
@@ -37,6 +70,7 @@ export type IngestSummary = Readonly<{
 export class FeatureIngest {
   readonly #keys = new Map<string, number>();
   readonly #keyTypes: number[] = [];
+  readonly #statistics: FieldStatistics[] = [];
   readonly #transform: CoordinateTransform | null;
   #properties = new Uint8Array(4096);
   #propertiesView = new DataView(this.#properties.buffer);
@@ -50,6 +84,7 @@ export class FeatureIngest {
   #clampedLatitude = 0;
   #wideSegments = 0;
   #nonNumericIds = 0;
+  #usableIds = 0;
   #degenerateParts = 0;
   #nudgedCoordinates = 0;
   #minLon = Infinity;
@@ -68,12 +103,15 @@ export class FeatureIngest {
   sampleCount = 0;
   /** Set by readers so that errors name the offending feature. */
   location = 'input';
+  /** When set, the read ends with `SampleComplete` after this many features. */
+  stopAfter: number | undefined;
 
   constructor(
     private readonly spool: FeatureSpool,
     private readonly selection: FieldSelection,
     transform: CoordinateTransform | null,
     private readonly rank: RankSelection | null = null,
+    private readonly featureId: FeatureIdSelection | null = null,
   ) {
     this.#transform = transform;
     if (rank) this.#rankKeys = new Float64Array(1024);
@@ -100,9 +138,10 @@ export class FeatureIngest {
       this.#emptyGeometry += 1;
       return;
     }
+    if (this.#features === this.stopAfter) throw new SampleComplete();
     this.#encodeProperties(properties);
     if (this.rank) this.#readRank(properties[this.rank.field]);
-    const numericId = this.#numericId(id);
+    const numericId = this.#numericId(this.featureId ? this.#selectedId(properties) : id);
     this.#addGeometry(geometry, numericId);
   }
 
@@ -147,6 +186,13 @@ export class FeatureIngest {
         `${this.#unrankedFeatures} features have no numeric "${this.rank?.field}" and are the first to be thinned.`,
       );
     }
+    if (this.featureId && this.#features > 0 && this.#usableIds === 0) {
+      throw new TilesetBuildError(
+        'TF_TILESET_BUILD_FEATURE_ID_INVALID',
+        'featureId',
+        `No feature has a non-negative integer in "${this.featureId.field}". Hash text values with --hash-feature-id.`,
+      );
+    }
     if (this.#features === 0) {
       throw new TilesetBuildError(
         'TF_TILESET_BUILD_EMPTY',
@@ -168,7 +214,7 @@ export class FeatureIngest {
       if (name !== sourceName) {
         this.#warnings.add(`Field "${sourceName}" was renamed to "${name}".`);
       }
-      return {name, sourceName, type: fieldType(this.#keyTypes[key])};
+      return {name, sourceName, type: fieldType(this.#keyTypes[key]), ...this.#fieldSummary(key)};
     });
     if (this.#clampedLatitude > 0) {
       this.#warnings.add(
@@ -213,13 +259,50 @@ export class FeatureIngest {
     };
   }
 
+  #fieldSummary(key: number) {
+    const {complete, count, max, min, values} = this.#statistics[key];
+    return {
+      count,
+      ...(Number.isFinite(max) ? {max, min} : {}),
+      values: [...values].sort(compareFieldValues),
+      valuesComplete: complete,
+    };
+  }
+
+  #recordValue(key: number, value: unknown): void {
+    const statistics = this.#statistics[key];
+    statistics.count += 1;
+    if (typeof value === 'number') {
+      if (value < statistics.min) statistics.min = value;
+      if (value > statistics.max) statistics.max = value;
+    }
+    if (
+      (typeof value === 'string' && value.length > maximumFieldValueCharacters) ||
+      (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean')
+    ) {
+      statistics.complete = false;
+    } else if (statistics.values.size < maximumFieldValues) {
+      statistics.values.add(value);
+    } else if (statistics.complete && !statistics.values.has(value)) {
+      statistics.complete = false;
+    }
+  }
+
   keyNames(summary: IngestSummary): string[] {
     return summary.fields.map((item) => item.name);
+  }
+
+  #selectedId(properties: Record<string, unknown>): unknown {
+    const value = properties[(this.featureId as FeatureIdSelection).field];
+    if (!this.featureId?.hash || value === undefined || value === null) return value;
+    const digest = createHash('sha256').update(String(value)).digest();
+    return Number((digest.readBigUInt64BE(0) >> 11n) % largestHashedId);
   }
 
   #numericId(id: unknown): number {
     if (id === undefined || id === null) return 0;
     if (typeof id === 'number' && Number.isSafeInteger(id) && id >= 0 && id < 2 ** 53 - 1) {
+      this.#usableIds += 1;
       return id + 1;
     }
     this.#nonNumericIds += 1;
@@ -342,6 +425,7 @@ export class FeatureIngest {
   }
 
   #pushXY(sourceX: unknown, sourceY: unknown, dropPastMercator: boolean): void {
+    if (this.#points.length >= maximumFeaturePositions * 2) throw featureTooLarge(this.location);
     if (
       typeof sourceX !== 'number' ||
       typeof sourceY !== 'number' ||
@@ -503,7 +587,15 @@ export class FeatureIngest {
       }
       this.#keys.set(name, key);
       this.#keyTypes.push(0);
+      this.#statistics.push({
+        complete: true,
+        count: 0,
+        max: -Infinity,
+        min: Infinity,
+        values: new Set(),
+      });
     }
+    this.#recordValue(key, value);
     const start = this.#propertyLength + 6;
     let end: number;
     if (typeof value === 'number' && Number.isFinite(value)) {
@@ -623,4 +715,10 @@ function fieldType(bits: number): 'Boolean' | 'Number' | 'String' | 'Mixed' {
   if (bits === typeBits.number) return 'Number';
   if (bits === typeBits.string) return 'String';
   return 'Mixed';
+}
+
+function compareFieldValues(left: FieldValue, right: FieldValue): number {
+  if (typeof left === 'number' && typeof right === 'number') return left - right;
+  const [a, b] = [String(left), String(right)];
+  return a < b ? -1 : a > b ? 1 : 0;
 }

@@ -281,6 +281,7 @@ function chooseLayer(layers: readonly LayerRow[], requested: string | undefined)
       'TF_TILESET_BUILD_INPUT_LAYER_INVALID',
       'inputLayer',
       `The GeoPackage has ${names.length} feature tables. Choose one with --input-layer: ${listChoices(names)}.`,
+      names,
     );
   }
   return layers[0];

@@ -6,6 +6,7 @@ import {describeUrl, downloadSource, parseSource} from './source.mjs';
 import {annotate, appendSummary, parseBoolean, setOutputs} from './workflow.mjs';
 
 const valueOptions = [
+  ['TILEFLOW_TILESET_RECIPE', '--recipe'],
   ['TILEFLOW_TILESET_SOURCE_CRS', '--source-crs'],
   ['TILEFLOW_TILESET_MAXZOOM', '--maxzoom'],
   ['TILEFLOW_TILESET_RANK_BY', '--rank-by'],

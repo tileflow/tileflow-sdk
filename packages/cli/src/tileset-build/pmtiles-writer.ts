@@ -1,8 +1,8 @@
 import {createHash} from 'node:crypto';
 import {closeSync, openSync, readSync, writeSync} from 'node:fs';
-import {gzip as gzipCallback, gzipSync} from 'node:zlib';
 import {zxyToTileId} from 'pmtiles';
 import {TilesetBuildError} from './errors';
+import {stableGzip, stableGzipSync} from './gzip';
 
 const headerBytes = 127;
 const rootLimitBytes = 16_384 - headerBytes;
@@ -148,9 +148,7 @@ export class TileArchiveWriter {
   async #compress(content: number, tile: Uint8Array): Promise<void> {
     while (this.#pending.size >= concurrentCompression) await Promise.race(this.#pending);
     if (this.#failure) throw this.#failure;
-    const task: Promise<void> = new Promise<Buffer>((resolve, reject) => {
-      gzipCallback(tile, (error, result) => (error ? reject(error) : resolve(result)));
-    })
+    const task: Promise<void> = stableGzip(tile)
       .then((compressed) => {
         if (this.#descriptor === null) return; // The build failed while this tile was compressing.
         let written = 0;
@@ -217,7 +215,7 @@ export class TileArchiveWriter {
     }
 
     const {leaves, root} = buildDirectories(entries);
-    const metadataBytes = gzipSync(Buffer.from(metadata, 'utf8'));
+    const metadataBytes = stableGzipSync(Buffer.from(metadata, 'utf8'));
     const rootOffset = headerBytes;
     const metadataOffset = rootOffset + root.length;
     const leafOffset = metadataOffset + metadataBytes.length;
@@ -331,5 +329,5 @@ function serializeDirectory(entries: readonly Entry[]): Buffer {
     const contiguous = previous && entry.offset === previous.offset + previous.length;
     varint(contiguous ? 0 : entry.offset + 1);
   }
-  return gzipSync(bytes.subarray(0, cursor));
+  return stableGzipSync(bytes.subarray(0, cursor));
 }

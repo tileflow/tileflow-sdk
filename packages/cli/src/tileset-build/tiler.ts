@@ -1,6 +1,6 @@
-import {gzipSync} from 'node:zlib';
 import {type Box, clipRecordInto} from './clip';
 import {TilesetBuildError} from './errors';
+import {compressedSizeForBudget} from './gzip';
 import {tileBufferUnits, TileEncoder} from './mvt';
 import type {TileArchiveWriter} from './pmtiles-writer';
 import {FeatureSpool, field, geometryType, headerWords, type SpoolDirectory} from './spool';
@@ -328,7 +328,7 @@ function isSolidTile(spool: FeatureSpool, box: Box): boolean {
 }
 
 function measuredSize(tile: Uint8Array): number {
-  return tile.length <= targetCompressedBytes ? tile.length : gzipSync(tile).length;
+  return tile.length <= targetCompressedBytes ? tile.length : compressedSizeForBudget(tile);
 }
 
 function tooLarge(z: number, x: number, y: number): TilesetBuildError {

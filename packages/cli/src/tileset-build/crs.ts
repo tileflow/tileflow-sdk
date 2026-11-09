@@ -96,6 +96,22 @@ export function resolveCrs(statement: CrsStatement, reproject: boolean): Resolve
 }
 
 /** Accept EPSG shorthands, proj strings, WKT and paths to .prj files. */
+/** True for a CRS written out in full. A recipe accepts only these, never a path to read. */
+export function isInlineCrs(value: string): boolean {
+  const trimmed = value.trim();
+  return /^epsg:\d{4,6}$/iu.test(trimmed) || isProjOrWkt(trimmed);
+}
+
+function isProjOrWkt(trimmed: string): boolean {
+  return trimmed.startsWith('+') || /^[A-Z_]+\[/u.test(trimmed);
+}
+
+/** The value to store in a recipe: `.prj` paths become their contents, so the recipe can travel. */
+export function portableCrs(value: string): string {
+  if (isInlineCrs(value)) return value.trim();
+  return parseSourceCrsOption(value).definition as string;
+}
+
 export function parseSourceCrsOption(value: string): CrsStatement {
   const trimmed = value.trim();
   const epsg = /^epsg:(\d{4,6})$/iu.exec(trimmed)?.[1];
@@ -110,7 +126,7 @@ export function parseSourceCrsOption(value: string): CrsStatement {
     }
     return {authority: 'option', definition, label: `EPSG:${epsg}`};
   }
-  if (trimmed.startsWith('+') || /^[A-Z_]+\[/u.test(trimmed)) {
+  if (isProjOrWkt(trimmed)) {
     return {authority: 'option', definition: trimmed, label: '--source-crs'};
   }
   if (existsSync(trimmed)) {

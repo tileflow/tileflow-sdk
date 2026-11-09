@@ -28,6 +28,11 @@ inputs:
       Exact tileflow CLI version to install. When empty, the action uses the tileflow package
       already installed in working-directory.
     default: ''
+  recipe:
+    description: >-
+      Recipe file, relative to working-directory, holding every build setting. Cannot be combined
+      with the inputs a recipe also sets, such as maxzoom or source-crs.
+    default: ''
   source-crs:
     description: CRS of the input, such as EPSG:25830. Passed to --source-crs.
     default: ''
@@ -109,6 +114,7 @@ runs:
         TILEFLOW_TILESET_HAS_API_KEY: ${{ inputs.api-key != '' }}
         TILEFLOW_TILESET_PUBLISH: ${{ inputs.publish }}
         TILEFLOW_TILESET_CLI_VERSION: ${{ inputs.tileflow-version }}
+        TILEFLOW_TILESET_RECIPE: ${{ inputs.recipe }}
         TILEFLOW_TILESET_SOURCE_CRS: ${{ inputs.source-crs }}
         TILEFLOW_TILESET_REPROJECT: ${{ inputs.reproject }}
         TILEFLOW_TILESET_MAXZOOM: ${{ inputs.maxzoom }}

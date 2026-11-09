@@ -1,4 +1,4 @@
-import {existsSync, mkdtempSync, rmSync, statfsSync, statSync} from 'node:fs';
+import {existsSync, mkdtempSync, readdirSync, rmSync, statfsSync, statSync} from 'node:fs';
 import {rename} from 'node:fs/promises';
 import {basename, dirname, extname, join, resolve} from 'node:path';
 import {serializeCanonicalJson} from '@tileflow/core';
@@ -12,7 +12,7 @@ import {
   wgs84Statement,
 } from './crs';
 import {TilesetBuildError} from './errors';
-import {FeatureIngest} from './ingest';
+import {FeatureIngest, type FieldSummary, type IngestSummary} from './ingest';
 import {TileArchiveWriter} from './pmtiles-writer';
 import {csvColumnsNameCoordinates, readCsv} from './read-csv';
 import {readGeojson, readGeojsonSequence} from './read-geojson';
@@ -22,36 +22,43 @@ import {readKml} from './read-kml';
 import {readShapefile, shapefileCrsStatement} from './read-shapefile';
 import {fileChunks} from './read-xml';
 import {ZippedKml, ZippedShapefile} from './read-zip';
+import {
+  layerNamePattern,
+  maximumZoom,
+  recipeFromSettings,
+  recipeHash,
+  type RecipeSettings,
+  type TilesetBuildFormat,
+  type TilesetRecipe,
+} from './recipe';
+import {checkInputSignature} from './signature';
+import {hashSource} from './source-hash';
 import {FeatureSpool, SpoolDirectory} from './spool';
 import {buildPyramid, type ZoomStatistics} from './tiler';
 import {chooseMaxzoom} from './zoom';
 
-export type TilesetBuildFormat =
-  'csv' | 'geojson' | 'geojsonseq' | 'geopackage' | 'gpx' | 'kml' | 'shapefile';
+export type {TilesetBuildFormat};
 
-export type TilesetBuildOptions = Readonly<{
-  attribution?: string;
-  description?: string;
-  exclude?: readonly string[];
-  force?: boolean;
-  format?: TilesetBuildFormat;
-  include?: readonly string[];
-  input: string;
-  inputLayer?: string;
-  latColumn?: string;
-  layer?: string;
-  lonColumn?: string;
-  maxzoom?: number;
-  minzoom?: number;
-  name?: string;
-  onProgress?: (message: string) => void;
-  output?: string;
-  rankAscending?: boolean;
-  rankBy?: string;
-  reproject?: boolean;
-  sourceCrs?: string;
-  zipEntry?: string;
+export type TilesetBuildStage = 'archiving' | 'reading' | 'tiling' | 'validating';
+
+export type TilesetBuildProgress = Readonly<{
+  features?: number;
+  message: string;
+  stage: TilesetBuildStage;
+  tiles?: number;
 }>;
+
+export type TilesetBuildOptions = RecipeSettings &
+  Readonly<{
+    /** Remove the input once read, so a host with little disk can fit the tiling files. */
+    deleteInputAfterRead?: boolean;
+    force?: boolean;
+    input: string;
+    /** Refuse a zip or KMZ that declares more uncompressed bytes than this. */
+    maximumExtractedBytes?: number;
+    onProgress?: (progress: TilesetBuildProgress) => void;
+    output?: string;
+  }>;
 
 export type TilesetBuildResult = Readonly<{
   archive: Readonly<{
@@ -72,18 +79,18 @@ export type TilesetBuildResult = Readonly<{
     geometryTypes: readonly string[];
     skipped: Readonly<{emptyGeometry: number; outsideMercator: number}>;
   }>;
-  layer: Readonly<{
-    fields: readonly Readonly<{name: string; sourceName: string; type: string}>[];
-    id: string;
-  }>;
+  layer: Readonly<{fields: readonly FieldSummary[]; id: string}>;
+  recipe: TilesetRecipe;
   schemaVersion: 1;
+  source: Readonly<{sha256: string}>;
   warnings: readonly string[];
   zooms: readonly ZoomStatistics[];
 }>;
 
-const maximumZoom = 16;
-const layerNamePattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$/u;
 const minimumFreeBytes = 64 * 1024 * 1024;
+const readingProgressMilliseconds = 5_000;
+const extractedExtensions = new Set(['.cpg', '.dbf', '.prj', '.shp']);
+const maximumTileStatisticsCharacters = 128 * 1024;
 const maximumArchiveBytes = 8_000_000_000;
 const nullIslandDegrees = 1;
 
@@ -99,21 +106,8 @@ export async function buildTileset(options: TilesetBuildOptions): Promise<Tilese
     );
   }
   const zipped = isZip(input);
-  if (zipped && format !== 'shapefile') {
-    throw new TilesetBuildError(
-      'TF_TILESET_BUILD_FORMAT_UNSUPPORTED',
-      'format',
-      'Only Shapefiles can be read from a zip; extract other formats first.',
-    );
-  }
   const kmz = isKmz(input);
-  if (kmz && format !== 'kml') {
-    throw new TilesetBuildError(
-      'TF_TILESET_BUILD_FORMAT_UNSUPPORTED',
-      'format',
-      'A .kmz file can only be read as KML.',
-    );
-  }
+  checkContainerFormat(format, zipped, kmz);
   if (!zipped && !kmz && options.zipEntry !== undefined) {
     throw new TilesetBuildError(
       'TF_TILESET_BUILD_ZIP_ENTRY_INVALID',
@@ -157,8 +151,10 @@ export async function buildTileset(options: TilesetBuildOptions): Promise<Tilese
 
   const outputDirectory = dirname(output);
   checkFreeSpace(outputDirectory, zipped ? 0 : inputStat.size);
+  checkInputSignature(input, format, zipped ? 'zip' : kmz ? 'kmz' : null);
   const zip = zipped ? await ZippedShapefile.open(input, options.zipEntry) : null;
   const zippedKml = kmz ? await ZippedKml.open(input, options.zipEntry) : null;
+  checkExtractedSize(zip?.uncompressedBytes ?? zippedKml?.uncompressedBytes, options);
   const geopackage =
     format === 'geopackage' ? GeoPackageLayer.open(input, options.inputLayer) : null;
   const temporary = mkdtempSync(join(outputDirectory, '.tileflow-tileset-build-'));
@@ -194,39 +190,66 @@ export async function buildTileset(options: TilesetBuildOptions): Promise<Tilese
       options.rankBy === undefined
         ? null
         : {ascending: options.rankAscending === true, field: options.rankBy},
+      options.featureId ?? null,
     );
     if (crs.warning) ingest.warn(crs.warning);
 
-    options.onProgress?.('Reading features.');
-    switch (format) {
-      case 'csv':
-        await readCsv(input, ingest, options);
-        break;
-      case 'geojson':
-        await readGeojson(input, ingest, (member) => checkDocumentCrs(member, options));
-        break;
-      case 'geojsonseq':
-        await readGeojsonSequence(input, ingest);
-        break;
-      case 'geopackage':
-        await (geopackage as GeoPackageLayer).read(ingest, options.sourceCrs === undefined);
-        break;
-      case 'gpx':
-        await readGpx(fileChunks(input), ingest);
-        break;
-      case 'kml':
-        await readKml(zippedKml ? zippedKml.chunks() : fileChunks(input), ingest);
-        break;
-      case 'shapefile':
-        await readShapefile(shapefile, ingest);
-        break;
+    async function readFeatures(): Promise<void> {
+      switch (format) {
+        case 'csv':
+          await readCsv(input, ingest, options);
+          break;
+        case 'geojson':
+          await readGeojson(input, ingest, (member) => checkDocumentCrs(member, options));
+          break;
+        case 'geojsonseq':
+          await readGeojsonSequence(input, ingest);
+          break;
+        case 'geopackage':
+          await (geopackage as GeoPackageLayer).read(ingest, options.sourceCrs === undefined);
+          break;
+        case 'gpx':
+          await readGpx(fileChunks(input), ingest);
+          break;
+        case 'kml':
+          await readKml(zippedKml ? zippedKml.chunks() : fileChunks(input), ingest);
+          break;
+        case 'shapefile':
+          await readShapefile(shapefile, ingest);
+          break;
+      }
+    }
+
+    // Hashed now because a service build deletes the input as soon as it has been read.
+    const sourceSha256 = await hashSource(input, format, zipped);
+    options.onProgress?.({message: 'Reading features.', stage: 'reading'});
+    const readingProgress = setInterval(() => {
+      const features = ingest.featureCount;
+      options.onProgress?.({features, message: `Read ${features} features.`, stage: 'reading'});
+    }, readingProgressMilliseconds);
+    try {
+      await readFeatures();
+    } finally {
+      clearInterval(readingProgress);
+    }
+    if (options.deleteInputAfterRead) {
+      rmSync(input, {force: true});
+      for (const name of zip ? readdirSync(temporary) : []) {
+        if (extractedExtensions.has(extname(name).toLowerCase())) {
+          rmSync(join(temporary, name), {force: true});
+        }
+      }
     }
 
     const summary = ingest.finish();
     const maxzoom =
       zoomRange.maxzoom ?? Math.max(chooseMaxzoom(ingest, summary), zoomRange.minzoom);
     const fieldMetadata = Object.fromEntries(summary.fields.map((item) => [item.name, item.type]));
-    options.onProgress?.(`Tiling ${summary.features} features through zoom ${maxzoom}.`);
+    options.onProgress?.({
+      features: summary.features,
+      message: `Tiling ${summary.features} features through zoom ${maxzoom}.`,
+      stage: 'tiling',
+    });
 
     archive = new TileArchiveWriter(join(temporary, 'tiles.bin'));
     // Tiles keep the first features per cell, so this order is what decides which ones survive.
@@ -239,12 +262,17 @@ export async function buildTileset(options: TilesetBuildOptions): Promise<Tilese
       maxzoom,
       minzoom: zoomRange.minzoom,
       onTile: (count) => {
-        if (count % 65_536 < 256) options.onProgress?.(`Wrote ${count} tiles.`);
+        if (count % 65_536 < 256) {
+          options.onProgress?.({message: `Wrote ${count} tiles.`, stage: 'tiling', tiles: count});
+        }
       },
     });
     const pending = join(temporary, 'archive.pmtiles');
     const bounds = summary.bounds;
     const name = options.name ?? layer;
+    // The zoom is resolved, so repeating this recipe holds even if automatic zoom later changes.
+    const recipe = recipeFromSettings({...options, maxzoom, minzoom: zoomRange.minzoom}, layer);
+    options.onProgress?.({message: 'Writing the archive.', stage: 'archiving'});
     const totals = await archive.finish(
       pending,
       {
@@ -260,6 +288,9 @@ export async function buildTileset(options: TilesetBuildOptions): Promise<Tilese
         generator: 'tileflow tileset build',
         generator_version: getCliVersion(),
         name,
+        tileflow_recipe_hash: recipeHash(recipe),
+        tileflow_source_hash: `sha256:${sourceSha256}`,
+        tilestats: tileStatistics(layer, summary),
         type: 'overlay',
         vector_layers: [{fields: fieldMetadata, id: layer, maxzoom, minzoom: zoomRange.minzoom}],
         version: '1',
@@ -275,7 +306,7 @@ export async function buildTileset(options: TilesetBuildOptions): Promise<Tilese
     }
 
     // Use the same validation `tileset publish` applies, so success means the archive is publishable.
-    options.onProgress?.('Validating the archive.');
+    options.onProgress?.({message: 'Validating the archive.', stage: 'validating'});
     const inspection = await inspectTileflowPmtiles(pending, {sample: true});
     await rename(pending, output);
 
@@ -299,7 +330,9 @@ export async function buildTileset(options: TilesetBuildOptions): Promise<Tilese
         skipped: summary.skipped,
       },
       layer: {fields: summary.fields, id: layer},
+      recipe,
       schemaVersion: 1,
+      source: {sha256: sourceSha256},
       warnings: [
         ...summary.warnings,
         ...placementWarnings(bounds, crs.label, options.sourceCrs !== undefined || crs.reprojected),
@@ -327,7 +360,61 @@ export async function buildTileset(options: TilesetBuildOptions): Promise<Tilese
   }
 }
 
-function detectFormat(path: string): TilesetBuildFormat {
+/**
+ * The field values styling needs without reading tiles, in the tilestats shape other vector tile
+ * tools already understand. Values stop once they would make the metadata heavy for a map to load.
+ */
+function tileStatistics(layer: string, summary: IngestSummary) {
+  let budget = maximumTileStatisticsCharacters;
+  const attributes = summary.fields.map((field) => {
+    const size = field.values.reduce<number>((total, value) => total + String(value).length, 0);
+    const values = size <= budget ? field.values : [];
+    budget -= size <= budget ? size : 0;
+    return {
+      attribute: field.name,
+      count: values.length,
+      ...(field.max === undefined ? {} : {max: field.max, min: field.min}),
+      type: field.type.toLowerCase(),
+      values,
+    };
+  });
+  const geometries = summary.geometryTypes;
+  return {
+    layerCount: 1,
+    layers: [
+      {
+        attributeCount: attributes.length,
+        attributes,
+        count: summary.features,
+        geometry: geometries.length === 1 ? geometries[0] : 'Unknown',
+        layer,
+      },
+    ],
+  };
+}
+
+export function checkContainerFormat(
+  format: TilesetBuildFormat,
+  zipped: boolean,
+  kmz: boolean,
+): void {
+  if (zipped && format !== 'shapefile') {
+    throw new TilesetBuildError(
+      'TF_TILESET_BUILD_FORMAT_UNSUPPORTED',
+      'format',
+      'Only Shapefiles can be read from a zip; extract other formats first.',
+    );
+  }
+  if (kmz && format !== 'kml') {
+    throw new TilesetBuildError(
+      'TF_TILESET_BUILD_FORMAT_UNSUPPORTED',
+      'format',
+      'A .kmz file can only be read as KML.',
+    );
+  }
+}
+
+export function detectFormat(path: string): TilesetBuildFormat {
   const extension = extname(path).toLowerCase();
   switch (extension) {
     case '.geojson':
@@ -361,7 +448,7 @@ function detectFormat(path: string): TilesetBuildFormat {
   }
 }
 
-async function chooseCrsStatement(
+export async function chooseCrsStatement(
   format: TilesetBuildFormat,
   input: string,
   options: TilesetBuildOptions,
@@ -402,11 +489,11 @@ function checkDocumentCrs(member: unknown, options: TilesetBuildOptions): void {
   );
 }
 
-function isZip(path: string): boolean {
+export function isZip(path: string): boolean {
   return extname(path).toLowerCase() === '.zip';
 }
 
-function isKmz(path: string): boolean {
+export function isKmz(path: string): boolean {
   return extname(path).toLowerCase() === '.kmz';
 }
 
@@ -440,7 +527,7 @@ function placementWarnings(
   return warnings;
 }
 
-function chooseLayer(
+export function chooseLayer(
   requested: string | undefined,
   inputLayer: string | undefined,
   input: string,
@@ -477,6 +564,19 @@ function checkZooms(options: TilesetBuildOptions): {maxzoom?: number; minzoom: n
     );
   }
   return {...(maxzoom === undefined ? {} : {maxzoom}), minzoom};
+}
+
+function checkExtractedSize(
+  uncompressedBytes: number | undefined,
+  options: TilesetBuildOptions,
+): void {
+  const limit = options.maximumExtractedBytes;
+  if (uncompressedBytes === undefined || limit === undefined || uncompressedBytes <= limit) return;
+  throw new TilesetBuildError(
+    'TF_TILESET_BUILD_INPUT_LIMIT',
+    'input',
+    `The archive expands to ${formatBytes(uncompressedBytes)}; the limit here is ${formatBytes(limit)}.`,
+  );
 }
 
 function checkFreeSpace(directory: string, inputBytes: number, extractedBytes = 0): void {

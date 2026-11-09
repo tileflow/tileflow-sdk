@@ -1,14 +1,21 @@
 import {closeSync, existsSync, openSync, readdirSync, readFileSync, readSync} from 'node:fs';
 import {basename, dirname, extname, join} from 'node:path';
 import type {CrsStatement} from './crs';
-import {TilesetBuildError, yieldToEventLoop} from './errors';
+import {
+  featureTooLarge,
+  featureTooManyBytes,
+  maximumFeatureBytes,
+  maximumFeaturePositions,
+  TilesetBuildError,
+  yieldToEventLoop,
+} from './errors';
 import type {FeatureIngest} from './ingest';
 
 const shapeHeaderBytes = 100;
 const dbfFieldBytes = 32;
 
 /** The sidecar matching `.prj`, tolerating the upper-case extensions older tools write. */
-function sidecar(path: string, extension: string): string | null {
+export function shapefileSidecar(path: string, extension: string): string | null {
   const stem = basename(path, extname(path));
   const directory = dirname(path);
   for (const candidate of [extension, extension.toUpperCase()]) {
@@ -21,7 +28,7 @@ function sidecar(path: string, extension: string): string | null {
 }
 
 export function shapefileCrsStatement(path: string): CrsStatement {
-  const prj = sidecar(path, '.prj');
+  const prj = shapefileSidecar(path, '.prj');
   const label = `${basename(path)}${prj ? ' (.prj)' : ' (no .prj file)'}`;
   return {
     authority: 'declared',
@@ -32,8 +39,8 @@ export function shapefileCrsStatement(path: string): CrsStatement {
 
 export async function readShapefile(path: string, ingest: FeatureIngest): Promise<void> {
   const shp = openSync(path, 'r');
-  const dbfPath = sidecar(path, '.dbf');
-  const table = dbfPath ? openDbf(dbfPath, sidecar(path, '.cpg')) : null;
+  const dbfPath = shapefileSidecar(path, '.dbf');
+  const table = dbfPath ? openDbf(dbfPath, shapefileSidecar(path, '.cpg')) : null;
   if (!table) ingest.warn('No .dbf file was found, so features have no attributes.');
   try {
     const header = Buffer.allocUnsafe(shapeHeaderBytes);
@@ -63,6 +70,7 @@ export async function readShapefile(path: string, ingest: FeatureIngest): Promis
       const recordHeader = stream.read(8);
       if (!recordHeader) throw invalid(`record ${index}: the .shp file ends early.`);
       const bytes = recordHeader.readInt32BE(4) * 2;
+      if (bytes > maximumFeatureBytes) throw featureTooManyBytes(ingest.location);
       const content = stream.read(bytes);
       if (!content) throw invalid(`record ${index}: the .shp file ends early.`);
       const row = table?.next();
@@ -95,16 +103,17 @@ function decodeShape(content: Buffer, index: number) {
     case 18:
     case 28: {
       const count = content.readInt32LE(36);
+      if (count > maximumFeaturePositions) throw featureTooLarge(`record ${index}`);
       return {coordinates: readPoints(content, 40, count), type: 'MultiPoint'};
     }
     case 3:
     case 13:
     case 23:
-      return {coordinates: readParts(content), type: 'MultiLineString'};
+      return {coordinates: readParts(content, index), type: 'MultiLineString'};
     case 5:
     case 15:
     case 25:
-      return {coordinates: assemblePolygons(readParts(content)), type: 'MultiPolygon'};
+      return {coordinates: assemblePolygons(readParts(content, index)), type: 'MultiPolygon'};
     default:
       throw invalid(`record ${index}: unsupported shape type ${type}.`);
   }
@@ -121,14 +130,20 @@ function readPoints(content: Buffer, offset: number, count: number): number[][] 
   return points;
 }
 
-function readParts(content: Buffer): number[][][] {
+function readParts(content: Buffer, index: number): number[][][] {
   const partCount = content.readInt32LE(36);
   const pointCount = content.readInt32LE(40);
+  if (partCount > maximumFeaturePositions || pointCount > maximumFeaturePositions) {
+    throw featureTooLarge(`record ${index}`);
+  }
   const pointsOffset = 44 + partCount * 4;
   const parts: number[][][] = [];
   for (let part = 0; part < partCount; part += 1) {
     const start = content.readInt32LE(44 + part * 4);
     const end = part + 1 < partCount ? content.readInt32LE(44 + (part + 1) * 4) : pointCount;
+    if (start < 0 || end < start || end > pointCount) {
+      throw invalid(`record ${index}: the part offsets are out of order.`);
+    }
     parts.push(readPoints(content, pointsOffset + start * 16, end - start));
   }
   return parts;

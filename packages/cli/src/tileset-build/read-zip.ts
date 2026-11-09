@@ -174,6 +174,7 @@ function chooseKml(documents: readonly Entry[], requested: string | undefined): 
       'TF_TILESET_BUILD_ZIP_ENTRY_INVALID',
       'zipEntry',
       `The KMZ has ${names.length} KML documents and no doc.kml. Choose one with --zip-entry: ${listChoices(names)}.`,
+      names,
     );
   }
   return documents[0];
@@ -203,6 +204,7 @@ function chooseShapefile(shapefiles: readonly Entry[], requested: string | undef
       'TF_TILESET_BUILD_ZIP_ENTRY_INVALID',
       'zipEntry',
       `The zip has ${names.length} Shapefiles. Choose one with --zip-entry: ${listed}.`,
+      names,
     );
   }
   return shapefiles[0];

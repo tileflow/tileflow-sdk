@@ -4,9 +4,18 @@ export class TilesetBuildError extends Error {
     readonly code: `TF_TILESET_BUILD_${string}`,
     readonly path: string,
     message: string,
+    /** What the caller can pick from, when the input holds several layers or entries. */
+    readonly choices?: readonly string[],
   ) {
     super(message);
     this.name = 'TilesetBuildError';
+  }
+}
+
+/** Ends a read early once a sample is complete. */
+export class SampleComplete extends TilesetBuildError {
+  constructor() {
+    super('TF_TILESET_BUILD_SAMPLE_COMPLETE', 'input', 'The sample is complete.');
   }
 }
 
@@ -26,6 +35,17 @@ export function listChoices(names: readonly string[]): string {
  * allocating, so that a small file claiming a huge geometry stops with an error instead of a crash.
  */
 export const maximumFeaturePositions = 5_000_000;
+
+/** Bytes one feature may span before it is parsed, far more than those positions need. */
+export const maximumFeatureBytes = 256 * 1024 * 1024;
+
+export function featureTooManyBytes(location: string): TilesetBuildError {
+  return new TilesetBuildError(
+    'TF_TILESET_BUILD_INPUT_LIMIT',
+    'input',
+    `${location}: the feature takes more than ${maximumFeatureBytes / 1024 ** 2} MiB. Split or simplify it first.`,
+  );
+}
 
 export function featureTooLarge(location: string): TilesetBuildError {
   return new TilesetBuildError(

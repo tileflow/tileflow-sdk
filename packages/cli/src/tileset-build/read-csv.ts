@@ -99,6 +99,15 @@ export async function csvColumnsNameCoordinates(
   );
 }
 
+export async function csvColumnNames(path: string): Promise<string[]> {
+  let names: string[] = [];
+  await forEachRow(path, detectDelimiter(path), (row) => {
+    names = row;
+    return 'stop';
+  });
+  return names;
+}
+
 function normalizeName(name: string): string {
   return name.trim().toLowerCase();
 }

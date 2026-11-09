@@ -6,10 +6,13 @@ import {mkdir, mkdtemp, readdir, readFile, rm, writeFile} from 'node:fs/promises
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
-import {crc32, deflateRawSync} from 'node:zlib';
+import {crc32, deflateRawSync, gunzipSync} from 'node:zlib';
 import {PbfReader} from 'pbf';
 import {PMTiles, type Source} from 'pmtiles';
+import {serializeCanonicalJson} from '@tileflow/core';
 import {cliFixtureArguments} from '../../../test-support/cli-fixture';
+import {compressedSizeForBudget} from '../src/tileset-build/gzip';
+import {tilesetRecipeJsonSchema} from '../src/tileset-build/recipe';
 import {
   inspectNodeTeamTilesetArchive,
   openNodeTeamTilesetArchive,
@@ -17,6 +20,7 @@ import {
 } from '../src/tileset-upload';
 
 const {DatabaseSync} = process.getBuiltinModule('node:sqlite');
+const canonical = serializeCanonicalJson;
 
 type GeoJsonGeometry = {coordinates: any; type: string};
 type DecodedFeature = {
@@ -144,6 +148,484 @@ test('repeat builds are byte-identical and leave no temporary files', async (t) 
     'one.pmtiles',
     'two.pmtiles',
   ]);
+});
+
+test('archives carry no trace of the operating system that compressed them', async (t) => {
+  const directory = await workspace(t);
+  await writeFile(join(directory, 'grid.geojson'), collection(gridPoints(40, 0.3)));
+  assert.equal((await build(directory, ['grid.geojson', '-o', 'grid.pmtiles'])).code, 0);
+
+  const archive = await readFile(join(directory, 'grid.pmtiles'));
+  const offsets = [8, 24, 56].map((position) => Number(archive.readBigUInt64LE(position)));
+  for (const offset of offsets) {
+    assert.deepEqual([...archive.subarray(offset, offset + 2)], [0x1f, 0x8b]);
+    assert.equal(archive[offset + 9], 255);
+  }
+});
+
+test('the decoded tiles are the same on every platform and Node.js release', async (t) => {
+  const directory = await workspace(t);
+  const features = Array.from({length: 30_000}, (_, index) => {
+    const digest = createHash('sha256').update(String(index)).digest();
+    return feature(
+      {
+        coordinates: [digest.readUInt16BE(0) / 65535 - 0.5, digest.readUInt16BE(2) / 65535 - 0.5],
+        type: 'Point',
+      },
+      `Place ${index}`,
+      {properties: {code: digest.toString('hex').slice(0, 48), rank: digest.readUInt16BE(4)}},
+    );
+  });
+  await writeFile(join(directory, 'dense.geojson'), collection(features));
+  const result = await build(directory, ['dense.geojson', '--maxzoom', '9', '--json']);
+  assert.equal(result.code, 0, result.stderr);
+  const {zooms} = JSON.parse(result.stdout);
+  assert.ok(
+    zooms.some((zoom: {largestTileBytes: number}) => zoom.largestTileBytes > 500 * 1024),
+    'the fixture must reach the size budget, or it does not exercise what this test protects',
+  );
+
+  const archive = await readFile(join(directory, 'dense.pmtiles'));
+  const dataStart = Number(archive.readBigUInt64LE(56));
+  const dataLength = Number(archive.readBigUInt64LE(64));
+  // Each tile is one gzip member, and gunzip decodes all of them in layout order.
+  const decoded = gunzipSync(archive.subarray(dataStart, dataStart + dataLength));
+  assert.equal(
+    createHash('sha256').update(decoded).digest('hex'),
+    '29266591d189bf2c8690e43816de283d1ded54c4d9da219d96196d38564c32d0',
+  );
+});
+
+test('the size that decides which features survive does not depend on zlib', () => {
+  const bytes = Uint8Array.from({length: 600_000}, (_, index) => (index * index) % 251);
+  assert.equal(compressedSizeForBudget(bytes), 2_639);
+});
+
+test('a recipe builds the same archive as the flags it was printed from', async (t) => {
+  const directory = await workspace(t);
+  await writeFile(
+    join(directory, 'stores.geojson'),
+    collection(
+      gridPoints(60, 0.2).map((item, index) => ({
+        ...item,
+        properties: {gid: `store-${index}`, name: `Store ${index}`, score: index},
+      })),
+    ),
+  );
+  const flags = [
+    'stores.geojson',
+    '--layer',
+    'shops',
+    '--include',
+    'gid,score',
+    '--rank-by',
+    'score',
+    '--feature-id',
+    'gid',
+    '--hash-feature-id',
+    '--maxzoom',
+    '9',
+    '--attribution',
+    'Example',
+  ];
+  const printed = await runCli(directory, ['tileset', 'build', ...flags, '--print-recipe']);
+  assert.equal(printed.code, 0, printed.stderr);
+  assert.deepEqual((await readdir(directory)).sort(), ['stores.geojson']);
+  const recipe = JSON.parse(printed.stdout);
+  assert.equal(recipe.version, 1);
+  assert.deepEqual(recipe.layers.shops, {
+    featureId: {field: 'gid', hash: true},
+    fields: {include: ['gid', 'score']},
+    maxzoom: 9,
+    minzoom: 0,
+    rank: {by: 'score', order: 'descending'},
+    source: 'shops',
+  });
+  await writeFile(join(directory, 'stores.tileset.json'), printed.stdout);
+
+  const fromFlags = await build(directory, [...flags, '-o', 'flags.pmtiles', '--json']);
+  const fromRecipe = await build(directory, [
+    'stores.geojson',
+    '--recipe',
+    'stores.tileset.json',
+    '-o',
+    'recipe.pmtiles',
+    '--json',
+  ]);
+  assert.equal(fromFlags.code, 0, fromFlags.stderr);
+  assert.equal(fromRecipe.code, 0, fromRecipe.stderr);
+  assert.deepEqual(
+    await readFile(join(directory, 'flags.pmtiles')),
+    await readFile(join(directory, 'recipe.pmtiles')),
+  );
+
+  const features = await decodeZoom(join(directory, 'recipe.pmtiles'), 9, 'shops');
+  assert.equal(new Set(features.map((item) => item.id)).size, 60);
+  assert.ok(features.every((item) => Number.isSafeInteger(item.id)));
+});
+
+test('the build reports the resolved recipe and records its hashes in the archive', async (t) => {
+  const directory = await workspace(t);
+  const source = collection(gridPoints(30, 0.2));
+  await writeFile(join(directory, 'grid.geojson'), source);
+  const result = await build(directory, ['grid.geojson', '--json']);
+  assert.equal(result.code, 0, result.stderr);
+
+  const document = JSON.parse(result.stdout);
+  const layer = document.recipe.layers.grid;
+  assert.equal(typeof layer.maxzoom, 'number');
+  assert.equal(layer.maxzoom, document.archive.maxzoom);
+  const sourceHash = createHash('sha256').update(source).digest('hex');
+  assert.equal(document.source.sha256, sourceHash);
+
+  const pmtiles = new PMTiles(fileSource(await readFile(join(directory, 'grid.pmtiles'))));
+  const metadata = (await pmtiles.getMetadata()) as Record<string, string>;
+  assert.equal(metadata.tileflow_source_hash, `sha256:${sourceHash}`);
+  const recipeHash = createHash('sha256').update(canonical(document.recipe)).digest('hex');
+  assert.equal(metadata.tileflow_recipe_hash, `sha256:${recipeHash}`);
+});
+
+test('a recipe cannot name a file, an unknown field, or several layers', async (t) => {
+  const directory = await workspace(t);
+  await writeFile(join(directory, 'grid.geojson'), collection(gridPoints(4, 0.2)));
+  const base = {
+    layers: {grid: {source: 'grid'}},
+    sources: {grid: {}},
+    version: 1,
+  };
+  const attempts: Array<[string, unknown, string]> = [
+    [
+      'a CRS read from a file',
+      {...base, sources: {grid: {crs: {from: '/etc/passwd'}}}},
+      'recipe.sources.grid.crs.from',
+    ],
+    [
+      'a field this version does not know',
+      {...base, layers: {grid: {source: 'grid', tolerance: 2}}},
+      'recipe.layers.grid',
+    ],
+    [
+      'two layers',
+      {...base, layers: {grid: {source: 'grid'}, other: {source: 'grid'}}},
+      'recipe.layers',
+    ],
+    [
+      'a layer with no source',
+      {...base, layers: {grid: {source: 'missing'}}},
+      'recipe.layers.grid.source',
+    ],
+    ['a newer version', {...base, version: 2}, 'recipe.version'],
+    [
+      'zooms in the wrong order',
+      {...base, layers: {grid: {maxzoom: 2, minzoom: 5, source: 'grid'}}},
+      'recipe.layers.grid.maxzoom',
+    ],
+  ];
+  for (const [label, recipe, path] of attempts) {
+    await writeFile(join(directory, 'recipe.json'), JSON.stringify(recipe));
+    const result = await build(directory, ['grid.geojson', '--recipe', 'recipe.json', '--json']);
+    assert.equal(result.code, 1, label);
+    assert.equal(JSON.parse(result.stderr).error.code, 'TF_TILESET_BUILD_RECIPE_INVALID', label);
+    assert.equal(JSON.parse(result.stderr).error.path, path, label);
+  }
+});
+
+test('a recipe replaces the flags it would otherwise conflict with', async (t) => {
+  const directory = await workspace(t);
+  await writeFile(join(directory, 'grid.geojson'), collection(gridPoints(4, 0.2)));
+  await writeFile(
+    join(directory, 'recipe.json'),
+    JSON.stringify({layers: {grid: {source: 'grid'}}, sources: {grid: {}}, version: 1}),
+  );
+  const result = await build(directory, [
+    'grid.geojson',
+    '--recipe',
+    'recipe.json',
+    '--maxzoom',
+    '4',
+  ]);
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /remove --maxzoom/u);
+});
+
+test('printing a recipe embeds a .prj file instead of its path', async (t) => {
+  const directory = await workspace(t);
+  await writeFile(join(directory, 'crs.prj'), utm30nPrj);
+  await writeFile(join(directory, 'grid.geojson'), collection(gridPoints(4, 0.2)));
+  const printed = await runCli(directory, [
+    'tileset',
+    'build',
+    'grid.geojson',
+    '--source-crs',
+    'crs.prj',
+    '--reproject',
+    '--print-recipe',
+  ]);
+  assert.equal(printed.code, 0, printed.stderr);
+  assert.deepEqual(JSON.parse(printed.stdout).sources.grid.crs, {from: utm30nPrj, reproject: true});
+});
+
+test('--feature-id refuses a field with no usable integers unless it is hashed', async (t) => {
+  const directory = await workspace(t);
+  await writeFile(
+    join(directory, 'named.geojson'),
+    collection([feature({coordinates: [1, 1], type: 'Point'}, 'A', {properties: {gid: 'x'}})]),
+  );
+  const refused = await build(directory, ['named.geojson', '--feature-id', 'gid', '--json']);
+  assert.equal(refused.code, 1);
+  assert.equal(JSON.parse(refused.stderr).error.code, 'TF_TILESET_BUILD_FEATURE_ID_INVALID');
+  const hashed = await build(directory, [
+    'named.geojson',
+    '--feature-id',
+    'gid',
+    '--hash-feature-id',
+    '--json',
+  ]);
+  assert.equal(hashed.code, 0, hashed.stderr);
+});
+
+test('the published recipe schema matches the validator', async () => {
+  const published = JSON.parse(
+    await readFile(new URL('../schemas/tileset-recipe.v1.json', import.meta.url), 'utf8'),
+  );
+  assert.deepEqual(published, tilesetRecipeJsonSchema());
+});
+
+test('a file whose contents contradict its extension is refused before parsing', async (t) => {
+  const directory = await workspace(t);
+  const attempts: Array<[string, string | Buffer, RegExp]> = [
+    ['report.geojson', '%PDF-1.7 not json', /does not look like GeoJSON/u],
+    ['data.gpkg', 'not a database at all', /does not look like GeoPackage/u],
+    ['shapes.shp', Buffer.alloc(200), /does not look like a Shapefile/u],
+    ['bundle.zip', 'plain text', /does not look like a ZIP archive/u],
+    ['route.gpx', '{"type":"FeatureCollection"}', /does not look like GPX/u],
+    ['table.csv', Buffer.from([0x50, 0x00, 0x4b]), /does not look like CSV/u],
+  ];
+  for (const [name, contents, message] of attempts) {
+    await writeFile(join(directory, name), contents);
+    const result = await build(directory, [name, '--json']);
+    assert.equal(result.code, 1, name);
+    assert.equal(failure(result).code, 'TF_TILESET_BUILD_INPUT_INVALID', name);
+    assert.match(failure(result).message, message, name);
+  }
+});
+
+test('one feature cannot hold more positions than the limit in GeoJSON', async (t) => {
+  const directory = await workspace(t);
+  const positions = Array.from({length: 5_000_001}, () => '[1,2]').join(',');
+  await writeFile(
+    join(directory, 'huge.geojson'),
+    `{"type":"FeatureCollection","features":[{"type":"Feature","properties":{},"geometry":{"type":"LineString","coordinates":[${positions}]}}]}`,
+  );
+  const result = await build(directory, ['huge.geojson', '--json']);
+  assert.equal(result.code, 1);
+  assert.equal(failure(result).code, 'TF_TILESET_BUILD_INPUT_LIMIT');
+  assert.match(failure(result).message, /feature 1: the feature has more than 5000000 positions/u);
+});
+
+test('a Shapefile record cannot claim more positions than the limit', async (t) => {
+  const directory = await workspace(t);
+  const {shp} = await shapefileParts(directory);
+  // The first non-null record's point count sits 40 bytes into its content, after its 8-byte header.
+  const nullRecordBytes = 12;
+  shp.writeInt32LE(5_000_001, 100 + nullRecordBytes + 8 + 40);
+  await writeFile(join(directory, 'shapes.shp'), shp);
+  const result = await build(directory, ['shapes.shp', '--source-crs', 'EPSG:4326', '--json']);
+  assert.equal(result.code, 1);
+  assert.equal(failure(result).code, 'TF_TILESET_BUILD_INPUT_LIMIT');
+});
+
+test('--progress ndjson reports each stage while stdout keeps the final document', async (t) => {
+  const directory = await workspace(t);
+  await writeFile(join(directory, 'grid.geojson'), collection(gridPoints(40, 0.2)));
+  const result = await build(directory, ['grid.geojson', '--json', '--progress', 'ndjson']);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).command, 'tileset build');
+  const events = result.stderr
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line));
+  assert.deepEqual(
+    [...new Set(events.map((event) => event.stage))],
+    ['reading', 'tiling', 'archiving', 'validating'],
+  );
+  assert.ok(events.every((event) => typeof event.message === 'string'));
+
+  const invalid = await build(directory, ['grid.geojson', '--progress', 'xml', '--json']);
+  assert.equal(failure(invalid).code, 'TF_TILESET_BUILD_PROGRESS_INVALID');
+});
+
+test('--delete-input-after-read frees the input and still writes the archive', async (t) => {
+  const directory = await workspace(t);
+  await writeFile(join(directory, 'grid.geojson'), collection(gridPoints(16, 0.2)));
+  const result = await build(directory, ['grid.geojson', '--delete-input-after-read', '--json']);
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual((await readdir(directory)).sort(), ['grid.pmtiles']);
+});
+
+test('--delete-input-after-read keeps the spool of a zipped Shapefile', async (t) => {
+  const directory = await workspace(t);
+  const {dbf, shp} = await shapefileParts(directory);
+  await writeZip(join(directory, 'parks.zip'), [
+    {data: shp, name: 'parks.shp'},
+    {data: dbf, name: 'parks.dbf'},
+    {data: Buffer.from(wgs84Prj), name: 'parks.prj'},
+  ]);
+  const result = await build(directory, ['parks.zip', '--delete-input-after-read', '--json']);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).input.features, 1);
+  assert.deepEqual((await readdir(directory)).sort(), ['parks.pmtiles', 'scratch-source']);
+});
+
+test('numeric options must be positive integers', async (t) => {
+  const directory = await workspace(t);
+  await writeFile(join(directory, 'grid.geojson'), collection(gridPoints(4, 0.2)));
+  const result = await build(directory, ['grid.geojson', '--inspect', '--sample-features', 'many']);
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /--sample-features must be a positive integer/u);
+});
+
+test('--max-extracted-bytes refuses an archive that expands past it', async (t) => {
+  const directory = await workspace(t);
+  const {dbf, shp} = await shapefileParts(directory);
+  await writeZip(join(directory, 'data.zip'), [
+    {data: shp, name: 'data.shp'},
+    {data: dbf, name: 'data.dbf'},
+    {data: Buffer.from(wgs84Prj), name: 'data.prj'},
+  ]);
+  const result = await build(directory, [
+    'data.zip',
+    '--max-extracted-bytes',
+    String(shp.length - 1),
+    '--json',
+  ]);
+  assert.equal(result.code, 1);
+  assert.equal(failure(result).code, 'TF_TILESET_BUILD_INPUT_LIMIT');
+  assert.match(failure(result).message, /expands to/u);
+});
+
+test('field statistics reach the JSON output and the archive metadata', async (t) => {
+  const directory = await workspace(t);
+  await writeFile(
+    join(directory, 'stores.geojson'),
+    collection(
+      Array.from({length: 100}, (_, index) =>
+        feature({coordinates: [index / 50, 1], type: 'Point'}, `Store ${index}`, {
+          properties: {
+            kind: index % 2 === 0 ? 'cafe' : 'shop',
+            label: 'x'.repeat(index === 0 ? 100 : 1),
+            score: index / 2,
+          },
+        }),
+      ),
+    ),
+  );
+  const result = await build(directory, ['stores.geojson', '--json']);
+  assert.equal(result.code, 0, result.stderr);
+  const fields = Object.fromEntries(
+    JSON.parse(result.stdout).layer.fields.map((item: {name: string}) => [item.name, item]),
+  );
+  assert.deepEqual(fields.kind, {
+    count: 100,
+    name: 'kind',
+    sourceName: 'kind',
+    type: 'String',
+    values: ['cafe', 'shop'],
+    valuesComplete: true,
+  });
+  assert.equal(fields.score.min, 0);
+  assert.equal(fields.score.max, 49.5);
+  assert.equal(fields.score.values.length, 64);
+  assert.equal(fields.score.valuesComplete, false);
+  assert.equal(fields.label.valuesComplete, false);
+
+  const pmtiles = new PMTiles(fileSource(await readFile(join(directory, 'stores.pmtiles'))));
+  const {tilestats} = (await pmtiles.getMetadata()) as {
+    tilestats: {
+      layers: {
+        attributes: {attribute: string; max?: number; type: string; values: unknown[]}[];
+        count: number;
+        geometry: string;
+        layer: string;
+      }[];
+    };
+  };
+  const [layer] = tilestats.layers;
+  assert.equal(layer.layer, 'stores');
+  assert.equal(layer.count, 100);
+  assert.equal(layer.geometry, 'Point');
+  const kind = layer.attributes.find((item) => item.attribute === 'kind');
+  assert.deepEqual(kind?.values, ['cafe', 'shop']);
+  assert.equal(layer.attributes.find((item) => item.attribute === 'score')?.max, 49.5);
+});
+
+test('inspection reports what a person must still decide, without tiling', async (t) => {
+  const directory = await workspace(t);
+  await writeFile(
+    join(directory, 'sites.csv'),
+    'x,y,kind\n440000,4470000,a\n441000,4471000,b\n442000,4472000,a\n',
+  );
+  const inspect = async (...args: string[]) => {
+    const result = await runCli(directory, ['tileset', 'build', ...args, '--inspect']);
+    assert.equal(result.code, 0, result.stderr);
+    return JSON.parse(result.stdout);
+  };
+
+  const unnamed = await inspect('sites.csv');
+  assert.deepEqual(unnamed.columns, ['x', 'y', 'kind']);
+  assert.equal(unnamed.crs.status, 'unknown');
+
+  const wrong = await inspect('sites.csv', '--lon-column', 'x', '--lat-column', 'y');
+  assert.equal(wrong.crs.status, 'out-of-range');
+  assert.equal(wrong.crs.problem.code, 'TF_TILESET_BUILD_COORDINATES_OUT_OF_RANGE');
+  assert.deepEqual(wrong.sample.sourceBounds, [440000, 4470000, 442000, 4472000]);
+  assert.deepEqual(wrong.sample.coordinates[0], [440000, 4470000]);
+  assert.equal(wrong.sample.bounds, null);
+
+  const stated = await inspect(
+    'sites.csv',
+    '--lon-column',
+    'x',
+    '--lat-column',
+    'y',
+    '--source-crs',
+    'EPSG:25830',
+  );
+  assert.equal(stated.crs.status, 'needs-reproject');
+  assertClose(stated.sample.bounds.slice(0, 2), [-3.7068, 40.3784], 0.001);
+  assert.deepEqual(stated.recipe.sources.sites.crs, {from: 'EPSG:25830', reproject: true});
+  assert.deepEqual(stated.fields[0].values, ['a', 'b']);
+  assert.equal(stated.sample.complete, true);
+  assert.deepEqual((await readdir(directory)).sort(), ['sites.csv']);
+});
+
+test('inspection stops at the sample and lists what must be picked', async (t) => {
+  const directory = await workspace(t);
+  await writeFile(join(directory, 'grid.geojson'), collection(gridPoints(40, 0.2)));
+  const sampled = await runCli(directory, [
+    'tileset',
+    'build',
+    'grid.geojson',
+    '--inspect',
+    '--sample-features',
+    '25',
+  ]);
+  assert.equal(sampled.code, 0, sampled.stderr);
+  const {sample} = JSON.parse(sampled.stdout);
+  assert.equal(sample.features, 25);
+  assert.equal(sample.complete, false);
+
+  const parts = await shapefileParts(directory);
+  await writeZip(join(directory, 'two.zip'), [
+    {data: parts.shp, name: 'a.shp'},
+    {data: parts.shp, name: 'b.shp'},
+  ]);
+  const listed = await runCli(directory, ['tileset', 'build', 'two.zip', '--inspect']);
+  assert.equal(listed.code, 0, listed.stderr);
+  assert.deepEqual(JSON.parse(listed.stdout).choices, {
+    names: ['a.shp', 'b.shp'],
+    option: 'zipEntry',
+  });
 });
 
 test('built archives pass the checks publish runs before uploading', async (t) => {
@@ -722,7 +1204,7 @@ test('invalid requests fail fast with stable codes and keep existing output', as
   const cases: Array<[string[], string, RegExp?]> = [
     [['missing.geojson'], 'TF_TILESET_BUILD_INPUT_MISSING'],
     [['a.fgb'], 'TF_TILESET_BUILD_FORMAT_UNSUPPORTED', /\.shp/u],
-    [['a.zip'], 'TF_TILESET_BUILD_INPUT_INVALID', /zip could not be read/u],
+    [['a.zip'], 'TF_TILESET_BUILD_INPUT_INVALID', /does not look like a ZIP archive/u],
     [['a.geojson', '-o', 'taken.pmtiles'], 'TF_TILESET_BUILD_OUTPUT_EXISTS', /--force/u],
     [['a.geojson', '-o', 'a.geojson'], 'TF_TILESET_BUILD_OUTPUT_INVALID'],
     [['a.geojson', '--maxzoom', '40'], 'TF_TILESET_BUILD_ZOOM_INVALID'],
@@ -2218,7 +2700,7 @@ test('hostile or broken GeoPackages stop with a stable code and never run their 
 
 test('a GeoPackage only needs the runtime check when one is actually read', async (t) => {
   const directory = await workspace(t);
-  await writeFile(join(directory, 'a.gpkg'), 'x');
+  await writeFile(join(directory, 'a.gpkg'), 'SQLite format 3\0');
   await writeFile(join(directory, 'a.geojson'), collection(gridPoints(1, 1)));
   // Stands in for a Node.js 22 release from before the module was available without a flag.
   const env = {

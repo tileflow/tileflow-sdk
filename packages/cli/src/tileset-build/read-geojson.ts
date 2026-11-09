@@ -1,5 +1,10 @@
 import {closeSync, fstatSync, openSync, readFileSync, readSync} from 'node:fs';
-import {TilesetBuildError, yieldToEventLoop} from './errors';
+import {
+  featureTooManyBytes,
+  maximumFeatureBytes,
+  TilesetBuildError,
+  yieldToEventLoop,
+} from './errors';
 import type {FeatureIngest, GeometryInput} from './ingest';
 
 const chunkBytes = 4 * 1024 * 1024;
@@ -45,6 +50,7 @@ export async function readGeojson(
 export async function readGeojsonSequence(path: string, ingest: FeatureIngest): Promise<void> {
   let line = 0;
   let carried: Buffer[] = [];
+  let carriedBytes = 0;
   const emit = (bytes: Buffer) => {
     line += 1;
     let start = 0;
@@ -64,12 +70,17 @@ export async function readGeojsonSequence(path: string, ingest: FeatureIngest): 
       if (carried.length > 0) {
         emit(Buffer.concat([...carried, piece]));
         carried = [];
+        carriedBytes = 0;
       } else {
         emit(piece);
       }
       start = newline + 1;
     }
-    if (start < chunk.length) carried.push(Buffer.from(chunk.subarray(start)));
+    if (start < chunk.length) {
+      carried.push(Buffer.from(chunk.subarray(start)));
+      carriedBytes += chunk.length - start;
+      if (carriedBytes > maximumFeatureBytes) throw featureTooManyBytes(`line ${line + 1}`);
+    }
   });
   if (carried.length > 0) emit(Buffer.concat(carried));
 }
@@ -154,6 +165,8 @@ class TopLevelScanner {
   #escaped = false;
   #inFeatures = false;
   #capture: Buffer[] = [];
+  #capturedBytes = 0;
+  #featuresEmitted = 0;
   #captureStart = -1;
   #key: Buffer[] = [];
   #keyStart = -1;
@@ -253,7 +266,11 @@ class TopLevelScanner {
     }
     if (this.#captureStart >= 0) {
       this.#capture.push(Buffer.from(chunk.subarray(this.#captureStart)));
+      this.#capturedBytes += chunk.length - this.#captureStart;
       this.#captureStart = 0;
+      if (this.#capturedBytes > maximumFeatureBytes) {
+        throw featureTooManyBytes(`feature ${this.#featuresEmitted + 1}`);
+      }
     }
   }
 
@@ -271,11 +288,13 @@ class TopLevelScanner {
     const tail = chunk.subarray(this.#captureStart, end);
     const bytes = this.#capture.length > 0 ? Buffer.concat([...this.#capture, tail]) : tail;
     this.#capture = [];
+    this.#capturedBytes = 0;
     this.#captureStart = -1;
     return bytes;
   }
 
   #emitFeature(chunk: Buffer, end: number): void {
+    this.#featuresEmitted += 1;
     this.onFeature(this.#take(chunk, end));
   }
 

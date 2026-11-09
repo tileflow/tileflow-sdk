@@ -1,7 +1,9 @@
 import {Command} from 'commander';
 import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
 import test from 'node:test';
 import {stripVTControlCharacters} from 'node:util';
+import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {registerDeploymentCommands} from '../src/deployment-command';
 import {registerTilesetCommands} from '../src/tileset-command';
 
@@ -91,9 +93,9 @@ function mapProgram() {
   const scopes: string[][] = [];
   const command = new Command().name('tileflow').exitOverride();
   registerDeploymentCommands(command, {
-    resolveApi: async (_options, behavior) => {
+    resolveApi: async (options, behavior) => {
       scopes.push(behavior.capabilityScopes);
-      return {apiKey, apiUrl: 'https://api.tileflow.dev', mapId};
+      return {apiKey, apiUrl: options.apiUrl ?? 'https://api.tileflow.dev', mapId};
     },
   });
   return {command, scopes};
@@ -287,7 +289,10 @@ test('a restore blocked by an upload tells an agent exactly how to clear it', as
   assert.deepEqual(error.upload, upload);
   assert.deepEqual(
     error.nextSteps.map((step: {command: string}) => step.command),
-    ['tileflow tileset upload abort stores --upload-id upl_a', 'tileflow tileset restore stores'],
+    [
+      `tileflow tileset upload abort ${resourceId} --upload-id upl_a`,
+      `tileflow tileset restore ${resourceId}`,
+    ],
   );
 });
 
@@ -324,10 +329,26 @@ test('a repaired restore says nothing was swapped', async (t) => {
 });
 
 test('upload abort finds the active upload and aborts that one', async (t) => {
+  const session = {...upload, id: 'tsu_0123456789abcdef0123456789abcdef'};
   const output = capture(t, (request) => {
-    if (request.method === 'DELETE') return Response.json({state: 'aborted', uploadId: upload.id});
+    if (request.method === 'DELETE')
+      return Response.json({
+        schemaVersion: 1,
+        state: 'aborted',
+        uploadId: session.id,
+        byteCount: 42,
+        contentHash: 'a'.repeat(64),
+        contentHashAlgorithm: 'sha256-fixed-parts-v1',
+        expiresAt: session.expiresAt,
+        failure: null,
+        partCount: 1,
+        parts: [],
+        partSize: 16_777_216,
+        publishedVersion: null,
+        versionId: null,
+      });
     return request.path.endsWith('/uploads')
-      ? Response.json({schemaVersion: 1, upload})
+      ? Response.json({schemaVersion: 1, upload: session})
       : Response.json(tilesetDetail);
   });
 
@@ -346,10 +367,10 @@ test('upload abort finds the active upload and aborts that one', async (t) => {
   );
 
   assert.equal(process.exitCode ?? 0, 0, output.stderr);
-  assert.equal(output.requests.at(-1)!.path, `/v1/tilesets/${resourceId}/uploads/upl_a`);
+  assert.equal(output.requests.at(-1)!.path, `/v1/tilesets/${resourceId}/uploads/${session.id}`);
   const document = JSON.parse(output.stdout);
   assert.equal(document.aborted, true);
-  assert.equal(document.nextSteps[0].command, 'tileflow tileset restore stores');
+  assert.equal(document.nextSteps[0].command, `tileflow tileset restore ${resourceId}`);
 });
 
 test('upload abort with nothing in progress succeeds without deleting', async (t) => {
@@ -376,4 +397,57 @@ test('upload abort with nothing in progress succeeds without deleting', async (t
   assert.equal(process.exitCode ?? 0, 0, output.stderr);
   assert.equal(JSON.parse(output.stdout).aborted, false);
   assert.ok(output.requests.every((request) => request.method === 'GET'));
+});
+
+test('deployment continuations preserve the API origin and Map', async (t) => {
+  const origin = 'https://staging.example.test';
+  const output = capture(t, () => Response.json({...history, deployments: []}));
+  await output.run(() =>
+    mapProgram().command.parseAsync(
+      ['deployments', 'restore', '2', '--map-id', mapId, '--api-url', origin, '--json'],
+      {from: 'user'},
+    ),
+  );
+  const {error} = JSON.parse(output.stderr);
+  assert.equal(error.nextSteps[0].command, `tileflow deploy --map-id ${mapId} --api-url ${origin}`);
+  assert.doesNotMatch(error.nextSteps[0].command, /tf_live|--api-key/u);
+});
+
+test('an incompatible history offers no unqualified package installation', async (t) => {
+  const output = capture(t, () => Response.json({}));
+  await output.run(() =>
+    mapProgram().command.parseAsync(['deployments', 'list', '--map-id', mapId, '--json'], {
+      from: 'user',
+    }),
+  );
+  const {error} = JSON.parse(output.stderr);
+  assert.equal(error.code, 'deployment_list_invalid');
+  assert.ok(error.nextSteps[0].description);
+  assert.equal(error.nextSteps[0].command, undefined);
+  assert.doesNotMatch(output.stderr, /@latest/u);
+});
+
+test('agent commands emit a single JSON failure for invalid arguments and unavailable credentials', () => {
+  const cases = [
+    ['deployments', 'list', '--map-id', 'wrong'],
+    ['deployments', 'restore', '1', '--map-id', mapId],
+    ['deployments', 'restore', '1', '--map-id', mapId, '--api-key', 'invalid'],
+    ['deployments', 'list'],
+    ['deployments', 'restore', 'zero', '--map-id', mapId],
+    ['tileset', 'restore', 'stores', '--api-key', 'invalid'],
+    ['tileset', 'upload', 'abort', 'stores'],
+    ['tileset', 'restore'],
+  ];
+  for (const args of cases) {
+    const child = spawnSync(process.execPath, cliFixtureArguments([...args, '--json']), {
+      encoding: 'utf8',
+      env: {PATH: process.env.PATH, CI: 'true'},
+      timeout: 30_000,
+    });
+    assert.equal(child.status, 1, child.stderr);
+    assert.equal(child.stdout, '');
+    const {error} = JSON.parse(child.stderr);
+    assert.ok(error.code && error.message, args.join(' '));
+    assert.ok(Array.isArray(error.nextSteps), args.join(' '));
+  }
 });

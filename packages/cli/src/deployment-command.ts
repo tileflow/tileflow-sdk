@@ -2,10 +2,16 @@ import type {Command} from 'commander';
 import pc from 'picocolors';
 import {z} from 'zod';
 import {resolveDeploySource} from './deploy-source';
-import {emitFailure, emitJson} from './hosted-team';
-import {hostedApiKeyOption, hostedApiUrlOption} from './hosted-options';
 import {requestHostedJson} from './hosted-client';
-import {deploymentRestoreSteps, emitGuidedFailure, printNextSteps} from './restore-guidance';
+import {hostedApiKeyOption, hostedApiUrlOption} from './hosted-options';
+import {emitJson} from './hosted-team';
+import {
+  apiOriginOption,
+  deploymentRestoreSteps,
+  emitGuidedFailure,
+  emitRestoreFailure,
+  printNextSteps,
+} from './restore-guidance';
 
 type DeploymentOptions = {apiKey?: string; apiUrl?: string; json?: boolean; mapId?: string};
 type HostedMapApi = {apiKey: string; apiUrl: string; mapId: string};
@@ -54,7 +60,10 @@ export function registerDeploymentCommands(
   dependencies: {
     resolveApi(
       options: DeploymentOptions,
-      behavior: {capabilityScopes: Array<'status:read' | 'styles:write'>; silent?: boolean},
+      behavior: {
+        capabilityScopes: Array<'status:read' | 'styles:write'>;
+        onFailure?: ((code: string, message: string) => void) | undefined;
+      },
     ): Promise<HostedMapApi | null>;
   },
 ): void {
@@ -71,7 +80,7 @@ export function registerDeploymentCommands(
   const readHistory = async (api: HostedMapApi, json: boolean | undefined) => {
     const response = await request(api, '/v1/styles/deployments', 'GET');
     if (!response.ok) {
-      emitHttpFailure(json, response.status, response.body, api.mapId);
+      emitHttpFailure(json, response.status, response.body, api);
       return null;
     }
     const parsed = deploymentListResponseSchema.safeParse(response.body);
@@ -80,7 +89,7 @@ export function registerDeploymentCommands(
         json,
         'deployment_list_invalid',
         'The deployment history was not understood.',
-        [{description: 'Update the CLI, then try again.', command: 'npm install tileflow@latest'}],
+        [{description: 'Update to a CLI version that supports deployments, then try again.'}],
       );
       return null;
     }
@@ -92,7 +101,9 @@ export function registerDeploymentCommands(
   ).action(async (options: DeploymentOptions) => {
     const api = await dependencies.resolveApi(options, {
       capabilityScopes: ['status:read'],
-      silent: options.json,
+      onFailure: options.json
+        ? (code, message) => emitRestoreFailure(true, code, message)
+        : undefined,
     });
     if (!api) return;
     const history = await readHistory(api, options.json);
@@ -102,7 +113,7 @@ export function registerDeploymentCommands(
       ? [
           {
             description: `Publish an earlier version again, for example version ${earlier.version}. It becomes a new version and nothing is lost.`,
-            command: `tileflow deployments restore ${earlier.version} --map-id ${api.mapId}`,
+            command: `tileflow deployments restore ${earlier.version} --map-id ${api.mapId}${apiOriginOption(api.apiUrl)}`,
           },
         ]
       : [];
@@ -131,12 +142,18 @@ export function registerDeploymentCommands(
       .argument('<version>', 'the version to restore'),
   ).action(async (value: string, options: DeploymentOptions) => {
     if (!/^[1-9][0-9]{0,9}$/u.test(value)) {
-      return emitFailure(options.json, 'invalid_version', 'Version must be a positive integer.');
+      return emitRestoreFailure(
+        options.json,
+        'invalid_version',
+        'Version must be a positive integer.',
+      );
     }
     const version = Number(value);
     const api = await dependencies.resolveApi(options, {
       capabilityScopes: ['status:read', 'styles:write'],
-      silent: options.json,
+      onFailure: options.json
+        ? (code, message) => emitRestoreFailure(true, code, message)
+        : undefined,
     });
     if (!api) return;
     const history = await readHistory(api, options.json);
@@ -147,7 +164,7 @@ export function registerDeploymentCommands(
         options.json,
         'nothing_published',
         'Nothing is published on this Map.',
-        deploymentRestoreSteps({code: 'nothing_published', mapId: api.mapId}),
+        deploymentRestoreSteps({code: 'nothing_published', mapId: api.mapId, apiUrl: api.apiUrl}),
       );
     }
     if (!history.some((item) => item.version === version)) {
@@ -155,22 +172,29 @@ export function registerDeploymentCommands(
         options.json,
         'deployment_not_found',
         `Version ${version} is not in this Map's retained history.`,
-        deploymentRestoreSteps({code: 'deployment_not_found', mapId: api.mapId}),
+        deploymentRestoreSteps({
+          code: 'deployment_not_found',
+          mapId: api.mapId,
+          apiUrl: api.apiUrl,
+        }),
       );
     }
     const response = await request(api, `/v1/styles/deployments/${version}/restore`, 'POST', {
       expectedCurrentVersion: live.version,
       source: resolveDeploySource(process.env),
     });
-    if (!response.ok)
-      return emitHttpFailure(options.json, response.status, response.body, api.mapId);
+    if (!response.ok) return emitHttpFailure(options.json, response.status, response.body, api);
     const parsed = deploymentRestoreResponseSchema.safeParse(response.body);
     if (!parsed.success || parsed.data.mapId !== api.mapId) {
       return emitGuidedFailure(
         options.json,
         'deployment_restore_unconfirmed',
         `The restore of version ${version} was not confirmed.`,
-        deploymentRestoreSteps({code: 'deployment_restore_unconfirmed', mapId: api.mapId}),
+        deploymentRestoreSteps({
+          code: 'deployment_restore_unconfirmed',
+          mapId: api.mapId,
+          apiUrl: api.apiUrl,
+        }),
       );
     }
     const nextSteps = parsed.data.changed
@@ -180,7 +204,7 @@ export function registerDeploymentCommands(
           },
           {
             description: `To undo this restore, publish version ${live.version} again.`,
-            command: `tileflow deployments restore ${live.version} --map-id ${api.mapId}`,
+            command: `tileflow deployments restore ${live.version} --map-id ${api.mapId}${apiOriginOption(api.apiUrl)}`,
           },
         ]
       : [];
@@ -209,7 +233,12 @@ function request(api: HostedMapApi, path: string, method: 'GET' | 'POST', body?:
   });
 }
 
-function emitHttpFailure(json: boolean | undefined, status: number, body: unknown, mapId: string) {
+function emitHttpFailure(
+  json: boolean | undefined,
+  status: number,
+  body: unknown,
+  api: HostedMapApi,
+) {
   const failure = failureSchema.safeParse(body);
   const message = failure.success ? failure.data.error : undefined;
   const code = (failure.success ? failure.data.code : undefined) ?? `http_${status}`;
@@ -217,6 +246,6 @@ function emitHttpFailure(json: boolean | undefined, status: number, body: unknow
     json,
     code,
     message ? `${message.replace(/\.$/u, '')}.` : `The request failed with ${status}.`,
-    deploymentRestoreSteps({code, mapId}),
+    deploymentRestoreSteps({code, mapId: api.mapId, apiUrl: api.apiUrl}),
   );
 }

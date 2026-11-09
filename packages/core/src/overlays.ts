@@ -32,9 +32,12 @@ export type TileflowHostedTilesetSource = Readonly<{
   type: TileflowHostedTilesetType;
 }>;
 
-/** A GeoJSON FeatureCollection, the shape MapLibre clustering and `setData` accept. */
+/**
+ * A GeoJSON FeatureCollection, the shape MapLibre clustering and `setData` accept. Features are
+ * plain objects because typed GeoJSON interfaces, such as `Feature<Point>`, have no index signature.
+ */
 export type TileflowGeoJsonFeatureCollection = Readonly<{
-  features: readonly Readonly<Record<string, unknown>>[];
+  features: readonly object[];
   type: 'FeatureCollection';
 }>;
 

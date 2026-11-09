@@ -89,7 +89,7 @@ Display every attribution entry and URL. Results are temporary by default. Persi
 disabled. In a compatible, enabled service, `geocode` and `geocodeReverse` accept
 `retention: 'persistent'`. Check `getGeocodingStorageEstimate(options)` before sending a request.
 Pass its `unitsPerRequest` as `expectedUnits` to reject a changed estimate. Store only results
-acknowledged with `retention: 'persistent'`. Autocomplete and opaque references stay temporary.
+acknowledged with `retention: 'persistent'`. Publishable credentials cannot request persistent results or retrieve the storage estimate. Autocomplete and opaque references stay temporary.
 
 ## Request another page or resolve a selection
 

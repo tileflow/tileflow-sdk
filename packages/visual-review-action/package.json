@@ -1,0 +1,12 @@
+{
+  "name": "@tileflow/visual-review-action",
+  "version": "0.0.0-development",
+  "private": true,
+  "description": "Reviews Tileflow map changes inside GitHub pull requests and GitLab merge requests.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "verify": "node --test test/*.test.mjs"
+  }
+}

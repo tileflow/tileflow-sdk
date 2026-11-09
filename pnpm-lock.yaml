@@ -502,6 +502,8 @@ importers:
 
   packages/tileset-action: {}
 
+  packages/visual-review-action: {}
+
   packages/vite:
     dependencies:
       '@tileflow/dev':

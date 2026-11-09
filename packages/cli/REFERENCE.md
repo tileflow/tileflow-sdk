@@ -18,6 +18,11 @@ Use `--address-columns street city postcode` to combine columns in order. The de
 remaining addresses and prompts before sending them. `--yes` accepts the estimate. Concurrency
 defaults to two requests and accepts one to eight.
 
+At the per-minute Search limit, all workers pause for the indicated wait of up to 120 seconds.
+These pauses do not use a row’s retry allowance. After five pauses without a completed lookup,
+or a requested wait above 120 seconds, rerun the command to resume. Other transient failures
+and rate limits without a retry delay allow two retries with waits of at most 30 seconds.
+
 The GeoJSON preserves source columns and attribution. Pass the printed attribution to
 `tileset build --attribution`. The adjacent `.unmatched.csv` lists missing points by CSV line.
 Keep the adjacent `.geocode.sqlite` checkpoint private. Repeating the command with the same input,

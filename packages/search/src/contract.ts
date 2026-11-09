@@ -38,7 +38,22 @@ const latitude = z.number().finite().min(-90).max(90);
 
 export const geocodingPositionSchema = z.tuple([longitude, latitude]);
 
-export const geocodingRetentionModes = ['temporary'] as const;
+export const geocodingRetentionModes = ['temporary', 'persistent'] as const;
+export type GeocodingRetention = (typeof geocodingRetentionModes)[number];
+
+const storedUnitsSchema = z.number().int().positive().max(2_147_483_647);
+export const geocodingStorageEstimateSchema = z
+  .object({unitsPerRequest: storedUnitsSchema})
+  .strict();
+export type GeocodingStorageEstimate = z.infer<typeof geocodingStorageEstimateSchema>;
+
+const retentionFields = {
+  retention: z.enum(geocodingRetentionModes).default('temporary'),
+  /** Refuse a persistent request if the server's configured weight has changed. */
+  expectedUnits: storedUnitsSchema.optional(),
+};
+const validEstimate = (request: {retention: GeocodingRetention; expectedUnits?: number}) =>
+  request.expectedUnits === undefined || request.retention === 'persistent';
 
 export const geocodingBoundsSchema = z
   .tuple([longitude, latitude, longitude, latitude])
@@ -74,9 +89,10 @@ export const geocodingForwardRequestSchema = z
     limit: z.number().int().min(1).max(geocodingLimits.maximumLimit).optional(),
     proximity: geocodingPositionSchema.optional(),
     query: boundedText(geocodingLimits.maximumQueryCharacters),
-    retention: z.enum(geocodingRetentionModes).default('temporary'),
+    ...retentionFields,
   })
   .strict()
+  .refine(validEstimate)
   .refine((request) => request.bounds === undefined || request.proximity === undefined, {
     message: 'Bounds and proximity are mutually exclusive',
     path: ['proximity'],
@@ -127,9 +143,10 @@ export const geocodingReverseRequestSchema = z
       .max(geocodingLimits.maximumLimit)
       .default(geocodingLimits.defaultReverseLimit),
     position: geocodingPositionSchema,
-    retention: z.enum(geocodingRetentionModes).default('temporary'),
+    ...retentionFields,
   })
-  .strict();
+  .strict()
+  .refine(validEstimate);
 
 export const geocodingResultKinds = [
   'address',
@@ -297,9 +314,15 @@ export const geocodingForwardResponseSchema = z
     results: z.array(geocodingResultSchema).max(geocodingLimits.maximumLimit),
     schemaVersion: z.literal(1),
     source: geocodingSourceSchema,
-    usage: z.object({units: placeOperationUnitsSchema}).strict(),
+    retention: z.literal('persistent').optional(),
+    usage: z.object({units: storedUnitsSchema}).strict(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (response) =>
+      response.retention === 'persistent' ||
+      placeOperationUnitsSchema.safeParse(response.usage.units).success,
+  );
 
 export const geocodingReverseResponseSchema = geocodingForwardResponseSchema;
 
@@ -333,7 +356,7 @@ export const autocompleteResponseSchema = z
 export const resolveSuggestionRequestSchema = z
   .object({
     include: searchPlaceDetailsSchema.optional(),
-    retention: z.enum(geocodingRetentionModes).default('temporary'),
+    retention: z.literal('temporary').default('temporary'),
     token: z
       .string()
       .min(1)

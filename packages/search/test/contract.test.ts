@@ -36,11 +36,11 @@ test('normalizes one bounded forward request', () => {
   assert.equal(geocodingLimits.maximumQueryCharacters, 200);
 });
 
-test('temporary is the sole retention mode', () => {
+test('geocoding permits explicit persistence and defaults to temporary', () => {
   assert.equal(geocodingForwardRequestSchema.parse({query: 'Lisboa'}).retention, 'temporary');
   assert.equal(
     geocodingForwardRequestSchema.safeParse({query: 'Lisboa', retention: 'persistent'}).success,
-    false,
+    true,
   );
   assert.equal(
     resolveSuggestionRequestSchema.safeParse({token: 'opaque', retention: 'persistent'}).success,

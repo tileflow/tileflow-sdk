@@ -261,22 +261,21 @@ refuse to overwrite hosted manifests by default, and deploy refuses to replace a
 manifest without explicit authorization. Keep separate outputs, or use the documented overwrite
 option only for an intentional migration.
 
-Data publication is separate from map deployment:
+Data publication is separate from map deployment. Build PMTiles locally from GeoJSON, CSV,
+Shapefile, GeoPackage, KML or GPX:
 
 ```sh
+npx tileflow tileset build ./data/stores.geojson -o ./data/stores.pmtiles --json
 npx tileflow tileset inspect ./data/stores.pmtiles --json
 npx tileflow tileset publish ./data/stores.pmtiles --id stores --team @acme --attribution 'Store data © Example' --json
 npx tileflow tileset status stores --team @acme --json
 ```
 
-Inspect without an account; publish your own data with Team data authority and attribution.
-Account-backed authorization renews automatically. Interrupted uploads resume; published versions become
+See the
+[reference](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/REFERENCE.md) for inputs,
+CRS rules, limits and upload behavior. Publish your own data with Team data authority and attribution.
+Interrupted uploads resume; published versions become
 current at stable URLs. Purge requires confirmation and may be blocked by retained deployments.
-
-Hashing reuses a 16 MiB buffer. Up to four parts stream concurrently with reusable buffers.
-
-Administratively disabled uploads return `TF_TILESET_UPLOAD_DISABLED` without retrying.
-Temporary service failures retain bounded retries.
 
 `inspect features` samples bounded vector-source features. `icons list` and `icons diff` inspect
 prepared icon identities; they do not turn package directories into a separate hosted library.

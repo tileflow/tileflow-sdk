@@ -69,6 +69,7 @@ for a walkthrough and troubleshooting.
 - **Ship your map:** [build production assets](https://tileflow.dev/docs/development-and-deployment/production-builds),
   then [self-host](https://tileflow.dev/docs/development-and-deployment/self-hosting) or
   [deploy to Tileflow](https://tileflow.dev/docs/development-and-deployment/deployment).
+- **Automate your data:** build and publish tilesets from GitHub workflows with the [tileset action](packages/tileset-action/README.md).
 
 ## Packages
 

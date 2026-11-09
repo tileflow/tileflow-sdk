@@ -13,6 +13,7 @@ import {
   type HostedTeamOptions,
   resolveTeamAuthority,
 } from './hosted-team';
+import {registerTilesetBuildCommand} from './tileset-build-command';
 import {
   createHostedTeamTilesetUploadTransport,
   inspectNodeTeamTilesetArchive,
@@ -91,6 +92,7 @@ export function registerTilesetCommands(
 ): void {
   const tileset = program.command('tileset').description('Inspect and manage geospatial tilesets');
 
+  registerTilesetBuildCommand(tileset);
   registerTilesetInspectCommand(tileset);
 
   tileset

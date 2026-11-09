@@ -27,7 +27,7 @@ const inspectionLimits = Object.freeze({
   maxValuesPerField: 16,
 });
 const maxArchiveBytes = 8_000_000_000;
-const maximumDecodedBytes = 4 * 1024 * 1024 * 1024;
+const maximumDecodedBytes = 8 * 1024 * 1024 * 1024;
 const minimumDecodedBytes = 64 * 1024 * 1024;
 const maxDecompressedSectionBytes = 16 * 1024 * 1024;
 const defaultMaximumDirectoryDepth = 32;
@@ -599,9 +599,8 @@ async function validatePmtilesDirectoryTree(
   ];
   const countedDirectories = new Set<string>();
   const processedContexts = new Set<string>();
-  const clusteredContents = new Set<string>();
   const decompressDirectory = createSectionDecompressor(budget);
-  let clusteredEnd: number | null = null;
+  let clusteredEnd = 0;
   let addressedTiles = 0;
   let totalEntries = 0;
   let tileEntries = 0;
@@ -610,20 +609,18 @@ async function validatePmtilesDirectoryTree(
     signal?.throwIfAborted();
     const item = pending.pop()!;
     if (item.kind === 'clustered-content') {
-      const key = `${item.offset}:${item.length}`;
-      if (clusteredContents.has(key)) continue;
-      if (clusteredEnd === null ? item.offset !== 0 : item.offset !== clusteredEnd) {
+      // TileID order makes one frontier the whole state: a tile either extends it or reuses bytes
+      // already behind it. Remembering each range would reject valid archives on tile count alone.
+      const end = item.offset + item.length;
+      if (item.offset === clusteredEnd) {
+        clusteredEnd = end;
+      } else if (item.offset > clusteredEnd || end > clusteredEnd) {
         throw inspectionError(
           'TF_TILESET_ARCHIVE_INVALID',
           'archive',
           'PMTiles clustered contents are not contiguous in TileID order.',
         );
       }
-      clusteredContents.add(key);
-      clusteredEnd = item.offset + item.length;
-      assertParserMemory(
-        processedContexts.size + countedDirectories.size + clusteredContents.size + pending.length,
-      );
       continue;
     }
     const current = item;
@@ -642,9 +639,7 @@ async function validatePmtilesDirectoryTree(
     processedContexts.add(contextKey);
     const firstPhysicalVisit = !countedDirectories.has(current.key);
     countedDirectories.add(current.key);
-    assertParserMemory(
-      processedContexts.size + countedDirectories.size + clusteredContents.size + pending.length,
-    );
+    assertParserMemory(processedContexts.size + countedDirectories.size + pending.length);
 
     const response = await source.getBytes(current.offset, current.length, signal);
     if (response.data.byteLength !== current.length) {
@@ -745,9 +740,7 @@ async function validatePmtilesDirectoryTree(
     for (let index = nextItems.length - 1; index >= 0; index -= 1) {
       pending.push(nextItems[index]!);
     }
-    assertParserMemory(
-      processedContexts.size + countedDirectories.size + clusteredContents.size + pending.length,
-    );
+    assertParserMemory(processedContexts.size + countedDirectories.size + pending.length);
   }
 
   if (

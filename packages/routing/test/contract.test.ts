@@ -30,14 +30,40 @@ const southBeach: [number, number] = [-80.1312, 25.7795];
 const orlando: [number, number] = [-81.3792, 28.5383];
 const fortLauderdale: [number, number] = [-80.1373, 26.1224];
 
-test('a route request takes two to five positions, a mode and nothing else', () => {
+test('an optimized route is bound by the matrix reach, not by the given order', () => {
+  const parse = (request: unknown) => routingRouteRequestSchema.safeParse(request).success;
+  assert.ok(parse({locations: Array(25).fill(littleHavana), mode: 'driving'}));
+  const far = [littleHavana, southBeach, orlando];
+  assert.ok(parse({locations: far, mode: 'driving'}));
+  assert.ok(!parse({locations: far, mode: 'driving', optimize: true}));
+  const zigzag = Array.from({length: 25}, (_, index) => (index % 2 ? southBeach : littleHavana));
+  assert.ok(!parse({locations: zigzag, mode: 'walking'}));
+  assert.ok(parse({locations: zigzag, mode: 'walking', optimize: true}));
+});
+
+test('a departure is a local time that exists', () => {
+  const request = {locations: [littleHavana, southBeach], mode: 'driving'};
+  const parse = (departAt: string) =>
+    routingRouteRequestSchema.safeParse({...request, departAt}).success;
+  assert.ok(parse('2028-02-29T08:30'));
+  for (const invalid of [
+    '2027-02-29T08:30',
+    '2027-01-01T24:00',
+    '2027-01-01T08:30Z',
+    '2027-01-01T08:30:00',
+    '2027-01-01',
+  ])
+    assert.ok(!parse(invalid), invalid);
+});
+
+test('a route request takes two to 25 positions, a mode and nothing else', () => {
   assert.ok(
     routingRouteRequestSchema.safeParse({locations: [littleHavana, southBeach], mode: 'driving'})
       .success,
   );
   for (const invalid of [
     {locations: [littleHavana], mode: 'driving'},
-    {locations: Array(6).fill(littleHavana), mode: 'driving'},
+    {locations: Array(26).fill(littleHavana), mode: 'driving'},
     {locations: [littleHavana, southBeach], mode: 'flying'},
     {locations: [littleHavana, southBeach], mode: 'driving', costing: 'auto'},
     {locations: [[-181, 0], southBeach], mode: 'driving'},
@@ -367,7 +393,7 @@ test('the limits match the service', () => {
     maximumRequestBytes: 8 * 1024,
     maximumResponseBytes: 4 * 1024 * 1024,
     minimumLocations: 2,
-    maximumLocations: 5,
+    maximumLocations: 25,
     maximumAlternatives: 2,
     maximumDirectDistanceMeters: {
       driving: 1_000_000,

@@ -23,9 +23,18 @@ Baselines render on GitHub-hosted Ubuntu, so renders from a laptop will not matc
 The GitLab template reviews merge requests from the same project. It doesn't run on forks, because
 a parent pipeline for a fork exposes the parent project's variables.
 
-1. Create a project access token with the Developer role and the `api` scope.
+With CI configuration in the project, use this template only if you trust everyone with the
+Developer role or higher. Merge request pipelines use the source branch's configuration, so anyone
+who can push a branch to the project can access the publishing token.
+
+For stricter control, keep the CI configuration and its includes in a separate project writable
+only by CI maintainers. In **Settings > CI/CD > General pipelines > CI/CD configuration file**,
+select `.gitlab-ci.yml@group/project`.
+
+1. Create a dedicated project access token with the Developer role, the `api` scope and a short
+   expiry. Rotate it before it expires and when a member leaves the project.
 2. Add it as a masked CI/CD variable named `TILEFLOW_REVIEW_TOKEN`, with the environment scope
-   `tileflow-visual-review`. The capture job refuses to run if it receives this token.
+   `tileflow-visual-review`. Update the variable when you rotate the token.
 3. Add the [template](./gitlab/tileflow-visual-review.yml) to `.gitlab-ci.yml`, and replace both
    `COMMIT_SHA` values with the same full commit of this action:
 
@@ -34,6 +43,18 @@ a parent pipeline for a fork exposes the parent project's variables.
      - remote: https://raw.githubusercontent.com/tileflow/tileflow-sdk/COMMIT_SHA/packages/visual-review-action/gitlab/tileflow-visual-review.yml
        inputs:
          action_ref: COMMIT_SHA
+   ```
+
+   GitLab requires a merge request rule in the root CI configuration. Projects that already run
+   merge request pipelines can keep that rule. Also allow pushes to the default branch so merged
+   baselines update. For a new workflow, use the example below. For an existing workflow, add
+   only the missing rules and retain its other triggers.
+
+   ```yaml
+   workflow:
+     rules:
+       - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+       - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
    ```
 
 4. In the merge request settings, turn on **Pipelines must succeed**.
@@ -80,7 +101,8 @@ Tileflow configs are executable, so pull request code is treated as hostile:
 - The publish workflow never checks out pull request code. It validates the evidence as data,
   escapes all text it displays, and takes approvals only from people with write access.
 - Baselines come from the base commit, never from the pull request.
-- On GitLab, only the publish jobs can read the token, and they don't fetch merge request code.
+- In the supplied GitLab template, the environment scope keeps the token out of capture. Trust
+  whoever can edit the pipeline configuration that selects the environment.
 
 A malicious pull request controls its own capture job, so it can forge what its report shows. The
 status catches honest mistakes, not attackers: always read the config diff of an untrusted pull

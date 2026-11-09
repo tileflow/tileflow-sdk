@@ -42,8 +42,8 @@ spec:
     - export TILEFLOW_REVIEW_HEAD_SHA="${CI_MERGE_REQUEST_SOURCE_BRANCH_SHA:-$CI_COMMIT_SHA}"
     - export TILEFLOW_REVIEW_BASE_SHA="${CI_MERGE_REQUEST_TARGET_BRANCH_SHA:-$CI_MERGE_REQUEST_DIFF_BASE_SHA}"
 
-# Runs merge request code. The publishing token is limited to the environment below, which this
-# job does not declare. Forks are excluded: a parent pipeline for a fork exposes parent variables.
+# The capture job omits the publishing environment. Merge request pipelines use source-branch
+# configuration, so branch authors must be trusted when the project owns its CI configuration.
 tileflow-visual-review-capture:
   extends: .tileflow-visual-review-base
   variables:

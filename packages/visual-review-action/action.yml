@@ -1,0 +1,139 @@
+name: Tileflow visual review
+description: Show before and after map renders, a semantic diff and a pass or fail status in pull requests.
+author: Tileflow
+branding:
+  icon: map
+  color: blue
+
+inputs:
+  mode:
+    description: 'capture, report, approve or promote. Each one belongs to its own workflow trigger.'
+    required: true
+  working-directory:
+    description: Directory holding the Tileflow project, relative to the repository root.
+    default: '.'
+  config:
+    description: Tileflow config path, relative to working-directory.
+    default: tileflow.config.ts
+  baseline-dir:
+    description: Approved baseline directory, relative to working-directory.
+    default: test/visual-baselines
+  install-command:
+    description: Dependency install command. Detected from the lockfile when empty.
+    default: ''
+  noise-ratio:
+    description: >-
+      Largest share of exactly changed pixels treated as renderer noise, and only when no pixel
+      changed perceptually. Use 0 to fail on any exact difference.
+    default: '0.0001'
+  evidence-branch:
+    description: Branch that stores review images, approvals and proposed baselines.
+    default: tileflow-visual-review
+  dry-run:
+    description: Report to the job summary only, without touching a pull request or a commit status.
+    default: 'false'
+  artifact-name:
+    description: Artifact that carries evidence between the capture and report modes.
+    default: tileflow-visual-review
+  node-version:
+    description: Node.js version used to run the action and the Tileflow CLI.
+    default: '24'
+  github-token:
+    description: Token used by report, approve and promote. Capture never receives it.
+    default: ${{ github.token }}
+  pull-request:
+    description: Pull request number. Taken from the triggering event by default.
+    default: ${{ github.event.pull_request.number || github.event.issue.number }}
+  base-sha:
+    description: Trusted base commit for capture. Taken from the triggering event by default.
+    default: ${{ github.event.pull_request.base.sha }}
+  head-sha:
+    description: Commit being reviewed. Taken from the triggering event by default.
+    default: ${{ github.event.workflow_run.head_sha || github.event.pull_request.head.sha }}
+  run-id:
+    description: Capture run to report on. Taken from the triggering event by default.
+    default: ${{ github.event.workflow_run.id }}
+  run-event:
+    description: Event that started the capture run. Taken from the triggering event by default.
+    default: ${{ github.event.workflow_run.event }}
+  comment-id:
+    description: Approval comment id. Taken from the triggering event by default.
+    default: ${{ github.event.comment.id }}
+  comment-body:
+    description: Approval comment text. Taken from the triggering event by default.
+    default: ${{ github.event.comment.body }}
+  comment-author:
+    description: Approval comment author. Taken from the triggering event by default.
+    default: ${{ github.event.comment.user.login }}
+  merged:
+    description: Whether the closed pull request was merged. Taken from the event by default.
+    default: ${{ github.event.pull_request.merged }}
+
+outputs:
+  verdict:
+    description: pass, changed or error. Set by the report mode.
+    value: ${{ steps.report.outputs.verdict }}
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Node
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Capture scenes
+      if: inputs.mode == 'capture'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        TILEFLOW_REVIEW_CONFIG: ${{ inputs.config }}
+        TILEFLOW_REVIEW_BASELINE_DIR: ${{ inputs.baseline-dir }}
+        TILEFLOW_REVIEW_INSTALL_COMMAND: ${{ inputs.install-command }}
+        TILEFLOW_REVIEW_NOISE_RATIO: ${{ inputs.noise-ratio }}
+        TILEFLOW_REVIEW_PULL_REQUEST: ${{ inputs.pull-request }}
+        TILEFLOW_REVIEW_BASE_SHA: ${{ inputs.base-sha }}
+        TILEFLOW_REVIEW_HEAD_SHA: ${{ inputs.head-sha }}
+        TILEFLOW_REVIEW_OUTPUT: ${{ runner.temp }}/tileflow-visual-review
+      run: node "$GITHUB_ACTION_PATH/src/main.mjs" capture
+
+    - name: Upload evidence
+      if: inputs.mode == 'capture' && !cancelled()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ runner.temp }}/tileflow-visual-review
+        if-no-files-found: ignore
+        retention-days: 14
+
+    - name: Download evidence
+      if: inputs.mode == 'report'
+      continue-on-error: true
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ runner.temp }}/tileflow-visual-review
+        github-token: ${{ inputs.github-token }}
+        run-id: ${{ inputs.run-id }}
+
+    - name: Publish review
+      id: report
+      if: inputs.mode != 'capture'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        TILEFLOW_REVIEW_MODE: ${{ inputs.mode }}
+        TILEFLOW_REVIEW_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        TILEFLOW_REVIEW_BASELINE_DIR: ${{ inputs.baseline-dir }}
+        TILEFLOW_REVIEW_EVIDENCE_BRANCH: ${{ inputs.evidence-branch }}
+        TILEFLOW_REVIEW_DRY_RUN: ${{ inputs.dry-run }}
+        TILEFLOW_REVIEW_PULL_REQUEST: ${{ inputs.pull-request }}
+        TILEFLOW_REVIEW_HEAD_SHA: ${{ inputs.head-sha }}
+        TILEFLOW_REVIEW_RUN_ID: ${{ inputs.run-id }}
+        TILEFLOW_REVIEW_RUN_EVENT: ${{ inputs.run-event }}
+        TILEFLOW_REVIEW_COMMENT_ID: ${{ inputs.comment-id }}
+        TILEFLOW_REVIEW_COMMENT_BODY: ${{ inputs.comment-body }}
+        TILEFLOW_REVIEW_COMMENT_AUTHOR: ${{ inputs.comment-author }}
+        TILEFLOW_REVIEW_MERGED: ${{ inputs.merged }}
+        TILEFLOW_REVIEW_OUTPUT: ${{ runner.temp }}/tileflow-visual-review
+      run: node "$GITHUB_ACTION_PATH/src/main.mjs" "$TILEFLOW_REVIEW_MODE"

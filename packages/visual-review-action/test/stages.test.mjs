@@ -369,8 +369,15 @@ describe('publishing stages', () => {
     assert.match(github.comments.at(-1).body, /protected/);
   });
 
-  it('keeps pull requests and commit statuses untouched in a dry run', async () => {
+  it('writes only the local summary with a read-only token in a dry run', async (t) => {
     const summary = join(directory, 'summary.md');
+    const refs = new Map(github.refs);
+    const commits = new Map(github.commits);
+    const fetch = globalThis.fetch;
+    t.mock.method(globalThis, 'fetch', (url, init) => {
+      assert.equal(init?.method ?? 'GET', 'GET', 'The token has read access only.');
+      return fetch(url, init);
+    });
     await writeArtifact(directory, report());
     await runReport({
       ...env,
@@ -380,7 +387,12 @@ describe('publishing stages', () => {
     });
     assert.equal(github.comments.length, 0);
     assert.equal(github.statuses.length, 0);
-    assert.match(await readFile(summary, 'utf8'), /Tileflow visual review/);
+    assert.deepEqual(github.refs, refs);
+    assert.deepEqual(github.commits, commits);
+    const body = await readFile(summary, 'utf8');
+    assert.match(body, /Tileflow visual review/);
+    assert.match(body, /images were not uploaded/i);
+    assert.doesNotMatch(body, /<img\b|undefined\//);
   });
 });
 

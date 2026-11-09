@@ -48,30 +48,34 @@ export async function runReport(env = process.env, provider = createProvider(env
     workflowEdits = changed.filter((name) => provider.isAutomationFile(name));
   }
 
-  const evidencePath = `pr-${report.pullRequest}/${headSha}`;
-  const approvable = baselineEdits.length === 0 && !report.failure;
-  const sanitized = {...report, approvable};
-  const evidenceId = await provider.writeEvidence(
-    [
-      ...files.map(({name, bytes}) => ({path: `${evidencePath}/${name}`, bytes})),
-      {
-        path: `${evidencePath}/report.json`,
-        bytes: Buffer.from(`${JSON.stringify(sanitized, null, 2)}\n`),
-      },
-    ],
-    `Visual review evidence for ${provider.reference(report.pullRequest)} at ${headSha.slice(0, 12)}`,
-  );
+  const summary = summarize(report, baselineEdits);
+  const approvable = !dryRun && baselineEdits.length === 0 && !report.failure;
+  let imageBase;
+  if (!dryRun) {
+    const evidencePath = `pr-${report.pullRequest}/${headSha}`;
+    const sanitized = {...report, approvable};
+    const evidenceId = await provider.writeEvidence(
+      [
+        ...files.map(({name, bytes}) => ({path: `${evidencePath}/${name}`, bytes})),
+        {
+          path: `${evidencePath}/report.json`,
+          bytes: Buffer.from(`${JSON.stringify(sanitized, null, 2)}\n`),
+        },
+      ],
+      `Visual review evidence for ${provider.reference(report.pullRequest)} at ${headSha.slice(0, 12)}`,
+    );
+    imageBase = provider.evidenceUrl(evidenceId, evidencePath);
+  }
   const body = renderReport({
     approvable,
     approvalInstructions: provider.approvalInstructions(headSha),
     changeRequestNoun: provider.changeRequestNoun,
     baselineEdits,
-    imageBase: provider.evidenceUrl(evidenceId, evidencePath),
+    imageBase,
     report,
     runUrl,
     workflowEdits,
   });
-  const summary = summarize(report, baselineEdits);
   await provider.writeRunOutput(body, summary.verdict);
 
   if (!dryRun) {

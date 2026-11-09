@@ -52,6 +52,7 @@
     "@tileflow/core": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
     "@tileflow/dev": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
     "@tileflow/maps": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
+    "@tileflow/search": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
     "commander": "^15.0.0",
     "hono": "4.13.14",
     "picocolors": "^1.1.1",

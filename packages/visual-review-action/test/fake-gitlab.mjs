@@ -124,7 +124,9 @@ export async function startFakeGitLab() {
       'POST',
       /^\/projects\/42\/merge_requests$/,
       (_, body) => {
-        state.mergeRequests.set(900, {iid: 900, ...body});
+        const sha = state.branches.get(body.source_branch).id;
+        const pipeline = {id: 901, sha, source: 'merge_request_event', status: 'skipped'};
+        state.mergeRequests.set(900, {iid: 900, ...body, sha, head_pipeline: pipeline});
         return [201, {iid: 900}];
       },
     ],

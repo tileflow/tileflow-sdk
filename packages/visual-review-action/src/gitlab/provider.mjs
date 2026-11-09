@@ -1,8 +1,11 @@
+import {setTimeout as delay} from 'node:timers/promises';
 import {commentMarker, statusContext} from '../contract.mjs';
 import {createGitLabClient} from './client.mjs';
 
 const developerAccess = 30;
 const maximumAttempts = 4;
+const pipelinePollAttempts = 30;
+const pipelinePollDelayMs = 2000;
 const skipCi = '[ci skip]';
 const statusStates = {error: 'failed', failure: 'failed', success: 'success'};
 
@@ -41,16 +44,16 @@ export function createGitLabProvider(env) {
   const reference = (number) => `!${number}`;
   const comment = (number, body) => gitlab.post(`/merge_requests/${number}/notes`, {body});
 
-  async function setStatus(sha, state, description, targetUrl, ref) {
+  async function setStatus(sha, state, description, targetUrl, target = {}) {
+    const pipelineId =
+      target.pipelineId ?? (sha === env.CI_COMMIT_SHA ? Number(env.CI_PIPELINE_ID) : undefined);
     const body = {
       name: statusContext,
       state: statusStates[state],
       description: description.slice(0, 255),
       ...(targetUrl ? {target_url: targetUrl.slice(0, 255)} : {}),
-      ...(ref ? {ref} : {}),
-      ...(sha === env.CI_COMMIT_SHA && env.CI_PIPELINE_ID
-        ? {pipeline_id: Number(env.CI_PIPELINE_ID)}
-        : {}),
+      ...(target.ref ? {ref: target.ref} : {}),
+      ...(pipelineId ? {pipeline_id: pipelineId} : {}),
     };
     for (let attempt = 1; ; attempt += 1) {
       try {
@@ -59,6 +62,19 @@ export function createGitLabProvider(env) {
         if (attempt >= maximumAttempts || error.status !== 409) throw error;
       }
     }
+  }
+
+  /**
+   * A skip-CI commit still gets a skipped merge request pipeline, which GitLab creates a moment
+   * after the merge request. A status on any other pipeline leaves "Pipelines must succeed" blocked.
+   */
+  async function skippedPipelineId(iid, sha) {
+    for (let attempt = 1; attempt <= pipelinePollAttempts; attempt += 1) {
+      const {head_pipeline: pipeline} = await gitlab.get(`/merge_requests/${iid}`);
+      if (pipeline?.sha === sha && pipeline.source === 'merge_request_event') return pipeline.id;
+      await delay(pipelinePollDelayMs);
+    }
+    return undefined;
   }
 
   async function listTree(ref, path) {
@@ -242,12 +258,13 @@ export function createGitLabProvider(env) {
         target_branch: baseBranch,
         title: `Update visual baselines for ${reference(number)}`,
       });
+      const pipelineId = await skippedPipelineId(proposal.iid, commit.id);
       await setStatus(
         commit.id,
         'success',
         'Baselines approved in the source merge request',
         undefined,
-        head,
+        pipelineId ? {pipelineId} : {ref: head},
       );
       return {proposedIn: reference(proposal.iid)};
     },

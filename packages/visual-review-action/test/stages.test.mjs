@@ -601,8 +601,8 @@ describe('GitLab provider', () => {
     const head = 'tileflow-visual-review-baselines/mr-7';
     assert.deepEqual(gitlab.files(head).get('test/visual-baselines/madrid.png'), png());
     assert.equal(lastStatus().state, 'success');
-    assert.equal(lastStatus().ref, head);
-    assert.equal(lastStatus().pipeline_id, undefined);
+    assert.equal(lastStatus().pipeline_id, 901);
+    assert.equal(lastStatus().ref, undefined);
     assert.match(gitlab.notes.at(-1).body, /waiting in !900/);
   });
 

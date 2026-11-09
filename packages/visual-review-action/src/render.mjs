@@ -103,7 +103,11 @@ export function renderReport({
     );
   }
 
-  for (const scene of summary.pending) lines.push(...renderScene(scene, imageBase));
+  if (imageBase) {
+    for (const scene of summary.pending) lines.push(...renderScene(scene, imageBase));
+  } else {
+    lines.push('Images were not uploaded for this dry run.', '');
+  }
   lines.push(...renderSemantic(report.semantic));
 
   if (approvable && summary.pending.length > 0) {

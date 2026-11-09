@@ -1,5 +1,6 @@
 import type {CoordinateTransform} from './crs';
 import {TilesetBuildError} from './errors';
+import {utf8ByteLength} from './platform';
 import {FeatureSpool, field, geometryType, headerWords, worldSize} from './spool';
 
 export type FieldSelection = Readonly<{
@@ -11,6 +12,7 @@ export type RankSelection = Readonly<{ascending: boolean; field: string}>;
 
 export type GeometryInput = Readonly<{coordinates?: unknown; geometries?: unknown; type?: unknown}>;
 
+const utf8 = new TextEncoder();
 const fieldNamePattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,191}$/u;
 const maximumFields = 512;
 const maximumMercatorLatitude = 85.0511287798066;
@@ -546,7 +548,7 @@ export class FeatureIngest {
   }
 
   #encodeString(start: number, value: string): number {
-    const byteLength = Buffer.byteLength(value);
+    const byteLength = utf8ByteLength(value);
     this.#ensureProperties(start + 6 + byteLength);
     let cursor = start;
     this.#properties[cursor] = 0x0a;
@@ -559,7 +561,7 @@ export class FeatureIngest {
     }
     this.#properties[cursor] = remaining;
     cursor += 1;
-    Buffer.from(this.#properties.buffer).write(value, cursor, 'utf8');
+    utf8.encodeInto(value, this.#properties.subarray(cursor, cursor + byteLength));
     return cursor + byteLength;
   }
 

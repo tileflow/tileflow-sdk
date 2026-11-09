@@ -1,7 +1,7 @@
-import {gzipSync} from 'node:zlib';
 import {type Box, clipRecordInto} from './clip';
 import {TilesetBuildError} from './errors';
 import {tileBufferUnits, TileEncoder} from './mvt';
+import type {TilesetPlatform} from './platform';
 import type {TileArchiveWriter} from './pmtiles-writer';
 import {FeatureSpool, field, geometryType, headerWords, type SpoolDirectory} from './spool';
 
@@ -41,6 +41,7 @@ export type PyramidOptions = Readonly<{
   maxzoom: number;
   minzoom: number;
   onTile?: (tilesWritten: number) => void;
+  platform: TilesetPlatform;
 }>;
 
 /** Top-down, depth-first: each tile reads its parent's clipped features and spools its children. */
@@ -76,13 +77,13 @@ class Pyramid {
     const {archive, maxzoom, minzoom} = this.options;
     let content = -1;
     if (z >= minzoom) {
-      const tile = this.#encodeTile(z, x, y, spool);
+      const tile = await this.#encodeTile(z, x, y, spool);
       if (tile !== null) content = await archive.addTile(z, x, y, tile);
     }
     this.#visited += 1;
     if (this.#visited % yieldEveryTiles === 0) {
       this.options.onTile?.(archive.tileCount);
-      await new Promise((resolve) => setImmediate(resolve));
+      await this.options.platform.yield();
     }
     if (z === maxzoom) {
       spool.dispose();
@@ -126,7 +127,12 @@ class Pyramid {
     }
   }
 
-  #encodeTile(z: number, x: number, y: number, spool: FeatureSpool): Uint8Array | null {
+  async #encodeTile(
+    z: number,
+    x: number,
+    y: number,
+    spool: FeatureSpool,
+  ): Promise<Uint8Array | null> {
     const {maxzoom} = this.options;
     const encoder = this.#encoder;
     const lastZoom = z === maxzoom;
@@ -187,7 +193,10 @@ class Pyramid {
       });
       if (encoder.featureCount === 0) return null;
       const tile = encoder.finish();
-      const size = lastZoom ? tile.length : measuredSize(tile);
+      const size =
+        lastZoom || tile.length <= targetCompressedBytes
+          ? tile.length
+          : (await this.options.platform.gzip(tile)).length;
       const decodable = !abandoned && tile.length <= maximumTileBytes;
       // The byte target is a preference: past it, keeping what the parent drew still wins.
       const settled = optional === 0 || attempt === maximumAttempts;
@@ -316,10 +325,6 @@ function isSolidTile(spool: FeatureSpool, box: Box): boolean {
     }
   });
   return solid;
-}
-
-function measuredSize(tile: Uint8Array): number {
-  return tile.length <= targetCompressedBytes ? tile.length : gzipSync(tile).length;
 }
 
 function tooLarge(z: number, x: number, y: number): TilesetBuildError {

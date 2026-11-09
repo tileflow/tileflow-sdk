@@ -1,5 +1,7 @@
 import {field, geometryType, headerWords} from './spool';
 
+const utf8 = new TextEncoder();
+
 export const tileExtent = 4096;
 export const tileBufferUnits = 64;
 const extentBits = 12;
@@ -41,7 +43,7 @@ class ByteWriter {
   }
 
   string(value: string): void {
-    const encoded = Buffer.from(value, 'utf8');
+    const encoded = utf8.encode(value);
     this.varint(encoded.length);
     this.raw(encoded, 0, encoded.length);
   }
@@ -172,7 +174,7 @@ export class TileEncoder {
       keySection.byte(0x1a);
       keySection.string(this.keys[key]);
     }
-    const name = Buffer.from(this.layer, 'utf8');
+    const name = utf8.encode(this.layer);
     const layerLength =
       2 +
       1 +

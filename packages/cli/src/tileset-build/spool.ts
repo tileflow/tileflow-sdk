@@ -1,5 +1,4 @@
-import {closeSync, openSync, readSync, unlinkSync, writeSync} from 'node:fs';
-import {join} from 'node:path';
+import type {TilesetFile, TilesetStorage} from './platform';
 
 /*
  * Features move through the tile pyramid as flat int32 records:
@@ -32,9 +31,9 @@ const readChunkWords = (16 * 1024 * 1024) / 4;
 
 export class SpoolDirectory {
   #next = 0;
-  constructor(readonly path: string) {}
-  nextFile(): string {
-    return join(this.path, `spool-${(this.#next += 1)}`);
+  constructor(private readonly storage: TilesetStorage) {}
+  nextFile(): TilesetFile {
+    return this.storage.create(`spool-${(this.#next += 1)}`);
   }
 }
 
@@ -43,8 +42,8 @@ export class FeatureSpool {
   words = new Int32Array(1024);
   length = 0;
   count = 0;
-  #descriptor: number | null = null;
-  #path: string | null = null;
+  #file: TilesetFile | null = null;
+  #fileBytes = 0;
 
   constructor(private readonly directory: SpoolDirectory) {}
 
@@ -64,41 +63,31 @@ export class FeatureSpool {
 
   /** Visit each record; `words` is only valid during the callback. */
   forEach(visit: (words: Int32Array, offset: number) => void): void {
-    if (this.#path === null) {
+    if (this.#file === null) {
       visitRecords(this.words, this.length, visit);
       return;
     }
     this.#flush();
-    if (this.#descriptor !== null) {
-      closeSync(this.#descriptor);
-      this.#descriptor = null;
-    }
-    const descriptor = openSync(this.#path, 'r');
-    try {
-      let chunk = new Int32Array(readChunkWords);
-      let carried = 0;
-      for (;;) {
-        const bytes = readSync(
-          descriptor,
-          new Uint8Array(chunk.buffer),
-          carried * 4,
-          (chunk.length - carried) * 4,
-          null,
-        );
-        const available = carried + bytes / 4;
-        const consumed = visitRecords(chunk, available, visit);
-        carried = available - consumed;
-        if (bytes === 0) break;
-        chunk.copyWithin(0, consumed, available);
-        // One record can exceed the chunk: a polygon with millions of vertices.
-        if (carried > 0 && chunk[field.words] > chunk.length) {
-          const larger = new Int32Array(chunk[field.words] * 2);
-          larger.set(chunk.subarray(0, carried));
-          chunk = larger;
-        }
+    let chunk = new Int32Array(readChunkWords);
+    let carried = 0;
+    let position = 0;
+    for (;;) {
+      const bytes = this.#file.read(
+        new Uint8Array(chunk.buffer, carried * 4, (chunk.length - carried) * 4),
+        position,
+      );
+      position += bytes;
+      const available = carried + bytes / 4;
+      const consumed = visitRecords(chunk, available, visit);
+      carried = available - consumed;
+      if (bytes === 0) break;
+      chunk.copyWithin(0, consumed, available);
+      // One record can exceed the chunk: a polygon with millions of vertices.
+      if (carried > 0 && chunk[field.words] > chunk.length) {
+        const larger = new Int32Array(chunk[field.words] * 2);
+        larger.set(chunk.subarray(0, carried));
+        chunk = larger;
       }
-    } finally {
-      closeSync(descriptor);
     }
   }
 
@@ -125,7 +114,7 @@ export class FeatureSpool {
 
     const target = new FeatureSpool(this.directory);
     target.count = this.count;
-    if (this.#path === null) {
+    if (this.#file === null) {
       target.words = new Int32Array(position);
       target.length = position;
       visited = 0;
@@ -137,67 +126,47 @@ export class FeatureSpool {
       return target;
     }
 
-    target.#path = this.directory.nextFile();
-    const descriptor = openSync(target.#path, 'w');
-    try {
-      visited = 0;
-      this.forEach((words, offset) => {
-        const bytes = new Uint8Array(
-          words.buffer,
-          words.byteOffset + offset * 4,
-          sizes[visited] * 4,
-        );
-        let written = 0;
-        while (written < bytes.length) {
-          written += writeSync(
-            descriptor,
-            bytes,
-            written,
-            bytes.length - written,
-            positions[visited] * 4 + written,
-          );
-        }
-        visited += 1;
-      });
-    } finally {
-      closeSync(descriptor);
-    }
+    const file = this.directory.nextFile();
+    target.#file = file;
+    target.#fileBytes = position * 4;
+    visited = 0;
+    this.forEach((words, offset) => {
+      file.write(
+        new Uint8Array(words.buffer, words.byteOffset + offset * 4, sizes[visited] * 4),
+        positions[visited] * 4,
+      );
+      visited += 1;
+    });
     this.dispose();
     return target;
   }
 
   dispose(): void {
-    if (this.#descriptor !== null) closeSync(this.#descriptor);
-    if (this.#path !== null) unlinkSync(this.#path);
-    this.#descriptor = null;
-    this.#path = null;
+    this.#file?.discard();
+    this.#file = null;
     this.words = new Int32Array(0);
     this.length = 0;
   }
 
   #makeRoom(size: number): void {
-    if (this.#path === null && this.length + size > memoryLimitWords) {
-      this.#path = this.directory.nextFile();
-      this.#descriptor = openSync(this.#path, 'w');
+    if (this.#file === null && this.length + size > memoryLimitWords) {
+      this.#file = this.directory.nextFile();
     }
-    if (this.#path !== null) {
+    if (this.#file !== null) {
       this.#flush();
       if (size <= fileBufferWords && this.words.length >= fileBufferWords) return;
     }
     const needed = this.length + size;
     const capacity = Math.max(needed, Math.min(this.words.length * 2, memoryLimitWords));
-    const grown = new Int32Array(this.#path === null ? capacity : Math.max(size, fileBufferWords));
+    const grown = new Int32Array(this.#file === null ? capacity : Math.max(size, fileBufferWords));
     grown.set(this.words.subarray(0, this.length));
     this.words = grown;
   }
 
   #flush(): void {
-    if (this.length === 0 || this.#descriptor === null) return;
-    const bytes = new Uint8Array(this.words.buffer, 0, this.length * 4);
-    let written = 0;
-    while (written < bytes.length) {
-      written += writeSync(this.#descriptor, bytes, written, bytes.length - written);
-    }
+    if (this.length === 0 || this.#file === null) return;
+    this.#file.write(new Uint8Array(this.words.buffer, 0, this.length * 4), this.#fileBytes);
+    this.#fileBytes += this.length * 4;
     this.length = 0;
   }
 }

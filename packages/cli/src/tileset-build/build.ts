@@ -1,7 +1,6 @@
 import {existsSync, mkdtempSync, rmSync, statfsSync, statSync} from 'node:fs';
 import {rename} from 'node:fs/promises';
 import {basename, dirname, extname, join, resolve} from 'node:path';
-import {serializeCanonicalJson} from '@tileflow/core';
 import {inspectTileflowPmtiles} from '@tileflow/dev/tilesets';
 import {getCliVersion} from '../cli-version';
 import {
@@ -13,7 +12,7 @@ import {
 } from './crs';
 import {TilesetBuildError} from './errors';
 import {FeatureIngest} from './ingest';
-import {TileArchiveWriter} from './pmtiles-writer';
+import {nodeTilesetPlatform} from './platform-node';
 import {csvColumnsNameCoordinates, readCsv} from './read-csv';
 import {readGeojson, readGeojsonSequence} from './read-geojson';
 import {GeoPackageLayer} from './read-geopackage';
@@ -23,8 +22,8 @@ import {readShapefile, shapefileCrsStatement} from './read-shapefile';
 import {fileChunks} from './read-xml';
 import {ZippedKml, ZippedShapefile} from './read-zip';
 import {FeatureSpool, SpoolDirectory} from './spool';
-import {buildPyramid, type ZoomStatistics} from './tiler';
-import {chooseMaxzoom} from './zoom';
+import type {ZoomStatistics} from './tiler';
+import {tileFeatures} from './tileset-core';
 
 export type TilesetBuildFormat =
   'csv' | 'geojson' | 'geojsonseq' | 'geopackage' | 'gpx' | 'kml' | 'shapefile';
@@ -170,7 +169,6 @@ export async function buildTileset(options: TilesetBuildOptions): Promise<Tilese
   process.once('SIGINT', interrupt);
   process.once('SIGTERM', interrupt);
 
-  let archive: TileArchiveWriter | null = null;
   try {
     // Extracted files sit beside the temporary spool, so they count on top of its estimate.
     if (zip) checkFreeSpace(outputDirectory, zip.uncompressedBytes, zip.uncompressedBytes);
@@ -182,7 +180,8 @@ export async function buildTileset(options: TilesetBuildOptions): Promise<Tilese
     const crs = resolveCrs(statement, options.reproject === true);
     if (zip) await zip.extractData(temporary);
 
-    const directory = new SpoolDirectory(temporary);
+    const platform = nodeTilesetPlatform(temporary);
+    const directory = new SpoolDirectory(platform.storage);
     const spool = new FeatureSpool(directory);
     const ingest = new FeatureIngest(
       spool,
@@ -222,49 +221,23 @@ export async function buildTileset(options: TilesetBuildOptions): Promise<Tilese
         break;
     }
 
-    const summary = ingest.finish();
-    const maxzoom =
-      zoomRange.maxzoom ?? Math.max(chooseMaxzoom(ingest, summary), zoomRange.minzoom);
-    const fieldMetadata = Object.fromEntries(summary.fields.map((item) => [item.name, item.type]));
-    options.onProgress?.(`Tiling ${summary.features} features through zoom ${maxzoom}.`);
-
-    archive = new TileArchiveWriter(join(temporary, 'tiles.bin'));
-    // Tiles keep the first features per cell, so this order is what decides which ones survive.
-    const root = ingest.rankedSpool(spool);
-    const zooms = await buildPyramid(root, {
-      archive,
+    const {maxzoom, summary, totals, zooms} = await tileFeatures({
+      archiveName: 'archive.pmtiles',
+      attribution: options.attribution,
+      description: options.description,
       directory,
-      keys: ingest.keyNames(summary),
+      generatorVersion: getCliVersion(),
+      ingest,
       layer,
-      maxzoom,
+      maxzoom: zoomRange.maxzoom,
       minzoom: zoomRange.minzoom,
-      onTile: (count) => {
-        if (count % 65_536 < 256) options.onProgress?.(`Wrote ${count} tiles.`);
-      },
+      name: options.name,
+      onProgress: options.onProgress,
+      platform,
+      spool,
     });
     const pending = join(temporary, 'archive.pmtiles');
     const bounds = summary.bounds;
-    const name = options.name ?? layer;
-    const totals = await archive.finish(
-      pending,
-      {
-        bounds,
-        center: [(bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2, zoomRange.minzoom],
-        maxzoom,
-        minzoom: zoomRange.minzoom,
-      },
-      serializeCanonicalJson({
-        ...(options.attribution ? {attribution: options.attribution} : {}),
-        ...(options.description ? {description: options.description} : {}),
-        format: 'pbf',
-        generator: 'tileflow tileset build',
-        generator_version: getCliVersion(),
-        name,
-        type: 'overlay',
-        vector_layers: [{fields: fieldMetadata, id: layer, maxzoom, minzoom: zoomRange.minzoom}],
-        version: '1',
-      }),
-    );
 
     if (totals.byteCount > maximumArchiveBytes) {
       throw new TilesetBuildError(
@@ -317,7 +290,6 @@ export async function buildTileset(options: TilesetBuildOptions): Promise<Tilese
     }
     throw error;
   } finally {
-    archive?.close();
     zip?.close();
     zippedKml?.close();
     geopackage?.close();

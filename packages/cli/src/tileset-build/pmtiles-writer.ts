@@ -1,8 +1,6 @@
-import {createHash} from 'node:crypto';
-import {closeSync, openSync, readSync, writeSync} from 'node:fs';
-import {gzip as gzipCallback, gzipSync} from 'node:zlib';
 import {zxyToTileId} from 'pmtiles';
 import {TilesetBuildError} from './errors';
+import {concatBytes, type TilesetFile, type TilesetPlatform} from './platform';
 
 const headerBytes = 127;
 const rootLimitBytes = 16_384 - headerBytes;
@@ -41,7 +39,7 @@ type Entry = {
 
 /** Collects compressed tiles in any order and lays them out in TileID order at the end. */
 export class TileArchiveWriter {
-  #descriptor: number | null;
+  #data: TilesetFile | null;
   #dataOffset = 0;
   #contentOffsets: number[] = [];
   #contentLengths: number[] = [];
@@ -54,8 +52,8 @@ export class TileArchiveWriter {
   readonly #pending = new Set<Promise<void>>();
   #failure: unknown = null;
 
-  constructor(private readonly dataPath: string) {
-    this.#descriptor = openSync(dataPath, 'w');
+  constructor(private readonly platform: TilesetPlatform) {
+    this.#data = platform.storage.create('tiles.bin');
   }
 
   get tileCount(): number {
@@ -67,7 +65,7 @@ export class TileArchiveWriter {
     let content = -1;
     let identity: string | null = null;
     if (tile.length <= deduplicatedTileBytes) {
-      identity = createHash('sha1').update(tile).digest('base64');
+      identity = this.platform.digest(tile);
       content = this.#known.get(identity) ?? -1;
     }
     if (content < 0) {
@@ -93,28 +91,28 @@ export class TileArchiveWriter {
 
   /** Wait for compression, then write the finished archive. Tile contents are copied in order. */
   async finish(
-    archivePath: string,
+    archiveName: string,
     fields: ArchiveHeaderFields,
     metadata: string,
   ): Promise<ArchiveSummary> {
     await Promise.all(this.#pending);
     if (this.#failure) throw this.#failure;
-    this.close();
+    const input = this.#data as TilesetFile;
+    this.#data = null;
 
     const entries = this.#sortedEntries();
-    const input = openSync(this.dataPath, 'r');
-    const output = openSync(archivePath, 'w');
+    const output = this.platform.storage.create(archiveName);
     try {
-      return this.#layOut(entries, input, output, fields, metadata);
+      return await this.#layOut(entries, input, output, fields, metadata);
     } finally {
-      closeSync(input);
-      closeSync(output);
+      output.close();
+      input.discard();
     }
   }
 
   close(): void {
-    if (this.#descriptor !== null) closeSync(this.#descriptor);
-    this.#descriptor = null;
+    this.#data?.discard();
+    this.#data = null;
   }
 
   #addEntry(tileId: number, runLength: number, content: number): void {
@@ -148,15 +146,11 @@ export class TileArchiveWriter {
   async #compress(content: number, tile: Uint8Array): Promise<void> {
     while (this.#pending.size >= concurrentCompression) await Promise.race(this.#pending);
     if (this.#failure) throw this.#failure;
-    const task: Promise<void> = new Promise<Buffer>((resolve, reject) => {
-      gzipCallback(tile, (error, result) => (error ? reject(error) : resolve(result)));
-    })
+    const task: Promise<void> = this.platform
+      .gzip(tile)
       .then((compressed) => {
-        if (this.#descriptor === null) return; // The build failed while this tile was compressing.
-        let written = 0;
-        while (written < compressed.length) {
-          written += writeSync(this.#descriptor!, compressed, written);
-        }
+        if (this.#data === null) return; // The build failed while this tile was compressing.
+        this.#data.write(compressed, this.#dataOffset);
         this.#contentOffsets[content] = this.#dataOffset;
         this.#contentLengths[content] = compressed.length;
         this.#dataOffset += compressed.length;
@@ -177,13 +171,13 @@ export class TileArchiveWriter {
     return order.sort((left, right) => tileIds[left] - tileIds[right]);
   }
 
-  #layOut(
+  async #layOut(
     order: Uint32Array,
-    input: number,
-    output: number,
+    input: TilesetFile,
+    output: TilesetFile,
     fields: ArchiveHeaderFields,
     metadata: string,
-  ): ArchiveSummary {
+  ): Promise<ArchiveSummary> {
     // A first pass assigns final offsets: each content lands where its first tile needs it.
     const finalOffsets = new Float64Array(this.#contentOffsets.length).fill(-1);
     const contentOrder: number[] = [];
@@ -216,15 +210,16 @@ export class TileArchiveWriter {
       });
     }
 
-    const {leaves, root} = buildDirectories(entries);
-    const metadataBytes = gzipSync(Buffer.from(metadata, 'utf8'));
+    const {leaves, root} = await this.#buildDirectories(entries);
+    const metadataBytes = await this.platform.gzip(new TextEncoder().encode(metadata));
     const rootOffset = headerBytes;
     const metadataOffset = rootOffset + root.length;
     const leafOffset = metadataOffset + metadataBytes.length;
     const dataOffset = leafOffset + leaves.length;
     const clustered = contentOrder.length <= maximumClusteredContents;
-    const header = Buffer.alloc(headerBytes);
-    header.write('PMTiles', 0, 'latin1');
+    const header = new Uint8Array(headerBytes);
+    const view = new DataView(header.buffer);
+    header.set([0x50, 0x4d, 0x54, 0x69, 0x6c, 0x65, 0x73]); // "PMTiles"
     header[7] = 3;
     const writeOffsets: Array<[number, number]> = [
       [8, rootOffset],
@@ -239,28 +234,34 @@ export class TileArchiveWriter {
       [80, entries.length],
       [88, contentOrder.length],
     ];
-    for (const [position, value] of writeOffsets) header.writeBigUInt64LE(BigInt(value), position);
+    for (const [position, value] of writeOffsets) view.setBigUint64(position, BigInt(value), true);
     header[96] = clustered ? 1 : 0;
     header[97] = 2; // Gzip directories and metadata.
     header[98] = 2; // Gzip tiles.
     header[99] = 1; // Mapbox Vector Tile.
     header[100] = fields.minzoom;
     header[101] = fields.maxzoom;
-    header.writeInt32LE(Math.round(fields.bounds[0] * 1e7), 102);
-    header.writeInt32LE(Math.round(fields.bounds[1] * 1e7), 106);
-    header.writeInt32LE(Math.round(fields.bounds[2] * 1e7), 110);
-    header.writeInt32LE(Math.round(fields.bounds[3] * 1e7), 114);
+    view.setInt32(102, Math.round(fields.bounds[0] * 1e7), true);
+    view.setInt32(106, Math.round(fields.bounds[1] * 1e7), true);
+    view.setInt32(110, Math.round(fields.bounds[2] * 1e7), true);
+    view.setInt32(114, Math.round(fields.bounds[3] * 1e7), true);
     header[118] = fields.center[2];
-    header.writeInt32LE(Math.round(fields.center[0] * 1e7), 119);
-    header.writeInt32LE(Math.round(fields.center[1] * 1e7), 123);
+    view.setInt32(119, Math.round(fields.center[0] * 1e7), true);
+    view.setInt32(123, Math.round(fields.center[1] * 1e7), true);
 
-    for (const section of [header, root, metadataBytes, leaves]) writeAll(output, section);
-    let buffer: Buffer = Buffer.allocUnsafe(1024 * 1024);
+    let cursor = 0;
+    for (const section of [header, root, metadataBytes, leaves]) {
+      output.write(section, cursor);
+      cursor += section.length;
+    }
+    let buffer = new Uint8Array(1024 * 1024);
     for (const content of contentOrder) {
       const length = this.#contentLengths[content];
-      if (length > buffer.length) buffer = Buffer.allocUnsafe(length);
-      readSync(input, buffer, 0, length, this.#contentOffsets[content]);
-      writeAll(output, buffer.subarray(0, length));
+      if (length > buffer.length) buffer = new Uint8Array(length);
+      const tile = buffer.subarray(0, length);
+      input.read(tile, this.#contentOffsets[content]);
+      output.write(tile, cursor);
+      cursor += length;
     }
     return {
       addressedTiles: this.#addressed,
@@ -269,67 +270,62 @@ export class TileArchiveWriter {
       tileEntries: entries.length,
     };
   }
-}
 
-function writeAll(descriptor: number, bytes: Uint8Array): void {
-  let written = 0;
-  while (written < bytes.length) {
-    written += writeSync(descriptor, bytes, written, bytes.length - written);
-  }
-}
-
-/** Root directory first; when it will not fit, spill to one level of leaf directories. */
-function buildDirectories(entries: readonly Entry[]): {leaves: Buffer; root: Buffer} {
-  const root = serializeDirectory(entries);
-  if (root.length <= rootLimitBytes) return {leaves: Buffer.alloc(0), root};
-  for (let leafSize = 4096; ; leafSize = Math.ceil(leafSize * 1.2)) {
-    const rootEntries: Entry[] = [];
-    const leaves: Buffer[] = [];
-    let offset = 0;
-    for (let start = 0; start < entries.length; start += leafSize) {
-      const leaf = serializeDirectory(entries.slice(start, start + leafSize));
-      rootEntries.push({
-        content: -1,
-        length: leaf.length,
-        offset,
-        runLength: 0,
-        tileId: entries[start].tileId,
-      });
-      leaves.push(leaf);
-      offset += leaf.length;
-    }
-    const serialized = serializeDirectory(rootEntries);
-    if (serialized.length <= rootLimitBytes) {
-      return {leaves: Buffer.concat(leaves), root: serialized};
+  /** Root directory first; when it will not fit, spill to one level of leaf directories. */
+  async #buildDirectories(
+    entries: readonly Entry[],
+  ): Promise<{leaves: Uint8Array; root: Uint8Array}> {
+    const root = await this.#serializeDirectory(entries);
+    if (root.length <= rootLimitBytes) return {leaves: new Uint8Array(0), root};
+    for (let leafSize = 4096; ; leafSize = Math.ceil(leafSize * 1.2)) {
+      const rootEntries: Entry[] = [];
+      const leaves: Uint8Array[] = [];
+      let offset = 0;
+      for (let start = 0; start < entries.length; start += leafSize) {
+        const leaf = await this.#serializeDirectory(entries.slice(start, start + leafSize));
+        rootEntries.push({
+          content: -1,
+          length: leaf.length,
+          offset,
+          runLength: 0,
+          tileId: entries[start].tileId,
+        });
+        leaves.push(leaf);
+        offset += leaf.length;
+      }
+      const serialized = await this.#serializeDirectory(rootEntries);
+      if (serialized.length <= rootLimitBytes) {
+        return {leaves: concatBytes(leaves), root: serialized};
+      }
     }
   }
-}
 
-function serializeDirectory(entries: readonly Entry[]): Buffer {
-  const bytes = Buffer.allocUnsafe(10 + entries.length * 40);
-  let cursor = 0;
-  const varint = (value: number) => {
-    while (value >= 0x80) {
-      bytes[cursor] = (value % 0x80) | 0x80;
+  #serializeDirectory(entries: readonly Entry[]): Promise<Uint8Array> {
+    const bytes = new Uint8Array(10 + entries.length * 40);
+    let cursor = 0;
+    const varint = (value: number) => {
+      while (value >= 0x80) {
+        bytes[cursor] = (value % 0x80) | 0x80;
+        cursor += 1;
+        value = Math.floor(value / 0x80);
+      }
+      bytes[cursor] = value;
       cursor += 1;
-      value = Math.floor(value / 0x80);
+    };
+    varint(entries.length);
+    let lastId = 0;
+    for (const entry of entries) {
+      varint(entry.tileId - lastId);
+      lastId = entry.tileId;
     }
-    bytes[cursor] = value;
-    cursor += 1;
-  };
-  varint(entries.length);
-  let lastId = 0;
-  for (const entry of entries) {
-    varint(entry.tileId - lastId);
-    lastId = entry.tileId;
+    for (const entry of entries) varint(entry.runLength);
+    for (const entry of entries) varint(entry.length);
+    for (let index = 0; index < entries.length; index += 1) {
+      const entry = entries[index];
+      const previous = entries[index - 1];
+      const contiguous = previous && entry.offset === previous.offset + previous.length;
+      varint(contiguous ? 0 : entry.offset + 1);
+    }
+    return this.platform.gzip(bytes.subarray(0, cursor));
   }
-  for (const entry of entries) varint(entry.runLength);
-  for (const entry of entries) varint(entry.length);
-  for (let index = 0; index < entries.length; index += 1) {
-    const entry = entries[index];
-    const previous = entries[index - 1];
-    const contiguous = previous && entry.offset === previous.offset + previous.length;
-    varint(contiguous ? 0 : entry.offset + 1);
-  }
-  return gzipSync(bytes.subarray(0, cursor));
 }

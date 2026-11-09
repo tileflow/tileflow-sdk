@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {mkdtemp, writeFile} from 'node:fs/promises';
+import {mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
@@ -207,6 +207,23 @@ test('validates every leaf directory entry against archive bounds and rejects cy
   }
 });
 
+test('clustered archives may reuse earlier tile bytes but not overlap the frontier', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'tileflow-tileset-clustered-'));
+  t.after(() => rm(directory, {force: true, recursive: true}));
+  const archivePath = join(directory, 'clustered.pmtiles');
+
+  await writeFile(archivePath, createClusteredRanges(0, 10));
+  await inspectTileflowPmtiles(archivePath, {sample: false});
+
+  await writeFile(archivePath, createClusteredRanges(5, 15));
+  await assert.rejects(
+    inspectTileflowPmtiles(archivePath, {sample: false}),
+    (error: unknown) =>
+      error instanceof Error &&
+      (error as Error & {code?: string}).code === 'TF_TILESET_ARCHIVE_INVALID',
+  );
+});
+
 test('local inspection stops at the root directory while explicit inspection remains exhaustive', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'tileflow-tileset-local-inspect-'));
   const archivePath = join(directory, 'deep-cycle.pmtiles');
@@ -303,9 +320,12 @@ test('sampling is determined by structural limits rather than wall-clock timing'
   assert.equal(inspection.observation?.featuresRead, 2);
 });
 
-function createPmtiles(metadata: Record<string, unknown>, tile: Uint8Array = vectorTile) {
+function createPmtiles(
+  metadata: Record<string, unknown>,
+  tile: Uint8Array = vectorTile,
+  directory = new Uint8Array([1, 0, 1, ...encodeVarint(tile.byteLength), 1]),
+) {
   const headerLength = 127;
-  const directory = new Uint8Array([1, 0, 1, ...encodeVarint(tile.byteLength), 1]);
   const metadataBytes = new TextEncoder().encode(JSON.stringify(metadata));
   const bytes = new Uint8Array(
     headerLength + directory.byteLength + metadataBytes.byteLength + tile.byteLength,
@@ -441,6 +461,17 @@ function createReorderedPmtiles() {
   bytes.set(root, rootOffset);
   bytes.set(tile, tileOffset);
   bytes.set(metadata, metadataOffset);
+  return bytes;
+}
+
+/** Two tiles of 10 bytes each, the second starting at `secondOffset` of a `dataLength`-byte section. */
+function createClusteredRanges(secondOffset: number, dataLength: number) {
+  const directory = new Uint8Array([2, 0, 1, 1, 1, 10, 10, 1, secondOffset + 1]);
+  const bytes = createPmtiles({}, new Uint8Array(dataLength), directory);
+  const view = new DataView(bytes.buffer);
+  setUint64(view, 72, 2);
+  setUint64(view, 80, 2);
+  view.setUint8(101, 1);
   return bytes;
 }
 

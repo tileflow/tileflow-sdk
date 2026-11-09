@@ -1,0 +1,149 @@
+name: Tileflow tileset
+description: Build a PMTiles tileset from vector data and publish it to Tileflow.
+author: Tileflow
+branding:
+  icon: map
+  color: blue
+
+inputs:
+  source:
+    description: Local path, relative to working-directory, or https:// URL of the source file.
+    required: true
+  tileset-id:
+    description: Team-local tileset ID. Required when publish is true.
+    default: ''
+  api-key:
+    description: Team data API key. Always pass it from a secret, such as secrets.TILEFLOW_API_KEY.
+    default: ''
+  team:
+    description: >-
+      Team name shown in the run summary. The API key selects the Team, and this value is not
+      checked against it.
+    default: ''
+  publish:
+    description: Publish the archive. When false, the archive is uploaded as a workflow artifact.
+    default: 'true'
+  tileflow-version:
+    description: >-
+      Exact tileflow CLI version to install. When empty, the action uses the tileflow package
+      already installed in working-directory.
+    default: ''
+  source-crs:
+    description: CRS of the input, such as EPSG:25830. Passed to --source-crs.
+    default: ''
+  reproject:
+    description: Convert a stated non-WGS84 CRS to WGS84.
+    default: 'false'
+  maxzoom:
+    description: Highest zoom to write. Chosen from the data when empty.
+    default: ''
+  rank-by:
+    description: Numeric attribute that decides which features to keep when thinning.
+    default: ''
+  include:
+    description: Comma-separated attributes to keep. Keeps all of them when empty.
+    default: ''
+  input-layer:
+    description: Feature table to read from a GeoPackage holding several.
+    default: ''
+  zip-entry:
+    description: The .shp or .kml to read from a .zip or .kmz holding several.
+    default: ''
+  layer:
+    description: Source-layer name. Defaults to the source file name.
+    default: ''
+  format:
+    description: Input format, for a file whose extension does not identify it.
+    default: ''
+  lon-column:
+    description: CSV longitude column, when its name is not a standard one.
+    default: ''
+  lat-column:
+    description: CSV latitude column, when its name is not a standard one.
+    default: ''
+  name:
+    description: Display name for the tileset.
+    default: ''
+  attribution:
+    description: Data attribution stored in the archive and shown with the tileset.
+    default: ''
+  artifact-name:
+    description: Name of the workflow artifact created when publish is false.
+    default: tileflow-tileset
+  working-directory:
+    description: Directory that relative paths and an installed tileflow package resolve from.
+    default: '.'
+  node-version:
+    description: Node.js version used to run the action and the Tileflow CLI.
+    default: '24'
+
+outputs:
+  path:
+    description: Absolute path of the PMTiles archive.
+    value: ${{ steps.build.outputs.path }}
+  id:
+    description: Published tileset ID. Empty when publish is false.
+    value: ${{ steps.publish.outputs.id }}
+  version:
+    description: Published version number. Empty when publish is false.
+    value: ${{ steps.publish.outputs.version }}
+  publication:
+    description: changed or unchanged. Empty when publish is false.
+    value: ${{ steps.publish.outputs.publication }}
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Node
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Build tileset
+      id: build
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        TILEFLOW_TILESET_SOURCE: ${{ inputs.source }}
+        TILEFLOW_TILESET_ID: ${{ inputs.tileset-id }}
+        TILEFLOW_TILESET_HAS_API_KEY: ${{ inputs.api-key != '' }}
+        TILEFLOW_TILESET_PUBLISH: ${{ inputs.publish }}
+        TILEFLOW_TILESET_CLI_VERSION: ${{ inputs.tileflow-version }}
+        TILEFLOW_TILESET_SOURCE_CRS: ${{ inputs.source-crs }}
+        TILEFLOW_TILESET_REPROJECT: ${{ inputs.reproject }}
+        TILEFLOW_TILESET_MAXZOOM: ${{ inputs.maxzoom }}
+        TILEFLOW_TILESET_RANK_BY: ${{ inputs.rank-by }}
+        TILEFLOW_TILESET_INCLUDE: ${{ inputs.include }}
+        TILEFLOW_TILESET_INPUT_LAYER: ${{ inputs.input-layer }}
+        TILEFLOW_TILESET_ZIP_ENTRY: ${{ inputs.zip-entry }}
+        TILEFLOW_TILESET_LAYER: ${{ inputs.layer }}
+        TILEFLOW_TILESET_FORMAT: ${{ inputs.format }}
+        TILEFLOW_TILESET_LON_COLUMN: ${{ inputs.lon-column }}
+        TILEFLOW_TILESET_LAT_COLUMN: ${{ inputs.lat-column }}
+        TILEFLOW_TILESET_ATTRIBUTION: ${{ inputs.attribution }}
+      run: node "$GITHUB_ACTION_PATH/src/main.mjs" build
+
+    - name: Upload archive
+      if: inputs.publish == 'false'
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ steps.build.outputs.path }}
+        if-no-files-found: error
+        compression-level: 0
+        retention-days: 14
+
+    - name: Publish tileset
+      id: publish
+      if: inputs.publish == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        TILEFLOW_API_KEY: ${{ inputs.api-key }}
+        TILEFLOW_TILESET_ARCHIVE: ${{ steps.build.outputs.path }}
+        TILEFLOW_TILESET_CLI: ${{ steps.build.outputs.cli }}
+        TILEFLOW_TILESET_ID: ${{ inputs.tileset-id }}
+        TILEFLOW_TILESET_TEAM: ${{ inputs.team }}
+        TILEFLOW_TILESET_NAME: ${{ inputs.name }}
+        TILEFLOW_TILESET_ATTRIBUTION: ${{ inputs.attribution }}
+      run: node "$GITHUB_ACTION_PATH/src/main.mjs" publish

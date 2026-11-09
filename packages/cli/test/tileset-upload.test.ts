@@ -58,15 +58,15 @@ test('Node positioned reads preserve offsets, concurrent ownership and truncated
   );
 });
 
-test('fixed part layout reaches the exact 4,000,000,000-byte boundary without allocating it', () => {
+test('fixed part layout reaches the exact 8,000,000,000-byte boundary without allocating it', () => {
   const layout = createTeamTilesetPartLayout(maximumTeamTilesetBytes);
 
-  assert.equal(layout.length, 239);
+  assert.equal(layout.length, 477);
   assert.deepEqual(layout[0], {byteCount: teamTilesetPartSize, partNumber: 1, position: 0});
   assert.deepEqual(layout.at(-1), {
-    byteCount: 7_022_592,
-    partNumber: 239,
-    position: 3_992_977_408,
+    byteCount: 14_045_184,
+    partNumber: 477,
+    position: 7_985_954_816,
   });
   assert.throws(
     () => createTeamTilesetPartLayout(maximumTeamTilesetBytes + 1),

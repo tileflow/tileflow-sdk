@@ -676,7 +676,7 @@ function runProcess(command: string, args: string[], cwd: string): Promise<Uint8
           reject(reviewError(`${command} is not installed. Install it and sign in with it first.`));
           return;
         }
-        const detail = Buffer.from(stderr).toString('utf8').trim();
+        const detail = Buffer.from(stderr).toString('utf8').replace(/\s+/gu, ' ').trim();
         reject(
           /HTTP 404|404 Not Found/u.test(detail)
             ? new HostNotFoundError(detail)

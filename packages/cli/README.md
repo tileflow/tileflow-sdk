@@ -197,12 +197,12 @@ Only `visual update` changes baseline PNG/receipt pairs. `visual diff` writes wo
 approval. Changed pixels normally exit 0; `--fail-on changed` exits 2. Missing or incompatible
 baselines and operational failures exit 1. Never run `visual update` automatically to make CI pass.
 
-Use `visual analyze <scene> --reference <png>` for an external screenshot without a Tileflow
-receipt. Use `visual compare` for an authenticated two-style review with matched camera, viewport,
-renderer, and data identity. Neither operation approves a baseline. Capture watch mode emits NDJSON
-generation events rather than a single JSON document.
+`visual analyze <scene> --reference <png>` checks an external screenshot. `visual compare` runs an
+authenticated two-style review with matched camera, viewport, renderer, and data. Neither approves a
+baseline. Capture watch mode emits NDJSON generation events rather than a single JSON document.
+`visual report` and `visual approve` read and approve a pull request's visual review.
 
-Use `tileflow capture --help` and `tileflow compare --help` for installed command options.
+See `--help` on each command for installed options.
 
 ## Publish data and deploy a map
 

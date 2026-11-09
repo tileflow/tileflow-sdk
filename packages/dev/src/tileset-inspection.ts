@@ -27,7 +27,7 @@ const inspectionLimits = Object.freeze({
   maxValuesPerField: 16,
 });
 const maxArchiveBytes = 8_000_000_000;
-const maximumDecodedBytes = 4 * 1024 * 1024 * 1024;
+const maximumDecodedBytes = 8 * 1024 * 1024 * 1024;
 const minimumDecodedBytes = 64 * 1024 * 1024;
 const maxDecompressedSectionBytes = 16 * 1024 * 1024;
 const defaultMaximumDirectoryDepth = 32;

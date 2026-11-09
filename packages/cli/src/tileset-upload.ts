@@ -6,6 +6,7 @@ import {type HostedJsonResponse, requestHostedJson} from './hosted-client';
 
 export const teamTilesetPartSize = 16_777_216;
 export const maximumTeamTilesetBytes = 8_000_000_000;
+const archiveLimitMessage = `PMTiles archive exceeds the ${maximumTeamTilesetBytes.toLocaleString('en-US')}-byte platform maximum.`;
 const maximumTeamTilesetParts = Math.ceil(maximumTeamTilesetBytes / teamTilesetPartSize);
 const authorizationBatchSize = 16;
 const uploadConcurrency = 4;
@@ -143,14 +144,10 @@ export class TeamTilesetUploadError extends Error {
 
 export function createTeamTilesetPartLayout(byteCount: number) {
   if (!Number.isSafeInteger(byteCount) || byteCount < 1 || byteCount > maximumTeamTilesetBytes) {
-    throw new TeamTilesetUploadError(
-      'TF_TILESET_VERSION_TOO_LARGE',
-      'PMTiles archive exceeds the 4,000,000,000-byte platform maximum.',
-      {
-        actualBytes: Number.isSafeInteger(byteCount) && byteCount >= 0 ? byteCount : 0,
-        limitBytes: maximumTeamTilesetBytes,
-      },
-    );
+    throw new TeamTilesetUploadError('TF_TILESET_VERSION_TOO_LARGE', archiveLimitMessage, {
+      actualBytes: Number.isSafeInteger(byteCount) && byteCount >= 0 ? byteCount : 0,
+      limitBytes: maximumTeamTilesetBytes,
+    });
   }
 
   return Object.freeze(
@@ -812,11 +809,10 @@ function checkedIdentity(device: bigint, inode: bigint, mtimeNanoseconds: bigint
     throw new TeamTilesetUploadError('TF_TILESET_ARCHIVE_EMPTY', 'PMTiles archive is empty.');
   }
   if (numericSize > maximumTeamTilesetBytes) {
-    throw new TeamTilesetUploadError(
-      'TF_TILESET_VERSION_TOO_LARGE',
-      'PMTiles archive exceeds the 4,000,000,000-byte platform maximum.',
-      {actualBytes: numericSize, limitBytes: maximumTeamTilesetBytes},
-    );
+    throw new TeamTilesetUploadError('TF_TILESET_VERSION_TOO_LARGE', archiveLimitMessage, {
+      actualBytes: numericSize,
+      limitBytes: maximumTeamTilesetBytes,
+    });
   }
   return Object.freeze({device, inode, mtimeNanoseconds, size: numericSize});
 }

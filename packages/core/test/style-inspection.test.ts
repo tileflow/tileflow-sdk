@@ -52,10 +52,17 @@ function inspectionMap() {
       }),
       poi: disable(),
       roads: withRenderStack(roads({}), {
+        // Classes merge into one physical cohort only when no merged property would depend
+        // on both zoom and the feature, so both major classes share one fixed width.
         motorwayOpacity: refineRenderTarget({
           renderer: 'line',
-          style: {opacity: 0.9},
+          style: {opacity: 0.9, width: 12},
           target: roadTarget,
+        }),
+        trunkWidth: refineRenderTarget({
+          renderer: 'line',
+          style: {width: 12},
+          target: 'roads.classes.trunk.surface.fill',
         }),
       }),
     },

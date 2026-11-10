@@ -15,7 +15,7 @@ import {
 } from './contributions';
 import type {TileflowCompiledDomains} from './domain-registry';
 import type {TileflowLayerDomain} from './domains';
-import {compactTileflowLayer} from './expression-compaction';
+import {compactTileflowLayers} from './expression-compaction';
 import type {TileflowCompiledRenderOperation} from './render-stack';
 import {bindSemanticLayer} from './semantic-bindings';
 
@@ -254,9 +254,11 @@ export function lowerTileflowDomainIR(
   data: ResolvedTileflowData,
   resolvePhysicalId: TileflowPhysicalIdResolver = physicalLayerIdForSemanticKey,
 ): TileflowLoweredDomainIR {
-  const layers = families.flatMap((family) =>
-    bindSemanticLayer(emitLayer(family, resolvePhysicalId), data).map(compactTileflowLayer),
+  const emitted = families.flatMap((family) =>
+    bindSemanticLayer(emitLayer(family, resolvePhysicalId), data),
   );
+  const taken = new Set(emitted.map(({id}) => id));
+  const layers = emitted.flatMap((layer) => compactTileflowLayers(layer, taken));
   assertNoSemanticReferences(layers);
   const ids = new Set<string>();
   for (const layer of layers) {

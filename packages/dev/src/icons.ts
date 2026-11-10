@@ -41,6 +41,11 @@ import {
   resolveTileflowAssetDirectories,
   TileflowAssetDirectoryError,
 } from './asset-directories';
+import {
+  formatTileflowIconAttributionNotice,
+  tileflowIconAttributionDirectory,
+  type TileflowIconAttributionNotice,
+} from './icon-attribution';
 import type {TileflowIconCacheOptions} from './icon-cache';
 import {
   composeTileflowIconSources,
@@ -59,6 +64,12 @@ import {prepareTileflowMapTreeModels} from './tree-models';
 export {prepareTileflowMapTreeModels, type PreparedTileflowBuildingModel} from './tree-models';
 
 export {renderTileflowIconAtlasPreview} from './icon-preview';
+
+export {
+  formatTileflowIconAttributionNotice,
+  tileflowIconAttributionDirectory,
+  type TileflowIconAttributionNotice,
+} from './icon-attribution';
 
 export {verifyTileflowIconArtifact, type VerifiedTileflowIconArtifact} from './icon-artifact';
 
@@ -151,6 +162,8 @@ export type CompiledTileflowIconPackage = {
 
 export type TileflowMapIconPackageBinding = {
   appearances?: Record<string, TileflowIconAppearance>;
+  /** Effective icons whose licenses require their credit to travel with the sprite. */
+  attributions?: readonly TileflowIconAttributionNotice[];
   iconIds: readonly string[];
   label: string;
   mapName: string;
@@ -310,6 +323,7 @@ type ComposeMapIconSourcesResult = {
 
 type IconInput = {
   appearance?: TileflowIconAppearance;
+  attribution?: TileflowIconAttributionNotice;
   layout?: TileflowIconLayoutMetadata;
   displayPath: string;
   fileName: string;
@@ -374,10 +388,14 @@ export async function compileTileflowIconPackages(
         icon.appearance ? [[icon.name, icon.appearance]] : [],
       ),
     );
+    const attributions = composed.winners.flatMap((winner) =>
+      winner.attribution ? [winner.attribution] : [],
+    );
     return [
       {
         iconIds: composed.package.manifest.iconNames,
         ...(Object.keys(appearances).length ? {appearances} : {}),
+        ...(attributions.length ? {attributions} : {}),
         label: request.mapName,
         mapName: request.mapName,
         packageHash: composed.package.contentHash,
@@ -659,6 +677,14 @@ export async function prepareTileflowCatalogIcons(
           file.contentType === 'application/json'
             ? new TextDecoder().decode(file.source)
             : file.source,
+      });
+    }
+    // Licenses such as CC BY-SA require their credit and terms wherever the artwork travels.
+    for (const attribution of binding.attributions ?? []) {
+      assets.push({
+        contentType: 'text/plain; charset=utf-8',
+        fileName: `icons/${binding.mapName}/${tileflowIconAttributionDirectory}/${attribution.id}.txt`,
+        source: formatTileflowIconAttributionNotice(attribution),
       });
     }
   }
@@ -974,6 +1000,14 @@ async function inspectIconSource(
       });
   }
 
+  const licenseTexts = new Map<string, string>();
+  for (const [id, declared] of Object.entries(metadata.icons)) {
+    const licenseFile = declared.attribution?.licenseFile;
+    if (!licenseFile || licenseTexts.has(licenseFile) || !names.has(id)) continue;
+    const text = await readIconLicenseText(directory, licenseFile, issues);
+    if (text !== undefined) licenseTexts.set(licenseFile, text);
+  }
+
   if (candidates.length === 0) {
     issues.push({
       message: 'No supported .svg, .png, .jpg, .jpeg, or .webp icon files were found',
@@ -1005,9 +1039,19 @@ async function inspectIconSource(
       }
 
       const declared = metadata.icons[candidate.name];
+      const attribution = declared?.attribution;
       icons.push({
         ...(declared?.representation === 'sdf'
           ? {appearance: {representation: declared.representation, defaults: declared.defaults}}
+          : {}),
+        ...(attribution
+          ? {
+              attribution: {
+                ...attribution,
+                id: candidate.name,
+                licenseText: licenseTexts.get(attribution.licenseFile)!,
+              },
+            }
           : {}),
         ...(declared?.layout ? {layout: declared.layout} : {}),
         displayPath,
@@ -1031,6 +1075,37 @@ async function inspectIconSource(
   }
 
   return {icons};
+}
+
+const maximumIconLicenseBytes = 2 * 1024 * 1024;
+
+/** Read one complete license named by icon metadata, contained in the icon directory itself. */
+async function readIconLicenseText(
+  directory: ResolvedTileflowAssetDirectory,
+  fileName: string,
+  issues: TileflowIconCompilationIssue[],
+): Promise<string | undefined> {
+  const path = `${directory.configPath}/${fileName}`;
+  try {
+    const configuredPath = resolvePath(directory.realPath, fileName);
+    const realLicensePath = await realpath(configuredPath);
+    if (!isPathInside(directory.realPath, realLicensePath))
+      throw new Error('License file escapes its icon directory');
+    const metadata = await stat(realLicensePath);
+    if (!metadata.isFile()) throw new Error('License file must be a regular file');
+    if (metadata.size > maximumIconLicenseBytes)
+      throw new Error(`License file exceeds the ${maximumIconLicenseBytes}-byte limit`);
+    const text = new TextDecoder('utf-8', {fatal: true}).decode(await readFile(realLicensePath));
+    if (text.trim().length === 0 || text.includes('\0'))
+      throw new Error('License file must be non-empty UTF-8 text without NUL bytes');
+    return text;
+  } catch (error) {
+    issues.push({
+      message: describeFileSystemError(error, 'License file could not be read'),
+      path,
+    });
+    return undefined;
+  }
 }
 
 async function validateDecodedDimensions(icon: IconInput): Promise<DecodedIconDimensions> {
@@ -1402,6 +1477,7 @@ export type ReadTileflowIconDirectoryResult = {
   realPath: string;
   render: (ids: readonly string[]) => Promise<
     Array<{
+      attribution?: TileflowIconAttributionNotice;
       icon: TileflowRenderedIcon;
       identity: TileflowEffectiveIconSourceIdentity;
       source: TileflowIconDirectorySourceFile;
@@ -1476,6 +1552,7 @@ export async function readTileflowIconDirectory(
           },
         ]);
       return (await renderIconInputs(inputs)).map((rendered) => ({
+        ...(rendered.input.attribution ? {attribution: rendered.input.attribution} : {}),
         icon: {
           id: rendered.input.name,
           ...(rendered.input.appearance ? {appearance: rendered.input.appearance} : {}),

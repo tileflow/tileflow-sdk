@@ -66,6 +66,8 @@ test('registers watch inputs and emits deterministic Webpack assets', async (t) 
     [
       'maps/build-manifest.json',
       'maps/families/main.json',
+      'maps/icons/main/licenses/transit-madrid-emt.txt',
+      'maps/icons/main/licenses/transit-madrid-metro.txt',
       'maps/icons/main/sprite.json',
       'maps/icons/main/sprite.png',
       'maps/icons/main/sprite@2x.json',
@@ -77,7 +79,8 @@ test('registers watch inputs and emits deterministic Webpack assets', async (t) 
     ],
   );
   const generated = names.filter((name) => name.includes('/generations/'));
-  assert.equal(generated.length, 5 + Object.keys(streetsThemes).length);
+  // Two of these are the Streets transit-symbol credits written beside the sprite.
+  assert.equal(generated.length, 7 + Object.keys(streetsThemes).length);
   assert.ok(generated.every((name) => /^maps\/generations\/[a-f0-9]{64}\//.test(name)));
   const manifestAsset = emitted.get('maps/manifest.json') as RawSource;
   const manifest = JSON.parse(String(manifestAsset.value)) as RuntimeManifest;

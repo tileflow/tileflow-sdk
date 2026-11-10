@@ -75,11 +75,11 @@ for (const theme of ['light', 'dawn', 'dusk', 'dark']) {
   test(`1777 ${theme} keeps roads growing beyond zoom 16 without width jumps at detail stops`, () => {
     for (const roadClass of [...carriageways, 'pathway', 'footway', 'cycleway', 'pedestrian']) {
       const properties = {class: roadClass};
-      const surface = line(`tileflow-road-surface-${roadClass}-fill`);
       for (const structure of ['surface', 'bridge', 'tunnel']) {
-        const fill = line(`tileflow-road-${structure}-${roadClass}-fill`);
         let previous = 0;
         for (const zoom of [14, 16, 17.156959, 18, 19, 22]) {
+          const fill = drawnAt(`tileflow-road-${structure}-${roadClass}-fill`, zoom);
+          const surface = drawnAt(`tileflow-road-surface-${roadClass}-fill`, zoom);
           const casing = drawnAt(`tileflow-road-${structure}-${roadClass}-casing`, zoom);
           const width = paint(fill, 'line-width', zoom, properties);
           assert.ok(width > previous, `${roadClass} ${structure} must grow at zoom ${zoom}`);
@@ -93,6 +93,7 @@ for (const theme of ['light', 'dawn', 'dusk', 'dark']) {
           previous = width;
         }
         for (const zoom of [16, 18, 22]) {
+          const fill = drawnAt(`tileflow-road-${structure}-${roadClass}-fill`, zoom);
           const width = paint(fill, 'line-width', zoom, properties);
           const before = paint(fill, 'line-width', zoom - 0.001, properties);
           const after = paint(fill, 'line-width', zoom + 0.001, properties);
@@ -133,21 +134,37 @@ for (const theme of ['light', 'dawn', 'dusk', 'dark']) {
             {service: 'driveway'},
             {service: 'parking_aisle'},
           ]) {
-            // Compare with the layer that draws the open road: highway links have their own.
-            const drawing =
-              ['motorway', 'trunk'].includes(roadClass) && phase === 'fill' && 'link' in treatment
-                ? line(`tileflow-roads-render-${roadClass}-surface-links`)
-                : ordinary;
-            assert.ok(matches(drawing, {...open, ...treatment}));
+            // Compare with the layer that draws the open road: highway links have their own,
+            // and widths that depend on the feature draw in layers of their own.
             for (const zoom of [15, 17, 19]) {
+              const feature = {...open, ...treatment};
+              const bases = [
+                ordinary.id,
+                ordinary.id.replace(/-(?:motorway|trunk)-/u, '-highzoom-major-'),
+              ];
+              const drawing = style.layers.filter(
+                (layer): layer is LineLayerSpecification =>
+                  layer.type === 'line' &&
+                  (bases.some((id) => layer.id === id || layer.id.startsWith(`${id}-`)) ||
+                    (phase === 'fill' &&
+                      layer.id === `tileflow-roads-render-${roadClass}-surface-links`)) &&
+                  zoom >= (layer.minzoom ?? 0) &&
+                  zoom < (layer.maxzoom ?? 24) &&
+                  featureFilter(layer.filter).filter({zoom}, {type: 2, properties: feature}),
+              );
+              assert.equal(drawing.length, 1, `${roadClass} ${phase} ${JSON.stringify(treatment)}`);
+              const building = {...feature, class: closed.class, type: className};
+              const ink = style.layers.filter(
+                (layer): layer is LineLayerSpecification =>
+                  layer.type === 'line' &&
+                  (layer.id === works.id || layer.id.startsWith(`${works.id}-`)) &&
+                  featureFilter(layer.filter).filter({zoom}, {type: 2, properties: building}),
+              );
+              assert.equal(ink.length, 1, `${works.id} ${JSON.stringify(treatment)}`);
               assert.equal(
-                paint(works, 'line-width', zoom, {...open, ...treatment, class: closed.class}),
-                paint(
-                  drawing === ordinary ? drawnAt(ordinary.id, zoom) : drawing,
-                  'line-width',
-                  zoom,
-                  {...open, ...treatment},
-                ),
+                paint(ink[0]!, 'line-width', zoom, building),
+                paint(drawing[0]!, 'line-width', zoom, feature),
+                `${roadClass} ${phase} ${JSON.stringify(treatment)} z${zoom}`,
               );
             }
           }
@@ -171,8 +188,8 @@ for (const theme of ['light', 'dawn', 'dusk', 'dark']) {
       for (const structure of ['surface', 'bridge']) {
         const link = line(`tileflow-roads-render-${roadClass}-${structure}-links`);
         const ordinary = line(`tileflow-road-${structure}-${roadClass}-fill`);
-        // Ramp-dependent casing widths draw links' casings in their own layer.
-        const casing = line(`tileflow-road-${structure}-${roadClass}-rampCasing`);
+        // Ramps' narrower casings draw in a layer of their own, beneath the carriageways'.
+        const casing = line(`tileflow-road-${structure}-${roadClass}-casing-link`);
         const feature = {
           class: roadClass,
           link: true,
@@ -204,19 +221,24 @@ for (const theme of ['light', 'dawn', 'dusk', 'dark']) {
           for (const zoom of [13.5, 16, 19]) {
             const properties = {...feature, ...treatment};
             // The carriageway layer no longer draws links, so its style is read for the same
-            // road as a carriageway. Links keep that colour and opacity; unrestricted links
-            // narrow to 72 %, like construction works on a link.
+            // road as a carriageway. Links keep that colour and opacity and narrow to 72 %,
+            // like construction works on a link.
             const carriageway = {...properties, link: false};
             for (const property of ['line-opacity', 'line-color'] as const) {
               assert.deepEqual(
                 paint(link, property, zoom, properties),
-                paint(ordinary, property, zoom, carriageway),
+                paint(drawnAt(ordinary.id, zoom), property, zoom, carriageway),
                 `${roadClass} ${structure} ${property}`,
               );
             }
-            const width = paint(ordinary, 'line-width', zoom, carriageway) as number;
+            const width = paint(
+              drawnAt(ordinary.id, zoom),
+              'line-width',
+              zoom,
+              carriageway,
+            ) as number;
             const linkWidth = paint(link, 'line-width', zoom, properties) as number;
-            const factor = 'access' in treatment ? 1 : 0.72;
+            const factor = 0.72;
             assert.ok(
               Math.abs(linkWidth - width * factor) < 1e-9,
               `${roadClass} ${structure} line-width ${linkWidth} != ${width} × ${factor}`,

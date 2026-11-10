@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   compactTileflowExpression,
   compactTileflowLayer,
+  compactTileflowLayers,
 } from '../src/cartography/expression-compaction';
 
 const restricted = [
@@ -391,5 +392,96 @@ test('drops zoom stops outside the zooms a layer is drawn at', () => {
     compactTileflowLayer({id: 'overview', minzoom: 9, maxzoom: 15, paint: {'line-opacity': ramp}})
       .paint['line-opacity'],
     ramp.slice(0, 3).concat(ramp.slice(5)),
+  );
+});
+
+function lineValue(value: unknown, property: string, zoom: number, properties: object) {
+  const specification = (latest.paint_line as Record<string, unknown>)[property];
+  const parsed = createPropertyExpression(value, specification as never);
+  assert.equal(parsed.result, 'success', JSON.stringify(parsed.value));
+  if (parsed.result !== 'success') throw new Error('Invalid expression');
+  return {
+    kind: parsed.value.kind,
+    value: parsed.value.evaluate({zoom}, {type: 2, properties} as never),
+  };
+}
+
+test('splits a width that depends on zoom and a feature test into camera-only layers', () => {
+  const driveway = ['==', ['get', 'service'], 'driveway'];
+  const width = [
+    'interpolate',
+    ['exponential', 1.5],
+    ['zoom'],
+    12,
+    ['case', ['==', ['get', 'link'], true], 0.7, driveway, 0.8, 1],
+    18,
+    ['case', ['==', ['get', 'link'], true], 7, driveway, 8, 10],
+  ];
+  const filter = ['==', ['get', 'class'], 'service'];
+  const layer = {
+    id: 'roads',
+    type: 'line',
+    filter,
+    paint: {'line-width': width, 'line-color': ['case', driveway, '#111111', '#222222']},
+  };
+  const parts = compactTileflowLayers(layer);
+  assert.deepEqual(
+    parts.map(({id}) => id),
+    ['roads-link', 'roads-service-driveway', 'roads'],
+  );
+  // The original ID keeps the features no test selects, above the others.
+  for (const properties of [
+    {class: 'service'},
+    {class: 'service', link: true},
+    {class: 'service', service: 'driveway'},
+    {class: 'service', link: true, service: 'driveway'},
+  ]) {
+    const drawing = parts.filter((part) =>
+      featureFilter(part.filter as never).filter({zoom: 15}, {type: 2, properties} as never),
+    );
+    assert.equal(drawing.length, 1, JSON.stringify(properties));
+    for (const zoom of [12, 14.5, 18, 20]) {
+      const split = lineValue(drawing[0]!.paint['line-width'], 'line-width', zoom, properties);
+      assert.notEqual(split.kind, 'composite');
+      assert.equal(split.value, lineValue(width, 'line-width', zoom, properties).value);
+      assert.equal(
+        lineValue(drawing[0]!.paint['line-color'], 'line-color', zoom, properties).value.toString(),
+        lineValue(layer.paint['line-color'], 'line-color', zoom, properties).value.toString(),
+      );
+    }
+  }
+
+  // A width read from continuous data cannot be split, and keeps its single layer.
+  const measured = [
+    'interpolate',
+    ['exponential', 2],
+    ['zoom'],
+    15,
+    ['*', ['get', 'width_m'], 1],
+    22,
+    ['*', ['get', 'width_m'], 128],
+  ];
+  assert.deepEqual(
+    compactTileflowLayers({id: 'measured', type: 'line', paint: {'line-width': measured}}).map(
+      ({id}) => id,
+    ),
+    ['measured'],
+  );
+  // Other layer types and camera-only widths are left alone.
+  assert.equal(
+    compactTileflowLayers({id: 'circles', type: 'circle', paint: {'circle-radius': width}}).length,
+    1,
+  );
+});
+
+test('folds match branches whose labels the filter excludes', () => {
+  const width = ['match', ['get', 'service'], ['driveway'], 0.8, ['alley'], 0.9, 1];
+  assert.deepEqual(
+    compactTileflowLayer({
+      id: 'service',
+      filter: ['!', ['match', ['get', 'service'], ['driveway'], true, false]],
+      paint: {'line-width': width},
+    }).paint['line-width'],
+    ['match', ['get', 'service'], ['alley'], 0.9, 1],
   );
 });

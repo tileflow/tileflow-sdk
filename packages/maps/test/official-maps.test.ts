@@ -852,18 +852,26 @@ test('Streets-family road caps follow overview and structural reference geometry
   }
 });
 
-test('Streets road widths depend on the camera zoom alone', () => {
+test('official road widths depend on the camera zoom alone', () => {
   // MapLibre evaluates a property that depends on zoom and feature data at each tile's zoom.
   // Pitched street views draw tiles several zooms apart, so such a width would change where
   // those tiles meet and jump as the camera moves.
-  for (const theme of ['light', 'dark']) {
-    const style = compileOfficialMap(streets, theme);
+  for (const [mapId, map, theme] of [
+    ['streets', streets, 'light'],
+    ['streets', streets, 'dark'],
+    ['baedeker', baedeker, undefined],
+    ['civica', civica, undefined],
+    ['map-1777', map1777, undefined],
+    ['siegfried', siegfried, undefined],
+    ['blueprint', blueprint, undefined],
+  ] as const) {
+    const style = compileOfficialMap(map, theme);
     const roads = style.layers.filter(
       (layer) =>
         layer.type === 'line' &&
         (layer.id.startsWith('tileflow-road-') || layer.id.startsWith('tileflow-roads-')),
     );
-    assert.ok(roads.length > 60);
+    assert.ok(roads.length > 40, mapId);
     for (const layer of roads)
       for (const property of ['line-width', 'line-gap-width', 'line-offset'] as const) {
         const value = (layer.paint as Record<string, unknown> | undefined)?.[property];
@@ -871,7 +879,7 @@ test('Streets road widths depend on the camera zoom alone', () => {
         const parsed = createPropertyExpression(value, latest.paint_line[property] as never);
         assert.equal(parsed.result, 'success');
         if (parsed.result === 'success')
-          assert.notEqual(parsed.value.kind, 'composite', `${theme} ${layer.id} ${property}`);
+          assert.notEqual(parsed.value.kind, 'composite', `${mapId} ${layer.id} ${property}`);
       }
   }
 });
@@ -899,7 +907,7 @@ test('official road maps avoid seam-prone caps on ordinary surface and bridge se
       if (
         (mapId === 'streets' || mapId === 'map-1777') &&
         layer.id.startsWith('tileflow-road-bridge-') &&
-        (layer.id.endsWith('-casing') || layer.id.endsWith('-rampCasing'))
+        /-casing(?:-|$)/u.test(layer.id)
       )
         continue;
       assert.notEqual(

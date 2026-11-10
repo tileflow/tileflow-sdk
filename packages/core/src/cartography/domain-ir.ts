@@ -15,7 +15,7 @@ import {
 } from './contributions';
 import type {TileflowCompiledDomains} from './domain-registry';
 import type {TileflowLayerDomain} from './domains';
-import {compactTileflowLayer} from './expression-compaction';
+import {compactTileflowLayers} from './expression-compaction';
 import type {TileflowCompiledRenderOperation} from './render-stack';
 import {bindSemanticLayer} from './semantic-bindings';
 
@@ -254,9 +254,11 @@ export function lowerTileflowDomainIR(
   data: ResolvedTileflowData,
   resolvePhysicalId: TileflowPhysicalIdResolver = physicalLayerIdForSemanticKey,
 ): TileflowLoweredDomainIR {
-  const layers = families.flatMap((family) =>
-    bindSemanticLayer(emitLayer(family, resolvePhysicalId), data).map(compactTileflowLayer),
+  const emitted = families.flatMap((family) =>
+    bindSemanticLayer(emitLayer(family, resolvePhysicalId), data),
   );
+  const taken = new Set(emitted.map(({id}) => id));
+  const layers = emitted.flatMap((layer) => compactTileflowLayers(layer, taken));
   assertNoSemanticReferences(layers);
   const ids = new Set<string>();
   for (const layer of layers) {
@@ -330,7 +332,7 @@ export function physicalLayerIdForSemanticKey(semanticKey: string): string {
   if (match) return `tileflow-road-surface-${match[1]}-${match[2]}-on-green`;
 
   match =
-    /^roads\.classes\.([^.]+)\.(tunnel|surface|bridge)\.(shadow|casing|fill|hatch|rampFill|rampCasing|rampShadow)$/u.exec(
+    /^roads\.classes\.([^.]+)\.(tunnel|surface|bridge)\.(shadow|casing|fill|hatch|rampFill)$/u.exec(
       semanticKey,
     );
   if (match) return `tileflow-road-${match[2]}-${match[1]}-${match[3]}`;
@@ -341,10 +343,9 @@ export function physicalLayerIdForSemanticKey(semanticKey: string): string {
     );
   if (match) return `tileflow-road-surface-${match[1]}-${match[2]}-on-green`;
 
-  match =
-    /^roads\.cohorts\.(tunnel|surface|bridge)\.([^.]+)\.(shadow|casing|fill|rampFill|rampCasing|rampShadow)$/u.exec(
-      semanticKey,
-    );
+  match = /^roads\.cohorts\.(tunnel|surface|bridge)\.([^.]+)\.(shadow|casing|fill|rampFill)$/u.exec(
+    semanticKey,
+  );
   if (match) return `tileflow-road-${match[1]}-highzoom-${match[2]}-${match[3]}`;
 
   match = /^roads\.cohorts\.(tunnel|surface|bridge)\.hatch$/u.exec(semanticKey);

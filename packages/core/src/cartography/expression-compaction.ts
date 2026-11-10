@@ -335,6 +335,176 @@ function visit(value: unknown[], transform: (node: unknown[]) => unknown[]): unk
  * evaluated at each tile's zoom, which pitched views mix across the screen.
  */
 export function compactTileflowLayer<T extends Record<string, unknown>>(layer: T): T {
+  return shareLayerExpressions(compactLayerExpressions(layer));
+}
+
+/**
+ * Compacts a layer like {@link compactTileflowLayer}, and splits a line layer whose width, gap or
+ * offset depends on both zoom and a discrete feature test into one layer per outcome.
+ *
+ * MapLibre evaluates such a property at each tile's zoom and the next, so a tilted view, which
+ * draws tiles several zooms apart, would draw one road at different widths where tile zooms
+ * meet. Each split layer selects its features in its filter and keeps a camera-only width. The
+ * layer that keeps the original ID draws the features no test selects; the others go beneath
+ * it. A width that depends on continuous data cannot be split and keeps a single layer.
+ */
+export function compactTileflowLayers<T extends Record<string, unknown>>(
+  layer: T,
+  /** IDs already in the style; a split layer's new ID avoids them and is added. */
+  taken: Set<string> = new Set([String(layer.id)]),
+): T[] {
+  const parts = splitFeatureWidths(compactLayerExpressions(layer), 0);
+  return parts.map(({layer: part, suffixes}) => {
+    if (suffixes.length === 0) return shareLayerExpressions({...part, id: layer.id});
+    const base = [String(layer.id), ...suffixes].join('-');
+    let id = base;
+    for (let index = 2; taken.has(id); index += 1) id = `${base}-${index}`;
+    taken.add(id);
+    return shareLayerExpressions({...part, id});
+  });
+}
+
+const maximumWidthSplits = 3;
+const widthProperties = ['line-width', 'line-gap-width', 'line-offset'] as const;
+
+function splitFeatureWidths<T extends Record<string, unknown>>(
+  layer: T,
+  depth: number,
+): Array<{layer: T; suffixes: string[]}> {
+  const whole = [{layer, suffixes: []}];
+  if (layer.type !== 'line' || !widthProperties.some((key) => composite(paintOf(layer)[key])))
+    return whole;
+  const test = depth < maximumWidthSplits ? widthTest(layer) : undefined;
+  if (!test) return whole;
+  const part = (outcome: boolean) =>
+    compactLayerExpressions({
+      ...layer,
+      filter: [
+        'all',
+        ...(layer.filter === undefined ? [] : [layer.filter]),
+        outcome ? test.condition : ['!', test.condition],
+      ],
+      ...(layer.paint === undefined ? {} : {paint: settle(layer.paint, test.condition, outcome)}),
+      ...(layer.layout === undefined
+        ? {}
+        : {layout: settle(layer.layout, test.condition, outcome)}),
+    }) as T;
+  const parts = [
+    ...splitFeatureWidths(part(true), depth + 1).map((entry) => ({
+      ...entry,
+      suffixes: [test.name, ...entry.suffixes],
+    })),
+    ...splitFeatureWidths(part(false), depth + 1),
+  ];
+  // Splitting only pays when every resulting width is camera-only.
+  return parts.some(({layer: entry}) =>
+    widthProperties.some((key) => composite(paintOf(entry)[key])),
+  )
+    ? whole
+    : parts;
+}
+
+function paintOf(layer: Record<string, unknown>): Record<string, unknown> {
+  const paint = layer.paint;
+  return paint && typeof paint === 'object' ? (paint as Record<string, unknown>) : {};
+}
+
+/** Whether a value depends on both the camera zoom and the feature. */
+function composite(value: unknown): boolean {
+  return readsZoom(value) && readsFeature(value);
+}
+
+function readsZoom(value: unknown): boolean {
+  if (!Array.isArray(value) || value[0] === 'literal') return false;
+  return isZoom(value) || value.some(readsZoom);
+}
+
+function readsFeature(value: unknown): boolean {
+  if (!Array.isArray(value) || value[0] === 'literal') return false;
+  if (
+    ['get', 'has', 'properties', 'geometry-type', 'id', 'feature-state', 'line-progress'].includes(
+      value[0] as string,
+    )
+  )
+    return true;
+  return value.some(readsFeature);
+}
+
+/** The first discrete feature test a zoom-dependent width branches on. */
+function widthTest(
+  layer: Record<string, unknown>,
+): {condition: unknown[]; name: string} | undefined {
+  let found: {condition: unknown[]; name: string} | undefined;
+  const testable = (condition: unknown): condition is unknown[] =>
+    Array.isArray(condition) &&
+    readsFeature(condition) &&
+    !readsZoom(condition) &&
+    !JSON.stringify(condition).includes('"var"') &&
+    !JSON.stringify(condition).includes('"feature-state"');
+  const walk = (value: unknown) => {
+    if (found || !isExpression(value) || value[0] === 'literal') return;
+    if (value[0] === 'case') {
+      for (let index = 1; index < value.length - 1 && !found; index += 2) {
+        const condition = value[index];
+        if (testable(condition)) found = {condition, name: testName(condition)};
+      }
+    } else if (value[0] === 'match' && value.length >= 5 && featureOperand(value[1])) {
+      const labels = Array.isArray(value[2]) ? value[2] : [value[2]];
+      const condition = ['match', value[1], labels, true, false];
+      found = {condition, name: testName(condition)};
+    }
+    value.forEach(walk);
+  };
+  for (const key of widthProperties) {
+    const value = paintOf(layer)[key];
+    if (composite(value)) walk(value);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+/** A short name for a feature test, for the ID of the layer that draws its features. */
+function testName(condition: unknown[]): string {
+  const slug = (parts: unknown[]) =>
+    parts
+      .map((part) =>
+        String(part)
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/gu, '-'),
+      )
+      .join('-')
+      .replace(/^-+|-+$/gu, '') || 'variant';
+  const comparison = comparedOperand(condition);
+  if (comparison && condition[0] === '==') {
+    const field = comparison.operand[0] === 'get' ? comparison.operand[1] : 'geometry';
+    return slug(comparison.value === true ? [field] : [field, comparison.value]);
+  }
+  const membership = matchedOperand(condition);
+  if (membership && membership.included) {
+    const field = membership.operand[0] === 'get' ? membership.operand[1] : 'geometry';
+    return slug([field, ...membership.labels]);
+  }
+  // Otherwise the first field the test reads.
+  const field = JSON.stringify(condition).match(/\["get","([^"]+)"\]/u)?.[1];
+  return field === undefined ? 'variant' : slug([field]);
+}
+
+/** Replaces a feature test that a layer's filter now settles with its outcome. */
+function settle(value: unknown, condition: unknown[], outcome: boolean): unknown {
+  if (value === undefined) return value;
+  const text = JSON.stringify(condition);
+  const replace = (entry: unknown): unknown => {
+    if (isColorProgramMarker(entry) || !Array.isArray(entry)) return entry;
+    if (JSON.stringify(entry) === text) return outcome;
+    if (entry[0] === 'literal') return entry;
+    return entry.map(replace);
+  };
+  if (value && typeof value === 'object' && !Array.isArray(value))
+    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, replace(entry)]));
+  return replace(value);
+}
+
+function compactLayerExpressions<T extends Record<string, unknown>>(layer: T): T {
   const result = {...layer};
   const facts = filterFacts(layer.filter);
   const domain = zoomDomain(layer);
@@ -343,17 +513,29 @@ export function compactTileflowLayer<T extends Record<string, unknown>>(layer: T
     if (properties && typeof properties === 'object' && !Array.isArray(properties))
       Object.assign(result, {
         [group]: Object.fromEntries(
-          Object.entries(properties).map(([key, value]) => {
-            const compacted = compactTileflowExpression(
-              clipZoomDomain(applyFilterFacts(value, facts), domain),
-            );
-            return [
-              key,
-              // Asset discovery enumerates these outputs before resource preparation. Keep
-              // their branches visible instead of hiding an image/font choice in a binding.
-              /(?:image|pattern|font)$/u.test(key) ? compacted : shareExpressions(compacted),
-            ];
-          }),
+          Object.entries(properties).map(([key, value]) => [
+            key,
+            compactTileflowExpression(clipZoomDomain(applyFilterFacts(value, facts), domain)),
+          ]),
+        ),
+      });
+  }
+  return result;
+}
+
+function shareLayerExpressions<T extends Record<string, unknown>>(layer: T): T {
+  const result = {...layer};
+  for (const group of ['paint', 'layout'] as const) {
+    const properties = layer[group];
+    if (properties && typeof properties === 'object' && !Array.isArray(properties))
+      Object.assign(result, {
+        [group]: Object.fromEntries(
+          Object.entries(properties).map(([key, value]) => [
+            key,
+            // Asset discovery enumerates these outputs before resource preparation. Keep
+            // their branches visible instead of hiding an image/font choice in a binding.
+            /(?:image|pattern|font)$/u.test(key) ? value : shareExpressions(value),
+          ]),
         ),
       });
   }
@@ -506,7 +688,17 @@ function applyFilterFacts(value: unknown, facts: ReadonlyMap<string, FilterFact>
     const known = facts.get(JSON.stringify(node[1]));
     if (!known) return node;
     const candidates = known.is !== undefined ? [known.is] : known.oneOf;
-    if (!candidates) return node;
+    if (!candidates) {
+      // Branches whose every label the filter excludes can never be selected.
+      const kept = [node[0], node[1]];
+      for (let index = 2; index < node.length - 1; index += 2) {
+        const labels = (Array.isArray(node[index]) ? node[index] : [node[index]]) as Primitive[];
+        if (!labels.every((label) => known.isNot.includes(label)))
+          kept.push(node[index], node[index + 1]);
+      }
+      if (kept.length === node.length - 1) return node;
+      return kept.length === 2 ? node.at(-1) : [...kept, node.at(-1)];
+    }
     const outputs = new Set<string>();
     let selected: unknown;
     for (const candidate of candidates) {

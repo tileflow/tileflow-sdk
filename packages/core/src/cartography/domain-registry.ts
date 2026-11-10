@@ -255,7 +255,6 @@ export const tileflowSemanticDomainRegistry = Object.freeze([
             fill: {dash: [2, 1], opacity: 0.68},
           },
         },
-        expressway: {widthScale: 1.06},
         indoor: {
           surface: {
             casing: {dash: [1, 1], opacity: 0.28},
@@ -277,13 +276,6 @@ export const tileflowSemanticDomainRegistry = Object.freeze([
             fill: {dash: [1.5, 1], opacity: 0.52},
           },
         },
-      },
-      serviceTypes: {
-        alley: {widthScale: 0.82},
-        crossover: {widthScale: 0.62},
-        driveway: {widthScale: 0.76},
-        parkingAisle: {widthScale: 0.62},
-        yard: {widthScale: 0.7},
       },
     }),
     dependencies: {},

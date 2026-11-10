@@ -180,6 +180,9 @@ const approvedLightStyleColors = new Set([
   '#F6F6F4',
   '#F8F7F3',
   '#F9EFDD',
+  // Activity areas fade out in their colour, from z15 to z16.25.
+  'RGBA(249, 239, 221, 0.75)',
+  'RGBA(249, 239, 221, 0)',
   '#FEFEFE',
   '#FF668C',
   '#FF809A',
@@ -469,8 +472,13 @@ test('Streets Dark recolors every color-bearing Streets layer without major ligh
       darkColors['buildings.raised.neutral'],
     ],
   );
+  // Activity areas fade out in their colour: its first stop is the area colour.
   assert.equal(
-    requireLayer(dark, 'tileflow-land-render-activityAreas').paint?.['fill-color'],
+    String(
+      (
+        requireLayer(dark, 'tileflow-land-render-activityAreas').paint?.['fill-color'] as unknown[]
+      )[4],
+    ).toUpperCase(),
     darkColors['landuse.activity'],
   );
 
@@ -957,7 +965,11 @@ test('Streets restores Mapbox-scale contrast at city overview and building detai
     /"residential"\],"#F5F3F3"/u,
   );
   assert.equal(
-    requireLayer(style, 'tileflow-land-render-activityAreas').paint?.['fill-color'],
+    String(
+      (
+        requireLayer(style, 'tileflow-land-render-activityAreas').paint?.['fill-color'] as unknown[]
+      )[4],
+    ).toUpperCase(),
     '#F9EFDD',
   );
   const buildingFill = requireLayer(style, 'tileflow-buildings-fill');

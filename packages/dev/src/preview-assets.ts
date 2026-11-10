@@ -37,7 +37,8 @@ export function getTileflowPreviewRuntimeResponse(path: string): Response | unde
   if (path === '/__runtime/three.module.js') {
     return textAssetResponse(getLocalThreeAsset('module'), 'text/javascript; charset=utf-8');
   }
-  if (path === '/__runtime/three.core.min.js') {
+  // three.module.js imports its core as ./three.core.js; Three.js 0.187 ships no minified builds.
+  if (path === '/__runtime/three.core.js') {
     return textAssetResponse(getLocalThreeAsset('core'), 'text/javascript; charset=utf-8');
   }
   if (path.startsWith('/__runtime/three-addons/')) {
@@ -76,7 +77,7 @@ function getLocalThreeAsset(kind: 'core' | 'module'): string {
     return localThreeModuleJavaScript;
   const commonJsPath = localRequire.resolve('three');
   const source = readFileSync(
-    join(dirname(commonJsPath), kind === 'core' ? 'three.core.min.js' : 'three.module.min.js'),
+    join(dirname(commonJsPath), kind === 'core' ? 'three.core.js' : 'three.module.js'),
     'utf8',
   );
   if (kind === 'core') localThreeCoreJavaScript = source;

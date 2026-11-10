@@ -47,6 +47,10 @@ export function createTileflowAppearanceBinding(options: {
   let emphasisKey = '';
   let disposed = false;
   let stopWaiting: (() => void) | undefined;
+  let latest: {
+    changeOptions: TileflowThemeChangeOptions | undefined;
+    input: TileflowAppearanceInput;
+  } = {changeOptions: undefined, input: {}};
 
   const settle = (
     pending: Promise<TileflowThemeTransitionResult>,
@@ -66,7 +70,7 @@ export function createTileflowAppearanceBinding(options: {
     );
   };
 
-  /** Emphasis writes paint values, which MapLibre allows only once the style has loaded. */
+  /** Both parts write paint values, which MapLibre allows only once the style has loaded. */
   const whenStyleLoaded = (run: () => void) => {
     stopWaiting?.();
     stopWaiting = undefined;
@@ -87,6 +91,29 @@ export function createTileflowAppearanceBinding(options: {
     map.on('idle', onIdle);
   };
 
+  /** Shows whatever was asked for last, colours first, and only the parts that changed. */
+  const flush = () => {
+    if (disposed) return;
+    const {changeOptions, input} = latest;
+    const colors = input.colors && Object.keys(input.colors).length > 0 ? input.colors : undefined;
+    const nextColorsKey = colors ? serialize(colors) : '';
+    if (nextColorsKey !== colorsKey) {
+      const previous = colorsKey;
+      colorsKey = nextColorsKey;
+      settle(controller.setColors(colors ?? {}, changeOptions), 'colors', () => {
+        if (colorsKey === nextColorsKey) colorsKey = previous;
+      });
+    }
+    const nextEmphasisKey = input.emphasis ? serialize(input.emphasis) : '';
+    if (nextEmphasisKey !== emphasisKey) {
+      const previous = emphasisKey;
+      emphasisKey = nextEmphasisKey;
+      settle(controller.setEmphasis(input.emphasis, changeOptions), 'emphasis', () => {
+        if (emphasisKey === nextEmphasisKey) emphasisKey = previous;
+      });
+    }
+  };
+
   return {
     dispose() {
       disposed = true;
@@ -94,28 +121,8 @@ export function createTileflowAppearanceBinding(options: {
     },
     update(input, changeOptions) {
       if (disposed) return;
-      const colors =
-        input.colors && Object.keys(input.colors).length > 0 ? input.colors : undefined;
-      const nextColorsKey = colors ? serialize(colors) : '';
-      if (nextColorsKey !== colorsKey) {
-        const previous = colorsKey;
-        colorsKey = nextColorsKey;
-        settle(controller.setColors(colors ?? {}, changeOptions), 'colors', () => {
-          if (colorsKey === nextColorsKey) colorsKey = previous;
-        });
-      }
-      const nextEmphasisKey = input.emphasis ? serialize(input.emphasis) : '';
-      if (nextEmphasisKey !== emphasisKey) {
-        const previous = emphasisKey;
-        emphasisKey = nextEmphasisKey;
-        const emphasis = input.emphasis;
-        whenStyleLoaded(() => {
-          if (disposed) return;
-          settle(controller.setEmphasis(emphasis, changeOptions), 'emphasis', () => {
-            if (emphasisKey === nextEmphasisKey) emphasisKey = previous;
-          });
-        });
-      }
+      latest = {changeOptions, input};
+      whenStyleLoaded(flush);
     },
   };
 }

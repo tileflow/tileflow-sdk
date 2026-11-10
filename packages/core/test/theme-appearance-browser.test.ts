@@ -84,13 +84,10 @@ test('restores the design when a declared part is removed, and passes the transi
   assert.deepEqual(calls[0]!.args[1], {transition: {duration: 0}});
 });
 
-test('waits for the style to load before writing emphasis, but not before colours', () => {
+test('waits for the style to load before writing colours or emphasis', () => {
   const {binding, calls, finishLoading, listeners} = setup({loaded: false});
   binding.update({colors: {a: '#111111'}, emphasis: {labels: 0.2}});
-  assert.deepEqual(
-    calls.map((call) => call.method),
-    ['setColors'],
-  );
+  assert.equal(calls.length, 0);
   assert.equal(listeners.size, 1);
   finishLoading();
   assert.deepEqual(

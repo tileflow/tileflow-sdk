@@ -282,8 +282,13 @@ World attribution credits Tileflow and OpenStreetMap; other vector data keeps it
 attribution.
 
 `projection` accepts `mercator` or `globe`. Terrain supports `none`, `hillshade`, `3d`, and an object
-form for explicit hillshade and contour configuration. Browser-derived contours require a DEM tile
-template, zoom limits, thresholds, and the Tileflow contour protocol. Framework adapters and local
+form for explicit hillshade and contour configuration. Browser-derived contours require zoom limits,
+thresholds, and the Tileflow contour protocol. They read the terrain's DEM: `contours.demUrl` when
+given, else the first `terrain.tiles` template, else the `terrain.url` TileJSON, which defaults to
+hosted Tileflow Terrain. A TileJSON is read when the first contour tile is requested; its first tile
+template is the DEM, so contours follow the same Terrain release and map binding as hillshade.
+`registerTileflowContourProtocol` accepts `fetch` and `transformTileJsonUrl` to route that request
+through an application transport. Framework adapters and local
 tooling prepare browser resources; direct MapLibre integrations must register required protocols
 before loading a style.
 

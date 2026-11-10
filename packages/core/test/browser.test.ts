@@ -20,8 +20,12 @@ import {
   tileflowPmtilesMaximumDirectoryDepth,
   type TileflowWorldProtocolHandler,
 } from '../src/browser';
+import {
+  createTileflowContourProtocolUrl,
+  parseTileflowContourSourceUrl,
+  type TileflowContourProtocolConfig,
+} from '../src/terrain/contour-protocol';
 import type {MapLibreStyle} from '../src/types';
-import {createTileflowContourProtocolUrl} from '../src/terrain/contour-protocol';
 
 test('registers only the Tileflow-owned PMTiles protocol once per MapLibre registry', () => {
   const names: string[] = [];
@@ -691,6 +695,136 @@ test('contour protocol routes its nested DEM template through the application tr
     .replace('{y}', '1456');
   await handler({url}, new AbortController());
   assert.equal(sourceUrl, 'tileflow://resource/terrain/{z}/{x}/{y}');
+});
+
+test('contour protocol reads a DEM TileJSON once and uses its first tile template', async () => {
+  let handler: TileflowContourProtocolHandler | undefined;
+  const fetched: string[] = [];
+  const sources: Array<{maxzoom: number; url: string}> = [];
+  let document: Record<string, unknown> = {
+    encoding: 'terrarium',
+    maxzoom: 14,
+    tiles: ['https://cdn.example.test/terrain/release-a/{z}/{x}/{y}.webp?map=map_one'],
+  };
+  let status = 200;
+  registerTileflowContourProtocol(
+    {
+      addProtocol: (_name, installed) => {
+        handler = installed;
+      },
+    },
+    {
+      fetch: async (url) => {
+        fetched.push(url);
+        return {json: async () => document, ok: status === 200, status};
+      },
+      transformTileJsonUrl: (url) => `${url}&transport=native`,
+      transformDemUrl: (url) => url.replace('https://cdn.example.test/', 'tileflow://resource/'),
+      loadMaplibreContour: async () => ({
+        default: {
+          DemSource: class {
+            constructor(options: {maxzoom: number; url: string}) {
+              sources.push({maxzoom: options.maxzoom, url: options.url});
+            }
+            contourProtocolUrl() {
+              return 'contour://{z}/{x}/{y}';
+            }
+            async contourProtocolV4() {
+              return {data: new ArrayBuffer(0)};
+            }
+          },
+        },
+      }),
+    },
+  );
+  assert.ok(handler);
+  const tile = (demTileJson: string, demMaxzoom = 12) =>
+    createTileflowContourProtocolUrl({
+      demTileJson,
+      demMaxzoom,
+      encoding: 'terrarium',
+      maxzoom: 15,
+      multiplier: 1,
+      overzoom: 2,
+      thresholds: {9: [100, 500]},
+    })
+      .replace('{z}', '12')
+      .replace('{x}', '2134')
+      .replace('{y}', '1456');
+  const tileJson = 'https://api.example.test/tiles/terrain/tiles.json?map=map_one';
+  await handler({url: tile(tileJson)}, new AbortController());
+  await handler({url: tile(tileJson)}, new AbortController());
+  assert.deepEqual(fetched, [`${tileJson}&transport=native`]);
+  assert.deepEqual(sources, [
+    {maxzoom: 12, url: 'tileflow://resource/terrain/release-a/{z}/{x}/{y}.webp?map=map_one'},
+  ]);
+
+  // The document caps the declared DEM zoom when it publishes less detail.
+  const shallow = 'https://api.example.test/tiles/terrain/tiles.json?map=map_two';
+  document = {...document, maxzoom: 10};
+  await handler({url: tile(shallow)}, new AbortController());
+  assert.equal(sources.at(-1)?.maxzoom, 10);
+
+  // A failed or mismatched document is not cached; the next tile asks again.
+  const failing = 'https://api.example.test/tiles/terrain/tiles.json?map=map_three';
+  status = 403;
+  await assert.rejects(handler({url: tile(failing)}, new AbortController()), /HTTP 403/u);
+  status = 200;
+  document = {encoding: 'mapbox', tiles: ['https://cdn.example.test/{z}/{x}/{y}.png']};
+  await assert.rejects(handler({url: tile(failing)}, new AbortController()), /encoding mapbox/u);
+  document = {tiles: ['javascript:alert(1)/{z}/{x}/{y}']};
+  await assert.rejects(handler({url: tile(failing)}, new AbortController()), /safe HTTP/u);
+  assert.equal(fetched.filter((url) => url.startsWith(failing)).length, 3);
+});
+
+test('contour source templates round-trip and name exactly one DEM', () => {
+  const config = {
+    demTileJson: 'https://api.example.test/tiles/terrain/tiles.json',
+    demMaxzoom: 12,
+    encoding: 'terrarium',
+    maxzoom: 14,
+    multiplier: 1,
+    overzoom: 2,
+    thresholds: {9: [50, 250], 13: [10, 50]},
+  } as const;
+  const template = createTileflowContourProtocolUrl(config);
+  assert.ok(template.startsWith('tileflow-contour://tiles/{z}/{x}/{y}.pbf?demTileJson='));
+  assert.deepEqual(parseTileflowContourSourceUrl(template), config);
+  const rebound = createTileflowContourProtocolUrl({
+    ...parseTileflowContourSourceUrl(template),
+    demTileJson: `${config.demTileJson}?map=map_one`,
+  } as TileflowContourProtocolConfig);
+  assert.equal(
+    parseTileflowContourSourceUrl(rebound).demTileJson,
+    'https://api.example.test/tiles/terrain/tiles.json?map=map_one',
+  );
+  assert.throws(
+    () =>
+      parseTileflowContourSourceUrl(
+        `${template}&demUrl=https%3A%2F%2Fdem.example%2F%7Bz%7D%2F%7Bx%7D%2F%7By%7D`,
+      ),
+    /Incomplete/u,
+  );
+  assert.throws(
+    () => parseTileflowContourSourceUrl(template.replace('demTileJson=', 'demTile=')),
+    /parameters/u,
+  );
+  assert.throws(
+    () => parseTileflowContourSourceUrl(template.replace('{z}/{x}/{y}', '1/2/3')),
+    /source URL/u,
+  );
+  for (const demTileJson of [
+    'http://api.example.test/tiles.json',
+    'https://api.example.test/{z}/tiles.json',
+    'https://user:secret@api.example.test/tiles.json',
+    '/tiles/terrain/tiles.json',
+  ]) {
+    assert.throws(
+      () => createTileflowContourProtocolUrl({...config, demTileJson}),
+      /demTileJson/u,
+      demTileJson,
+    );
+  }
 });
 
 test('contour protocol loads the pinned generator lazily and serves self-contained DEM requests', async () => {

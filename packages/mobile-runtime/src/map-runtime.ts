@@ -263,6 +263,7 @@ export function createMobileMapRuntime(input: {
         {addProtocol: maplibregl.addProtocol},
         {
           transformDemUrl: (url) => resourceTemplateAddress(url, input.platform),
+          transformTileJsonUrl: (url) => resourceAddress(url, input.platform),
         },
       );
       registerTileflowPathGroundProtocol(

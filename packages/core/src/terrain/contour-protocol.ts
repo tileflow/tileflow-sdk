@@ -59,6 +59,13 @@ const requiredParameters = [
   'thresholds',
 ] as const;
 const allowedParameters = new Set<string>([...demParameters, ...requiredParameters]);
+/**
+ * A tile request, never a source template, may name the browser request scope of the map that
+ * issued it. The scope is a local registry key, not configuration: it selects which map's request
+ * transform (and therefore which Hosted session) the nested DEM requests use.
+ */
+export const tileflowContourScopeParameter = 'scope' as const;
+const contourScopePattern = /^[A-Za-z0-9_]{1,80}$/u;
 
 /** Deterministic, self-contained URL consumed by the generic browser contour protocol. */
 export function createTileflowContourProtocolUrl(config: TileflowContourProtocolConfig): string {
@@ -81,6 +88,8 @@ export function createTileflowContourProtocolUrl(config: TileflowContourProtocol
 
 export type ParsedTileflowContourProtocolRequest = Readonly<{
   config: TileflowContourProtocolConfig;
+  /** Browser request scope of the map that issued the tile request, when it registered one. */
+  scope?: string;
   x: number;
   y: number;
   z: number;
@@ -90,7 +99,7 @@ export type ParsedTileflowContourProtocolRequest = Readonly<{
 export function parseTileflowContourProtocolRequest(
   value: string,
 ): ParsedTileflowContourProtocolRequest {
-  const url = parseProtocolUrl(value);
+  const url = parseProtocolUrl(value, true);
   const tile = contourTilePathPattern.exec(url.pathname);
   if (!tile) throw new Error('Invalid Tileflow contour tile coordinates.');
   const config = parseProtocolConfig(url);
@@ -102,7 +111,8 @@ export function parseTileflowContourProtocolRequest(
   if (z < minimumThresholdZoom || z > config.maxzoom || x >= axisLimit || y >= axisLimit) {
     throw new Error('Invalid Tileflow contour tile coordinates.');
   }
-  return {config, x, y, z};
+  const scope = url.searchParams.get(tileflowContourScopeParameter);
+  return {config, ...(scope === null ? {} : {scope}), x, y, z};
 }
 
 /**
@@ -120,7 +130,7 @@ export function parseTileflowContourSourceUrl(value: string): TileflowContourPro
   );
 }
 
-function parseProtocolUrl(value: string): URL {
+function parseProtocolUrl(value: string, allowScope = false): URL {
   if (value.length > maximumProtocolUrlLength || /[\\\p{Cc}]/u.test(value)) {
     throw new Error('Invalid Tileflow contour protocol URL.');
   }
@@ -140,9 +150,15 @@ function parseProtocolUrl(value: string): URL {
     throw new Error('Invalid Tileflow contour protocol URL.');
   }
   for (const key of url.searchParams.keys()) {
-    if (!allowedParameters.has(key) || url.searchParams.getAll(key).length !== 1) {
+    const allowed =
+      allowedParameters.has(key) || (allowScope && key === tileflowContourScopeParameter);
+    if (!allowed || url.searchParams.getAll(key).length !== 1) {
       throw new Error('Invalid Tileflow contour protocol URL parameters.');
     }
+  }
+  const scope = url.searchParams.get(tileflowContourScopeParameter);
+  if (scope !== null && !contourScopePattern.test(scope)) {
+    throw new Error('Invalid Tileflow contour request scope.');
   }
   if (
     requiredParameters.some((key) => !url.searchParams.has(key)) ||
@@ -184,6 +200,19 @@ export function isSafeTileflowDemUrlTemplate(value: string): boolean {
 /** A TileJSON document address: absolute HTTPS (HTTP only on loopback), with no placeholders. */
 export function isSafeTileflowTileJsonUrl(value: string): boolean {
   return isBoundedUrlText(value) && !/[{}]/u.test(value) && isSafeAbsoluteHttpUrl(value);
+}
+
+/**
+ * A concrete nested request after the map's transform: absolute HTTPS (HTTP only on loopback),
+ * without credentials. Its bound leaves room for the session parameters a transform adds.
+ */
+export function isSafeTileflowContourRequestUrl(value: string): boolean {
+  return (
+    value.length > 0 &&
+    value.length <= maximumProtocolUrlLength * 2 &&
+    !/[\\\p{Cc}]/u.test(value) &&
+    isSafeAbsoluteHttpUrl(value)
+  );
 }
 
 function isBoundedUrlText(value: string): boolean {

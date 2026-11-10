@@ -288,7 +288,13 @@ given, else the first `terrain.tiles` template, else the `terrain.url` TileJSON,
 hosted Tileflow Terrain. A TileJSON is read when the first contour tile is requested; its first tile
 template is the DEM, so contours follow the same Terrain release and map binding as hillshade.
 `registerTileflowContourProtocol` accepts `fetch` and `transformTileJsonUrl` to route that request
-through an application transport. Framework adapters and local
+through an application transport. The protocol is registered once per page, so a map that sends a
+Hosted session gives its contours a request scope: `createTileflowContourRequestScope` takes the
+map's `transformRequest`, `createTileflowTransformRequest({contourRequestScope})` names the scope
+on each contour tile request, and the protocol sends the DEM TileJSON (`Source`) and every DEM tile
+(`Tile`) back through that transform when it fetches them. Each request then carries the map's
+current `session` and `grant`, as hillshade tiles do; dispose the scope when the map is removed.
+The React, Vue and Svelte components do this for every map. Framework adapters and local
 tooling prepare browser resources; direct MapLibre integrations must register required protocols
 before loading a style.
 

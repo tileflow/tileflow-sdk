@@ -20,7 +20,7 @@ Prepared styles may retain relative asset URLs. The component loads them through
 resource loader before creating the map and before changing or blending themes. Sprites, fonts,
 data and model resources resolve against their declaring documents. Pending document loads are
 cancelled when the map is replaced or unmounted; `mapOptions.transformRequest` also applies to
-style and HTTP TileJSON requests.
+style and HTTP TileJSON requests, and to the DEM TileJSON and DEM tiles that contours read.
 
 ## Prepare a map
 

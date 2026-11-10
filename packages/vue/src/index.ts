@@ -40,6 +40,7 @@ import {
   attachTileflowNotices,
   createTileflowSessionStarter,
   createTileflowThemeController,
+  createTileflowContourRequestScope,
   createTileflowTransformRequest,
   getTileflowSystemColorScheme,
   loadTileflowRuntimeStyle,
@@ -59,6 +60,7 @@ import {
   type TileflowThemeTransition,
   type TileflowThemeTransitionOptions,
   type TileflowViewMode,
+  type TileflowContourRequestScope,
   type TileflowWorldRequestBridge,
 } from '@tileflow/core/browser';
 import {normalizeTileflowCaptureId} from '@tileflow/core/capture';
@@ -321,6 +323,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     let mapLifecycle: TileflowMapLifecycleAttachment | null = null;
     let mapResizeObserver: ResizeObserver | null = null;
     let mapWorldRequestBridge: TileflowWorldRequestBridge | null = null;
+    let mapContourRequestScope: TileflowContourRequestScope | null = null;
     let sceneAttachment: TileflowMap3DAttachment | null = null;
     let themeController: TileflowThemeController | null = null;
     let unsubscribeSystemColorScheme: (() => void) | null = null;
@@ -767,6 +770,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       const annotationInteractionsForMap = annotationRuntime;
       const semanticInteractionsForMap = semanticRuntime;
       const worldRequestBridge = mapWorldRequestBridge;
+      const contourRequestScope = mapContourRequestScope;
       const teardownSteps = [
         annotationRuntimeCoordinatorDetach,
         semanticRuntimeCoordinatorDetach,
@@ -779,6 +783,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         () => annotationInteractionsForMap?.dispose(),
         () => semanticInteractionsForMap?.dispose(),
         () => worldRequestBridge?.dispose(),
+        () => contourRequestScope?.dispose(),
         () => fairUseNotice?.dispose(),
         () => lifecycle?.dispose(),
         () => scene?.dispose(),
@@ -809,6 +814,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       mapResizeObserver = null;
       mapRef.value = null;
       mapWorldRequestBridge = null;
+      mapContourRequestScope = null;
       themeController = null;
 
       interactionRuntimesDisposing = true;
@@ -966,6 +972,24 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         addProtocol: maplibregl.addProtocol,
         onNotice: mapFairUseNotice.update,
       });
+      // Contour DEM requests leave through the shared protocol and come back to this map's
+      // transform, so they carry this map's session like its hillshade tiles.
+      const contourRequestScope = createTileflowContourRequestScope({
+        transformRequest: (url, resourceType) =>
+          mapTransformRequest(url, resourceType as Parameters<RequestTransformFunction>[1]),
+      });
+      mapContourRequestScope = contourRequestScope;
+      const mapTransformRequest = createTileflowTransformRequest<
+        RequestParameters,
+        Parameters<RequestTransformFunction>[1]
+      >({
+        contourRequestScope,
+        getAnalytics: () => resolvedAnalytics.value,
+        sessionController: session,
+        sessionId: session.sessionId,
+        transformRequest: props.mapOptions?.transformRequest ?? undefined,
+        worldRequestBridge: mapWorldRequestBridge,
+      });
       const map = new maplibregl.Map({
         ...props.mapOptions,
         canvasContextAttributes: tileflowCanvasContextAttributes(
@@ -983,16 +1007,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         interactive: resolvedInteractive.value,
         pitch: resolvedPitch.value,
         style: prepared.style as StyleSpecification,
-        transformRequest: createTileflowTransformRequest<
-          RequestParameters,
-          Parameters<RequestTransformFunction>[1]
-        >({
-          getAnalytics: () => resolvedAnalytics.value,
-          sessionController: session,
-          sessionId: session.sessionId,
-          transformRequest: props.mapOptions?.transformRequest ?? undefined,
-          worldRequestBridge: mapWorldRequestBridge,
-        }),
+        transformRequest: mapTransformRequest,
         zoom: resolvedZoom.value,
       });
 

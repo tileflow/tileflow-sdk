@@ -32,6 +32,7 @@ import {
   attachTileflowNotices,
   createTileflowSessionStarter,
   createTileflowThemeController,
+  createTileflowContourRequestScope,
   createTileflowTransformRequest,
   getTileflowSystemColorScheme,
   loadTileflowRuntimeStyle,
@@ -873,7 +874,18 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
           onNotice: fairUseNotice.update,
         });
         registerCleanup(() => worldRequestBridge.dispose());
+        // Contour DEM requests leave through the shared protocol and come back to this map's
+        // transform, so they carry this map's session like its hillshade tiles.
+        const contourRequestScope = createTileflowContourRequestScope({
+          transformRequest: (url, resourceType) =>
+            transformRequest(
+              url,
+              resourceType as Parameters<NonNullable<TileflowMapOptions['transformRequest']>>[1],
+            ),
+        });
+        registerCleanup(() => contourRequestScope.dispose());
         const transformRequest = createTileflowTransformRequest({
+          contourRequestScope,
           getAnalytics: () => resolvedAnalyticsRef.current,
           sessionController: session,
           sessionId: session.sessionId,

@@ -96,8 +96,9 @@ export function withStreetsCartography(base: TileflowMap) {
               [180, -85.0511287798066],
               [-180, -85.0511287798066],
             ],
-            attribution:
-              'Climate context: <a href="https://doi.org/10.1038/s41597-023-02549-6">Beck et al. (2023)</a>, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>; colours and smoothing adapted by Tileflow',
+            // The full Beck et al. (2023) credit lives on the credits page. Renderers drop a credit
+            // contained in another, so World maps show this link once and others still reach it.
+            attribution: '<a href="https://tileflow.dev/copyright">© Tileflow</a>',
             maxZoom: 11,
             opacity: zoom.linear<TileflowThemeNumberValue>([
               [0, token.number('land.climate.opacity')],

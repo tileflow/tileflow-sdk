@@ -34,6 +34,7 @@ import {streetsFonts, streetsIcons, streetsModels} from '../assets';
 import {mapboxRailTransitStyle} from './mapbox-rail';
 import {withStreetsCartography} from './streets-cartography';
 import {withStreetsConstruction} from './streets-construction';
+import {streetsCreditsAttribution} from './streets-credits';
 import {streetsPoiImage} from './streets-poi';
 import {streetsThemes, streetsVisual} from './streets-themes';
 import {streetsTrees} from './streets-trees';
@@ -1565,8 +1566,7 @@ const streetsBase = bindOfficialMapTheme(
       tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
       tileSize: 256,
       maxZoom: 12,
-      attribution:
-        'Terrain: <a href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md">© Mapzen, data sources</a>',
+      attribution: streetsCreditsAttribution,
       hillshade: {
         minZoom: 5,
         maxZoom: 14,

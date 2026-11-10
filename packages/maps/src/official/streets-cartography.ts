@@ -14,6 +14,7 @@ import {
   zoom,
 } from '@tileflow/core';
 import {streetsClimateImage} from './streets-climate';
+import {streetsCreditsAttribution} from './streets-credits';
 import {
   streetsAccessOverview,
   streetsAgriculturalColor,
@@ -96,9 +97,7 @@ export function withStreetsCartography(base: TileflowMap) {
               [180, -85.0511287798066],
               [-180, -85.0511287798066],
             ],
-            // The full Beck et al. (2023) credit lives on the credits page. Renderers drop a credit
-            // contained in another, so World maps show this link once and others still reach it.
-            attribution: '<a href="https://tileflow.dev/copyright">© Tileflow</a>',
+            attribution: streetsCreditsAttribution,
             maxZoom: 11,
             opacity: zoom.linear<TileflowThemeNumberValue>([
               [0, token.number('land.climate.opacity')],

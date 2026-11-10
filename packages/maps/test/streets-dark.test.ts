@@ -1306,7 +1306,7 @@ test('Streets keeps ferries subordinate and limits attributed hillshade to regio
     ]);
     assert.equal(source.maxzoom, 12);
     assert.equal(source.tileSize, 256);
-    assert.match(String(source.attribution), /tilezen\/joerd/u);
+    assert.equal(source.attribution, '<a href="https://tileflow.dev/copyright">© Tileflow</a>');
     assert.equal(style.terrain, undefined);
     const ferry = style.layers.find(({id}) => id.includes('ferry') && !id.includes('label'));
     assert.ok(ferry);

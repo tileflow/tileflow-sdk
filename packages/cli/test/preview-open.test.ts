@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
-import {createServer} from 'node:http';
+import {createServer, request as httpRequest} from 'node:http';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
@@ -26,8 +26,21 @@ for (const [label, args] of [
     assert.equal(response.status, 200);
     assert.match(await response.text(), /Tileflow Inspector/u);
 
-    await writeFile(preview.configPath, tileflowMapFixture({id: 'main', version: 2}));
     const basePath = args.length ? '/left' : '/map';
+    // A rebound DNS name reaches the same socket but cannot read the preview or the workbench.
+    const port = new URL(preview.origin).port;
+    for (const path of ['/', `${basePath}/__status`, '/__workbench'])
+      assert.equal(
+        await statusWithHost(preview.origin, path, `rebound.example:${port}`),
+        421,
+        path,
+      );
+    assert.equal(
+      await statusWithHost(preview.origin, `${basePath}/__status`, `127.0.0.1:${port}`),
+      200,
+    );
+
+    await writeFile(preview.configPath, tileflowMapFixture({id: 'main', version: 2}));
     await waitUntil(async () => {
       const status = await fetch(`${preview.origin}${basePath}/__status`);
       return (await status.json()).generation >= 2;
@@ -249,4 +262,15 @@ async function waitUntil(predicate: () => Promise<boolean>, diagnostics: () => u
     )}`,
     {cause: lastError},
   );
+}
+
+function statusWithHost(origin: string, path: string, host: string) {
+  return new Promise<number | undefined>((resolve, reject) => {
+    const outgoing = httpRequest(new URL(path, origin), {headers: {host}}, (incoming) => {
+      incoming.resume();
+      resolve(incoming.statusCode);
+    });
+    outgoing.once('error', reject);
+    outgoing.end();
+  });
 }

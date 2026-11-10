@@ -109,17 +109,17 @@ property has a variable for its role, a shared variable, and a built-in value, r
 default. Set the shared variable to restyle every role together, or a role's own variable to set
 one apart.
 
-| Property | Role variables | Shared variable |
-| --- | --- | --- |
-| Surface of a popup or tooltip | `popup-surface`, `tooltip-surface` | `surface` |
-| Text | `popup-foreground`, `tooltip-foreground`, `marker-foreground`, `cluster-foreground` | `foreground` |
-| Border of a popup or tooltip | `popup-border-color`, `tooltip-border-color` | `border-color` |
-| Ring around a marker or cluster | `marker-ring`, `cluster-ring` | `border-color` |
-| Corner radius | `popup-border-radius`, `tooltip-border-radius`, `marker-border-radius`, `cluster-border-radius` | `border-radius` |
-| Shadow | `popup-shadow`, `tooltip-shadow`, `marker-shadow`, `cluster-shadow` | `shadow` |
-| Width of a popup or tooltip | `popup-max-width`, `tooltip-max-width` | `max-width` |
-| Fill of a marker or cluster | `marker-color`, `cluster-color` | none |
-| Colour of the popup's close cross | `popup-close-color` | none |
+| Property                          | Role variables                                                                                  | Shared variable |
+| --------------------------------- | ----------------------------------------------------------------------------------------------- | --------------- |
+| Surface of a popup or tooltip     | `popup-surface`, `tooltip-surface`                                                              | `surface`       |
+| Text                              | `popup-foreground`, `tooltip-foreground`, `marker-foreground`, `cluster-foreground`             | `foreground`    |
+| Border of a popup or tooltip      | `popup-border-color`, `tooltip-border-color`                                                    | `border-color`  |
+| Ring around a marker or cluster   | `marker-ring`, `cluster-ring`                                                                   | `border-color`  |
+| Corner radius                     | `popup-border-radius`, `tooltip-border-radius`, `marker-border-radius`, `cluster-border-radius` | `border-radius` |
+| Shadow                            | `popup-shadow`, `tooltip-shadow`, `marker-shadow`, `cluster-shadow`                             | `shadow`        |
+| Width of a popup or tooltip       | `popup-max-width`, `tooltip-max-width`                                                          | `max-width`     |
+| Fill of a marker or cluster       | `marker-color`, `cluster-color`                                                                 | none            |
+| Colour of the popup's close cross | `popup-close-color`                                                                             | none            |
 
 Every name starts with `--tileflow-interaction-`. The popup's close button is a real `button`
 labelled `Close <annotation label>` that shows a cross; it needs no text to restyle.

@@ -73,9 +73,7 @@ in ordinary web preview output, so you can open it manually if browser launch is
 
 Opening Inspector through another loopback name, such as `localhost` instead of `127.0.0.1`,
 redirects to the **Local** origin printed by the CLI, preserving camera and theme query parameters.
-This keeps the map, palette controls, and workbench API on the same origin. `preview` and `compare`
-answer only requests addressed to an IP address or `localhost`; any other host name gets `421`, so
-a web page cannot rebind its own domain to your machine and read the preview.
+This keeps the map, palette controls, and workbench API on the same origin.
 
 Run from the project directory and keep selected configs inside it, so capture commands copied from
 Inspector resolve the same files. The project itself can live anywhere, independently of this SDK.

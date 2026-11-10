@@ -719,6 +719,8 @@ export * from './icon-layout';
 export {
   assertTileflowSdfPixels,
   tileflowIconAppearanceSchema,
+  tileflowIconAttributionSchema,
+  type TileflowIconAttribution,
   tileflowIconAuthorMetadataSchema,
   tileflowIconMetadataFileName,
   type TileflowIconAppearance,

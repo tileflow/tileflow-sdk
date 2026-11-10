@@ -154,6 +154,9 @@ test('publishes every official icon and font directory with provenance', async (
       'road-shield-rectangle-yellow.svg',
       'sidewalk-dot-dark.svg',
       'sidewalk-dot.svg',
+      'LICENSE-CC-BY-SA-3.0.txt',
+      'LICENSE-CC-BY-SA-4.0.txt',
+      'tileflow.icons.json',
     ],
   } as const;
 

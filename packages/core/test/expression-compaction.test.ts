@@ -1,4 +1,4 @@
-import {createPropertyExpression, latest} from '@maplibre/maplibre-gl-style-spec';
+import {createPropertyExpression, featureFilter, latest} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
@@ -165,4 +165,142 @@ test('keeps separate dispatches when match labels have different types or overla
     equivalent(value, compactTileflowExpression(value));
     assert.equal((compactTileflowExpression(value) as unknown[])[0], 'case');
   }
+});
+
+function equivalentForFilter(
+  filter: unknown,
+  before: unknown,
+  after: unknown,
+  property = 'line-width',
+) {
+  const specification = (latest.paint_line as Record<string, unknown>)[property];
+  const original = createPropertyExpression(before, specification as never);
+  const folded = createPropertyExpression(after, specification as never);
+  assert.equal(original.result, 'success', JSON.stringify(original.value));
+  assert.equal(folded.result, 'success', JSON.stringify(folded.value));
+  if (original.result !== 'success' || folded.result !== 'success') return;
+  const accepts = featureFilter(filter as never);
+  let rendered = 0;
+  for (const zoom of [0, 12, 15, 15.5, 18, 21.3, 24])
+    for (const link of [undefined, null, true, false, 'true', 1])
+      for (const kind of [
+        undefined,
+        'motorway',
+        'trunk',
+        'primary',
+        'secondary',
+        'tertiary',
+        'street',
+      ])
+        for (const type of [1, 2, 3]) {
+          const feature = {type, properties: {link, class: kind}};
+          if (!accepts.filter({zoom}, feature as never)) continue;
+          rendered += 1;
+          assert.deepEqual(
+            folded.value.evaluate({zoom}, feature as never, {}),
+            original.value.evaluate({zoom}, feature as never, {}),
+            JSON.stringify({zoom, link, kind, type}),
+          );
+        }
+  assert.ok(rendered > 0, 'the filter must accept some sampled feature');
+}
+
+const rampWidth = [
+  'interpolate',
+  ['exponential', 1.5],
+  ['zoom'],
+  12,
+  ['case', ['==', ['get', 'link'], true], 0.4, 2],
+  18,
+  ['case', ['==', ['get', 'link'], true], 18, 28],
+];
+
+test('folds feature tests the layer filter settles into camera-only properties', () => {
+  for (const [filter, expected] of [
+    [['all', ['==', ['geometry-type'], 'LineString'], ['==', ['get', 'link'], true]], 18],
+    [['all', ['!=', ['get', 'link'], true], ['>=', ['zoom'], 12]], 28],
+    [['!', ['==', ['get', 'link'], true]], 28],
+  ] as const) {
+    const layer = {id: 'road', type: 'line', filter, paint: {'line-width': rampWidth}};
+    const width = compactTileflowLayer(layer).paint['line-width'];
+    equivalentForFilter(filter, rampWidth, width);
+    const specification = (latest.paint_line as Record<string, unknown>)['line-width'];
+    const parsed = createPropertyExpression(width, specification as never);
+    assert.equal(parsed.result, 'success');
+    if (parsed.result === 'success') assert.equal(parsed.value.kind, 'camera');
+    assert.equal((width as unknown[]).at(-1), expected);
+  }
+});
+
+test('selects match branches that a filter membership decides', () => {
+  const width = [
+    'interpolate',
+    ['linear'],
+    ['zoom'],
+    15,
+    ['match', ['get', 'class'], ['primary'], 8, ['secondary', 'tertiary'], 7, 5],
+    18,
+    ['match', ['get', 'class'], ['primary'], 28, ['secondary', 'tertiary'], 26, 20],
+  ];
+  const settled = ['match', ['get', 'class'], ['secondary', 'tertiary'], true, false];
+  const folded = compactTileflowLayer({id: 'road', filter: settled, paint: {'line-width': width}})
+    .paint['line-width'];
+  equivalentForFilter(settled, width, folded);
+  assert.deepEqual(folded, ['interpolate', ['linear'], ['zoom'], 15, 7, 18, 26]);
+
+  // Members with different outputs keep the feature dispatch.
+  const mixed = ['match', ['get', 'class'], ['primary', 'secondary'], true, false];
+  const kept = compactTileflowLayer({id: 'road', filter: mixed, paint: {'line-width': width}})
+    .paint['line-width'];
+  equivalentForFilter(mixed, width, kept);
+  assert.ok(JSON.stringify(kept).includes('"match"'));
+});
+
+test('does not use disjunctions, zoom-gated or legacy filters as facts', () => {
+  for (const filter of [
+    ['any', ['==', ['get', 'link'], true], ['==', ['get', 'class'], 'primary']],
+    ['step', ['zoom'], true, 13, ['==', ['get', 'link'], true]],
+    ['==', 'link', true],
+  ]) {
+    const width = compactTileflowLayer({id: 'road', filter, paint: {'line-width': rampWidth}})
+      .paint['line-width'];
+    assert.ok(JSON.stringify(width).includes('"link"'), JSON.stringify(filter));
+  }
+});
+
+test('folds literal boolean operands without reordering fallible tests', () => {
+  const guard = ['>', ['number', ['get', 'width']], 0];
+  assert.equal(compactTileflowExpression(['all', true, ['!', true]]), false);
+  assert.equal(compactTileflowExpression(['any', false, ['!', true]]), false);
+  assert.deepEqual(compactTileflowExpression(['all', guard, true]), guard);
+  assert.deepEqual(compactTileflowExpression(['any', guard, true, guard]), ['any', guard, true]);
+  assert.deepEqual(compactTileflowExpression(['case', false, 1, guard, 2, true, 3, 4]), [
+    'case',
+    guard,
+    2,
+    3,
+  ]);
+});
+
+test('uses what every branch of a merged cohort filter establishes', () => {
+  const filter = [
+    'any',
+    ['all', ['==', ['get', 'class'], 'motorway'], ['==', ['get', 'link'], true]],
+    ['all', ['==', ['get', 'class'], 'trunk'], ['==', ['get', 'link'], true]],
+  ];
+  const width = compactTileflowLayer({id: 'ramps', filter, paint: {'line-width': rampWidth}}).paint[
+    'line-width'
+  ];
+  equivalentForFilter(filter, rampWidth, width);
+  assert.deepEqual(width, ['interpolate', ['exponential', 1.5], ['zoom'], 12, 0.4, 18, 18]);
+
+  // Only a value every branch establishes is a fact; one branch is not enough.
+  const partial = ['any', filter[1], ['==', ['get', 'class'], 'trunk']];
+  const kept = compactTileflowLayer({
+    id: 'mixed',
+    filter: partial,
+    paint: {'line-width': rampWidth},
+  }).paint['line-width'];
+  equivalentForFilter(partial, rampWidth, kept);
+  assert.ok(JSON.stringify(kept).includes('"link"'));
 });

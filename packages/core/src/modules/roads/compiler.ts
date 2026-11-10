@@ -221,6 +221,39 @@ export function compileRoads(
             target: `roads.classes.${roadClass}.${structure}.rampFill`,
           });
           contribution.layer.filter = ['all', contribution.layer.filter, ['!', rampFilter]];
+        } else if (
+          !isTileflowPathRoadClass(roadClass) &&
+          readsDataField(
+            [contribution.layer.paint, contribution.layer.layout],
+            'link',
+            schema.fields.link,
+          )
+        ) {
+          // A shared layer would make a ramp-dependent width depend on both zoom and data,
+          // which MapLibre evaluates at each tile's zoom, so pitched views would draw it at
+          // a different size wherever tile zooms meet. Separate layers keep it camera-only.
+          const rampFilter = flagFilter(schema.fields.link);
+          const rampPhase = (
+            {casing: 'rampCasing', fill: 'rampFill', shadow: 'rampShadow'} as const
+          )[phase];
+          contributions.push({
+            ...contribution,
+            family: {
+              ...roadLinePhysicalFamily(roadClass, structure, phase),
+              group: `${structure}:${rampPhase}:${roadPhysicalCohort(roadClass)}`,
+              outputKey: `roads.cohorts.${structure}.${roadPhysicalCohort(roadClass)}.${rampPhase}`,
+            },
+            layer: {
+              ...contribution.layer,
+              id: `tileflow-road-${structure}-${roadClass}-${rampPhase}`,
+              filter: ['all', contribution.layer.filter, rampFilter],
+            },
+            // Like ramp fills, ramp casings and shadows go beneath the roads' own, which also
+            // keeps each class cohort contiguous. A fill split here keeps its ramp order.
+            localOrder: phase === 'fill' ? classIndex * 10 + phaseIndex + 3 : -1000 + classIndex,
+            target: `roads.classes.${roadClass}.${structure}.${rampPhase}`,
+          });
+          contribution.layer.filter = ['all', contribution.layer.filter, ['!', rampFilter]];
         }
         contributions.push(contribution);
       }
@@ -1103,6 +1136,18 @@ function restrictedAccessFilter(field: string): unknown[] {
       ],
     ],
   ];
+}
+
+/** Whether a layer reads a schema field, by its semantic name or its bound tile field. */
+function readsDataField(value: unknown, semanticName: string, boundField: string): boolean {
+  if (Array.isArray(value)) {
+    if (value[0] === 'get' && value[1] === boundField) return true;
+    return value.some((entry) => readsDataField(entry, semanticName, boundField));
+  }
+  if (value === null || typeof value !== 'object') return false;
+  const record = value as Record<string, unknown>;
+  if (record.kind === 'tileflow-data-field' && record.name === semanticName) return true;
+  return Object.values(record).some((entry) => readsDataField(entry, semanticName, boundField));
 }
 
 function flagFilter(field: string): unknown[] {

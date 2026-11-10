@@ -733,13 +733,15 @@ test('Streets preserves reference detail widths and class thresholds from z0 thr
   const layers = inspection.layers
     .filter(({contributions}) =>
       contributions.some(({target}) =>
-        /^roads\.classes\.[^.]+\.surface\.(fill|rampFill|casing)$/u.test(target),
+        /^roads\.classes\.[^.]+\.surface\.(fill|rampFill|casing|rampCasing)$/u.test(target),
       ),
     )
     .map(({index, contributions}) => ({
       layer: style.layers[index]!,
       phases: new Set(
-        contributions.map(({target}) => (target.endsWith('.casing') ? 'casing' : 'fill')),
+        contributions.map(({target}) =>
+          /\.(?:ramp)?[cC]asing$/u.test(target) ? 'casing' : 'fill',
+        ),
       ),
       accepts: featureFilter(style.layers[index]!.filter as never).filter,
       width: createPropertyExpression(

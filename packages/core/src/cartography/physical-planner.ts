@@ -488,6 +488,7 @@ function consolidateRoadNameNetworks(layers: LayerFamily[]): LayerFamily[] {
         })),
         first.style.placement?.['text-size'] ?? 16,
         minZoom,
+        'zoom-stops',
       );
       if (!size.ok) continue;
       const key = `labels.cohorts.roads.network${number++}`;
@@ -712,10 +713,18 @@ function consolidateWaterways(layers: LayerFamily[]): LayerFamily[] {
   return applyReplacements(layers, replacements);
 }
 
+/**
+ * How MapLibre evaluates a property that depends on both zoom and feature data. Paint
+ * properties bake each feature's value at the tile's zoom and the next one only. Symbol sizes
+ * bake it at the expression's own zoom stops around the tile, so they stay exact between them.
+ */
+type ZoomEvaluation = 'tile-zoom' | 'zoom-stops';
+
 function combineConditionalValues(
   entries: ConditionalValue[],
   fallback: unknown,
   minimumRelevantZoom: number,
+  zoomEvaluation: ZoomEvaluation = 'tile-zoom',
 ): CombinedValue {
   if (entries.length === 0) return {ok: true, value: fallback};
   if (allEqual(entries.map(({value}) => value))) {
@@ -725,7 +734,18 @@ function combineConditionalValues(
   // only that unreachable camera branch before comparing colors; otherwise two
   // palettes with the same geometry can acquire different physical layers just
   // because their low-zoom colors happen to be equal. Future steps stay intact.
+  // The same holds for an interpolation that is constant from this cohort's first zoom on.
   const atMinimumZoom = (value: unknown) => {
+    if (isZoomInterpolation(value)) {
+      const interpolation = value as unknown[];
+      const outputs = [evaluateZoomExpression(value, minimumRelevantZoom)];
+      for (let index = 3; index < interpolation.length - 1; index += 2) {
+        const stop = interpolation[index];
+        if (typeof stop === 'number' && stop > minimumRelevantZoom)
+          outputs.push(interpolation[index + 1]);
+      }
+      return allEqual(outputs) ? outputs[0] : value;
+    }
     if (!isZoomStep(value)) return value;
     const step = value as unknown[];
     const lastStop = step[step.length - 2];
@@ -736,6 +756,15 @@ function combineConditionalValues(
   entries = entries.map(({condition, value}) => ({condition, value: atMinimumZoom(value)}));
   fallback = atMinimumZoom(fallback);
   if (allEqual(entries.map(({value}) => value))) return {ok: true, value: entries[0]!.value};
+  // MapLibre evaluates a property that depends on both zoom and feature data at each tile's
+  // zoom, not the camera's. Pitched views draw tiles several zooms apart, so such a property
+  // would change size or color where tile zooms meet and jump as the camera moves. Members
+  // that differ while one of them still varies with zoom therefore keep separate layers.
+  if (
+    zoomEvaluation === 'tile-zoom' &&
+    (entries.some(({value}) => containsZoom(value)) || containsZoom(fallback))
+  )
+    return {ok: false};
   const letValues = entries.map(({value}) =>
     Array.isArray(value) && value.length === 4 && value[0] === 'let' ? value : undefined,
   );
@@ -751,6 +780,7 @@ function combineConditionalValues(
       })),
       letValues[0]![2],
       minimumRelevantZoom,
+      zoomEvaluation,
     );
     if (!combined.ok) return combined;
     return {ok: true, value: ['let', letValues[0]![1], combined.value, letValues[0]![3]]};
@@ -769,6 +799,7 @@ function combineConditionalValues(
       })),
       additiveValues[0]![1],
       minimumRelevantZoom,
+      zoomEvaluation,
     );
     if (!combined.ok) return combined;
     return {ok: true, value: ['+', combined.value, additiveValues[0]![2]]};

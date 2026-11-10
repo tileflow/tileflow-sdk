@@ -330,7 +330,7 @@ export function physicalLayerIdForSemanticKey(semanticKey: string): string {
   if (match) return `tileflow-road-surface-${match[1]}-${match[2]}-on-green`;
 
   match =
-    /^roads\.classes\.([^.]+)\.(tunnel|surface|bridge)\.(shadow|casing|fill|hatch|rampFill)$/u.exec(
+    /^roads\.classes\.([^.]+)\.(tunnel|surface|bridge)\.(shadow|casing|fill|hatch|rampFill|rampCasing|rampShadow)$/u.exec(
       semanticKey,
     );
   if (match) return `tileflow-road-${match[2]}-${match[1]}-${match[3]}`;
@@ -341,9 +341,10 @@ export function physicalLayerIdForSemanticKey(semanticKey: string): string {
     );
   if (match) return `tileflow-road-surface-${match[1]}-${match[2]}-on-green`;
 
-  match = /^roads\.cohorts\.(tunnel|surface|bridge)\.([^.]+)\.(shadow|casing|fill|rampFill)$/u.exec(
-    semanticKey,
-  );
+  match =
+    /^roads\.cohorts\.(tunnel|surface|bridge)\.([^.]+)\.(shadow|casing|fill|rampFill|rampCasing|rampShadow)$/u.exec(
+      semanticKey,
+    );
   if (match) return `tileflow-road-${match[1]}-highzoom-${match[2]}-${match[3]}`;
 
   match = /^roads\.cohorts\.(tunnel|surface|bridge)\.hatch$/u.exec(semanticKey);

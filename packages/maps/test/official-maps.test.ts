@@ -839,6 +839,31 @@ test('Streets-family road caps follow overview and structural reference geometry
   }
 });
 
+test('Streets road widths at street zooms depend on the camera zoom alone', () => {
+  // MapLibre evaluates a property that depends on zoom and feature data at each tile's zoom.
+  // Pitched street views draw tiles several zooms apart, so such a width would change where
+  // those tiles meet and jump as the camera moves.
+  for (const theme of ['light', 'dark']) {
+    const style = compileOfficialMap(streets, theme);
+    const roads = style.layers.filter(
+      (layer) =>
+        layer.type === 'line' &&
+        layer.id.startsWith('tileflow-road-') &&
+        (layer.maxzoom === undefined || layer.maxzoom > 15),
+    );
+    assert.ok(roads.length > 40);
+    for (const layer of roads)
+      for (const property of ['line-width', 'line-gap-width', 'line-offset'] as const) {
+        const value = (layer.paint as Record<string, unknown> | undefined)?.[property];
+        if (value === undefined) continue;
+        const parsed = createPropertyExpression(value, latest.paint_line[property] as never);
+        assert.equal(parsed.result, 'success');
+        if (parsed.result === 'success')
+          assert.notEqual(parsed.value.kind, 'composite', `${theme} ${layer.id} ${property}`);
+      }
+  }
+});
+
 test('official road maps avoid seam-prone caps on ordinary surface and bridge segments', () => {
   for (const [mapId, map] of Object.entries({
     streets,
@@ -862,7 +887,7 @@ test('official road maps avoid seam-prone caps on ordinary surface and bridge se
       if (
         (mapId === 'streets' || mapId === 'map-1777') &&
         layer.id.startsWith('tileflow-road-bridge-') &&
-        layer.id.endsWith('-casing')
+        (layer.id.endsWith('-casing') || layer.id.endsWith('-rampCasing'))
       )
         continue;
       assert.notEqual(

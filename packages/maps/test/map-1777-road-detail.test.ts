@@ -125,10 +125,16 @@ for (const theme of ['light', 'dawn', 'dusk', 'dark']) {
             {service: 'driveway'},
             {service: 'parking_aisle'},
           ]) {
+            // Compare with the layer that draws the open road: highway links have their own.
+            const drawing =
+              ['motorway', 'trunk'].includes(roadClass) && phase === 'fill' && 'link' in treatment
+                ? line(`tileflow-roads-render-${roadClass}-surface-links`)
+                : ordinary;
+            assert.ok(matches(drawing, {...open, ...treatment}));
             for (const zoom of [15, 17, 19]) {
               assert.equal(
                 paint(works, 'line-width', zoom, {...open, ...treatment, class: closed.class}),
-                paint(ordinary, 'line-width', zoom, {...open, ...treatment}),
+                paint(drawing, 'line-width', zoom, {...open, ...treatment}),
               );
             }
           }
@@ -152,7 +158,8 @@ for (const theme of ['light', 'dawn', 'dusk', 'dark']) {
       for (const structure of ['surface', 'bridge']) {
         const link = line(`tileflow-roads-render-${roadClass}-${structure}-links`);
         const ordinary = line(`tileflow-road-${structure}-${roadClass}-fill`);
-        const casing = line(`tileflow-road-${structure}-${roadClass}-casing`);
+        // Ramp-dependent casing widths draw links' casings in their own layer.
+        const casing = line(`tileflow-road-${structure}-${roadClass}-rampCasing`);
         const feature = {
           class: roadClass,
           link: true,
@@ -183,13 +190,24 @@ for (const theme of ['light', 'dawn', 'dusk', 'dark']) {
         ]) {
           for (const zoom of [13.5, 16, 19]) {
             const properties = {...feature, ...treatment};
-            for (const property of ['line-width', 'line-opacity', 'line-color'] as const) {
+            // The carriageway layer no longer draws links, so its style is read for the same
+            // road as a carriageway. Links keep that colour and opacity; unrestricted links
+            // narrow to 72 %, like construction works on a link.
+            const carriageway = {...properties, link: false};
+            for (const property of ['line-opacity', 'line-color'] as const) {
               assert.deepEqual(
                 paint(link, property, zoom, properties),
-                paint(ordinary, property, zoom, properties),
+                paint(ordinary, property, zoom, carriageway),
                 `${roadClass} ${structure} ${property}`,
               );
             }
+            const width = paint(ordinary, 'line-width', zoom, carriageway) as number;
+            const linkWidth = paint(link, 'line-width', zoom, properties) as number;
+            const factor = 'access' in treatment ? 1 : 0.72;
+            assert.ok(
+              Math.abs(linkWidth - width * factor) < 1e-9,
+              `${roadClass} ${structure} line-width ${linkWidth} != ${width} × ${factor}`,
+            );
           }
         }
       }

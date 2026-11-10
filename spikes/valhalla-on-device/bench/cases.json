@@ -1,0 +1,112 @@
+{
+  "madrid-city": [
+    {
+      "id": "walk-sol-retiro",
+      "costing": "pedestrian",
+      "from": [-3.7035, 40.4169],
+      "to": [-3.6822, 40.4138]
+    },
+    {
+      "id": "bike-moncloa-atocha",
+      "costing": "bicycle",
+      "from": [-3.719, 40.4352],
+      "to": [-3.6907, 40.4066]
+    },
+    {
+      "id": "car-castilla-usera",
+      "costing": "auto",
+      "from": [-3.689, 40.4669],
+      "to": [-3.7065, 40.387]
+    }
+  ],
+  "madrid-region": [
+    {
+      "id": "walk-sol-retiro",
+      "costing": "pedestrian",
+      "from": [-3.7035, 40.4169],
+      "to": [-3.6822, 40.4138]
+    },
+    {
+      "id": "car-castilla-usera",
+      "costing": "auto",
+      "from": [-3.689, 40.4669],
+      "to": [-3.7065, 40.387]
+    },
+    {
+      "id": "walk-alcala",
+      "costing": "pedestrian",
+      "from": [-3.364, 40.482],
+      "to": [-3.349, 40.5105]
+    },
+    {
+      "id": "bike-sol-alcala",
+      "costing": "bicycle",
+      "from": [-3.7035, 40.4169],
+      "to": [-3.364, 40.482]
+    },
+    {
+      "id": "car-sol-aranjuez",
+      "costing": "auto",
+      "from": [-3.7035, 40.4169],
+      "to": [-3.6027, 40.0331]
+    },
+    {
+      "id": "car-somosierra-aranjuez",
+      "costing": "auto",
+      "from": [-3.5826, 41.1335],
+      "to": [-3.6027, 40.0331]
+    }
+  ],
+  "portugal": [
+    {
+      "id": "walk-rossio-belem",
+      "costing": "pedestrian",
+      "from": [-9.1394, 38.7139],
+      "to": [-9.216, 38.6916]
+    },
+    {
+      "id": "bike-rossio-cascais",
+      "costing": "bicycle",
+      "from": [-9.1394, 38.7139],
+      "to": [-9.4207, 38.6967]
+    },
+    {
+      "id": "car-lisboa-porto",
+      "costing": "auto",
+      "from": [-9.1394, 38.7139],
+      "to": [-8.6109, 41.1496]
+    },
+    {
+      "id": "car-faro-braga",
+      "costing": "auto",
+      "from": [-7.9304, 37.0194],
+      "to": [-8.4265, 41.5454]
+    }
+  ],
+  "florida": [
+    {
+      "id": "walk-southbeach",
+      "costing": "pedestrian",
+      "from": [-80.13, 25.7907],
+      "to": [-80.134, 25.815]
+    },
+    {
+      "id": "bike-downtown-coralgables",
+      "costing": "bicycle",
+      "from": [-80.1918, 25.7617],
+      "to": [-80.2684, 25.7215]
+    },
+    {
+      "id": "car-miami-orlando",
+      "costing": "auto",
+      "from": [-80.1918, 25.7617],
+      "to": [-81.3792, 28.5383]
+    },
+    {
+      "id": "car-pensacola-keywest",
+      "costing": "auto",
+      "from": [-87.2169, 30.4213],
+      "to": [-81.78, 24.5551]
+    }
+  ]
+}

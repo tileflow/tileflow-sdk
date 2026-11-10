@@ -1,0 +1,37 @@
+name: ValhallaSpike
+options:
+  bundleIdPrefix: dev.tileflow.spike
+  deploymentTarget:
+    iOS: '16.4'
+settings:
+  base:
+    SWIFT_VERSION: '5.0'
+    SWIFT_OBJC_BRIDGING_HEADER: App/Bridging.h
+    GENERATE_INFOPLIST_FILE: YES
+    CODE_SIGNING_ALLOWED: NO
+    DEAD_CODE_STRIPPING: YES
+    STRIP_INSTALLED_PRODUCT: YES
+    COPY_PHASE_STRIP: YES
+    STRIP_STYLE: all
+    DEPLOYMENT_POSTPROCESSING: YES
+targets:
+  ValhallaBench:
+    type: application
+    platform: iOS
+    sources: [App]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.tileflow.spike.valhalla
+        LIBRARY_SEARCH_PATHS:
+          - $(SRCROOT)/../.build/tf-$(TF_SLICE)
+          - $(SRCROOT)/../.build/valhalla-$(TF_SLICE)/build/src
+          - $(SRCROOT)/../.build/protobuf-$(TF_SLICE)/install/lib
+        OTHER_LDFLAGS: [-ltf_valhalla, -lvalhalla, -lprotobuf-lite, -lz, -lc++]
+        TF_SLICE: ios-sim
+  BaselineBench:
+    type: application
+    platform: iOS
+    sources: [App, Stub]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.tileflow.spike.baseline

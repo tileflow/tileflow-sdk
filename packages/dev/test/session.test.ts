@@ -689,7 +689,7 @@ test('serves pinned local preview assets and a cancellable session event stream'
     handler(new Request('http://localhost/__runtime/maplibre-gl-worker.mjs')),
     handler(new Request('http://localhost/__runtime/maplibre-gl.css')),
     handler(new Request('http://localhost/__runtime/three.module.js')),
-    handler(new Request('http://localhost/__runtime/three.core.min.js')),
+    handler(new Request('http://localhost/__runtime/three.core.js')),
     handler(new Request('http://localhost/__runtime/three-addons/lines/LineMaterial.js')),
     handler(new Request('http://localhost/__runtime/three-addons/lines/LineSegments2.js')),
     handler(new Request('http://localhost/__runtime/three-addons/lines/LineSegmentsGeometry.js')),

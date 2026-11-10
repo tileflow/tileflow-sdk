@@ -1436,7 +1436,6 @@ export function renderTileflowPreviewHtml(
           [
             "transportation",
             "transportation_name",
-            "circular_feature",
             "sidewalk",
             "street_furniture"
           ].includes(sourceLayer)

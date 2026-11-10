@@ -1,6 +1,5 @@
 import type {
   TileflowAreaStyle,
-  TileflowCircleStyle,
   TileflowFillStyle,
   TileflowIconStyle,
   TileflowLineHatchStyle,
@@ -8,7 +7,6 @@ import type {
   TileflowLineStackStyle,
   TileflowLineStyle,
   TileflowMarkerSymbolStyle,
-  TileflowNumberStyleValue,
   TileflowSymbolStyle,
 } from './cartography/styles';
 import type {
@@ -302,14 +300,6 @@ export type TileflowRoadAreaStyle = {
 };
 export type TileflowRoadCrossingStyle = Omit<TileflowIconStyle, 'image'> &
   Required<Pick<TileflowIconStyle, 'image'>>;
-export type TileflowRoadRoundaboutStyle = {
-  /** Extra casing width in pixels, split equally across both edges; defaults to the road border. */
-  borderWidth?: TileflowNumberStyleValue;
-  casing?: TileflowCircleStyle;
-  /** Road width in pixels when metric radii are absent; defaults to the effective surface fill width. */
-  fallbackWidth?: TileflowNumberStyleValue;
-  fill?: TileflowCircleStyle;
-};
 /**
  * How Core's street lights renderer lights the map's streets at night, from the lamps and lit
  * streets its data holds.
@@ -356,7 +346,6 @@ export type TileflowRoadsModuleConfig = {
   /** Draw ramp fills below receiving roads by default; `by-class` keeps their class's order. */
   rampOrder?: 'below-roads' | 'by-class';
   restrictions?: Partial<Record<TileflowRoadRestriction, TileflowRoadTreatmentStyle>>;
-  roundabouts?: TileflowRoadRoundaboutStyle;
   serviceTypes?: Partial<Record<TileflowRoadServiceType, TileflowRoadTreatmentStyle>>;
   sidewalks?: TileflowRoadSidewalkStyle;
   streetLights?: TileflowRoadStreetLightStyle;

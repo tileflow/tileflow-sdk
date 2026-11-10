@@ -468,8 +468,6 @@ const exactPhysicalLayerIds: Readonly<Record<string, string>> = Object.freeze({
   'landforms.classes': 'tileflow-landforms',
   'roads.crossings': 'tileflow-road-crossing',
   'roads.oneWayMarkers': 'tileflow-road-oneway',
-  'roads.roundabouts.casing': 'tileflow-road-circular-casing',
-  'roads.roundabouts.fill': 'tileflow-road-circular-fill',
   'roads.sidewalks.outline': 'tileflow-sidewalk-outline',
   'roads.sidewalks.pattern': 'tileflow-sidewalk-pattern',
   'roads.sidewalks.surface': 'tileflow-sidewalk-surface',

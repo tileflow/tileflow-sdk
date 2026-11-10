@@ -328,7 +328,6 @@ test('accepts detailed cartographic module styles and their optional data bindin
       land: land({globalLandcover: {color: '#123456'}}),
       roads: roads({
         crossings: {image: 'crosswalk'},
-        roundabouts: {fill: {strokeColor: '#234567'}},
         sidewalks: {pattern: {pattern: 'sidewalk-dot'}},
       }),
       vegetation: vegetation({
@@ -394,10 +393,8 @@ test('accepts detailed cartographic module styles and their optional data bindin
   });
   if (map.data?.type !== 'vector-tiles') return;
   const data = resolveTileflowData(map.data);
-  assert.equal(data.schema.layers.circularFeature, 'circular_feature');
   assert.equal(data.schema.layers.sidewalk, 'sidewalk');
   assert.equal(data.schema.layers.streetFurniture, 'street_furniture');
-  assert.equal(data.schema.fields.circularRadiusAtZoom15, 'radius_px_z15');
   assert.equal(data.schema.fields.direction, 'direction');
 
   assert.throws(

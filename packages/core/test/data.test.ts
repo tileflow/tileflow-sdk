@@ -329,7 +329,6 @@ test('validates the layers and fields a Tileflow World TileJSON declares', () =>
     'Tileflow World requires bathymetry.',
     'Tileflow World requires landcover.',
     'Tileflow World requires poi_label.',
-    'Tileflow World requires circular_feature.',
     'Tileflow World requires sidewalk.',
     'Tileflow World requires street_furniture.',
     'Tileflow World requires road.',
@@ -356,7 +355,6 @@ test('fails closed on malformed or duplicate Tileflow World detail layers', () =
   assert.deepEqual(
     validateTileflowWorldTilejson({
       vector_layers: worldVectorLayers({
-        circular_feature: {maxzoom: 14, fields: {radius_m: 'String'}},
         sidewalk: {minzoom: 14, fields: {class: 'Number'}},
         street_furniture: {
           fields: {crossing: 'Boolean', direction: 'Boolean', markings: 'Boolean'},
@@ -365,8 +363,6 @@ test('fails closed on malformed or duplicate Tileflow World detail layers', () =
       }),
     }),
     [
-      'Tileflow World circular_feature must declare native z15.',
-      'Tileflow World requires Number radius_m on circular_feature.',
       'Tileflow World sidewalk must declare native z15.',
       'Tileflow World requires String class on sidewalk.',
       'Tileflow World requires String crossing on street_furniture.',
@@ -422,9 +418,9 @@ test('fails closed on malformed or duplicate Tileflow World detail layers', () =
   );
 
   const duplicate = validWorldVectorLayers();
-  duplicate.push({...duplicate.find(({id}) => id === 'circular_feature')!});
+  duplicate.push({...duplicate.find(({id}) => id === 'sidewalk')!});
   assert.deepEqual(validateTileflowWorldTilejson({vector_layers: duplicate}), [
-    'Tileflow World requires exactly one circular_feature layer.',
+    'Tileflow World requires exactly one sidewalk layer.',
   ]);
 });
 
@@ -731,19 +727,6 @@ function validWorldVectorLayers(): VectorLayer[] {
       minzoom: 0,
       maxzoom: 10,
       fields: {class: 'String'},
-    },
-    {
-      id: 'circular_feature',
-      minzoom: 15,
-      maxzoom: 15,
-      fields: {
-        circle_kind: 'String',
-        class: 'String',
-        inner_radius_m: 'Number',
-        outer_radius_m: 'Number',
-        radius_m: 'Number',
-        radius_px_z15: 'Number',
-      },
     },
     {
       id: 'sidewalk',

@@ -14,6 +14,30 @@ export function tileflowDevOrigin(host: string, port: number): string {
 
 const loopbackHosts = new Set(['127.0.0.1', 'localhost', '[::1]']);
 
+/**
+ * Refuse a request addressed to any DNS name other than localhost.
+ *
+ * A web page can rebind its own DNS name to this machine and then read the preview as same-origin
+ * content: map styles, local tilesets, sprites and inspection data. Its requests still carry that
+ * name in `Host`, while every legitimate address of a development server is an IP literal or
+ * localhost, including the LAN address used with `--host 0.0.0.0`.
+ */
+export function rejectTileflowDevRebinding(request: Request): Response | undefined {
+  let hostname: string;
+  try {
+    hostname = new URL(request.url).hostname.toLowerCase();
+  } catch {
+    hostname = '';
+  }
+  const literal =
+    hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
+  if (hostname === 'localhost' || isIP(literal) !== 0) return;
+  return new Response('Use the Tileflow preview from its local address.\n', {
+    status: 421,
+    headers: {'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store'},
+  });
+}
+
 /** Load the shell and its workbench API from the same configured loopback origin. */
 export function redirectTileflowDevNavigation(
   request: Request,

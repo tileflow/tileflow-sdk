@@ -29,7 +29,8 @@
   "files": [
     "dist",
     "THIRD_PARTY_NOTICES.md",
-    "LICENSE"
+    "LICENSE",
+    "NOTICE"
   ],
   "scripts": {
     "prepack": "node ../../scripts/package-license.mjs --prepare",

@@ -25,7 +25,8 @@
     "ios/*.rb",
     "TileflowNativeAdmission.podspec",
     "react-native.config.cjs",
-    "LICENSE"
+    "LICENSE",
+    "NOTICE"
   ],
   "scripts": {
     "prepack": "node ../../scripts/package-license.mjs --prepare",

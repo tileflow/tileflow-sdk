@@ -9,7 +9,7 @@ test('publishes resolvable Svelte and declaration entry points', async () => {
   );
   const entrySource = await readFile(new URL('../src/index.js', import.meta.url), 'utf8');
 
-  assert.deepEqual(packageJson.files, ['src', 'LICENSE']);
+  assert.deepEqual(packageJson.files, ['src', 'LICENSE', 'NOTICE']);
   assert.equal(packageJson.types, packageJson.exports['.'].types);
   assert.equal(packageJson.svelte, packageJson.exports['.'].svelte);
   assert.equal(packageJson.exports['.'].default, packageJson.exports['.'].import);

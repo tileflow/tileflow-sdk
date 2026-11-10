@@ -99,6 +99,7 @@ for (const path of ['Package.swift', 'Sources', 'Tests']) {
   await cp(resolve(root, 'platforms/ios', path), join(swift, path), {recursive: true});
 }
 await cp(resolve(root, 'LICENSE'), join(swift, 'LICENSE'));
+await cp(resolve(root, 'NOTICE'), join(swift, 'NOTICE'));
 const swiftReadme = await readFile(resolve(root, 'platforms/ios/distribution/README.md'), 'utf8');
 if (!swiftReadme.includes(`https://github.com/${catalog.swift.repository}`)) {
   throw new Error(
@@ -150,6 +151,7 @@ if ((await sourceInventory()) !== buildInputs) {
 }
 await writeFile(join(destination, 'source-inventory.json'), buildInputs);
 await cp(resolve(root, 'LICENSE'), join(destination, 'LICENSE'));
+await cp(resolve(root, 'NOTICE'), join(destination, 'NOTICE'));
 const provenance = {
   schemaVersion: 1,
   version,

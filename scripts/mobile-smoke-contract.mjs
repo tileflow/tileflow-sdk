@@ -297,7 +297,7 @@ export function assertPackedManifest(manifest, files) {
       'pack',
     );
   }
-  const required = ['package.json', 'LICENSE', 'dist/index.js', 'dist/index.d.ts'];
+  const required = ['package.json', 'LICENSE', 'NOTICE', 'dist/index.js', 'dist/index.d.ts'];
   if (manifest.name === '@tileflow/react-native') {
     required.push(
       'react-native.config.cjs',

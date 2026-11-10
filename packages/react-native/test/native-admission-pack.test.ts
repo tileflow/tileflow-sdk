@@ -47,6 +47,7 @@ test('the public archive contains native runtime sources without development tes
     ...documentation,
     ...(await files('dist')),
     'LICENSE',
+    'NOTICE',
     'package.json',
   ]
     .map((path) => `package/${path}`)

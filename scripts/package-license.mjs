@@ -5,23 +5,30 @@ import {fileURLToPath} from 'node:url';
 
 const repositoryRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const licenseFileName = 'LICENSE';
+const noticeFileName = 'NOTICE';
+// Apache-2.0 section 4(d) requires redistributions to carry the NOTICE beside the license.
+export const packageLegalFileNames = Object.freeze([licenseFileName, noticeFileName]);
 const publicLicenseIdentifier = 'Apache-2.0';
 
 export async function preparePackageLicense({root = repositoryRoot, packageRoot} = {}) {
   assert.ok(packageRoot, 'A package root is required.');
-  await copyFile(join(root, licenseFileName), join(packageRoot, licenseFileName));
+  await Promise.all(
+    packageLegalFileNames.map((name) => copyFile(join(root, name), join(packageRoot, name))),
+  );
 }
 
 export async function removePackageLicense({packageRoot} = {}) {
   assert.ok(packageRoot, 'A package root is required.');
-  await rm(join(packageRoot, licenseFileName), {force: true});
+  await Promise.all(
+    packageLegalFileNames.map((name) => rm(join(packageRoot, name), {force: true})),
+  );
 }
 
 export async function stagePackageLicenseInputs({root = repositoryRoot, stagingRoot} = {}) {
   assert.ok(stagingRoot, 'A staging root is required.');
   await mkdir(join(stagingRoot, 'scripts'), {recursive: true});
   await Promise.all([
-    copyFile(join(root, licenseFileName), join(stagingRoot, licenseFileName)),
+    ...packageLegalFileNames.map((name) => copyFile(join(root, name), join(stagingRoot, name))),
     copyFile(
       join(root, 'scripts', 'package-license.mjs'),
       join(stagingRoot, 'scripts', 'package-license.mjs'),
@@ -32,6 +39,8 @@ export async function stagePackageLicenseInputs({root = repositoryRoot, stagingR
 export async function verifyPackageLicenseLayout({root = repositoryRoot} = {}) {
   const license = await readFile(join(root, licenseFileName), 'utf8');
   assert.match(license, /Apache License\n\s+Version 2\.0, January 2004/u);
+  const notice = await readFile(join(root, noticeFileName), 'utf8');
+  assert.match(notice, /^Copyright \d{4} Tileflow$/mu, `${noticeFileName} must name Tileflow.`);
 
   const packageDirectories = [];
   for (const entry of await readdir(join(root, 'packages'), {withFileTypes: true})) {
@@ -52,29 +61,30 @@ export async function verifyPackageLicenseLayout({root = repositoryRoot} = {}) {
       `${manifest.name} must declare ${publicLicenseIdentifier}.`,
     );
     assert.ok(Array.isArray(manifest.files), `${manifest.name} must declare packaged files.`);
-    assert.ok(
-      manifest.files.includes(licenseFileName),
-      `${manifest.name} must pack ${licenseFileName}.`,
-    );
+    for (const name of packageLegalFileNames) {
+      assert.ok(manifest.files.includes(name), `${manifest.name} must pack ${name}.`);
+    }
     assert.equal(
       manifest.scripts?.prepack,
       'node ../../scripts/package-license.mjs --prepare',
-      `${manifest.name} must prepare ${licenseFileName} before packing.`,
+      `${manifest.name} must prepare its legal files before packing.`,
     );
     assert.equal(
       manifest.scripts?.postpack,
       'node ../../scripts/package-license.mjs --clean',
-      `${manifest.name} must remove the prepared ${licenseFileName} after packing.`,
+      `${manifest.name} must remove its prepared legal files after packing.`,
     );
 
-    await assert.rejects(
-      readFile(join(packageRoot, licenseFileName), 'utf8'),
-      {code: 'ENOENT'},
-      `${manifest.name} must not version a package ${licenseFileName}.`,
-    );
+    for (const name of packageLegalFileNames) {
+      await assert.rejects(
+        readFile(join(packageRoot, name), 'utf8'),
+        {code: 'ENOENT'},
+        `${manifest.name} must not version a package ${name}.`,
+      );
+    }
   }
 
-  return {licenseFileName, packages: packageDirectories};
+  return {legalFileNames: packageLegalFileNames, packages: packageDirectories};
 }
 
 async function main() {
@@ -82,7 +92,7 @@ async function main() {
   if (mode === '--check') {
     const result = await verifyPackageLicenseLayout();
     console.log(
-      `Validated ${result.licenseFileName} packaging for ${result.packages.length} public packages.`,
+      `Validated ${result.legalFileNames.join(' and ')} packaging for ${result.packages.length} public packages.`,
     );
     return;
   }

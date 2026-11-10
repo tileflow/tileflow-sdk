@@ -143,7 +143,7 @@ test('packed contents reject missing declarations, workspace ranges and unsafe a
     version: mobileVersions.package,
     exports: {'.': {types: './dist/index.d.ts', default: './dist/index.js'}},
   };
-  const files = ['package.json', 'LICENSE', 'dist/index.js', 'dist/index.d.ts'];
+  const files = ['package.json', 'LICENSE', 'NOTICE', 'dist/index.js', 'dist/index.d.ts'];
   assertPackedManifest(manifest, files);
   assert.throws(() => assertPackedManifest(manifest, files.slice(0, -1)), codeIs('PACK_INVALID'));
   assert.throws(

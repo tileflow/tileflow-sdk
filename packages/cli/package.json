@@ -27,7 +27,8 @@
     "dist",
     "schemas",
     "REFERENCE.md",
-    "LICENSE"
+    "LICENSE",
+    "NOTICE"
   ],
   "bin": {
     "tileflow": "./dist/index.js"

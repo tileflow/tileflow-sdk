@@ -25,6 +25,7 @@ test('publishes official maps and their assets as one package', async () => {
     'dist',
     'THIRD_PARTY_NOTICES.md',
     'LICENSE',
+    'NOTICE',
   ]);
   assert.equal(manifest.peerDependencies['@tileflow/core'].startsWith('workspace:'), true);
   assert.deepEqual(manifest.exports['.'], {

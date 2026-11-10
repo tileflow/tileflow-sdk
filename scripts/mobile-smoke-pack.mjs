@@ -78,7 +78,7 @@ export async function packMobilePackages(context, repository, pnpm) {
     join(sourceRoot, 'packages/core/reference/modules-api-reference.json'),
     join(stage, 'packages/core/reference/modules-api-reference.json'),
   );
-  for (const file of ['LICENSE', 'scripts/package-license.mjs'])
+  for (const file of ['LICENSE', 'NOTICE', 'scripts/package-license.mjs'])
     await readMobileFile(sourceRoot, join(sourceRoot, file));
   await stagePackageLicenseInputs({root: sourceRoot, stagingRoot: stage});
   for (const directory of mobilePackages) {

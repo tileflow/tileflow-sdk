@@ -7,6 +7,7 @@ import {fileURLToPath} from 'node:url';
 const runtimeInputs = [
   '.github/workflows/ci.yml',
   'LICENSE',
+  'NOTICE',
   'package.json',
   'pnpm-lock.yaml',
   'pnpm-workspace.yaml',

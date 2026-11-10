@@ -56,11 +56,12 @@ test('staged build and pack adapters use pnpm, fresh output and license inputs w
     await writeFixture(join(repository, file), '{}\n');
   }
   await writeFixture(join(repository, 'LICENSE'), 'Fixture license\n');
+  await writeFixture(join(repository, 'NOTICE'), 'Fixture notice\n');
   await writeFixture(
     join(repository, 'scripts', 'package-license.mjs'),
     '// Fixture hook; not executed.\n',
   );
-  const baseFiles = ['package.json', 'LICENSE', 'dist/index.js', 'dist/index.d.ts'];
+  const baseFiles = ['package.json', 'LICENSE', 'NOTICE', 'dist/index.js', 'dist/index.d.ts'];
   const nativeFiles = [
     'react-native.config.cjs',
     'android/build.gradle',
@@ -107,6 +108,7 @@ test('staged build and pack adapters use pnpm, fresh output and license inputs w
           if (command === 'pnpm' && args[0] === 'install') {
             assert.deepEqual(args, ['install', '--frozen-lockfile', '--ignore-scripts']);
             assert.equal(await readFile(join(options.cwd, 'LICENSE'), 'utf8'), 'Fixture license\n');
+            assert.equal(await readFile(join(options.cwd, 'NOTICE'), 'utf8'), 'Fixture notice\n');
             await access(join(options.cwd, 'scripts', 'package-license.mjs'));
             for (const name of mobilePackages)
               await assert.rejects(access(join(options.cwd, 'packages', name, 'dist')), {
@@ -134,7 +136,9 @@ test('staged build and pack adapters use pnpm, fresh output and license inputs w
                 file,
                 file === 'LICENSE'
                   ? Buffer.from('Fixture license\n')
-                  : await readFile(join(options.cwd, file)),
+                  : file === 'NOTICE'
+                    ? Buffer.from('Fixture notice\n')
+                    : await readFile(join(options.cwd, file)),
               );
             archives.set(path, contents);
             return output(
@@ -185,7 +189,8 @@ test('staged build and pack adapters use pnpm, fresh output and license inputs w
       await readFile(join(repository, 'packages', name, 'dist', 'stale.js'), 'utf8'),
       'stale',
     );
-    await assert.rejects(access(join(repository, 'packages', name, 'LICENSE')), {code: 'ENOENT'});
+    for (const file of ['LICENSE', 'NOTICE'])
+      await assert.rejects(access(join(repository, 'packages', name, file)), {code: 'ENOENT'});
   }
 });
 

@@ -41,6 +41,6 @@ embedded runtime of this release. The same release is published to Maven Central
 
 ## License
 
-Apache License 2.0, in `LICENSE`. The embedded dependencies keep their own notices in
+Apache License 2.0, in `LICENSE`, with the copyright notice in `NOTICE`. The embedded dependencies keep their own notices in
 `Sources/Tileflow/EmbeddedRuntime/notices.txt`. "Tileflow" and the Tileflow logo are trademarks of
 Tileflow; see [TRADEMARKS.md](https://github.com/tileflow/tileflow-sdk/blob/main/TRADEMARKS.md).

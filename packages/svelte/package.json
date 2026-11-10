@@ -25,7 +25,8 @@
   "types": "./src/index.d.ts",
   "files": [
     "src",
-    "LICENSE"
+    "LICENSE",
+    "NOTICE"
   ],
   "scripts": {
     "prepack": "node ../../scripts/package-license.mjs --prepare",

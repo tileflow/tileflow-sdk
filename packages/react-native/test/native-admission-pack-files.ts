@@ -8,4 +8,5 @@ export const nativePackageFiles = [
   'TileflowNativeAdmission.podspec',
   'react-native.config.cjs',
   'LICENSE',
+  'NOTICE',
 ];

@@ -843,7 +843,7 @@ function manifest(name, version, override = {}) {
     name,
     version,
     license: 'Apache-2.0',
-    files: ['LICENSE'],
+    files: ['LICENSE', 'NOTICE'],
     repository: {type: 'git', url: 'git+https://github.com/tileflow/tileflow-sdk.git'},
     bugs: {url: 'https://github.com/tileflow/tileflow-sdk/issues'},
     publishConfig: {access: 'public'},

@@ -25,6 +25,7 @@
   "files": [
     "dist",
     "LICENSE",
+    "NOTICE",
     "REFERENCE.md"
   ],
   "scripts": {

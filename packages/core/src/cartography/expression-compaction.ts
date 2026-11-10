@@ -242,10 +242,11 @@ function shareExpressions(value: unknown): unknown {
   let result = value;
   const bindings: unknown[] = [];
   const serialized = new WeakMap<unknown[], string>();
-  const textOf = (node: unknown[]) => {
+  // Built from the children's texts, so each round serializes only the nodes it rebuilt.
+  const textOf = (node: unknown[]): string => {
     let text = serialized.get(node);
     if (text === undefined) {
-      text = JSON.stringify(node);
+      text = `[${node.map((item) => (Array.isArray(item) ? textOf(item) : (JSON.stringify(item) ?? 'null'))).join(',')}]`;
       serialized.set(node, text);
     }
     return text;

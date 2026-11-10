@@ -197,12 +197,12 @@ Only `visual update` changes baseline PNG/receipt pairs. `visual diff` writes wo
 approval. Changed pixels normally exit 0; `--fail-on changed` exits 2. Missing or incompatible
 baselines and operational failures exit 1. Never run `visual update` automatically to make CI pass.
 
-Use `visual analyze <scene> --reference <png>` for an external screenshot without a Tileflow
-receipt. Use `visual compare` for an authenticated two-style review with matched camera, viewport,
-renderer, and data identity. Neither operation approves a baseline. Capture watch mode emits NDJSON
-generation events rather than a single JSON document.
+`visual analyze <scene> --reference <png>` checks an external screenshot. `visual compare` runs an
+authenticated two-style review with matched camera, viewport, renderer, and data. Neither approves a
+baseline. Capture watch mode emits NDJSON generation events rather than a single JSON document.
+`visual report` and `visual approve` read and approve a pull request's visual review.
 
-Use `tileflow capture --help` and `tileflow compare --help` for installed command options.
+See `--help` on each command for installed options.
 
 ## Publish data and deploy a map
 
@@ -261,26 +261,39 @@ refuse to overwrite hosted manifests by default, and deploy refuses to replace a
 manifest without explicit authorization. Keep separate outputs, or use the documented overwrite
 option only for an intentional migration.
 
-Data publication is separate from map deployment:
+Data publication is separate from map deployment. Build PMTiles locally from GeoJSON, CSV,
+Shapefile, GeoPackage, KML or GPX:
 
 ```sh
+npx tileflow tileset build ./data/stores.geojson -o ./data/stores.pmtiles --json
 npx tileflow tileset inspect ./data/stores.pmtiles --json
 npx tileflow tileset publish ./data/stores.pmtiles --id stores --team @acme --attribution 'Store data © Example' --json
 npx tileflow tileset status stores --team @acme --json
 ```
 
-Inspect without an account; publish your own data with Team data authority and attribution.
-Account-backed authorization renews automatically. Interrupted uploads resume; published versions become
+See the
+[reference](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/REFERENCE.md) for inputs,
+CRS rules, limits and upload behavior. Publish your own data with Team data authority and attribution.
+Interrupted uploads resume; published versions become
 current at stable URLs. Purge requires confirmation and may be blocked by retained deployments.
-
-Hashing reuses a 16 MiB buffer. Up to four parts stream concurrently with reusable buffers.
-
-Administratively disabled uploads return `TF_TILESET_UPLOAD_DISABLED` without retrying.
-Temporary service failures retain bounded retries.
 
 `inspect features` samples bounded vector-source features. `icons list` and `icons diff` inspect
 prepared icon identities; they do not turn package directories into a separate hosted library.
 Use the installed command's help for exact arguments and supported JSON output.
+
+## Restore an earlier version
+
+Restoring a deployment publishes its content again as a new version of the Map. Restoring a tileset
+swaps its current and previous versions for every Map that uses it:
+
+```bash
+npx tileflow deployments list --map-id map_AbCdEfGhIjKlMnOp
+npx tileflow deployments restore 12 --map-id map_AbCdEfGhIjKlMnOp
+npx tileflow tileset restore stores --team @acme
+```
+
+See the [reference](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/REFERENCE.md#restore)
+for refusals, clearing an abandoned upload and JSON output.
 
 ## Team Icon Sets and repository locks
 
@@ -302,13 +315,6 @@ bounded Team reads. `archive` and `unarchive` change only catalog state and neve
 revisions. `purge <slug> --version <n>` additionally requires `--idempotency-key`, an exact
 `--confirm @team/set@version`, and `--acknowledge-unknown-locks`, because repository locks that were
 never deployed are not discoverable and already-downloaded public bytes cannot be revoked.
-
-The lock commands inspect the `iconSet()` references your config declares. They are the only
-commands that resolve `latest`, and the only ones that write the lock. `install` fills in declared
-references that have no pin, `update` moves selected references to their current latest revision,
-and `pin` selects one exact revision. Every requested reference is resolved before a single
-compare-and-swap write of the whole snapshot, so a concurrent writer fails the command instead of
-losing its pins. No lock command rewrites `tileflow.config.ts`.
 
 `validate`, `build`, `preview`, `deploy`, `icons list` and `icons diff` read the lock and never
 resolve a catalog head. `--cache-dir` chooses the verified artifact cache root and `--offline` fails

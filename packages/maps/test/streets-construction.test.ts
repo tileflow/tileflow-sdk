@@ -49,7 +49,8 @@ test('Streets construction roads have square transverse marks over a faint conti
       (layer): layer is LineLayerSpecification =>
         layer.type === 'line' &&
         layer.id.startsWith('tileflow-roads-render-construction-') &&
-        !layer.id.endsWith('-underlay'),
+        !layer.id.endsWith('-underlay') &&
+        !layer.id.endsWith('-ramp'),
     );
     assert.equal(marks.length, 8);
     for (const mark of marks) {
@@ -57,24 +58,42 @@ test('Streets construction roads have square transverse marks over a faint conti
       // A road being built is World class construction, typed by the class it becomes.
       const worldClass = roadClass === 'minor' ? 'street' : roadClass;
       const properties = {class: 'construction', type: worldClass, link: false, oneway: true};
-      const filter = featureFilter(mark.filter);
-      const underlay = style.layers.find(
-        (layer): layer is LineLayerSpecification =>
-          layer.type === 'line' && layer.id === `${mark.id}-underlay`,
+      // Ramps have marks of their own, so a width that depends on `link` stays camera-only.
+      const variants = [mark, style.layers.find(({id}) => id === `${mark.id}-ramp`)].filter(
+        (layer): layer is LineLayerSpecification => layer?.type === 'line',
       );
-      assert.ok(underlay, `${roadClass} must retain its faint construction ground`);
-      assert.ok(style.layers.indexOf(underlay) < style.layers.indexOf(mark));
-      for (const ordinary of style.layers.filter(
-        (layer) =>
-          layer.type === 'line' &&
-          /^tileflow-road-(?:surface|bridge)-.*-(?:casing|fill|rampFill)$/u.test(layer.id),
-      )) {
-        assert.ok(
-          style.layers.indexOf(mark) < style.layers.indexOf(ordinary),
-          `${mark.id} must not stripe over ${ordinary.id}`,
-        );
+      const underlays = new Map(
+        variants.map((variant) => {
+          const underlay = style.layers.find(
+            (layer): layer is LineLayerSpecification =>
+              layer.type === 'line' && layer.id === `${variant.id}-underlay`,
+          );
+          assert.ok(underlay, `${variant.id} must retain its faint construction ground`);
+          assert.ok(style.layers.indexOf(underlay) < style.layers.indexOf(variant));
+          return [variant, underlay];
+        }),
+      );
+      for (const variant of variants) {
+        for (const ordinary of style.layers.filter(
+          (layer) =>
+            layer.type === 'line' &&
+            /^tileflow-road-(?:surface|bridge)-.*-(?:casing|fill|rampFill)$/u.test(layer.id),
+        )) {
+          assert.ok(
+            style.layers.indexOf(variant) < style.layers.indexOf(ordinary),
+            `${variant.id} must not stripe over ${ordinary.id}`,
+          );
+        }
+        assert.equal(variant.layout?.['line-cap'], 'butt', 'Marks must never become round pills');
       }
-      assert.equal(mark.layout?.['line-cap'], 'butt', 'Marks must never become round pills');
+      const variantFor = (feature: Record<string, unknown>, zoom: number) => {
+        const matches = variants.filter((variant) =>
+          featureFilter(variant.filter).filter({zoom}, {type: 2, properties: feature}),
+        );
+        assert.equal(matches.length, 1, `${roadClass} ${JSON.stringify(feature)} at z${zoom}`);
+        return matches[0]!;
+      };
+      const filter = featureFilter(mark.filter);
       for (const zoom of [15, 16.8, 18, 20]) {
         assert.equal(filter.filter({zoom}, {type: 2, properties}), true);
         for (const structure of ['bridge', 'tunnel']) {
@@ -114,6 +133,8 @@ test('Streets construction roads have square transverse marks over a faint conti
             `${roadClass} link=${link} has one carriageway at z${zoom}`,
           );
           const base = bases[0]!;
+          const markOf = variantFor(feature, zoom);
+          const underlay = underlays.get(markOf)!;
           // A carriageway is solid: without a dash, or with one that resolves to solid here.
           if (base.paint?.['line-dasharray'] !== undefined)
             assert.deepEqual(paint(base, 'line-dasharray', zoom, feature), [1, 0]);
@@ -122,21 +143,25 @@ test('Streets construction roads have square transverse marks over a faint conti
           // A solid underlay keeps MapLibre's solid-line shader: it has no dash at all.
           assert.equal(underlay.paint?.['line-dasharray'], undefined);
           assert.equal(
-            marks.filter((layer) =>
-              featureFilter(layer.filter).filter({zoom}, {type: 2, properties: feature}),
+            style.layers.filter(
+              (layer) =>
+                layer.type === 'line' &&
+                layer.id.startsWith('tileflow-roads-render-construction-') &&
+                !layer.id.endsWith('-underlay') &&
+                featureFilter(layer.filter).filter({zoom}, {type: 2, properties: feature}),
             ).length,
             1,
           );
 
           assert.ok(
             Math.abs(
-              paint(mark, 'line-width', zoom, feature) - paint(base, 'line-width', zoom, feature),
+              paint(markOf, 'line-width', zoom, feature) - paint(base, 'line-width', zoom, feature),
             ) < 1e-9,
             `${roadClass} marks must follow the carriageway width at z${zoom}`,
           );
           assert.equal(
             paint(underlay, 'line-width', zoom, feature),
-            paint(mark, 'line-width', zoom, feature),
+            paint(markOf, 'line-width', zoom, feature),
           );
         }
       }

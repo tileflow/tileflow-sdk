@@ -70,6 +70,7 @@ import {
   type TileflowRuntimeSource,
   type TileflowRuntimeStyle,
 } from '@tileflow/core/runtime';
+import type {TileflowGeoJsonSource, TileflowMapLibreOverlay} from '@tileflow/core';
 import type {
   TileflowAnnotation,
   TileflowAnnotationViewContext,
@@ -80,9 +81,13 @@ import type {
   TileflowInteractionViewContext,
 } from '@tileflow/interactions';
 import {
+  createTileflowMapLibreDataRuntime,
   createTileflowMapLibreDomRuntime,
   createTileflowMapLibreInteractionCoordinator,
   createTileflowMapLibreSemanticDomRuntime,
+  type TileflowAnnotationClusterOptions,
+  type TileflowMapLibreDataInput,
+  type TileflowMapLibreDataRuntime,
   type TileflowMapLibreDomRenderTarget,
   type TileflowMapLibreDomRuntime,
   type TileflowMapLibreInteractionCoordinator,
@@ -156,7 +161,13 @@ type TileflowInteractionRendererProps<TAnnotation extends TileflowAnnotation> =
 type MapInteractiveProps<TAnnotation extends TileflowAnnotation> = MapSharedProps &
   TileflowInteractionStateInputProps &
   TileflowInteractionRendererProps<TAnnotation> & {
+    /** Group `annotations` into accessible cluster buttons. Up to 1,000 annotations. */
+    annotationClusters?: TileflowAnnotationClusterOptions;
     annotations?: readonly TAnnotation[];
+    /** Overlays drawn over `dataSources` or compiled sources, keyed as in `defineMap`. */
+    dataOverlays?: Readonly<Record<string, TileflowMapLibreOverlay>>;
+    /** Application GeoJSON, keyed as in `defineMap`. A compiled source of the same key is filled. */
+    dataSources?: Readonly<Record<string, TileflowGeoJsonSource>>;
     mode?: 'interactive';
     onInteractionDiagnostic?: (diagnostic: TileflowInteractionDiagnostic) => void;
     onInteractionEvent?: (event: TileflowInteractionEvent<TAnnotation>) => void;
@@ -165,7 +176,10 @@ type MapInteractiveProps<TAnnotation extends TileflowAnnotation> = MapSharedProp
   };
 
 type MapImageProps = MapSharedProps & {
+  annotationClusters?: never;
   annotations?: never;
+  dataOverlays?: never;
+  dataSources?: never;
   defaultInteractionState?: never;
   interactionState?: never;
   interactions?: never;
@@ -191,7 +205,10 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
   assertTileflowMapStyleInputs(props);
 
   const {
+    annotationClusters,
     annotations,
+    dataOverlays,
+    dataSources,
     captureId,
     defaultInteractionState,
     mode = 'interactive',
@@ -270,6 +287,8 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
   const interactionCoordinatorRef = useRef<TileflowMapLibreInteractionCoordinator | undefined>(
     undefined,
   );
+  const dataRuntimeRef = useRef<TileflowMapLibreDataRuntime<TAnnotation> | undefined>(undefined);
+  const dataInputRef = useRef<TileflowMapLibreDataInput<TAnnotation>>({});
   const annotationsRef = useRef(preparedAnnotations.annotations);
   const annotationTitlesRef = useRef(preparedAnnotations.titles);
   const preparedInteractionsRef = useRef(preparedInteractions);
@@ -388,7 +407,10 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
   const resolvedAnalyticsRef = useRef<TileflowAnalytics | undefined>(undefined);
   const readinessRunRef = useRef(0);
   const hasAdditionalInteractionConfiguration =
+    annotationClusters !== undefined ||
     annotations !== undefined ||
+    dataOverlays !== undefined ||
+    dataSources !== undefined ||
     defaultInteractionState !== undefined ||
     interactionState !== undefined ||
     onInteractionDiagnostic !== undefined ||
@@ -687,6 +709,16 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
       onInteractionDiagnosticRef.current?.(diagnostic);
     }
   }, [preparedAnnotations]);
+
+  dataInputRef.current = {
+    annotationClusters,
+    annotations: preparedAnnotations.annotations,
+    dataOverlays,
+    dataSources,
+  };
+  useEffect(() => {
+    dataRuntimeRef.current?.reconcile(dataInputRef.current);
+  }, [annotationClusters, dataOverlays, dataSources, preparedAnnotations]);
 
   useEffect(() => {
     const runtime = semanticRuntimeRef.current;
@@ -990,6 +1022,28 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
         interactionRuntimeRef.current = interactionRuntime;
         setupResources.annotationRuntime = interactionRuntime;
         registerCleanup(() => interactionRuntime.dispose());
+        // Registered ahead of semantic POIs: a click on a cluster belongs to the cluster.
+        const dataRuntime = createTileflowMapLibreDataRuntime<
+          MapLibreMap,
+          TileflowReactMapLibrePositioned,
+          TAnnotation
+        >({
+          createMarker: ({element}) => wrapMapLibrePositioned(new maplibregl.Marker({element})),
+          document: container.ownerDocument,
+          map,
+          onDiagnostic(diagnostic) {
+            onInteractionDiagnosticRef.current?.(diagnostic);
+          },
+          onInteractionEvent(event) {
+            onInteractionEventRef.current?.(event as TileflowInteractionEvent<TAnnotation>);
+          },
+          setHiddenAnnotations: interactionRuntime.setHiddenAnnotations,
+        });
+        dataRuntimeRef.current = dataRuntime;
+        registerCleanup(() => {
+          dataRuntime.dispose();
+          if (dataRuntimeRef.current === dataRuntime) dataRuntimeRef.current = undefined;
+        });
         const semanticRuntime = createTileflowMapLibreSemanticDomRuntime<
           MapLibreMap,
           TileflowReactMapLibrePositioned
@@ -1073,6 +1127,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
           setAnnotationBridgeDiagnostic(diagnostic);
           onInteractionDiagnosticRef.current?.(diagnostic);
         }
+        dataRuntime.reconcile(dataInputRef.current);
         const initialInteractions = preparedInteractionsRef.current;
         if (initialInteractions.ok) {
           try {

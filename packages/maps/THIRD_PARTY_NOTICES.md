@@ -43,14 +43,18 @@ points. Each source is centered, proportionally scaled, and given accessible met
   by Przemysław Sakrajda, simplified by Kizar, with the current vector revision by Teo.raff.
   Licensed under [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/).
   This adapted SVG is distributed under the same license; the full text is in
-  `assets/streets/LICENSE-CC-BY-SA-3.0.txt`.
+  `assets/streets/icons/LICENSE-CC-BY-SA-3.0.txt`.
 - `transit-madrid-cercanias.svg`: [Cercanias Logo.svg](https://commons.wikimedia.org/wiki/File:Cercanias_Logo.svg),
   by WikiNight2, with revisions by Alkari and Borjaguado. The source is dedicated to the public
   domain by its author and marked PD-textlogo on Wikimedia Commons.
 - `transit-madrid-emt.svg`: [Símbolo de EMT Madrid.svg](https://commons.wikimedia.org/wiki/File:S%C3%ADmbolo_de_EMT_Madrid.svg),
   by Andreuvv, with a vector revision by Teo.raff. Licensed under
   [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). This adapted SVG is distributed
-  under the same license; the full text is in `assets/streets/LICENSE-CC-BY-SA-4.0.txt`.
+  under the same license; the full text is in `assets/streets/icons/LICENSE-CC-BY-SA-4.0.txt`.
+
+`assets/streets/icons/tileflow.icons.json` declares the credit, source and license of each
+attributed symbol. When a build places one of them in a sprite, it writes that credit and the
+complete license text beside the sprite as `icons/<map>/licenses/<icon>.txt`.
 
 The transport identities remain the marks of their respective owners. Their inclusion identifies
 the mapped services and does not imply affiliation or endorsement. These asset-specific terms

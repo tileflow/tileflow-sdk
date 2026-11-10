@@ -5,7 +5,9 @@ import {serializeCanonicalJson} from '@tileflow/core';
 import {type HostedJsonResponse, requestHostedJson} from './hosted-client';
 
 export const teamTilesetPartSize = 16_777_216;
-export const maximumTeamTilesetBytes = 4_000_000_000;
+export const maximumTeamTilesetBytes = 8_000_000_000;
+const archiveLimitMessage = `PMTiles archive exceeds the ${maximumTeamTilesetBytes.toLocaleString('en-US')}-byte platform maximum.`;
+const maximumTeamTilesetParts = Math.ceil(maximumTeamTilesetBytes / teamTilesetPartSize);
 const authorizationBatchSize = 16;
 const uploadConcurrency = 4;
 const maximumPartAttempts = 4;
@@ -142,14 +144,10 @@ export class TeamTilesetUploadError extends Error {
 
 export function createTeamTilesetPartLayout(byteCount: number) {
   if (!Number.isSafeInteger(byteCount) || byteCount < 1 || byteCount > maximumTeamTilesetBytes) {
-    throw new TeamTilesetUploadError(
-      'TF_TILESET_VERSION_TOO_LARGE',
-      'PMTiles archive exceeds the 4,000,000,000-byte platform maximum.',
-      {
-        actualBytes: Number.isSafeInteger(byteCount) && byteCount >= 0 ? byteCount : 0,
-        limitBytes: maximumTeamTilesetBytes,
-      },
-    );
+    throw new TeamTilesetUploadError('TF_TILESET_VERSION_TOO_LARGE', archiveLimitMessage, {
+      actualBytes: Number.isSafeInteger(byteCount) && byteCount >= 0 ? byteCount : 0,
+      limitBytes: maximumTeamTilesetBytes,
+    });
   }
 
   return Object.freeze(
@@ -811,11 +809,10 @@ function checkedIdentity(device: bigint, inode: bigint, mtimeNanoseconds: bigint
     throw new TeamTilesetUploadError('TF_TILESET_ARCHIVE_EMPTY', 'PMTiles archive is empty.');
   }
   if (numericSize > maximumTeamTilesetBytes) {
-    throw new TeamTilesetUploadError(
-      'TF_TILESET_VERSION_TOO_LARGE',
-      'PMTiles archive exceeds the 4,000,000,000-byte platform maximum.',
-      {actualBytes: numericSize, limitBytes: maximumTeamTilesetBytes},
-    );
+    throw new TeamTilesetUploadError('TF_TILESET_VERSION_TOO_LARGE', archiveLimitMessage, {
+      actualBytes: numericSize,
+      limitBytes: maximumTeamTilesetBytes,
+    });
   }
   return Object.freeze({device, inode, mtimeNanoseconds, size: numericSize});
 }
@@ -869,7 +866,7 @@ function numericDetails(value: unknown) {
   return Object.freeze(details);
 }
 
-function parseUploadSession(value: unknown): TeamTilesetUploadSession {
+export function parseUploadSession(value: unknown): TeamTilesetUploadSession {
   return uploadSessionSchema.parse(value);
 }
 
@@ -891,7 +888,7 @@ const identifierSchema = z
 const uploadPartStatusSchema = z
   .object({
     byteCount: z.number().int().min(1).max(teamTilesetPartSize),
-    partNumber: z.number().int().min(1).max(239),
+    partNumber: z.number().int().min(1).max(maximumTeamTilesetParts),
     uploaded: z.boolean(),
     validationState: z.enum(['mismatch', 'pending', 'processing', 'valid']),
   })
@@ -917,8 +914,8 @@ const uploadControlSchema = z
       .object({code: z.string().regex(/^TF_[A-Z0-9_]{1,96}$/u)})
       .strict()
       .nullable(),
-    partCount: z.number().int().min(1).max(239),
-    parts: z.array(uploadPartStatusSchema).max(239),
+    partCount: z.number().int().min(1).max(maximumTeamTilesetParts),
+    parts: z.array(uploadPartStatusSchema).max(maximumTeamTilesetParts),
     partSize: z.literal(teamTilesetPartSize),
     publishedVersion: z.null(),
     schemaVersion: z.literal(1),
@@ -954,7 +951,7 @@ const authorizationSchema = z
       })
       .strict(),
     method: z.literal('PUT'),
-    partNumber: z.number().int().min(1).max(239),
+    partNumber: z.number().int().min(1).max(maximumTeamTilesetParts),
     url: z
       .url()
       .max(8_192)
@@ -974,7 +971,7 @@ const partReceiptResponseSchema = z
   .object({
     changed: z.boolean(),
     etag: z.string().regex(/^[0-9a-f]{32}$/u),
-    partNumber: z.number().int().min(1).max(239),
+    partNumber: z.number().int().min(1).max(maximumTeamTilesetParts),
     schemaVersion: z.literal(1),
   })
   .strict();

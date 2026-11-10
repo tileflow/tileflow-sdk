@@ -90,6 +90,7 @@ export async function prepareTileflowLocalTilesets(
       for (const [sourceId, source] of Object.entries(map.sources ?? {}).sort(([left], [right]) =>
         compareCodeUnits(left, right),
       )) {
+        if (source.kind !== 'hosted-tileset') continue;
         const requestedPath = resolve(options.baseDirectory, source.local);
         const sourcePath = await realpath(requestedPath).catch(() => requestedPath);
         if (!isPathWithin(projectRoot, sourcePath)) {

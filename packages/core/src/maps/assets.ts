@@ -50,7 +50,9 @@ export type TileflowModelDirectory = TileflowLocalDirectory | TileflowPackageDir
 
 /**
  * An explicit MapLibre glyph provider. `fontStacks` lists the exact comma-joined request keys
- * produced by each compiled `text-font` array. The map owns the URL; World never supplies fonts.
+ * produced by each compiled `text-font` array. A Tileflow glyph set URL also combines any list of at
+ * most 10 declared fonts, so there each font is enough. The map owns the URL; World never supplies
+ * fonts.
  */
 export type TileflowGlyphs = Readonly<{
   fontStacks: readonly string[];

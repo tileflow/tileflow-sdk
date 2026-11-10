@@ -126,6 +126,14 @@ function roadSelector(
 }
 
 const link = {kind: 'compare', field: 'link', operator: 'eq', value: true} as const;
+/** Classes whose World features can be ramps. */
+const rampClasses: ReadonlySet<string> = new Set([
+  'motorway',
+  'trunk',
+  'primary',
+  'secondary',
+  'tertiary',
+]);
 
 /** Separate ink plates for works and highway links without changing the atlas palette. */
 export function withMap1777RoadDetail(
@@ -140,27 +148,10 @@ export function withMap1777RoadDetail(
       const stops = map1777RoadWidth(roadClass, border).stops.map(([z, base]) => {
         return [
           z,
-          expr.case(
-            [
-              // Preserve the domain's first-match width rules, including service ways.
-              {when: restrictedAccess, value: base},
-              {when: expr.eq(expr.get(field('expressway')), true), value: base * 1.06},
-              {when: expr.eq(expr.get(field('link')), true), value: base * 0.72},
-              ...(roadClass === 'service'
-                ? Object.entries({
-                    alley: 0.82,
-                    crossover: 0.62,
-                    driveway: 0.76,
-                    parking_aisle: 0.62,
-                    yard: 0.7,
-                  }).map(([service, factor]) => ({
-                    when: expr.eq(expr.get(field('service')), service),
-                    value: base * factor,
-                  }))
-                : []),
-            ],
-            base,
-          ),
+          // Works on a ramp narrow like the ramp itself, as the domain draws it.
+          rampClasses.has(roadClass)
+            ? expr.case([{when: expr.eq(expr.get(field('link')), true), value: base * 0.72}], base)
+            : base,
         ] as const;
       });
       return expr.interpolate({kind: 'exponential', base: 1.5}, expr.zoom(), [

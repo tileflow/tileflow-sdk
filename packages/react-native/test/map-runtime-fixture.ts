@@ -41,7 +41,7 @@ export async function inspectPublicMapRuntime(): Promise<unknown> {
 			export const Appearance = {getColorScheme() { throw new Error('Appearance read during import.'); }, addChangeListener() { throw new Error('Appearance subscription during import.'); }};
 			export const AppState = {currentState: 'active', addEventListener() { throw new Error('Lifecycle subscription during import.'); }};
 			export function View() { throw new Error('A native view was instantiated during import.'); }
-			export const Pressable = View;
+			export const Pressable = View, Text = View;
 			export function processColor() { throw new Error('Marker color evaluated during import.'); }
 			export function findNodeHandle() { throw new Error('A native ref was resolved during import.'); }
 			export const StyleSheet = {create: (value) => value};
@@ -55,6 +55,8 @@ export async function inspectPublicMapRuntime(): Promise<unknown> {
 			export function Camera() { throw new Error('A camera was instantiated during import.'); }
 			export function Marker() { throw new Error('A marker was instantiated during import.'); }
 			export function VectorSource() { throw new Error('A source was instantiated during import.'); }
+			export const GeoJSONSource = VectorSource;
+			export function Layer() { throw new Error('A layer was instantiated during import.'); }
 		`,
     );
     const core = await module('@tileflow/core', {'./native': './native.js'}, '');

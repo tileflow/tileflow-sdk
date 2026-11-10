@@ -1087,7 +1087,9 @@ export function assertNoLocalTilesetsForProduction(
 }
 
 function hasLocalTilesetSources(project: TileflowBuildCatalog): boolean {
-  return Object.values(project.maps).some((map) => Object.keys(map.sources ?? {}).length > 0);
+  return Object.values(project.maps).some((map) =>
+    Object.values(map.sources ?? {}).some((source) => source.kind === 'hosted-tileset'),
+  );
 }
 
 /** Prevents a framework build from silently replacing the frontend's Hosted delivery contract. */
@@ -1449,7 +1451,10 @@ function assertTileflowArtifactFileName(fileName: string): void {
   const logicalName = fileName.replace(/^generations\/[a-f0-9]{64}\//, '');
   const styleMatch = /^styles\/([^/]+)\/([^/]+)\.json$/u.exec(logicalName);
   const familyMatch = /^families\/([^/]+)\.json$/u.exec(logicalName);
-  const iconMatch = /^icons\/([^/]+)\/sprite(?:@2x)?\.(?:json|png)$/u.exec(logicalName);
+  const iconMatch =
+    /^icons\/([^/]+)\/(?:sprite(?:@2x)?\.(?:json|png)|licenses\/[a-z0-9]+(?:-[a-z0-9]+)*\.txt)$/u.exec(
+      logicalName,
+    );
   const imageMatch = /^images\/([^/]+)\/[a-f0-9]{64}\.png$/u.exec(logicalName);
   // A map's building models, named by their id and the start of their SHA-256.
   const modelMatch = /^models\/([^/]+)\/[a-z0-9]+(?:-[a-z0-9]+)*-[a-f0-9]{16}\.glb$/u.exec(

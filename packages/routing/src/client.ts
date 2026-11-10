@@ -65,10 +65,23 @@ export class RoutingError extends Error {
   }
 }
 
+/** An optimized route visits every location once, from the first to the last; no other states it. */
+function answersOrder(order: number[] | undefined, locations: number, optimize?: boolean) {
+  if (!optimize) return order === undefined;
+  return (
+    order?.length === locations &&
+    new Set(order).size === locations &&
+    order[0] === 0 &&
+    order.at(-1) === locations - 1 &&
+    order.every((index) => index < locations)
+  );
+}
+
 /**
- * The fastest route through two to five positions, with up to two alternatives between two
+ * The fastest route through two to 25 positions, with up to two alternatives between two
  * positions. Each route has its line, distance, duration, turn-by-turn steps and whether it uses
- * tolls, highways or ferries.
+ * tolls, highways or ferries. With `optimize`, the stops between the first and the last position
+ * are visited in the fastest order found, which `locationOrder` states.
  */
 export async function route(
   request: RoutingRouteRequest,
@@ -76,7 +89,8 @@ export async function route(
 ): Promise<RoutingRouteResponse> {
   const parsed = routingRouteRequestSchema.safeParse(request);
   if (!parsed.success) throw new Error('Invalid Tileflow route request');
-  const legs = parsed.data.locations.length - 1;
+  const {locations, optimize} = parsed.data;
+  const legs = locations.length - 1;
   return requestRouting(
     '/v1/routing/route',
     parsed.data,
@@ -84,7 +98,8 @@ export async function route(
     routingRouteResponseSchema,
     (response) =>
       response.routes.length <= (parsed.data.alternatives ?? 0) + 1 &&
-      response.routes.every((candidate) => candidate.legs.length === legs),
+      response.routes.every((candidate) => candidate.legs.length === legs) &&
+      answersOrder(response.locationOrder, locations.length, optimize),
   );
 }
 

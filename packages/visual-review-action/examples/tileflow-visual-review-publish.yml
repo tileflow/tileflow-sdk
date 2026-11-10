@@ -1,0 +1,55 @@
+# Holds write access and always runs the default branch's copy of this file. Never add a checkout
+# of pull request code here: the capture evidence is read as data and nothing from it is executed.
+name: Tileflow visual review publish
+
+on:
+  workflow_run:
+    workflows: [Tileflow visual review]
+    types: [completed]
+  issue_comment:
+    types: [created]
+  pull_request_target:
+    types: [closed]
+
+permissions: {}
+
+jobs:
+  report:
+    if: github.event_name == 'workflow_run'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+      pull-requests: write
+      statuses: write
+    steps:
+      - uses: tileflow/tileflow-sdk/packages/visual-review-action@COMMIT_SHA
+        with:
+          mode: report
+
+  approve:
+    if: >-
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/tileflow approve ')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      statuses: write
+    steps:
+      - uses: tileflow/tileflow-sdk/packages/visual-review-action@COMMIT_SHA
+        with:
+          mode: approve
+
+  promote:
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      statuses: write
+    steps:
+      - uses: tileflow/tileflow-sdk/packages/visual-review-action@COMMIT_SHA
+        with:
+          mode: promote

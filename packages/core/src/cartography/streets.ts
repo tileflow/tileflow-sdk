@@ -18,6 +18,11 @@ import {
 } from '../data';
 import {inferTileflowSourceRequirements} from '../data/requirements';
 import type {ResolvedTileflowMap} from '../maps';
+import {
+  servesGlyphFontStack,
+  tileflowGlyphSet,
+  tileflowGlyphStackProblem,
+} from '../maps/glyph-stacks';
 import {type ResolvedMarine, resolveMarine, tileflowNauticalV1Schema} from '../marine';
 import {buildingTargetsOfOtherModes} from '../modules/buildings/compiler';
 import {
@@ -439,6 +444,7 @@ function compileSemanticStyleInternal(
       basemapLayers,
       mapId: config.id,
       overlays: validateBoundaryChoroplethOverlays(config.id, config.overlays, boundaryAreas),
+      sourceDefinitions: hostedSources.definitions,
       sourceIds: [
         ...Object.keys(hostedSources.definitions),
         ...(boundaryAreas ? [boundaryAreas.sourceId] : []),
@@ -1140,7 +1146,20 @@ function dynamicImageExpression(path: string, operator: string): Error {
 
 function assertGlyphFontStacks(style: MapLibreStyle, config: ResolvedTileflowMap): void {
   if (!config.glyphs) return;
-  const declared = new Set(config.glyphs.fontStacks);
+  const {fontStacks: declared, url} = config.glyphs;
+  // A Tileflow glyph set serves a declared stack only when it publishes every font it names.
+  const set = tileflowGlyphSet(url);
+  const unservable = set
+    ? declared.flatMap((stack) => {
+        const problem = tileflowGlyphStackProblem(set, stack);
+        return problem ? [`"${stack}" ${problem}`] : [];
+      })
+    : [];
+  if (unservable.length > 0) {
+    throw new Error(
+      `Tileflow map "${config.id}" declares glyph font stacks its glyph set cannot serve: ${unservable.join('; ')}.`,
+    );
+  }
   const missing = new Set<string>();
   for (const layer of style.layers) {
     const layout = isRecord(layer.layout) ? layer.layout : undefined;
@@ -1149,7 +1168,8 @@ function assertGlyphFontStacks(style: MapLibreStyle, config: ResolvedTileflowMap
     const stack = font.join(',');
     // A derived line-background stack is served from its declared source stack.
     const source = parseTileflowLineBackgroundFontStack(stack)?.source ?? stack;
-    if (stack && !declared.has(source)) missing.add(source);
+    // A Tileflow glyph set also composites any stack of the fonts it is declared to publish.
+    if (stack && !servesGlyphFontStack(url, declared, source)) missing.add(source);
   }
   if (missing.size > 0) {
     throw new Error(

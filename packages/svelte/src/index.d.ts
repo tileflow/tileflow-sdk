@@ -1,4 +1,6 @@
+import type {TileflowGeoJsonSource, TileflowMapLibreOverlay} from '@tileflow/core';
 import type {TileflowTimeOfDay} from '@tileflow/core/runtime';
+import type {TileflowAnnotationClusterOptions} from '@tileflow/interactions/maplibre';
 import type {Map as MapLibreMap, MapOptions as MapLibreMapOptions} from 'maplibre-gl';
 import type {Snippet, SvelteComponentTyped} from 'svelte';
 import type {
@@ -68,7 +70,16 @@ type TileflowMapBaseProps = {
 export type TileflowMapAnnotationProps<
   TAnnotation extends TileflowAnnotation = TileflowAnnotation,
 > = {
+  /** Group `annotations` into accessible cluster buttons. Up to 1,000 annotations. */
+  annotationClusters?: TileflowAnnotationClusterOptions;
   annotations?: readonly TAnnotation[];
+};
+
+export type TileflowMapDataProps = {
+  /** Overlays drawn over `dataSources` or compiled sources, keyed as in `defineMap`. */
+  dataOverlays?: Readonly<Record<string, TileflowMapLibreOverlay>>;
+  /** Application GeoJSON, keyed as in `defineMap`. A compiled source of the same key is filled. */
+  dataSources?: Readonly<Record<string, TileflowGeoJsonSource>>;
 };
 
 export type TileflowMapInteractionStateProps =
@@ -87,6 +98,7 @@ type TileflowMapStyleSourceProps = {
 
 type TileflowMapInteractiveProps<TAnnotation extends TileflowAnnotation> =
   TileflowMapAnnotationProps<TAnnotation> &
+    TileflowMapDataProps &
     TileflowMapInteractionStateProps & {
       interactions?: readonly TileflowInteractionBinding[];
       marker?: TileflowMapAnnotationSnippet<TAnnotation>;
@@ -99,7 +111,10 @@ type TileflowMapInteractiveProps<TAnnotation extends TileflowAnnotation> =
     };
 
 type TileflowMapImageProps = {
+  annotationClusters?: never;
   annotations?: never;
+  dataOverlays?: never;
+  dataSources?: never;
   defaultInteractionState?: never;
   interactions?: never;
   interactionState?: never;

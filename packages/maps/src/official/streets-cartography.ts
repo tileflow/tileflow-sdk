@@ -1,7 +1,9 @@
 import {
+  color,
   defineMap,
   expr,
   field,
+  fixed,
   refineRenderTarget,
   renderPass,
   resolveMap,
@@ -20,6 +22,10 @@ import {
   streetsGroundBackground,
 } from './streets-ground-and-access';
 import {streetsOverviewRoads} from './streets-network-overview';
+
+/** Activity areas fade out as buildings take over, the same way in every theme. */
+const activityFade = (opacity: number) =>
+  fixed(opacity, {reason: 'Activity areas fade out as buildings take over.'});
 
 // A footprint whose building parts draw it says `extrude: false`.
 const activityOpacity = expr.interpolate(
@@ -131,13 +137,16 @@ export function withStreetsCartography(base: TileflowMap) {
             renderer: 'fill',
             selector: {field: 'class', kind: 'compare', operator: 'eq', value: 'activity_area'},
             style: {
-              color: token.color('landuse.activity'),
-              minZoom: 11,
-              opacity: expr.interpolate({kind: 'linear'}, expr.zoom(), [
-                [15, activityOpacity],
-                [15.5, expr.multiply(activityOpacity, 0.75)],
-                [16.25, 0],
+              // The fade lives in the colour and the activity level in the opacity: a single
+              // opacity reading both would be evaluated at each tile's zoom, so tilted views
+              // would fade areas differently where tile zooms meet.
+              color: zoom.linear([
+                [15, color.alpha(token.color('landuse.activity'), activityFade(1))],
+                [15.5, color.alpha(token.color('landuse.activity'), activityFade(0.75))],
+                [16.25, color.alpha(token.color('landuse.activity'), activityFade(0))],
               ]),
+              minZoom: 11,
+              opacity: activityOpacity,
             },
           }),
         },

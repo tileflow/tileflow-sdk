@@ -55,6 +55,7 @@ import {tileflowRoadClasses} from './modules/roads/semantics';
 import {
   isSafeLocalPmtilesPath,
   tileflowHostedSourceLimit,
+  tileflowInlineGeoJsonByteLimit,
   tileflowOverlayPlacements,
 } from './overlays';
 import {tileflowThemeNameSchema} from './portable-identity';
@@ -2178,8 +2179,36 @@ const hostedTilesetSourceSchema = z
       });
     }
   });
+const geojsonFeatureCollectionSchema = z
+  .object({
+    features: z.array(z.record(z.string(), z.unknown())),
+    type: z.literal('FeatureCollection'),
+  })
+  .refine(
+    (data) =>
+      new TextEncoder().encode(JSON.stringify(data)).byteLength <= tileflowInlineGeoJsonByteLimit,
+    `Expected at most ${tileflowInlineGeoJsonByteLimit} bytes of inline GeoJSON`,
+  );
+const geojsonSourceSchema = z
+  .object({
+    attribution: z.string().trim().min(1).max(4_096).optional(),
+    cluster: z.boolean().optional(),
+    clusterMaxZoom: z.number().min(0).max(24).optional(),
+    clusterMinPoints: z.number().int().min(2).optional(),
+    clusterProperties: z.record(z.string(), z.tuple([z.unknown(), z.unknown()])).optional(),
+    clusterRadius: z.number().positive().optional(),
+    data: z.union([
+      geojsonFeatureCollectionSchema,
+      z.string().refine((value) => value.startsWith('https://'), 'Expected an https:// URL'),
+    ]),
+    kind: z.literal('geojson'),
+  })
+  .strict();
 const hostedSourcesSchema = z
-  .record(tileflowMapIdSchema, hostedTilesetSourceSchema)
+  .record(
+    tileflowMapIdSchema,
+    z.discriminatedUnion('kind', [hostedTilesetSourceSchema, geojsonSourceSchema]),
+  )
   .superRefine((sources, context) => {
     if (Object.keys(sources).length > tileflowHostedSourceLimit) {
       context.addIssue({

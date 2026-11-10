@@ -1,6 +1,6 @@
 # @tileflow/interactions
 
-Portable annotations, tooltips, popups, state, and interaction bindings for Tileflow maps.
+Portable annotations, clusters, tooltips, popups, state, and interaction bindings for Tileflow maps.
 
 The package has two boundaries:
 
@@ -57,6 +57,17 @@ interactive content in a popup.
 Every new annotation needs a stable `id`, singular `coordinate`, and non-empty `ariaLabel`.
 Coordinates use `[longitude, latitude]`. Optional `data` must be recursively JSON-safe. Call `validateTileflowAnnotations` at an untrusted
 boundary to receive atomic validation and structured JSON-Pointer diagnostics.
+
+## Clusters, heatmaps, and drawing
+
+Group up to 1,000 annotations with the `annotationClusters` prop of a framework adapter. Each group
+is a focusable button that zooms in. For larger sets, pass GeoJSON through `dataSources` and
+`dataOverlays`, using `geojsonSource()`, `clusterOverlay()`, and `heatmapOverlay()` from Tileflow
+Core. Polygon drawing is a documented Terra Draw integration.
+
+The [interactions reference](https://github.com/tileflow/tileflow-sdk/blob/main/packages/interactions/REFERENCE.md)
+covers each path, events, and what React Native does not support. `REFERENCE.md` is also included in
+the installed package.
 
 ## Popup state
 

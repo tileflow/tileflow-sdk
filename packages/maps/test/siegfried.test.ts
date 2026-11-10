@@ -30,8 +30,8 @@ const fontNames = [
 ] as const;
 
 const themePalettes = {
-  light: new Set(['#000000', '#171713', '#5D90D0', '#A96C4D', '#F0EBE0']),
-  dark: new Set(['#000000', '#151612', '#79A9D6', '#C48A68', '#E8E0D0']),
+  light: new Set(['#171713', '#5D90D0', '#A96C4D', '#F0EBE0']),
+  dark: new Set(['#151612', '#79A9D6', '#C48A68', '#E8E0D0']),
 } as const;
 
 function compileSiegfried(theme: 'light' | 'dark' = 'light') {

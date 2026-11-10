@@ -37,6 +37,8 @@ test('emits manifest and style assets under the configured Vite base path', asyn
   const stableNames = [
     'maps/build-manifest.json',
     'maps/families/main.json',
+    'maps/icons/main/licenses/transit-madrid-emt.txt',
+    'maps/icons/main/licenses/transit-madrid-metro.txt',
     'maps/icons/main/sprite.json',
     'maps/icons/main/sprite.png',
     'maps/icons/main/sprite@2x.json',
@@ -51,7 +53,8 @@ test('emits manifest and style assets under the configured Vite base path', asyn
     stableNames,
   );
   const generated = names.filter((name) => name?.includes('/generations/'));
-  assert.equal(generated.length, 5 + Object.keys(streetsThemes).length);
+  // Two of these are the Streets transit-symbol credits written beside the sprite.
+  assert.equal(generated.length, 7 + Object.keys(streetsThemes).length);
   assert.ok(generated.every((name) => /^maps\/generations\/[a-f0-9]{64}\//.test(name ?? '')));
   const manifest = JSON.parse(
     String(emitted.find((asset) => asset.fileName === 'maps/manifest.json')?.source),

@@ -223,10 +223,60 @@ package uses this contract for its mounted Map; it is not yet published.
 Tileflow World is the hosted primary source, with an open (CC0)
 [schema](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/reference/tileflow-world-v1.json);
 detail layers load only when drawn. `vectorTiles()` takes that schema or OpenMapTiles
-(`openMapTiles()`). `hostedTileset()`, `boundaryAreas` and overlays add named sources.
+(`openMapTiles()`). `hostedTileset()`, `geojsonSource()`, `boundaryAreas` and overlays add named
+sources.
+
+`geojsonSource()` declares GeoJSON in `sources`, and `clusterOverlay()` and `heatmapOverlay()` return
+ordinary overlays that keep `placement`, `remove()`, and `tileflow validate`:
+
+<!-- docs:check -->
+
+```ts
+import {clusterOverlay, defineMap, geojsonSource, heatmapOverlay} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+
+export default defineMap({
+  id: 'store-locator',
+  version: 1,
+  extends: streets,
+  sources: {
+    stores: geojsonSource({
+      attribution: 'Stores © Example',
+      cluster: true,
+      clusterMaxZoom: 14,
+      clusterRadius: 50,
+    }),
+  },
+  overlays: {
+    density: heatmapOverlay({
+      id: 'density',
+      maxZoom: 9,
+      placement: 'below-labels',
+      source: 'stores',
+    }),
+    stores: clusterOverlay({id: 'stores', placement: 'above-labels', source: 'stores'}),
+  },
+});
+```
+
+Omit `data` to fill the source at runtime through a framework adapter's `dataSources`. Inline `data`
+is limited to 512,000 bytes; larger files use an absolute `https://` URL. Clustering options keep
+their MapLibre and Mapbox names. A cluster overlay over a source without `cluster: true` fails
+validation with `TF_OVERLAY_CLUSTER_SOURCE_INVALID`, and a map with no label font and no `font` option
+fails with `TF_OVERLAY_FONT_UNAVAILABLE`. Web helpers are also exported from
+`@tileflow/core/runtime`. `heatmapOverlay()` also accepts `sourceLayer` for hosted vector tilesets,
+which cannot cluster. See the
+[interactions reference](https://github.com/tileflow/tileflow-sdk/blob/main/packages/interactions/REFERENCE.md)
+for runtime data, click-to-expand, and React Native support.
 
 `bathymetry({vectorLayers: {...}})` declares contour/name layers. `marine: 'nautical'` adds
 navigation marks, flashing lights, and a "Not for navigation" notice.
+
+`circular_feature` optionally retains `network` (a normalized road-network string; coverage is
+partial) and `official` (a numeric path-status indicator). For paths, footways, cycleways and
+bridleways, `official=0` means OSM marks the way `informal=yes`; `official=1` means `informal=no`
+or a recorded operator, unless `informal=yes`. Absence means unknown or not applicable.
+This indicator does not establish legal recognition or public access.
 
 World attribution credits Tileflow and OpenStreetMap; other vector data keeps its owner's
 attribution.
@@ -297,6 +347,13 @@ Text requires exactly one provider. Soundings and Blueprint use URL glyphs; Stre
 and Noto Sans; Baedeker, 1777 and Siegfried package Cormorant; Cívica packages its lettering. Hosted
 rejects packaged/local fonts: self-host or replace them with compatible public glyphs. Tile and font
 URLs do not grant redistribution rights.
+
+`glyphs.fontStacks` lists the stacks the provider serves, exactly as MapLibre joins a `text-font`
+array with commas. A Tileflow glyph set URL (`/base/<assetSetSha256>/glyphs/{fontstack}/{range}.pbf`)
+combines fallback stacks, the first font holding a glyph winning, so there it is enough to declare
+each font: a `text-font` list of at most 10 declared fonts is accepted without declaring the joined
+stack. A declaration naming more than 10 fonts, or a font a known Tileflow glyph set does not
+publish, is rejected. Other providers must declare every joined stack the styles use.
 
 ## Reference
 

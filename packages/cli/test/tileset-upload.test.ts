@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {mkdtemp, rm, writeFile} from 'node:fs/promises';
+import fsPromises, {mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
+import {syncBuiltinESMExports} from 'node:module';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
@@ -58,15 +59,15 @@ test('Node positioned reads preserve offsets, concurrent ownership and truncated
   );
 });
 
-test('fixed part layout reaches the exact 4,000,000,000-byte boundary without allocating it', () => {
+test('fixed part layout reaches the exact 8,000,000,000-byte boundary without allocating it', () => {
   const layout = createTeamTilesetPartLayout(maximumTeamTilesetBytes);
 
-  assert.equal(layout.length, 239);
+  assert.equal(layout.length, 477);
   assert.deepEqual(layout[0], {byteCount: teamTilesetPartSize, partNumber: 1, position: 0});
   assert.deepEqual(layout.at(-1), {
-    byteCount: 7_022_592,
-    partNumber: 239,
-    position: 3_992_977_408,
+    byteCount: 14_045_184,
+    partNumber: 477,
+    position: 7_985_954_816,
   });
   assert.throws(
     () => createTeamTilesetPartLayout(maximumTeamTilesetBytes + 1),
@@ -75,6 +76,35 @@ test('fixed part layout reaches the exact 4,000,000,000-byte boundary without al
       error.code === 'TF_TILESET_VERSION_TOO_LARGE' &&
       error.details.limitBytes === maximumTeamTilesetBytes,
   );
+});
+
+function reportsArchiveLimit(error: unknown): boolean {
+  assert.ok(error instanceof TeamTilesetUploadError);
+  assert.equal(error.code, 'TF_TILESET_VERSION_TOO_LARGE');
+  assert.equal(error.details.limitBytes, 8_000_000_000);
+  assert.ok(error.message.includes('8,000,000,000'));
+  return true;
+}
+
+test('part layout reports the platform limit in its message and details', () => {
+  assert.throws(() => createTeamTilesetPartLayout(8_000_000_001), reportsArchiveLimit);
+});
+
+test('archive inspection reports the same platform limit before reading data', async (t) => {
+  const stat = t.mock.method(fsPromises, 'stat', async () => ({
+    isFile: () => true,
+    dev: 1n,
+    ino: 1n,
+    mtimeNs: 0n,
+    size: 8_000_000_001n,
+  }));
+  syncBuiltinESMExports();
+  try {
+    await assert.rejects(inspectNodeTeamTilesetArchive('archive.pmtiles'), reportsArchiveLimit);
+  } finally {
+    stat.mock.restore();
+    syncBuiltinESMExports();
+  }
 });
 
 test('manifest hashing is deterministic and binds ordered MD5 and SHA-256 part evidence', async () => {

@@ -76,8 +76,9 @@ This package does not redistribute third-party atlas assets, code, style files o
 ## Streets relief
 
 Streets requests Mapzen Terrain Tiles from the AWS Open Data elevation tiles bucket at runtime.
-No DEM tile is packaged here. The compiled source links to the upstream data attribution:
-<https://github.com/tilezen/joerd/blob/master/docs/attribution.md>.
+No DEM tile is packaged here. The compiled source credit links to the Tileflow map data credits
+page, <https://tileflow.dev/copyright#streets-terrain>, which lists the credits required by the
+upstream data attribution: <https://github.com/tilezen/joerd/blob/master/docs/attribution.md>.
 The dataset is described at <https://registry.opendata.aws/terrain-tiles/>.
 
 The upstream attribution catalog includes ArcticDEM (DigitalGlobe imagery, NSF awards 1043681,
@@ -214,5 +215,6 @@ names. No font file has been subsetted, renamed internally, or modified.
 
 Streets uses a smoothed colour proxy derived from Beck et al. (2023),
 https://doi.org/10.1038/s41597-023-02549-6, under CC BY 4.0.
-Source, attribution and adaptation details: assets/streets/climate/NOTICE.txt.
+Source, attribution and adaptation details: assets/streets/climate/NOTICE.txt. The compiled source
+credit links to <https://tileflow.dev/copyright#streets-climate>, which carries the same notice.
 The image is historical context, not live vegetation.

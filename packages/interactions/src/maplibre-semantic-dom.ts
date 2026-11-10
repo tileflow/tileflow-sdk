@@ -20,6 +20,7 @@ import {
   type TileflowMapLibrePoiMatch,
 } from './maplibre-poi';
 import {tileflowInteractionTargetRefsEqual} from './reducer';
+import {configurePopupCloseButton, roleVariable} from './surface-style';
 import type {TileflowInteractionDiagnostic} from './validation';
 
 export type TileflowMapLibreSemanticDomOverlayFactoryInput = Readonly<{
@@ -324,7 +325,7 @@ export function createTileflowMapLibreSemanticDomRuntime<
     shell.setAttribute('data-tileflow-target-kind', 'semantic-feature');
     shell.setAttribute('role', 'tooltip');
     shell.style.pointerEvents = 'none';
-    configureSurfaceStyles(shell);
+    configureSurfaceStyles(shell, 'tooltip');
     shell.append(container);
 
     let overlay: TOverlay | undefined;
@@ -374,7 +375,6 @@ export function createTileflowMapLibreSemanticDomRuntime<
     container.className = 'tileflow-interaction-popup-content';
     closeButton.className = 'tileflow-interaction-popup-close';
     closeButton.type = 'button';
-    closeButton.textContent = 'Close';
     shell.id = `${idPrefix}-popup-${++overlaySequence}`;
     shell.setAttribute('data-tileflow-interaction', 'popup');
     shell.setAttribute('data-tileflow-target-kind', 'semantic-feature');
@@ -382,11 +382,10 @@ export function createTileflowMapLibreSemanticDomRuntime<
     shell.setAttribute('aria-modal', 'false');
     shell.setAttribute('role', 'dialog');
     closeButton.setAttribute('aria-label', `Close ${label}`);
-    configureSurfaceStyles(shell);
-    closeButton.style.background = 'transparent';
-    closeButton.style.border = '0';
-    closeButton.style.color = 'inherit';
-    closeButton.style.cursor = 'pointer';
+    configureSurfaceStyles(shell, 'popup');
+    configurePopupCloseButton(closeButton, options.document);
+    shell.style.position = 'relative';
+    container.style.paddingRight = '1.5rem';
     shell.append(container, closeButton);
 
     const closeListener = () => requestPopupState(null, 'pointer');
@@ -824,15 +823,15 @@ function configureViewAttribute(element: HTMLElement, content: TileflowInteracti
   else element.removeAttribute('data-tileflow-view');
 }
 
-function configureSurfaceStyles(element: HTMLElement): void {
-  element.style.background = 'var(--tileflow-interaction-surface, #ffffff)';
-  element.style.borderColor = 'var(--tileflow-interaction-border-color, #d1d5db)';
-  element.style.borderRadius = 'var(--tileflow-interaction-border-radius, 0.375rem)';
+function configureSurfaceStyles(element: HTMLElement, role: 'popup' | 'tooltip'): void {
+  element.style.background = roleVariable(role, 'surface', '#ffffff');
+  element.style.borderColor = roleVariable(role, 'border-color', '#d1d5db');
+  element.style.borderRadius = roleVariable(role, 'border-radius', '0.375rem');
   element.style.borderStyle = 'solid';
   element.style.borderWidth = '1px';
-  element.style.boxShadow = 'var(--tileflow-interaction-shadow, 0 2px 8px rgb(0 0 0 / 0.18))';
-  element.style.color = 'var(--tileflow-interaction-foreground, #111827)';
-  element.style.maxWidth = 'var(--tileflow-interaction-max-width, 20rem)';
+  element.style.boxShadow = roleVariable(role, 'shadow', '0 2px 8px rgb(0 0 0 / 0.18)');
+  element.style.color = roleVariable(role, 'foreground', '#111827');
+  element.style.maxWidth = roleVariable(role, 'max-width', '20rem');
   element.style.padding = '0.5rem';
 }
 

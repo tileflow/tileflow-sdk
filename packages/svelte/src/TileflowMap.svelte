@@ -37,6 +37,7 @@
     attachTileflowMapLifecycle,
     attachTileflowNauticalLights,
     attachTileflowNotices,
+    createTileflowNavigationControlBinding,
     createTileflowSessionStarter,
     createTileflowThemeController,
     type TileflowMap3DAttachment,
@@ -53,6 +54,7 @@
     tileflowCanvasContextAttributes,
     type TileflowFairUseNoticeController,
     type TileflowMapLifecycleAttachment,
+    type TileflowNavigationControlBinding,
     type TileflowThemeController,
     type TileflowWorldRequestBridge,
   } from '@tileflow/core/browser';
@@ -107,6 +109,7 @@
   export let mapOptions: TileflowMapProps['mapOptions'] = undefined;
   export let marker: TileflowMapProps['marker'] = undefined;
   export let mode: NonNullable<TileflowMapProps['mode']> = 'interactive';
+  export let navigationControl: TileflowMapProps['navigationControl'] = undefined;
   export let onInteractionDiagnostic: TileflowMapProps['onInteractionDiagnostic'] = undefined;
   export let onInteractionEvent: TileflowMapProps['onInteractionEvent'] = undefined;
   export let onInteractionStateChange: TileflowMapProps['onInteractionStateChange'] = undefined;
@@ -165,6 +168,7 @@
   $: sceneAttachment?.setVegetation(vegetation);
   $: sceneAttachment?.setViewMode(viewMode);
   let themeController: TileflowThemeController | null = null;
+  let navigationBinding: TileflowNavigationControlBinding | null = null;
   let systemColorScheme: 'dark' | 'light' = 'light';
   let unsubscribeSystemColorScheme: (() => void) | null = null;
   let loadedManifestMap: TileflowRuntimeManifestMap | null = null;
@@ -375,6 +379,10 @@
   }
 
   $: if (mounted) {
+    navigationBinding?.update(resolvedInteractive ? navigationControl : false);
+  }
+
+  $: if (mounted) {
     defaultInteractionState;
     interactionState;
     interactionStateDiagnostics;
@@ -489,6 +497,8 @@
     const unsubscribeSemanticTargets = semanticRuntimeTargetsUnsubscribe;
     const currentMap = mapInstance;
     const currentThemeController = themeController;
+    const currentNavigationBinding = navigationBinding;
+    navigationBinding = null;
     const currentSceneAttachment = sceneAttachment;
     sceneAttachment = null;
     const worldRequestBridge = mapWorldRequestBridge;
@@ -534,6 +544,7 @@
       () => annotationInteractionsForMap?.dispose(),
       () => lifecycleAttachment?.dispose(),
       () => currentSceneAttachment?.dispose(),
+      () => currentNavigationBinding?.dispose(),
       () => currentThemeController?.dispose(),
       () => worldRequestBridge?.dispose(),
       () => fairUseNotice?.dispose(),
@@ -847,9 +858,11 @@
     };
     syncSemanticInteractions();
 
-    if (resolvedInteractive) {
-      maplibreMap.addControl(new maplibregl.NavigationControl(), 'top-right');
-    }
+    navigationBinding = createTileflowNavigationControlBinding({
+      createControl: (controlOptions) => new maplibregl.NavigationControl(controlOptions),
+      map: maplibreMap,
+    });
+    navigationBinding.update(resolvedInteractive ? navigationControl : false);
 
     mapResizeObserver = new ResizeObserver(() => {
       maplibreMap.resize();

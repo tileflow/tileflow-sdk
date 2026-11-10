@@ -327,6 +327,7 @@ export {
 } from './nautical-light-rhythm';
 
 export * from './fair-use-browser';
+export * from './navigation-control-browser';
 export {createTileflowAppearanceController} from './appearance-browser';
 export type {TileflowAppearanceSelection} from './appearance';
 export {

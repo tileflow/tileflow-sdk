@@ -5,6 +5,7 @@ import type {Map as MapLibreMap, MapOptions as MapLibreMapOptions} from 'maplibr
 import type {Snippet, SvelteComponentTyped} from 'svelte';
 import type {
   TileflowBrowserThemeBlendSelection,
+  TileflowNavigationControlInput,
   TileflowThemeTransition,
   TileflowViewMode,
   TileflowThemeTransitionOptions,
@@ -103,6 +104,11 @@ type TileflowMapInteractiveProps<TAnnotation extends TileflowAnnotation> =
       interactions?: readonly TileflowInteractionBinding[];
       marker?: TileflowMapAnnotationSnippet<TAnnotation>;
       mode?: 'interactive';
+      /**
+       * The zoom and compass buttons of an interactive map. They show at `top-right` by default;
+       * `false` removes them, and an object moves them or limits their buttons.
+       */
+      navigationControl?: TileflowNavigationControlInput;
       onInteractionDiagnostic?: (diagnostic: TileflowInteractionDiagnostic) => void;
       onInteractionEvent?: (event: TileflowInteractionEvent<TAnnotation>) => void;
       onInteractionStateChange?: (state: TileflowInteractionState) => void;
@@ -120,6 +126,7 @@ type TileflowMapImageProps = {
   interactionState?: never;
   marker?: never;
   mode: 'image';
+  navigationControl?: never;
   onInteractionDiagnostic?: never;
   onInteractionEvent?: never;
   onInteractionStateChange?: never;

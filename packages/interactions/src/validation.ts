@@ -22,6 +22,7 @@ export type TileflowInteractionDiagnosticCode =
   | 'SEMANTIC_MANIFEST_MISMATCH'
   | 'STALE_TARGET'
   | 'UNSTABLE_FEATURE_IDENTITY'
+  | 'UNUSED_RENDERER'
   | 'UNSUPPORTED_MODE'
   | 'UNSUPPORTED_TARGET';
 

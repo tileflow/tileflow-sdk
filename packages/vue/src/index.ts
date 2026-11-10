@@ -38,6 +38,7 @@ import {
   attachTileflowMapLifecycle,
   attachTileflowNauticalLights,
   attachTileflowNotices,
+  createTileflowNavigationControlBinding,
   createTileflowSessionStarter,
   createTileflowThemeController,
   createTileflowTransformRequest,
@@ -55,6 +56,8 @@ import {
   type TileflowMap3DAttachment,
   type TileflowMapLifecycleAttachment,
   tileflowMaxPitch,
+  type TileflowNavigationControlBinding,
+  type TileflowNavigationControlInput,
   type TileflowThemeController,
   type TileflowThemeTransition,
   type TileflowThemeTransitionOptions,
@@ -153,6 +156,14 @@ type TileflowMapSharedProps = {
   zoom?: number;
 };
 
+type TileflowMapNavigationProps = {
+  /**
+   * The zoom and compass buttons of an interactive map. They show at `top-right` by default;
+   * `false` removes them, and an object moves them or limits their buttons.
+   */
+  navigationControl?: TileflowNavigationControlInput;
+};
+
 type TileflowMapStateInput =
   | {defaultInteractionState?: never; interactionState?: TileflowInteractionState}
   | {defaultInteractionState?: TileflowInteractionState; interactionState?: never};
@@ -169,7 +180,7 @@ type TileflowMapInteractiveProps<TAnnotation extends TileflowAnnotation> = Tilef
     interactions?: readonly TileflowInteractionBinding[];
     interactive?: boolean;
     mode?: 'interactive';
-  };
+  } & TileflowMapNavigationProps;
 
 type TileflowMapImageProps = TileflowMapSharedProps & {
   annotationClusters?: never;
@@ -181,6 +192,7 @@ type TileflowMapImageProps = TileflowMapSharedProps & {
   interactions?: never;
   interactive?: never;
   mode: 'image';
+  navigationControl?: never;
 };
 
 export type TileflowMapProps<TAnnotation extends TileflowAnnotation = TileflowAnnotation> = (
@@ -193,6 +205,7 @@ type RuntimeTileflowMapProps = TileflowMapSharedProps &
   TileflowMapStyleSourceProps & {
     annotationClusters?: TileflowAnnotationClusterOptions;
     annotations?: readonly RuntimeTileflowAnnotation[];
+    navigationControl?: TileflowNavigationControlInput;
     dataOverlays?: Readonly<Record<string, TileflowMapLibreOverlay>>;
     dataSources?: Readonly<Record<string, TileflowGeoJsonSource>>;
     defaultInteractionState?: TileflowInteractionState;
@@ -261,6 +274,11 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       default: 'interactive',
       type: String as PropType<TileflowMapMode>,
     },
+    navigationControl: {
+      // A Boolean prop that is left out would read as false, which removes the control.
+      default: undefined,
+      type: [Boolean, Object] as PropType<TileflowNavigationControlInput>,
+    },
     source: {
       required: true,
       type: Object as PropType<TileflowRuntimeSource>,
@@ -323,6 +341,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     let mapWorldRequestBridge: TileflowWorldRequestBridge | null = null;
     let sceneAttachment: TileflowMap3DAttachment | null = null;
     let themeController: TileflowThemeController | null = null;
+    let navigationBinding: TileflowNavigationControlBinding | null = null;
     let unsubscribeSystemColorScheme: (() => void) | null = null;
     let mapLoadId = 0;
     let resourceLifetime: AbortController | undefined;
@@ -760,6 +779,8 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       const resizeObserver = mapResizeObserver;
       const map = mapRef.value;
       const controller = themeController;
+      const navigation = navigationBinding;
+      navigationBinding = null;
       const scene = sceneAttachment;
       sceneAttachment = null;
       dataRuntime?.dispose();
@@ -782,6 +803,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         () => fairUseNotice?.dispose(),
         () => lifecycle?.dispose(),
         () => scene?.dispose(),
+        () => navigation?.dispose(),
         () => controller?.dispose(),
         () => resizeObserver?.disconnect(),
         () => map?.remove(),
@@ -1167,9 +1189,11 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       };
       syncSemanticRuntime();
 
-      if (resolvedInteractive.value) {
-        map.addControl(new maplibregl.NavigationControl(), 'top-right');
-      }
+      navigationBinding = createTileflowNavigationControlBinding({
+        createControl: (controlOptions) => new maplibregl.NavigationControl(controlOptions),
+        map,
+      });
+      navigationBinding.update(resolvedInteractive.value ? props.navigationControl : false);
 
       mapResizeObserver = new ResizeObserver(() => {
         map.resize();
@@ -1334,6 +1358,12 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       () => [runtimeStyle.value, themeBlendKey.value],
       () => switchTheme(),
       {flush: 'post'},
+    );
+    watch(
+      () => [props.navigationControl, resolvedInteractive.value] as const,
+      ([navigationControl, interactive]) =>
+        navigationBinding?.update(interactive ? navigationControl : false),
+      {deep: true, flush: 'post'},
     );
     watch(
       () => [blendStyles.value, props.themeBlend?.position, props.themeBlend?.hold === true],

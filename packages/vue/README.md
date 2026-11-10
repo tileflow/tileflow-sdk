@@ -118,6 +118,9 @@ They do not change camera pitch and do not apply in image mode. See
 [the map's 3D scene](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md)
 and [vegetation controls](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md).
 
+Interactive maps show the zoom and compass buttons at the top right. `:navigation-control="false"` removes them, and
+`:navigation-control="{position: 'bottom-left', showCompass: false}"` moves them or limits their buttons.
+
 `mapOptions` accepts native MapLibre options except `container` and `style`. Direct props take
 priority over those options, then the published view, then shared defaults. `TileflowMap` always
 selects a Tileflow map through its manifest; it has no renderer discriminator or direct-style mode.

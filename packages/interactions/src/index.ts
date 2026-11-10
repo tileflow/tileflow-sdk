@@ -17,6 +17,7 @@ export type {
   TileflowAnnotation,
   TileflowAnnotationInteractionEvent,
   TileflowAnnotationMarker,
+  TileflowAnnotationMarkerState,
   TileflowAnnotationSurface,
   TileflowAnnotationViewContext,
   TileflowInteractionAction,

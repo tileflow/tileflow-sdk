@@ -1,6 +1,7 @@
 import {readBoundedTileflowBrowserResource} from './browser-resource';
 import {syncTileflowClearLayers, type TileflowClearLayersMap} from './clear-layers-browser';
 import type {TileflowColorOverrides} from './color-program-runtime';
+import type {TileflowContourRequestScope} from './contour-browser';
 import {
   createTileflowDynamicImageRegistry,
   type TileflowDynamicImage,
@@ -334,8 +335,16 @@ export {
   type TileflowPathGroundRegistry,
 } from './path-ground-browser';
 export {
+  createTileflowContourRequestScope,
   registerTileflowContourProtocol,
   tileflowMaplibreContourVersion,
+  type TileflowContourFetch,
+  type TileflowContourFetchInit,
+  type TileflowContourFetchResponse,
+  type TileflowContourRequestParameters,
+  type TileflowContourRequestResourceType,
+  type TileflowContourRequestScope,
+  type TileflowContourRequestTransform,
   type TileflowContourProtocolHandler,
   type TileflowContourProtocolRegistrationOptions,
   type TileflowContourProtocolRegistry,
@@ -2787,14 +2796,19 @@ export function attachTileflowMapLifecycle<TMap, TFrame>(options: {
 }
 
 /**
- * Compose the caller's request transform with Tileflow analytics, the Hosted session, and the
- * World bridge. Analytics are read when each request starts, so an asynchronous user transform
- * never attaches analytics that changed while it was pending.
+ * Compose the caller's request transform with Tileflow analytics, the Hosted session, the World
+ * bridge and the contour request scope. Analytics are read when each request starts, so an
+ * asynchronous user transform never attaches analytics that changed while it was pending.
  */
 export function createTileflowTransformRequest<
   TRequest extends TileflowTransformRequestParameters = TileflowTransformRequestParameters,
   TResourceType = unknown,
 >(options: {
+  /**
+   * Binds contour tiles to this map, so the DEM requests they make go back through this
+   * transform. Create the scope with this transform and dispose it with the map.
+   */
+  contourRequestScope?: Pick<TileflowContourRequestScope, 'rewriteUrl'>;
   getAnalytics: () => TileflowAnalytics | undefined;
   sessionController?: TileflowSessionController;
   sessionId: string;
@@ -2804,8 +2818,19 @@ export function createTileflowTransformRequest<
   return (url, resourceType) => {
     const request = options.transformRequest?.(url, resourceType);
     const analytics = options.getAnalytics();
-    const apply = (resolvedRequest: TRequest | undefined) =>
-      applyTileflowRequest(
+    const apply = (resolvedRequest: TRequest | undefined) => {
+      const contourScope = options.contourRequestScope;
+      const requestUrl = resolvedRequest?.url ?? url;
+      if (contourScope && requestUrl.startsWith('tileflow-contour://')) {
+        // The protocol handler makes the session-bearing requests itself, through this transform.
+        return composeTileflowRequest(
+          url,
+          resolvedRequest,
+          contourScope.rewriteUrl(requestUrl),
+          true,
+        );
+      }
+      return applyTileflowRequest(
         url,
         resolvedRequest,
         analytics,
@@ -2813,6 +2838,7 @@ export function createTileflowTransformRequest<
         options.sessionController,
         options.worldRequestBridge,
       );
+    };
 
     if (isPromiseLike(request)) {
       return request.then((resolvedRequest) => apply(resolvedRequest) ?? resolvedRequest);

@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   attachTileflowFairUseNotice,
   attachTileflowMapLifecycle,
+  createTileflowContourRequestScope,
   createTileflowSessionStarter,
   createTileflowThemeController,
   createTileflowTransformRequest,
@@ -25,6 +26,7 @@ import {
   parseTileflowContourSourceUrl,
   type TileflowContourProtocolConfig,
 } from '../src/terrain/contour-protocol';
+import {createTileflowSessionController} from '../src/runtime';
 import type {MapLibreStyle} from '../src/types';
 
 test('registers only the Tileflow-owned PMTiles protocol once per MapLibre registry', () => {
@@ -716,7 +718,7 @@ test('contour protocol reads a DEM TileJSON once and uses its first tile templat
     {
       fetch: async (url) => {
         fetched.push(url);
-        return {json: async () => document, ok: status === 200, status};
+        return Response.json(document, {status});
       },
       transformTileJsonUrl: (url) => `${url}&transport=native`,
       transformDemUrl: (url) => url.replace('https://cdn.example.test/', 'tileflow://resource/'),
@@ -775,6 +777,211 @@ test('contour protocol reads a DEM TileJSON once and uses its first tile templat
   document = {tiles: ['javascript:alert(1)/{z}/{x}/{y}']};
   await assert.rejects(handler({url: tile(failing)}, new AbortController()), /safe HTTP/u);
   assert.equal(fetched.filter((url) => url.startsWith(failing)).length, 3);
+});
+
+test('scoped contour requests carry each map’s current session and grant', async () => {
+  let handler: TileflowContourProtocolHandler | undefined;
+  const fetched: Array<{headers?: HeadersInit; url: string}> = [];
+  const tileJsonUrl = 'https://api.example.test/tiles/terrain/tiles.json?map=map_one';
+  const demTemplate =
+    'https://cdn.example.test/tiles/terrain/release-a/{z}/{x}/{y}.webp?map=map_one';
+  registerTileflowContourProtocol(
+    {
+      addProtocol: (_name, installed) => {
+        handler = installed;
+      },
+    },
+    {
+      fetch: async (url, init) => {
+        fetched.push({url, ...(init?.headers === undefined ? {} : {headers: init.headers})});
+        if (new URL(url).pathname.endsWith('/tiles.json')) {
+          return Response.json({encoding: 'terrarium', maxzoom: 12, tiles: [demTemplate]});
+        }
+        return new Response(new Uint8Array([1]), {headers: {'cache-control': 'max-age=60'}});
+      },
+      loadMaplibreContour: async () => ({
+        default: {
+          DemSource: class {
+            readonly url: string;
+            manager = {
+              getTile: async (): Promise<{data: Blob}> => {
+                throw new Error('the unscoped loader must not run for a scoped source');
+              },
+            };
+            constructor(options: {url: string}) {
+              this.url = options.url;
+            }
+            contourProtocolUrl() {
+              return 'contour://{z}/{x}/{y}';
+            }
+            // Stands in for the generator reading one DEM tile through its manager.
+            async contourProtocolV4(_request: unknown, controller: AbortController) {
+              const tile = await this.manager.getTile(
+                this.url.replace('{z}', '12').replace('{x}', '2134').replace('{y}', '1456'),
+                controller,
+              );
+              assert.equal(tile.cacheControl, 'max-age=60');
+              return {data: new ArrayBuffer(0)};
+            }
+          },
+        },
+      }),
+    },
+  );
+  assert.ok(handler);
+
+  let clock = Date.parse('2026-11-10T12:00:00.000Z');
+  const createMap = (sessionId: string, headers?: Record<string, string>) => {
+    let grants = 0;
+    const session = createTileflowSessionController({
+      fetch: async (_url, init) => {
+        grants += 1;
+        const body = JSON.parse(String(init?.body)) as {sessionId: string};
+        return Response.json(
+          {
+            expiresAt: new Date(clock + 60_000).toISOString(),
+            grant: `grant_${sessionId}_${grants}`,
+            meterMode: 'enforced',
+            ok: true,
+            resourceOrigins: ['https://cdn.example.test'],
+            sessionId: body.sessionId,
+            usageMode: 'session',
+          },
+          {status: 201},
+        );
+      },
+      now: () => new Date(clock),
+      sessionIdFactory: () => sessionId,
+      source: 'test',
+    });
+    const contourRequestScope = createTileflowContourRequestScope({
+      transformRequest: (url, resourceType) => transformRequest(url, resourceType),
+    });
+    const transformRequest = createTileflowTransformRequest<
+      {headers?: Record<string, string>; url: string},
+      string
+    >({
+      contourRequestScope,
+      getAnalytics: () => ({apiUrl: 'https://api.example.test', mapId: 'map_one'}),
+      sessionController: session,
+      sessionId: session.sessionId,
+      transformRequest: (url, resourceType) =>
+        headers && resourceType === 'Tile' && url.startsWith('https:') ? {headers, url} : undefined,
+    });
+    return {contourRequestScope, transformRequest};
+  };
+  const contourTile = createTileflowContourProtocolUrl({
+    demTileJson: tileJsonUrl,
+    demMaxzoom: 12,
+    encoding: 'terrarium',
+    maxzoom: 15,
+    multiplier: 1,
+    overzoom: 2,
+    thresholds: {9: [100, 500]},
+  })
+    .replace('{z}', '12')
+    .replace('{x}', '2134')
+    .replace('{y}', '1456');
+  // MapLibre transforms the contour tile URL, then hands the result to the shared protocol.
+  const loadContourTile = async (map: ReturnType<typeof createMap>) => {
+    const request = await map.transformRequest(contourTile, 'Tile');
+    assert.ok(request);
+    await handler!({url: request.url}, new AbortController());
+    return request.url;
+  };
+  const withSession = (url: string, sessionId: string, grant: string) => {
+    const next = new URL(url);
+    next.searchParams.set('session', sessionId);
+    next.searchParams.set('map', 'map_one');
+    next.searchParams.set('grant', grant);
+    return next.toString();
+  };
+  const demTile = demTemplate.replace('{z}', '12').replace('{x}', '2134').replace('{y}', '1456');
+
+  const first = createMap('ses_first', {'X-App': 'first'});
+  const scopedUrl = await loadContourTile(first);
+  // The protocol URL names the map's scope, never its grant.
+  assert.match(scopedUrl, /&scope=contour_[A-Za-z0-9_]+$/u);
+  assert.doesNotMatch(scopedUrl, /grant|session/u);
+  assert.deepEqual(fetched, [
+    {url: withSession(tileJsonUrl, 'ses_first', 'grant_ses_first_1')},
+    {
+      headers: {'X-App': 'first'},
+      url: withSession(demTile, 'ses_first', 'grant_ses_first_1'),
+    },
+  ]);
+
+  // A rotated grant reaches the next DEM tile without reloading the TileJSON.
+  clock += 45_000;
+  fetched.length = 0;
+  await loadContourTile(first);
+  assert.deepEqual(fetched, [
+    {
+      headers: {'X-App': 'first'},
+      url: withSession(demTile, 'ses_first', 'grant_ses_first_2'),
+    },
+  ]);
+
+  // A second map on the page with the same contour source keeps its own session.
+  const second = createMap('ses_second');
+  fetched.length = 0;
+  await loadContourTile(second);
+  assert.deepEqual(fetched, [
+    {url: withSession(tileJsonUrl, 'ses_second', 'grant_ses_second_1')},
+    {url: withSession(demTile, 'ses_second', 'grant_ses_second_1')},
+  ]);
+
+  // A removed map's tiles are refused instead of falling back to an unauthorized request.
+  first.contourRequestScope.dispose();
+  assert.equal(first.contourRequestScope.rewriteUrl(contourTile), contourTile);
+  await assert.rejects(
+    handler({url: scopedUrl}, new AbortController()),
+    /scope is no longer registered/u,
+  );
+  // The scope belongs to tile requests; a compiled source template cannot carry one.
+  assert.throws(
+    () =>
+      parseTileflowContourSourceUrl(
+        `${createTileflowContourProtocolUrl({
+          demTileJson: tileJsonUrl,
+          demMaxzoom: 12,
+          encoding: 'terrarium',
+          maxzoom: 15,
+          multiplier: 1,
+          overzoom: 2,
+          thresholds: {9: [100, 500]},
+        })}&scope=contour_x`,
+      ),
+    /parameters/u,
+  );
+});
+
+test('the pinned contour generator loads DEM tiles through its replaceable loader', async () => {
+  // Scoped sources replace this loader; a release that moves it must fail here, not in production.
+  const module = (await import('maplibre-contour')) as unknown as {
+    default: {
+      DemSource: new (options: Record<string, unknown>) => {
+        manager: {
+          fetchTile(z: number, x: number, y: number, controller: AbortController): Promise<unknown>;
+          getTile: (url: string, controller: AbortController) => Promise<{data: Blob}>;
+        };
+      };
+    };
+  };
+  const source = new module.default.DemSource({
+    encoding: 'terrarium',
+    maxzoom: 12,
+    url: 'https://dem.example.test/{z}/{x}/{y}.png',
+    worker: false,
+  });
+  const requested: string[] = [];
+  assert.equal(typeof source.manager.getTile, 'function');
+  source.manager.getTile = async (url) => {
+    requested.push(url);
+    return {data: new Blob([new Uint8Array([1])])};
+  };
+  await source.manager.fetchTile(3, 2, 1, new AbortController());
+  assert.deepEqual(requested, ['https://dem.example.test/3/2/1.png']);
 });
 
 test('contour source templates round-trip and name exactly one DEM', () => {

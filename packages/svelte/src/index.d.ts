@@ -5,10 +5,10 @@ import type {Map as MapLibreMap, MapOptions as MapLibreMapOptions} from 'maplibr
 import type {Snippet, SvelteComponentTyped} from 'svelte';
 import type {
   TileflowBrowserThemeBlendSelection,
-  TileflowNavigationControlInput,
   TileflowThemeTransition,
   TileflowViewMode,
   TileflowThemeTransitionOptions,
+  TileflowNavigationControlInput,
 } from '@tileflow/core/browser';
 import type {
   TileflowAnalytics,

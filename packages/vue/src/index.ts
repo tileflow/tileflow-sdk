@@ -38,9 +38,9 @@ import {
   attachTileflowMapLifecycle,
   attachTileflowNauticalLights,
   attachTileflowNotices,
-  createTileflowNavigationControlBinding,
   createTileflowSessionStarter,
   createTileflowThemeController,
+  createTileflowNavigationControlBinding,
   createTileflowTransformRequest,
   getTileflowSystemColorScheme,
   loadTileflowRuntimeStyle,
@@ -205,7 +205,6 @@ type RuntimeTileflowMapProps = TileflowMapSharedProps &
   TileflowMapStyleSourceProps & {
     annotationClusters?: TileflowAnnotationClusterOptions;
     annotations?: readonly RuntimeTileflowAnnotation[];
-    navigationControl?: TileflowNavigationControlInput;
     dataOverlays?: Readonly<Record<string, TileflowMapLibreOverlay>>;
     dataSources?: Readonly<Record<string, TileflowGeoJsonSource>>;
     defaultInteractionState?: TileflowInteractionState;
@@ -213,6 +212,7 @@ type RuntimeTileflowMapProps = TileflowMapSharedProps &
     interactions?: readonly TileflowInteractionBinding[];
     interactive?: boolean;
     mode?: TileflowMapMode;
+    navigationControl?: TileflowNavigationControlInput;
   };
 
 type PublicTileflowMapStatics = Pick<
@@ -338,10 +338,10 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     let mapFairUseNotice: TileflowFairUseNoticeController | null = null;
     let mapLifecycle: TileflowMapLifecycleAttachment | null = null;
     let mapResizeObserver: ResizeObserver | null = null;
+    let navigationBinding: TileflowNavigationControlBinding | null = null;
     let mapWorldRequestBridge: TileflowWorldRequestBridge | null = null;
     let sceneAttachment: TileflowMap3DAttachment | null = null;
     let themeController: TileflowThemeController | null = null;
-    let navigationBinding: TileflowNavigationControlBinding | null = null;
     let unsubscribeSystemColorScheme: (() => void) | null = null;
     let mapLoadId = 0;
     let resourceLifetime: AbortController | undefined;
@@ -779,10 +779,10 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       const resizeObserver = mapResizeObserver;
       const map = mapRef.value;
       const controller = themeController;
-      const navigation = navigationBinding;
-      navigationBinding = null;
       const scene = sceneAttachment;
       sceneAttachment = null;
+      const navigation = navigationBinding;
+      navigationBinding = null;
       dataRuntime?.dispose();
       dataRuntime = null;
       const annotationInteractionsForMap = annotationRuntime;
@@ -799,11 +799,11 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         semanticRuntimeEventsUnsubscribe,
         () => annotationInteractionsForMap?.dispose(),
         () => semanticInteractionsForMap?.dispose(),
+        () => navigation?.dispose(),
         () => worldRequestBridge?.dispose(),
         () => fairUseNotice?.dispose(),
         () => lifecycle?.dispose(),
         () => scene?.dispose(),
-        () => navigation?.dispose(),
         () => controller?.dispose(),
         () => resizeObserver?.disconnect(),
         () => map?.remove(),
@@ -1360,15 +1360,15 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       {flush: 'post'},
     );
     watch(
+      () => [blendStyles.value, props.themeBlend?.position, props.themeBlend?.hold === true],
+      () => switchBlend(),
+      {flush: 'post'},
+    );
+    watch(
       () => [props.navigationControl, resolvedInteractive.value] as const,
       ([navigationControl, interactive]) =>
         navigationBinding?.update(interactive ? navigationControl : false),
       {deep: true, flush: 'post'},
-    );
-    watch(
-      () => [blendStyles.value, props.themeBlend?.position, props.themeBlend?.hold === true],
-      () => switchBlend(),
-      {flush: 'post'},
     );
     watch(
       () => [hasInteractionConfiguration.value, isImageMode.value, runtimeImageUrl.value],

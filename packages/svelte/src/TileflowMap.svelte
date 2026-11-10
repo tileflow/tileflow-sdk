@@ -37,10 +37,10 @@
     attachTileflowMapLifecycle,
     attachTileflowNauticalLights,
     attachTileflowNotices,
-    createTileflowNavigationControlBinding,
     createTileflowSessionStarter,
     createTileflowThemeController,
     type TileflowMap3DAttachment,
+    createTileflowNavigationControlBinding,
     createTileflowTransformRequest,
     getTileflowSystemColorScheme,
     loadTileflowRuntimeStyle,
@@ -164,11 +164,11 @@
   let interactionRuntimesDisposing = false;
   let mapResizeObserver: ResizeObserver | null = null;
   let mapWorldRequestBridge: TileflowWorldRequestBridge | null = null;
+  let navigationBinding: TileflowNavigationControlBinding | null = null;
   let sceneAttachment: TileflowMap3DAttachment | null = null;
   $: sceneAttachment?.setVegetation(vegetation);
   $: sceneAttachment?.setViewMode(viewMode);
   let themeController: TileflowThemeController | null = null;
-  let navigationBinding: TileflowNavigationControlBinding | null = null;
   let systemColorScheme: 'dark' | 'light' = 'light';
   let unsubscribeSystemColorScheme: (() => void) | null = null;
   let loadedManifestMap: TileflowRuntimeManifestMap | null = null;
@@ -379,10 +379,6 @@
   }
 
   $: if (mounted) {
-    navigationBinding?.update(resolvedInteractive ? navigationControl : false);
-  }
-
-  $: if (mounted) {
     defaultInteractionState;
     interactionState;
     interactionStateDiagnostics;
@@ -394,6 +390,10 @@
     popup;
     tooltip;
     syncCustomRenderers();
+  }
+
+  $: if (mounted) {
+    navigationBinding?.update(resolvedInteractive ? navigationControl : false);
   }
 
   $: if (mounted && isImageMode) {
@@ -497,11 +497,11 @@
     const unsubscribeSemanticTargets = semanticRuntimeTargetsUnsubscribe;
     const currentMap = mapInstance;
     const currentThemeController = themeController;
-    const currentNavigationBinding = navigationBinding;
-    navigationBinding = null;
     const currentSceneAttachment = sceneAttachment;
     sceneAttachment = null;
     const worldRequestBridge = mapWorldRequestBridge;
+    const currentNavigationBinding = navigationBinding;
+    navigationBinding = null;
     interactionRuntimesDisposing = true;
     mapFairUseNotice = null;
     mapLifecycleAttachment = null;
@@ -544,8 +544,8 @@
       () => annotationInteractionsForMap?.dispose(),
       () => lifecycleAttachment?.dispose(),
       () => currentSceneAttachment?.dispose(),
-      () => currentNavigationBinding?.dispose(),
       () => currentThemeController?.dispose(),
+      () => currentNavigationBinding?.dispose(),
       () => worldRequestBridge?.dispose(),
       () => fairUseNotice?.dispose(),
       () => currentMap?.remove(),

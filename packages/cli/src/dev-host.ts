@@ -19,8 +19,9 @@ const loopbackHosts = new Set(['127.0.0.1', 'localhost', '[::1]']);
  *
  * A web page can rebind its own DNS name to this machine and then read the preview as same-origin
  * content: map styles, local tilesets, sprites and inspection data. Its requests still carry that
- * name in `Host`, while every legitimate address of a development server is an IP literal or
- * localhost, including the LAN address used with `--host 0.0.0.0`.
+ * name in `Host`, while every legitimate address of a development server is an IP literal,
+ * localhost or a `*.localhost` name (which browsers always resolve to loopback), including the LAN
+ * address used with `--host 0.0.0.0`.
  */
 export function rejectTileflowDevRebinding(request: Request): Response | undefined {
   let hostname: string;
@@ -31,7 +32,7 @@ export function rejectTileflowDevRebinding(request: Request): Response | undefin
   }
   const literal =
     hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
-  if (hostname === 'localhost' || isIP(literal) !== 0) return;
+  if (hostname === 'localhost' || hostname.endsWith('.localhost') || isIP(literal) !== 0) return;
   return new Response('Use the Tileflow preview from its local address.\n', {
     status: 421,
     headers: {'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store'},

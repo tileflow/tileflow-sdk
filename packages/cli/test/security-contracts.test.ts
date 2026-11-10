@@ -111,6 +111,7 @@ test('the dev server answers only IP literals and localhost, never a rebound DNS
   for (const url of [
     'http://127.0.0.1:3333/map/__status',
     'http://localhost:3333/',
+    'http://inspector.localhost:3333/',
     'http://[::1]:3333/__workbench',
     'http://192.168.1.20:3333/map/',
   ])

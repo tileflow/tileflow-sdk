@@ -174,7 +174,9 @@ export function compileRoundabouts(
   }
 }
 
-// Expressions a binding may stand for: never a match label or an interpolation's curve.
+// Expressions a binding may stand for: never a match label or an interpolation's curve, nor a bare
+// field read, which lowers to no more than its `var` and would hide the larger expressions around it
+// from the style's shared bindings.
 const bindable = new Set([
   'case',
   'match',
@@ -188,7 +190,6 @@ const bindable = new Set([
   '>',
   '>=',
   'has',
-  'get',
   'to-number',
   'coalesce',
   '+',

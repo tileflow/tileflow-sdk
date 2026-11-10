@@ -112,7 +112,10 @@ for (const [referenceName, theme] of Object.entries(themes)) {
         property === 'background-color'
           ? styleSpec.paint_background[property]
           : styleSpec.paint_fill['fill-color'],
-        reference.camera.zoom,
+        // Activity areas fade out in their colour above z15, so read the colour they fade from.
+        id === 'tileflow-land-render-activityAreas'
+          ? Math.min(reference.camera.zoom, 15)
+          : reference.camera.zoom,
       );
       closeToObserved(
         actual,

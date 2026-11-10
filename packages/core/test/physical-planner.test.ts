@@ -236,12 +236,44 @@ function evaluateProperty(
   );
 }
 
-test('merges compatible linear road cohorts without changing evaluated widths', () => {
-  const motorwayWidth = ['interpolate', ['linear'], ['zoom'], 16, 8, 20, 12];
-  const trunkWidth = ['interpolate', ['linear'], ['zoom'], 16, 6, 18, 7, 20, 10];
+function expressionKind(expression: unknown, property: string, group = 'paint_line'): string {
+  const specification = (mapLibreStyleSpec as unknown as Record<string, Record<string, unknown>>)[
+    group
+  ]![property];
+  const parsed = createPropertyExpression(expression, specification as never);
+  assert.equal(parsed.result, 'success', JSON.stringify(parsed.value));
+  return parsed.result === 'success' ? parsed.value.kind : 'invalid';
+}
+
+test('keeps road classes with different zoom-dependent widths in separate layers', () => {
+  // MapLibre evaluates a property that depends on zoom and feature data at each tile's zoom.
+  // Pitched views mix tile zooms, so a merged width would jump where those tiles meet.
+  for (const widths of [
+    [
+      ['interpolate', ['linear'], ['zoom'], 16, 8, 20, 12],
+      ['interpolate', ['linear'], ['zoom'], 16, 6, 18, 7, 20, 10],
+    ],
+    [
+      ['interpolate', ['exponential', 1.5], ['zoom'], 12, 3.2, 18, 30, 22, 300],
+      ['interpolate', ['exponential', 1.5], ['zoom'], 12, 3, 18, 28, 22, 280],
+    ],
+  ]) {
+    const input = [roadLayer('motorway', widths[0]), roadLayer('trunk', widths[1])];
+    const optimized = planTileflowLayers(input);
+    assert.deepEqual(optimized, input);
+    for (const layer of optimized)
+      assert.equal(
+        expressionKind((layer.paint as Record<string, unknown>)['line-width'], 'line-width'),
+        'camera',
+      );
+  }
+});
+
+test('merges road classes that share their zoom-dependent width', () => {
+  const width = ['interpolate', ['exponential', 1.5], ['zoom'], 12, 3, 18, 28, 22, 280];
   const optimized = planTileflowLayers([
-    roadLayer('motorway', motorwayWidth, {minzoom: 5}),
-    roadLayer('trunk', trunkWidth, {minzoom: 8}),
+    roadLayer('motorway', width, {paint: {'line-width': width, 'line-color': '#e08a2c'}}),
+    roadLayer('trunk', width, {paint: {'line-width': width, 'line-color': '#e0b02c'}}),
   ]);
   const merged = optimized.find(
     (layer) => layer.id === 'tileflow-road-surface-highzoom-major-fill',
@@ -249,28 +281,26 @@ test('merges compatible linear road cohorts without changing evaluated widths', 
 
   assert.ok(merged);
   assert.deepEqual(styleErrors(optimized), []);
-  const mergedWidth = (merged.paint as Record<string, unknown>)['line-width'];
-  for (const [roadClass, original] of [
-    ['motorway', motorwayWidth],
-    ['trunk', trunkWidth],
-  ] as const) {
-    for (const zoom of [16, 17, 18, 19, 20, 22]) {
+  const paint = merged.paint as Record<string, unknown>;
+  assert.equal(expressionKind(paint['line-width'], 'line-width'), 'camera');
+  // A feature-dependent value that does not vary with zoom has no tile zoom to depend on.
+  assert.equal(expressionKind(paint['line-color'], 'line-color'), 'source');
+  for (const roadClass of ['motorway', 'trunk'])
+    for (const zoom of [15, 16, 18, 20, 22])
       assert.equal(
         evaluateProperty(
-          mergedWidth,
+          paint['line-width'],
           mapLibreStyleSpec.paint_line['line-width'] as Record<string, unknown>,
           zoom,
           {class: roadClass},
         ),
         evaluateProperty(
-          original,
+          width,
           mapLibreStyleSpec.paint_line['line-width'] as Record<string, unknown>,
           zoom,
           {class: roadClass},
         ),
       );
-    }
-  }
 });
 
 test('the compiler frontend assigns planner families independently from physical layer IDs', () => {
@@ -351,43 +381,6 @@ test('palette colors do not change road topology when their last camera stop is 
           class: roadClass,
         }),
       );
-  }
-});
-
-test('merges exponential road cohorts without changing evaluated widths', () => {
-  const motorwayWidth = ['interpolate', ['exponential', 1.5], ['zoom'], 12, 3.2, 18, 30, 22, 300];
-  const trunkWidth = ['interpolate', ['exponential', 1.5], ['zoom'], 12, 3, 18, 28, 22, 280];
-  const optimized = planTileflowLayers([
-    roadLayer('motorway', motorwayWidth),
-    roadLayer('trunk', trunkWidth),
-  ]);
-  const merged = optimized.find(
-    (layer) => layer.id === 'tileflow-road-surface-highzoom-major-fill',
-  );
-
-  assert.ok(merged);
-  assert.deepEqual(styleErrors(optimized), []);
-  const mergedWidth = (merged.paint as Record<string, unknown>)['line-width'];
-  for (const [roadClass, original] of [
-    ['motorway', motorwayWidth],
-    ['trunk', trunkWidth],
-  ] as const) {
-    for (const zoom of [15, 16, 18, 20, 22]) {
-      assert.equal(
-        evaluateProperty(
-          mergedWidth,
-          mapLibreStyleSpec.paint_line['line-width'] as Record<string, unknown>,
-          zoom,
-          {class: roadClass},
-        ),
-        evaluateProperty(
-          original,
-          mapLibreStyleSpec.paint_line['line-width'] as Record<string, unknown>,
-          zoom,
-          {class: roadClass},
-        ),
-      );
-    }
   }
 });
 

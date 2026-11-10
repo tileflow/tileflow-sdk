@@ -1128,7 +1128,6 @@ const map1777Day = bindOfficialMapTheme(
           outline: 'strong',
           restrictions: {
             access: {
-              widthScale: 1,
               surface: {
                 casing: {dash: [1, 0], opacity: 0.52},
                 fill: {dash: [1, 0], opacity: 0.9},

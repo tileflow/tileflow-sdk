@@ -1,6 +1,8 @@
 import {
+  isSafeTileflowDemUrlTemplate,
   parseTileflowContourProtocolRequest,
   tileflowContourProtocol,
+  type TileflowContourProtocolConfig,
   tileflowContourSourceLayer,
   type TileflowContourThresholds,
 } from './terrain/contour-protocol';
@@ -26,6 +28,10 @@ export type TileflowContourProtocolRegistrationOptions = {
   loadMaplibreContour?: () => Promise<unknown>;
   /** Route the nested DEM template through an application-owned transport, preserving XYZ slots. */
   transformDemUrl?: (url: string) => string;
+  /** Route a `demTileJson` document request through an application-owned transport. */
+  transformTileJsonUrl?: (url: string) => string;
+  /** Fetch used for `demTileJson` documents. Defaults to the global fetch. */
+  fetch?: (url: string) => Promise<Pick<Response, 'json' | 'ok' | 'status'>>;
 };
 
 type MaplibreContourSource = {
@@ -62,7 +68,7 @@ export function registerTileflowContourProtocol(
   if (registeredContourProtocols.has(registry.addProtocol)) return;
   const handler = createTileflowContourProtocolHandler(
     options.loadMaplibreContour ?? loadPinnedMaplibreContour,
-    options.transformDemUrl,
+    options,
   );
   registry.addProtocol(tileflowContourProtocol, handler);
   registeredContourProtocols.add(registry.addProtocol);
@@ -70,25 +76,36 @@ export function registerTileflowContourProtocol(
 
 function createTileflowContourProtocolHandler(
   loadModule: () => Promise<unknown>,
-  transformDemUrl: (url: string) => string = (url) => url,
+  options: TileflowContourProtocolRegistrationOptions,
 ): TileflowContourProtocolHandler {
+  const transformDemUrl = options.transformDemUrl ?? ((url: string) => url);
+  const transformTileJsonUrl = options.transformTileJsonUrl ?? ((url: string) => url);
+  const fetchDocument = options.fetch ?? ((url: string) => globalThis.fetch(url));
   let library: Promise<MaplibreContourLibrary> | undefined;
   const sources = new Map<string, Promise<MaplibreContourSource>>();
 
   return async (request, abortController) => {
     if (abortController.signal.aborted) throw new Error('Tileflow contour request aborted.');
     const {config, x, y, z} = parseTileflowContourProtocolRequest(request.url);
-    const sourceKey = JSON.stringify([config.demUrl, config.encoding, config.demMaxzoom]);
+    const sourceKey = JSON.stringify([
+      config.demUrl ?? null,
+      config.demTileJson ?? null,
+      config.encoding,
+      config.demMaxzoom,
+    ]);
     let source = sources.get(sourceKey);
     if (!source) {
       if (sources.size >= 16) sources.delete(sources.keys().next().value as string);
       library ??= loadModule().then(resolveMaplibreContourLibrary);
-      source = library.then(
-        (module) =>
+      source = Promise.all([
+        library,
+        resolveContourDem(config, (url) => fetchDocument(transformTileJsonUrl(url))),
+      ]).then(
+        ([module, dem]) =>
           new module.DemSource({
             encoding: config.encoding,
-            maxzoom: config.demMaxzoom,
-            url: transformDemUrl(config.demUrl),
+            maxzoom: dem.maxzoom,
+            url: transformDemUrl(dem.url),
             // Upstream workers use a generated `blob:` URL. The main-thread manager keeps the
             // protocol usable in strict-CSP applications and deterministic local captures.
             worker: false,
@@ -118,6 +135,42 @@ function createTileflowContourProtocolHandler(
       .replace('{y}', String(y));
     return contourSource.contourProtocolV4({url: contourUrl}, abortController);
   };
+}
+
+type ResolvedContourDem = {maxzoom: number; url: string};
+
+/**
+ * A `demTileJson` reads its first tile template once per source. The document must agree with the
+ * declared encoding; its `maxzoom`, when lower than the declared DEM zoom, caps the requests.
+ */
+async function resolveContourDem(
+  config: TileflowContourProtocolConfig,
+  fetchDocument: NonNullable<TileflowContourProtocolRegistrationOptions['fetch']>,
+): Promise<ResolvedContourDem> {
+  if (config.demTileJson === undefined) return {maxzoom: config.demMaxzoom, url: config.demUrl};
+  const response = await fetchDocument(config.demTileJson);
+  if (!response.ok) {
+    throw new Error(`Tileflow contour DEM TileJSON request failed with HTTP ${response.status}.`);
+  }
+  const document = (await response.json()) as unknown;
+  const record =
+    document && typeof document === 'object' && !Array.isArray(document)
+      ? (document as {encoding?: unknown; maxzoom?: unknown; tiles?: unknown})
+      : {};
+  const template = Array.isArray(record.tiles) ? record.tiles[0] : undefined;
+  if (typeof template !== 'string' || !isSafeTileflowDemUrlTemplate(template)) {
+    throw new Error('Tileflow contour DEM TileJSON must list a safe HTTP(S) tile template.');
+  }
+  if (record.encoding !== undefined && record.encoding !== config.encoding) {
+    throw new Error(
+      `Tileflow contour DEM TileJSON encoding ${String(record.encoding)} differs from ${config.encoding}.`,
+    );
+  }
+  const documentMaxzoom =
+    typeof record.maxzoom === 'number' && Number.isInteger(record.maxzoom) && record.maxzoom >= 0
+      ? record.maxzoom
+      : config.demMaxzoom;
+  return {maxzoom: Math.min(config.demMaxzoom, documentMaxzoom), url: template};
 }
 
 async function loadPinnedMaplibreContour(): Promise<unknown> {

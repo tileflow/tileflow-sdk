@@ -71,20 +71,57 @@ const contourTerrain = {
   mode: 'none',
 } as const;
 
-test('contours without a DEM template read the hosted Tileflow Terrain tiles', () => {
+test('contours without a DEM template read the terrain DEM, hosted Terrain TileJSON by default', () => {
   const {demUrl: _, ...contours} = contourTerrain.contours;
   const terrain = {...contourTerrain, contours};
+  const demOf = (style: ReturnType<typeof createStyle>) => {
+    const tiles = style.sources['tileflow-contours']!.tiles as string[];
+    const parameters = new URL(tiles[0]!).searchParams;
+    return {demTileJson: parameters.get('demTileJson'), demUrl: parameters.get('demUrl')};
+  };
   for (const [apiBaseUrl, expected] of [
-    [undefined, 'https://api.tileflow.dev/tiles/terrain/{z}/{x}/{y}.webp'],
-    ['http://localhost:8787', 'http://localhost:8787/tiles/terrain/{z}/{x}/{y}.webp'],
+    [undefined, 'https://api.tileflow.dev/tiles/terrain/tiles.json'],
+    ['http://localhost:8787', 'http://localhost:8787/tiles/terrain/tiles.json'],
   ] as const) {
     const style = createStyle(extendStreets({terrain}), {
       preparedAssets,
       ...(apiBaseUrl ? {apiBaseUrl} : {}),
     });
-    const tiles = style.sources['tileflow-contours']!.tiles as string[];
-    assert.equal(new URL(tiles[0]!).searchParams.get('demUrl'), expected);
+    // The same TileJSON as the hillshade source, so a hosted style binds both to its map.
+    assert.deepEqual(demOf(style), {demTileJson: expected, demUrl: null});
+    const hillshade = createStyle(extendStreets({terrain: {...terrain, mode: 'hillshade'}}), {
+      preparedAssets,
+      ...(apiBaseUrl ? {apiBaseUrl} : {}),
+    });
+    assert.equal(hillshade.sources['tileflow-terrain']!.url, expected);
+    assert.deepEqual(demOf(hillshade), {demTileJson: expected, demUrl: null});
   }
+  assert.deepEqual(
+    demOf(
+      createStyle(
+        extendStreets({terrain: {...terrain, url: 'https://dem.example.test/tiles.json'}}),
+        {preparedAssets},
+      ),
+    ),
+    {demTileJson: 'https://dem.example.test/tiles.json', demUrl: null},
+  );
+  assert.deepEqual(
+    demOf(
+      createStyle(
+        extendStreets({
+          terrain: {
+            ...terrain,
+            tiles: [
+              'https://a.dem.example.test/{z}/{x}/{y}.png',
+              'https://b.dem.example.test/{z}/{x}/{y}.png',
+            ],
+          },
+        }),
+        {preparedAssets},
+      ),
+    ),
+    {demTileJson: null, demUrl: 'https://a.dem.example.test/{z}/{x}/{y}.png'},
+  );
   assert.equal(validateTileflowMap(extendStreets({terrain})).valid, true);
 });
 

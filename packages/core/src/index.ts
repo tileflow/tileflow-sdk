@@ -10,6 +10,14 @@ export {
   type TileflowSkyTimesOfDay,
 } from './sky';
 export {tileflowMaxPitch} from './camera-limits';
+/** Read and rebuild compiled contour sources, for services that bind their DEM to a hosted map. */
+export {
+  createTileflowContourProtocolUrl,
+  parseTileflowContourSourceUrl,
+  tileflowContourProtocol,
+  type TileflowContourDemSource,
+  type TileflowContourProtocolConfig,
+} from './terrain/contour-protocol';
 export {createStyle, createStyleResult, parseTileflowMap, validateTileflowMap} from './map';
 export {
   validateTileflowCompiledIconCapabilities,

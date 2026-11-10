@@ -1722,7 +1722,7 @@ function enrichTerrainContourConstraints(schema: JsonSchema): void {
       'contour DEM URL',
     );
     demUrl.description =
-      'Safe HTTP(S) DEM tile template containing each of {z}, {x}, and {y} exactly once; credentials, fragments, protocol-relative URLs, backslashes, controls, and non-loopback plain HTTP are forbidden.';
+      'Safe HTTP(S) DEM tile template containing each of {z}, {x}, and {y} exactly once; credentials, fragments, protocol-relative URLs, backslashes, controls, and non-loopback plain HTTP are forbidden. When omitted, contours read the terrain DEM: the first terrain.tiles template, else the terrain.url TileJSON, which defaults to hosted Tileflow Terrain.';
     demUrl['x-tileflow-refinement'] =
       'Must pass the exact Core DEM-template parser, including WHATWG URL and loopback checks.';
 

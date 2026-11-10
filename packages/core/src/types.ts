@@ -205,8 +205,11 @@ export type TileflowTerrainContoursConfig = {
   /** Maximum native zoom exposed by the DEM tile template. */
   demMaxZoom: number;
   /**
-   * HTTP(S) DEM template containing {z}, {x}, and {y}. Defaults to the hosted Tileflow Terrain
-   * tiles, `{apiBaseUrl}/tiles/terrain/{z}/{x}/{y}.webp`, which follow the current release.
+   * HTTP(S) DEM template containing {z}, {x}, and {y}. When omitted, contours read the terrain's
+   * own DEM: the first `terrain.tiles` template, else the `terrain.url` TileJSON, which defaults to
+   * hosted Tileflow Terrain (`{apiBaseUrl}/tiles/terrain/tiles.json`). A TileJSON is read when the
+   * first contour tile is requested, so hosted Terrain serves its current release with the map
+   * binding of the hosted style.
    */
   demUrl?: string;
   index?: TileflowTerrainContourLineStyle;

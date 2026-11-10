@@ -30,6 +30,7 @@ import {
   attachTileflowMapLifecycle,
   attachTileflowNauticalLights,
   attachTileflowNotices,
+  createTileflowAppearanceBinding,
   createTileflowSessionStarter,
   createTileflowThemeController,
   createTileflowTransformRequest,
@@ -43,6 +44,9 @@ import {
   subscribeTileflowSystemColorScheme,
   tileflowCanvasContextAttributes,
   type TileflowMap3DAttachment,
+  type TileflowAppearanceBinding,
+  type TileflowColorOverrides,
+  type TileflowEmphasis,
   tileflowMaxPitch,
   type TileflowThemeController,
   type TileflowThemeTransition,
@@ -164,10 +168,23 @@ type MapInteractiveProps<TAnnotation extends TileflowAnnotation> = MapSharedProp
     /** Group `annotations` into accessible cluster buttons. Up to 1,000 annotations. */
     annotationClusters?: TileflowAnnotationClusterOptions;
     annotations?: readonly TAnnotation[];
+    /**
+     * Colour token overrides for the map, for example `{'surface.land': '#f4f1ea'}`. The overrides ease in over
+     * `themeTransition`, stay through theme changes, and an empty object restores the map's own
+     * colours. The map must be configurable at run time; an unknown token or an invalid value is
+     * logged and leaves the colours unchanged.
+     */
+    colors?: TileflowColorOverrides;
     /** Overlays drawn over `dataSources` or compiled sources, keyed as in `defineMap`. */
     dataOverlays?: Readonly<Record<string, TileflowMapLibreOverlay>>;
     /** Application GeoJSON, keyed as in `defineMap`. A compiled source of the same key is filled. */
     dataSources?: Readonly<Record<string, TileflowGeoJsonSource>>;
+    /**
+     * Makes chosen modules of the map recede and its labels fade, so your own content reads first.
+     * It eases in over `themeTransition` and stays through theme changes; leave it out for the map
+     * as designed.
+     */
+    emphasis?: TileflowEmphasis;
     mode?: 'interactive';
     onInteractionDiagnostic?: (diagnostic: TileflowInteractionDiagnostic) => void;
     onInteractionEvent?: (event: TileflowInteractionEvent<TAnnotation>) => void;
@@ -178,9 +195,11 @@ type MapInteractiveProps<TAnnotation extends TileflowAnnotation> = MapSharedProp
 type MapImageProps = MapSharedProps & {
   annotationClusters?: never;
   annotations?: never;
+  colors?: never;
   dataOverlays?: never;
   dataSources?: never;
   defaultInteractionState?: never;
+  emphasis?: never;
   interactionState?: never;
   interactions?: never;
   mode: 'image';
@@ -207,10 +226,12 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
   const {
     annotationClusters,
     annotations,
+    colors,
     dataOverlays,
     dataSources,
     captureId,
     defaultInteractionState,
+    emphasis,
     mode = 'interactive',
     source,
     imageUrl,
@@ -578,6 +599,9 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
       : null;
   const themeTransitionRef = useRef(themeTransition);
   themeTransitionRef.current = themeTransition;
+  const appearanceRef = useRef({colors, emphasis});
+  appearanceRef.current = {colors, emphasis};
+  const appearanceBindingRef = useRef<TileflowAppearanceBinding | undefined>(undefined);
   const runtimeMapIdentity = `${manifestUrl}\0${runtimeSource.map}`;
   const runtimeStyleReady =
     runtimeStyle !== null || (themeResolution.error && mapRef.current !== null);
@@ -939,6 +963,24 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
             }
           });
         }
+        if (themeController) {
+          // Colours and emphasis the application declared show from the first frame the style
+          // allows, without easing in from the theme's own look.
+          const appearance = createTileflowAppearanceBinding({
+            controller: themeController,
+            map,
+            onError: (error, part) =>
+              console.error(`Failed to apply the Tileflow map ${part}`, error),
+          });
+          appearanceBindingRef.current = appearance;
+          registerCleanup(() => {
+            appearance.dispose();
+            if (appearanceBindingRef.current === appearance) {
+              appearanceBindingRef.current = undefined;
+            }
+          });
+          appearance.update(appearanceRef.current, {transition: {duration: 0}});
+        }
         // The map's 3D scene loads only once its style declares one, so 2D maps do not pay for it.
         const scene = attachTileflowMap3D({
           map,
@@ -1240,6 +1282,13 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
         }
       });
   }, [runtimeStyle, themeBlendKey, themeResolution.error]);
+
+  useEffect(() => {
+    appearanceBindingRef.current?.update(
+      {colors, emphasis},
+      {transition: themeTransitionRef.current},
+    );
+  }, [colors, emphasis]);
 
   useEffect(() => {
     const controller = themeControllerRef.current;

@@ -5,6 +5,7 @@ import {
   validateBindings,
   type TileflowColorBindings,
 } from './color-program';
+import {normalizeTileflowCssColor} from './css-color';
 import {mix} from './themes';
 import {resolveThemeValues, resolveTileflowTheme, type TileflowTheme} from './themes/model';
 import type {MapLibreStyle} from './types';
@@ -23,16 +24,23 @@ export function applyTileflowColorOverrides(
       'This style has no runtime colour bindings. Rebuild with runtimeColors enabled.',
     );
   validateBindings(catalog);
-  if (
-    keys.length > 1024 ||
-    keys.some(
-      (key) =>
-        !Object.hasOwn(catalog.tokens.color, key) ||
-        typeof overrides[key] !== 'string' ||
-        overrides[key]!.length > 128,
-    )
-  )
-    throw new TypeError('Unknown colour token or invalid override.');
+  if (keys.length > 1024) throw new TypeError('At most 1024 colour tokens can be overridden.');
+  const unknown = keys.filter((key) => !Object.hasOwn(catalog.tokens.color, key));
+  if (unknown.length)
+    throw new TypeError(
+      `Unknown colour token${unknown.length > 1 ? 's' : ''} ${unknown
+        .slice(0, 5)
+        .map((key) => JSON.stringify(key.slice(0, 80)))
+        .join(', ')}${unknown.length > 5 ? ', ...' : ''}.`,
+    );
+  // The style language reads hex and comma-separated rgb() and hsl(); every other CSS colour is
+  // converted here, and one that cannot be read is an error rather than a silently wrong colour.
+  overrides = Object.fromEntries(
+    keys.map((key) => [
+      key,
+      normalizeTileflowCssColor(overrides[key] as string, `colour for "${key.slice(0, 80)}"`),
+    ]),
+  );
   const theme: TileflowTheme = {
     id: 'runtime',
     version: 1,

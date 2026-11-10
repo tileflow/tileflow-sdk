@@ -120,42 +120,70 @@ export async function packTileflowRenderedIcons(
   return {contentHash: await hashTileflowIconPackageManifest(manifest), manifest, files};
 }
 
-/** Use proportional density bounds; preserve layouts that already fit the paired limit. */
-export function createSpriteLayout(
-  icons: Array<{
-    height: number;
-    name: string;
-    width: number;
-    appearance?: TileflowIconAppearance;
-    layout?: TileflowIconLayoutMetadata;
-  }>,
-  pixelRatio: 1 | 2,
+type SpriteLayoutIcon = {
+  height: number;
+  name: string;
+  width: number;
+  appearance?: TileflowIconAppearance;
+  layout?: TileflowIconLayoutMetadata;
+};
+
+/** Rows of icons in the given order; returns each icon's placement and the rows' total height. */
+function shelfPlacements(
+  icons: readonly SpriteLayoutIcon[],
+  order: readonly number[],
+  width: number,
 ) {
+  const placements: Array<{left: number; top: number}> = Array.from({length: icons.length});
+  let left = 0;
+  let rowHeight = 0;
+  let top = 0;
+  for (const ordinal of order) {
+    const icon = icons[ordinal]!;
+    if (left > 0 && left + icon.width > width) {
+      top += rowHeight;
+      left = 0;
+      rowHeight = 0;
+    }
+    placements[ordinal] = {left, top};
+    left += icon.width;
+    rowHeight = Math.max(rowHeight, icon.height);
+  }
+  return {height: top + rowHeight, placements};
+}
+
+/**
+ * Use proportional density bounds; preserve layouts that already fit the paired limit. Icons are
+ * placed in ID order. When that order overflows the atlas, as when large artwork falls between
+ * runs of small icons and every such row takes the large height, rows are filled tallest first
+ * instead. Both orders are deterministic and scale exactly with density, so the paired 1x and 2x
+ * atlases choose the same one.
+ */
+export function createSpriteLayout(icons: SpriteLayoutIcon[], pixelRatio: 1 | 2) {
   const columns = Math.ceil(Math.sqrt(icons.length));
   const widest = Math.max(...icons.map((icon) => icon.width));
   const maxDimension = (tileflowIconPackageLimits.maxAtlasDimension / 2) * pixelRatio;
   const targetWidth = Math.min(maxDimension, columns * widest);
 
-  const placements: Array<{left: number; top: number}> = [];
-  let left = 0;
-  let rowHeight = 0;
-  let top = 0;
-  for (const icon of icons) {
+  for (const icon of icons)
     if (icon.width > maxDimension)
       throw new Error(
         `Generated sprite exceeds ${maxDimension} pixels per dimension at ${pixelRatio}x`,
       );
-    if (left > 0 && left + icon.width > targetWidth) {
-      top += rowHeight;
-      left = 0;
-      rowHeight = 0;
-    }
-    placements.push({left, top});
-    left += icon.width;
-    rowHeight = Math.max(rowHeight, icon.height);
+  const idOrder = icons.map((_, ordinal) => ordinal);
+  let shelves = shelfPlacements(icons, idOrder, targetWidth);
+  if (shelves.height > maxDimension) {
+    const tallestFirst = [...idOrder].sort(
+      (left, right) =>
+        icons[right]!.height - icons[left]!.height ||
+        icons[right]!.width - icons[left]!.width ||
+        compareCodeUnits(icons[left]!.name, icons[right]!.name),
+    );
+    shelves = shelfPlacements(icons, tallestFirst, targetWidth);
   }
+  const {placements} = shelves;
   const width = targetWidth;
-  const height = top + rowHeight;
+  const height = shelves.height;
   if (width > maxDimension || height > maxDimension)
     throw new Error(
       `Generated sprite exceeds ${maxDimension} pixels per dimension at ${pixelRatio}x`,

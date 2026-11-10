@@ -131,6 +131,66 @@ test('paired layouts accept the density boundary and reject overflow on either a
   }
 });
 
+test('large artwork among small icons packs tallest first only when ID order overflows', () => {
+  // ID order fills rows left to right, and a row is as tall as its tallest icon.
+  const fitting = createSpriteLayout(
+    [
+      {name: 'a', width: 24, height: 24},
+      {name: 'b', width: 64, height: 64},
+      {name: 'c', width: 24, height: 24},
+    ],
+    1,
+  );
+  assert.deepEqual(
+    Object.values(fitting.index).map(({x, y}) => [x, y]),
+    [
+      [0, 0],
+      [24, 0],
+      [88, 0],
+    ],
+    'Layouts that fit keep their ID-order placement',
+  );
+
+  // Each 64px icon falls among small ones, so in ID order every row is 64px tall and the atlas
+  // passes 1024px. Tallest first, the large icons share two rows and the set needs under 600px.
+  const icons = Array.from({length: 24}, (_, row) => [
+    {name: `row-${String(row).padStart(2, '0')}-a`, width: 64, height: 64},
+    ...Array.from({length: 30}, (__, column) => ({
+      name: `row-${String(row).padStart(2, '0')}-b-${String(column).padStart(2, '0')}`,
+      width: 24,
+      height: 24,
+    })),
+  ]).flat();
+  for (const ratio of [1, 2] as const) {
+    const scaled = icons.map((icon) => ({
+      ...icon,
+      width: icon.width * ratio,
+      height: icon.height * ratio,
+    }));
+    const layout = createSpriteLayout(scaled, ratio);
+    assert(layout.height <= 1024 * ratio, `Packed atlas fits at ${ratio}x: ${layout.height}`);
+    const cells = Object.values(layout.index);
+    for (const [index, cell] of cells.entries()) {
+      assert(cell.x + cell.width <= layout.width && cell.y + cell.height <= layout.height);
+      for (const other of cells.slice(index + 1))
+        assert(
+          cell.x + cell.width <= other.x ||
+            other.x + other.width <= cell.x ||
+            cell.y + cell.height <= other.y ||
+            other.y + other.height <= cell.y,
+          'Packed icons never overlap',
+        );
+    }
+  }
+  const oneX = createSpriteLayout(icons, 1);
+  const twoX = createSpriteLayout(
+    icons.map((icon) => ({...icon, width: icon.width * 2, height: icon.height * 2})),
+    2,
+  );
+  for (const [name, cell] of Object.entries(oneX.index))
+    assert.deepEqual([twoX.index[name]!.x, twoX.index[name]!.y], [cell.x * 2, cell.y * 2]);
+});
+
 test('verification rejects malformed, overlapping, mismatched and extra index metadata', async () => {
   const {artifact} = await setFixture(1, [
     renderedIcon('a', [1, 2, 3, 255]),

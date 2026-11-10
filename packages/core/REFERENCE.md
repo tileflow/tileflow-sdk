@@ -348,6 +348,14 @@ and Noto Sans; Baedeker, 1777 and Siegfried package Cormorant; Cívica packages 
 rejects packaged/local fonts: self-host or replace them with compatible public glyphs. Tile and font
 URLs do not grant redistribution rights.
 
+`glyphs.fontStacks` lists the stacks the provider serves, exactly as MapLibre joins a `text-font`
+array with commas. A Tileflow glyph set URL (`/base/<assetSetSha256>/glyphs/{fontstack}/{range}.pbf`)
+combines fallback stacks itself: for each code point, the first listed font with a glyph wins. There
+it is enough to declare each font: a `text-font` list of at most 10 declared fonts is accepted
+without declaring the joined stack. A declaration naming more than 10 fonts, or a font a known
+Tileflow glyph set does not publish, is rejected. Other providers must declare every joined stack
+the styles use.
+
 ## Reference
 
 Use the [generated language schema](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/reference/modules-api-reference.json),

@@ -330,3 +330,66 @@ test('terrain cannot overwrite the stable primary vector source', () => {
     /conflicts with the primary vector source/,
   );
 });
+
+test('a Tileflow glyph set composites fallback stacks of the fonts it is declared to publish', () => {
+  const officialSet = '33d4de5e8086d9d629d67d3f39fedb87e23686c4c1ac653c27e2a52aee9d00b3';
+  const withFallback = defineTheme(testLightTheme, {
+    id: 'with-fallback',
+    version: 1,
+    colorScheme: 'light',
+    typography: {font: 'Noto Sans Bold', fallbacks: ['Noto Sans Regular']},
+  });
+  const compile = (url: string, fontStacks: string[]) =>
+    compileTestMap({
+      defaultTheme: 'with-fallback',
+      glyphs: {kind: 'url', url, fontStacks},
+      themes: {'with-fallback': withFallback},
+    });
+  const tileflow = `https://api.tileflow.dev/base/${officialSet}/glyphs/{fontstack}/{range}.pbf`;
+
+  const style = compile(tileflow, ['Noto Sans Bold', 'Noto Sans Regular']);
+  const city = style.layers.find((layer) => layer.id === 'tileflow-label-place-city');
+  assert.deepEqual((city?.layout as Record<string, unknown>)['text-font'], [
+    'Noto Sans Bold',
+    'Noto Sans Regular',
+  ]);
+  // Another provider serves only the exact keys a map declares.
+  assert.throws(
+    () =>
+      compile('https://fonts.example.test/{fontstack}/{range}.pbf', [
+        'Noto Sans Bold',
+        'Noto Sans Regular',
+      ]),
+    /undeclared glyph font stacks: Noto Sans Bold,Noto Sans Regular/u,
+  );
+  assert.doesNotThrow(() =>
+    compile('https://fonts.example.test/{fontstack}/{range}.pbf', [
+      'Noto Sans Bold,Noto Sans Regular',
+    ]),
+  );
+  // A combined stack still needs each of its fonts declared.
+  assert.throws(
+    () => compile(tileflow, ['Noto Sans Bold']),
+    /undeclared glyph font stacks: Noto Sans Bold,Noto Sans Regular/u,
+  );
+
+  // A stack naming a font the pinned set does not publish is refused where it is declared.
+  for (const fontStacks of [
+    ['Noto Sans Medium'],
+    ['Noto Sans Bold', 'Noto Sans Bold,Noto Sans Medium'],
+    ['Noto Sans Bold,Noto Sans Regular, Noto Sans Italic'],
+  ]) {
+    assert.throws(
+      () => compile(tileflow, fontStacks),
+      /glyph font stacks its glyph set cannot serve/u,
+      fontStacks.join('|'),
+    );
+  }
+  // A set the SDK has not reviewed is trusted for its fonts, never past ten of them.
+  const unreviewed = `https://api.tileflow.dev/base/${'a'.repeat(64)}/glyphs/{fontstack}/{range}.pbf`;
+  assert.doesNotThrow(() =>
+    compile(unreviewed, ['Noto Sans Bold', 'Noto Sans Regular', 'Brand Sans Regular']),
+  );
+  const eleven = Array.from({length: 11}, (_, index) => `Brand Sans ${index}`).join(',');
+  assert.throws(() => compile(unreviewed, [eleven]), /at most 10/u);
+});

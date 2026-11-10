@@ -95,6 +95,7 @@ import {
   defaultTileflowDevHost,
   parseTileflowDevHost,
   redirectTileflowDevNavigation,
+  rejectTileflowDevRebinding,
   tileflowDevOrigin,
 } from './dev-host';
 import {registerFeatureInspectCommand} from './feature-inspect-command';
@@ -863,9 +864,11 @@ program
             const createdServer = serve(
               {
                 fetch: (request) =>
+                  rejectTileflowDevRebinding(request) ??
                   (renderer === 'web'
                     ? redirectTileflowDevNavigation(request, origin)
-                    : undefined) ?? fetch(request),
+                    : undefined) ??
+                  fetch(request),
                 hostname: host,
                 port,
               },
@@ -1862,7 +1865,10 @@ async function runTileflowComparisonPreview(
       await new Promise<void>((resolveListening, rejectListening) => {
         const createdServer = serve(
           {
-            fetch: (request) => redirectTileflowDevNavigation(request, origin) ?? fetch(request),
+            fetch: (request) =>
+              rejectTileflowDevRebinding(request) ??
+              redirectTileflowDevNavigation(request, origin) ??
+              fetch(request),
             hostname: address.host,
             port: address.port,
           },

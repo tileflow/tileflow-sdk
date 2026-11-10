@@ -55,6 +55,14 @@ for (const theme of ['light', 'dawn', 'dusk', 'dark']) {
     assert.ok(layer?.type === 'line', id);
     return layer;
   };
+  // The layer that draws a class at a zoom: from z15, motorways and trunks share casings.
+  const drawnAt = (id: string, zoom: number) => {
+    const own = line(id);
+    if (zoom >= (own.minzoom ?? 0) && zoom < (own.maxzoom ?? 24)) return own;
+    const shared = line(id.replace(/-(?:motorway|trunk)-/u, '-highzoom-major-'));
+    assert.ok(zoom >= (shared.minzoom ?? 0) && zoom < (shared.maxzoom ?? 24), `${id} at z${zoom}`);
+    return shared;
+  };
   const matches = (layer: LineLayerSpecification, properties: Record<string, unknown>) =>
     featureFilter(layer.filter).filter({zoom: 18}, {type: 2, properties});
   const paint = (
@@ -70,9 +78,9 @@ for (const theme of ['light', 'dawn', 'dusk', 'dark']) {
       const surface = line(`tileflow-road-surface-${roadClass}-fill`);
       for (const structure of ['surface', 'bridge', 'tunnel']) {
         const fill = line(`tileflow-road-${structure}-${roadClass}-fill`);
-        const casing = line(`tileflow-road-${structure}-${roadClass}-casing`);
         let previous = 0;
         for (const zoom of [14, 16, 17.156959, 18, 19, 22]) {
+          const casing = drawnAt(`tileflow-road-${structure}-${roadClass}-casing`, zoom);
           const width = paint(fill, 'line-width', zoom, properties);
           assert.ok(width > previous, `${roadClass} ${structure} must grow at zoom ${zoom}`);
           assert.equal(width, paint(surface, 'line-width', zoom, properties));
@@ -134,7 +142,12 @@ for (const theme of ['light', 'dawn', 'dusk', 'dark']) {
             for (const zoom of [15, 17, 19]) {
               assert.equal(
                 paint(works, 'line-width', zoom, {...open, ...treatment, class: closed.class}),
-                paint(drawing, 'line-width', zoom, {...open, ...treatment}),
+                paint(
+                  drawing === ordinary ? drawnAt(ordinary.id, zoom) : drawing,
+                  'line-width',
+                  zoom,
+                  {...open, ...treatment},
+                ),
               );
             }
           }

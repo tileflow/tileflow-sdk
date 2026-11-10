@@ -106,52 +106,60 @@ export function streetsOverviewRoads(roads: TileflowRoadsModuleConfig | undefine
     }
   }
 
+  const overviewMajorCasing = (ramps: boolean) =>
+    renderPass({
+      // Keep the casing below every road fill, including trunk and ramp fills.
+      // Drawing it above those fills exposes round segment caps as small rings.
+      placement: {below: 'roads.classes.minor.surface.casing'},
+      feature: 'road',
+      renderer: 'line',
+      selector: {
+        kind: 'all',
+        selectors: [
+          {kind: 'geometry', geometry: 'line'},
+          {kind: 'in', field: 'class', values: ['motorway', 'trunk']},
+          {kind: 'compare', field: 'structure', operator: 'ne', value: 'tunnel'},
+          {kind: 'compare', field: 'link', operator: ramps ? 'eq' : 'ne', value: true},
+        ],
+      },
+      style: {
+        minZoom: 6,
+        maxZoom: 15,
+        cap: 'round',
+        join: 'round',
+        color: zoom.linear([
+          [12, token.color('roads.overview.casing')],
+          [14, token.color('roads.overview.casingClose')],
+          [14.25, token.color('roads.overview.casingClose')],
+          [15, token.color('roads.detail.casing')],
+        ]),
+        gapWidth: roads.classes!.motorway!.surface!.fill!.width,
+        width: zoom.linear([
+          [6, 0.2],
+          [8, 0.4],
+          [10, 0.65],
+          [12, 0.8],
+          [14, 0.95],
+          [15, 1.0203013481363996],
+        ]),
+        opacity: zoom.linear([
+          [6, 0.3],
+          [8, 0.8],
+          [10, 1],
+        ]),
+      },
+    });
+
   return {
     ...roads,
     classes,
     renderStack: {
       ...renderStack,
-      overviewMajorCasing: renderPass({
-        // Keep the casing below every road fill, including trunk and ramp fills.
-        // Drawing it above those fills exposes round segment caps as small rings.
-        placement: {below: 'roads.classes.minor.surface.casing'},
-        feature: 'road',
-        renderer: 'line',
-        selector: {
-          kind: 'all',
-          selectors: [
-            {kind: 'geometry', geometry: 'line'},
-            {kind: 'in', field: 'class', values: ['motorway', 'trunk']},
-            {kind: 'compare', field: 'structure', operator: 'ne', value: 'tunnel'},
-          ],
-        },
-        style: {
-          minZoom: 6,
-          maxZoom: 15,
-          cap: 'round',
-          join: 'round',
-          color: zoom.linear([
-            [12, token.color('roads.overview.casing')],
-            [14, token.color('roads.overview.casingClose')],
-            [14.25, token.color('roads.overview.casingClose')],
-            [15, token.color('roads.detail.casing')],
-          ]),
-          gapWidth: roads.classes!.motorway!.surface!.fill!.width,
-          width: zoom.linear([
-            [6, 0.2],
-            [8, 0.4],
-            [10, 0.65],
-            [12, 0.8],
-            [14, 0.95],
-            [15, 1.0203013481363996],
-          ]),
-          opacity: zoom.linear([
-            [6, 0.3],
-            [8, 0.8],
-            [10, 1],
-          ]),
-        },
-      }),
+      // Ramps get their own casing pass: their narrower gap would otherwise depend on zoom and
+      // `link`, which MapLibre evaluates at each tile's zoom, so tilted views would change it
+      // where tile zooms meet.
+      overviewMajorRampCasing: overviewMajorCasing(true),
+      overviewMajorCasing: overviewMajorCasing(false),
     },
   };
 }

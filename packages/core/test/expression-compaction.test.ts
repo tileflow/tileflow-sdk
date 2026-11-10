@@ -304,3 +304,92 @@ test('uses what every branch of a merged cohort filter establishes', () => {
   equivalentForFilter(partial, rampWidth, kept);
   assert.ok(JSON.stringify(kept).includes('"link"'));
 });
+
+/** Asserts equal values for camera zooms from `from` to `to` and features of several kinds. */
+function equivalentFrom(
+  before: unknown,
+  after: unknown,
+  from: number,
+  to = 24,
+  property = 'line-opacity',
+) {
+  const specification = (latest.paint_line as Record<string, unknown>)[property];
+  const original = createPropertyExpression(before, specification as never);
+  const compacted = createPropertyExpression(after, specification as never);
+  assert.equal(original.result, 'success', JSON.stringify(original.value));
+  assert.equal(compacted.result, 'success', JSON.stringify(compacted.value));
+  if (original.result !== 'success' || compacted.result !== 'success') return;
+  for (let zoom = from; zoom < to; zoom += 0.25)
+    for (const properties of [{}, {surface: 'unpaved'}, {access: 'private'}])
+      assert.deepEqual(
+        compacted.value.evaluate({zoom}, {type: 2, properties} as never),
+        original.value.evaluate({zoom}, {type: 2, properties} as never),
+        `z${zoom} ${JSON.stringify(properties)}`,
+      );
+}
+
+test('drops zoom stops outside the zooms a layer is drawn at', () => {
+  const unpaved = ['==', ['get', 'surface'], 'unpaved'];
+  // A fade-in at z3 that ends long before the layer starts: only its feature test remains.
+  const fade = [
+    'interpolate',
+    ['linear'],
+    ['zoom'],
+    3,
+    ['case', unpaved, 0.96, 0],
+    3.5,
+    ['case', unpaved, 0.96, 1],
+  ];
+  const faded = compactTileflowLayer({id: 'fade', minzoom: 12, paint: {'line-opacity': fade}})
+    .paint['line-opacity'];
+  assert.deepEqual(faded, ['case', unpaved, 0.96, 1]);
+  equivalentFrom(fade, faded, 12);
+
+  // The stop at or below the minimum zoom bounds the curve; later stops survive.
+  const color = [
+    'interpolate',
+    ['linear'],
+    ['zoom'],
+    12,
+    ['case', unpaved, '#B9CED5', '#D2DADC'],
+    14,
+    ['case', unpaved, '#B9CED5', '#D2DADC'],
+    15,
+    '#8AA7B0',
+    22,
+    '#8AA7B0',
+  ];
+  assert.equal(
+    compactTileflowLayer({id: 'casing', minzoom: 15, paint: {'line-color': color}}).paint[
+      'line-color'
+    ],
+    '#8AA7B0',
+  );
+  const clipped = compactTileflowLayer({id: 'fill', minzoom: 14.5, paint: {'line-color': color}})
+    .paint['line-color'];
+  assert.deepEqual(clipped, [...color.slice(0, 3), ...color.slice(5)]);
+  equivalentFrom(color, clipped, 14.5, 24, 'line-color');
+
+  // A maximum zoom keeps the first stop at or beyond it; steps fold into their base.
+  const steps = ['step', ['zoom'], ['case', unpaved, 1, 0], 10, 0.5, 13, 0.75, 16, 1];
+  const stepped = compactTileflowLayer({
+    id: 'step',
+    minzoom: 10,
+    maxzoom: 15,
+    paint: {
+      'line-opacity': steps,
+    },
+  }).paint['line-opacity'];
+  assert.deepEqual(stepped, ['step', ['zoom'], 0.5, 13, 0.75]);
+  equivalentFrom(steps, stepped, 10, 15);
+  const ramp = ['interpolate', ['linear'], ['zoom'], 3, 0, 8, ['case', unpaved, 1, 0.5], 18, 1];
+  const ranged = compactTileflowLayer({id: 'ramp', maxzoom: 6, paint: {'line-opacity': ramp}})
+    .paint['line-opacity'];
+  assert.deepEqual(ranged, ramp.slice(0, 7));
+  equivalentFrom(ramp, ranged, 0, 6);
+  assert.deepEqual(
+    compactTileflowLayer({id: 'overview', minzoom: 9, maxzoom: 15, paint: {'line-opacity': ramp}})
+      .paint['line-opacity'],
+    ramp.slice(0, 3).concat(ramp.slice(5)),
+  );
+});

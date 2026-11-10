@@ -337,13 +337,16 @@ function visit(value: unknown[], transform: (node: unknown[]) => unknown[]): unk
 export function compactTileflowLayer<T extends Record<string, unknown>>(layer: T): T {
   const result = {...layer};
   const facts = filterFacts(layer.filter);
+  const domain = zoomDomain(layer);
   for (const group of ['paint', 'layout'] as const) {
     const properties = layer[group];
     if (properties && typeof properties === 'object' && !Array.isArray(properties))
       Object.assign(result, {
         [group]: Object.fromEntries(
           Object.entries(properties).map(([key, value]) => {
-            const compacted = compactTileflowExpression(applyFilterFacts(value, facts));
+            const compacted = compactTileflowExpression(
+              clipZoomDomain(applyFilterFacts(value, facts), domain),
+            );
             return [
               key,
               // Asset discovery enumerates these outputs before resource preparation. Keep
@@ -355,6 +358,66 @@ export function compactTileflowLayer<T extends Record<string, unknown>>(layer: T
       });
   }
   return result;
+}
+
+type ZoomDomain = {min: number; max: number};
+
+/**
+ * The zooms at which MapLibre evaluates the layer: the renderer only draws it from `minzoom` to
+ * `maxzoom`, and the worker builds its features in tiles from `floor(minzoom)`.
+ */
+function zoomDomain(layer: Record<string, unknown>): ZoomDomain {
+  const min = typeof layer.minzoom === 'number' ? Math.floor(layer.minzoom) : 0;
+  const max = typeof layer.maxzoom === 'number' ? Math.ceil(layer.maxzoom) : Infinity;
+  return {min, max};
+}
+
+/**
+ * Drops zoom stops outside the zooms the layer is drawn at, keeping the stops that bound it.
+ * A zoom curve that is constant over that domain then disappears, which keeps a feature-dependent
+ * value from being evaluated at each tile's zoom in pitched views.
+ */
+function clipZoomDomain(value: unknown, domain: ZoomDomain): unknown {
+  if (isColorProgramMarker(value)) return value;
+  if (!isExpression(value) || value[0] === 'literal') return value;
+  if (value[0] === 'let') {
+    const body = clipZoomDomain(value.at(-1), domain);
+    return body === value.at(-1) ? value : [...value.slice(0, -1), body];
+  }
+  if (!isZoom(value[value[0] === 'interpolate' ? 2 : 1])) return value;
+  if (value[0] === 'interpolate') {
+    const stops: Array<[number, unknown]> = [];
+    for (let index = 3; index < value.length - 1; index += 2) {
+      if (typeof value[index] !== 'number') return value;
+      stops.push([value[index] as number, value[index + 1]]);
+    }
+    let first = 0;
+    while (first + 1 < stops.length && stops[first + 1]![0] <= domain.min) first += 1;
+    let last = stops.length - 1;
+    while (last - 1 >= first && stops[last - 1]![0] >= domain.max) last -= 1;
+    const kept = stops.slice(first, last + 1);
+    if (kept.length === 1) return kept[0]![1];
+    if (kept.length === stops.length) return value;
+    return [...value.slice(0, 3), ...kept.flat()];
+  }
+  if (value[0] === 'step') {
+    let base = value[2];
+    const stops: Array<[number, unknown]> = [];
+    for (let index = 3; index < value.length - 1; index += 2) {
+      const stop = value[index];
+      if (typeof stop !== 'number') return value;
+      if (stop <= domain.min) base = value[index + 1];
+      else if (stop < domain.max) stops.push([stop, value[index + 1]]);
+    }
+    if (stops.length === 0) return base;
+    if (stops.length * 2 + 3 === value.length) return value;
+    return ['step', value[1], base, ...stops.flat()];
+  }
+  return value;
+}
+
+function isZoom(value: unknown): boolean {
+  return Array.isArray(value) && value[0] === 'zoom' && value.length === 1;
 }
 
 type FilterFact = {is?: Primitive; isNot: Primitive[]; oneOf?: Primitive[]};

@@ -1092,19 +1092,10 @@ function cityRoadSurfaceColor(roadClass: keyof typeof streetsCityRoadPalette) {
     ([level, color]) =>
       [
         level,
+        // Roads under construction are invisible in these layers: their marks are drawn apart.
+        // Giving them a colour of their own would only make the colour depend on the feature.
         expr.case<ColorValue>(
           [
-            {
-              when: expr.all(
-                expr.eq(expr.get(field('class')), 'construction'),
-                expr.match(
-                  expr.get(field('type')),
-                  [{labels: [...worldConstructionTypes[roadClass]], value: true}],
-                  false,
-                ),
-              ),
-              value: roadSurfaceColor,
-            },
             {
               when: expr.eq(expr.get(field('surface')), 'unpaved'),
               value:

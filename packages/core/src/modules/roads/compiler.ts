@@ -4,6 +4,7 @@ import type {
   TileflowLayerSlot,
   TileflowPhysicalFamilyDeclaration,
 } from '../../cartography/contributions';
+import {compactTileflowExpression} from '../../cartography/expression-compaction';
 import {
   applyFillStyle,
   applyIconStyle,
@@ -835,10 +836,21 @@ function applyRoadTreatments(
     'width',
   ] as const satisfies readonly (keyof TileflowRoadTreatmentLineStyle)[];
 
+  // A treatment that hides this phase, such as construction under a carriageway's own fill,
+  // leaves its features invisible here. Their colour cannot show, and a colour branch would only
+  // make an otherwise camera-only colour depend on the feature, which MapLibre evaluates at each
+  // tile's zoom.
+  const hides = (style: TileflowRoadTreatmentStyle) => {
+    const opacity = style[structure]?.[phase]?.opacity;
+    return (
+      opacity !== undefined &&
+      compactTileflowExpression(withinClasses(toMapLibreStyleValue(opacity), drawn)) === 0
+    );
+  };
   for (const property of paintProperties) {
     const branches = treatments.flatMap(({condition, style}) => {
       const value = style[structure]?.[phase]?.[property];
-      return value === undefined
+      return value === undefined || (property === 'color' && hides(style))
         ? []
         : [
             {

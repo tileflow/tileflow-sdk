@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "icons": {
+    "transit-madrid-emt": {
+      "representation": "rgba",
+      "attribution": {
+        "credit": "Andreuvv, with a vector revision by Teo.raff",
+        "source": "https://commons.wikimedia.org/wiki/File:S%C3%ADmbolo_de_EMT_Madrid.svg",
+        "license": "CC BY-SA 4.0",
+        "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "licenseFile": "LICENSE-CC-BY-SA-4.0.txt",
+        "changes": "Centered, proportionally scaled and given accessible metadata in a 24px map icon cell by Tileflow. The adaptation is distributed under the same license."
+      }
+    },
+    "transit-madrid-metro": {
+      "representation": "rgba",
+      "attribution": {
+        "credit": "Przemysław Sakrajda, simplified by Kizar, with the current vector revision by Teo.raff",
+        "source": "https://commons.wikimedia.org/wiki/File:MetroMadridLogoSimplified.svg",
+        "license": "CC BY-SA 3.0",
+        "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+        "licenseFile": "LICENSE-CC-BY-SA-3.0.txt",
+        "changes": "Centered, proportionally scaled and given accessible metadata in a 24px map icon cell by Tileflow. The adaptation is distributed under the same license."
+      }
+    }
+  }
+}

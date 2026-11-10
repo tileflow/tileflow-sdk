@@ -44,17 +44,40 @@ test('prepares inherited Streets directories without mutating the authored map',
 
     assert.deepEqual(compiled.watchPaths, []);
     assert.deepEqual(compiled.packages[0]?.manifest.iconNames, streetsIconIds);
-    assert.deepEqual(compiled.bindings, [
-      {
-        iconIds: streetsIconIds,
-        label: 'main',
-        mapName: 'main',
-        packageHash: compiled.packages[0]?.contentHash,
-      },
-    ]);
+    const {attributions, ...binding} = compiled.bindings[0]!;
+    assert.deepEqual(binding, {
+      iconIds: streetsIconIds,
+      label: 'main',
+      mapName: 'main',
+      packageHash: compiled.packages[0]?.contentHash,
+    });
+    assert.deepEqual(
+      attributions?.map(({id, license}) => [id, license]),
+      [
+        ['transit-madrid-emt', 'CC BY-SA 4.0'],
+        ['transit-madrid-metro', 'CC BY-SA 3.0'],
+      ],
+    );
 
     const prepared = await prepareTileflowCatalogIcons(project, {assetBaseUrl: '/tileflow', cwd});
-    assert.equal(prepared.assets.length, 4);
+    assert.deepEqual(
+      prepared.assets.map((asset) => asset.fileName),
+      [
+        'icons/main/sprite.json',
+        'icons/main/sprite.png',
+        'icons/main/sprite@2x.json',
+        'icons/main/sprite@2x.png',
+        'icons/main/licenses/transit-madrid-emt.txt',
+        'icons/main/licenses/transit-madrid-metro.txt',
+      ],
+    );
+    const metroNotice = String(prepared.assets[5]!.source);
+    assert.ok(
+      metroNotice.startsWith(
+        'Icon: transit-madrid-metro\nCredit: Przemysław Sakrajda, simplified by Kizar, with the current vector revision by Teo.raff\n',
+      ),
+    );
+    assert.match(metroNotice, /\nAttribution-ShareAlike 3\.0 Unported\n/u);
     assert.equal(prepared.project, project);
     assert.deepEqual(prepared.mapAssets.main?.icons, {
       ids: streetsIconIds,
@@ -195,7 +218,8 @@ test('prepares every independent official root from its package-owned directorie
     }
 
     const prepared = await prepareTileflowCatalogIcons(project, {assetBaseUrl: '/tileflow', cwd});
-    assert.equal(prepared.assets.length, 24);
+    // Six sprites of four files each, plus Streets' two required transit-symbol credits.
+    assert.equal(prepared.assets.length, 26);
     for (const binding of compiled.bindings) {
       assert.deepEqual(prepared.mapAssets[binding.mapName]?.icons?.ids, binding.iconIds);
     }

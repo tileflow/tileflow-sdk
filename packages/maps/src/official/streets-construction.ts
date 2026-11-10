@@ -11,6 +11,15 @@ import {
 } from '@tileflow/core';
 import {worldConstructionSelector, worldConstructionTypes} from './world-roads';
 
+/** Classes whose World ramps (`link`) are drawn narrower than their carriageways. */
+const rampClasses: ReadonlySet<string> = new Set([
+  'motorway',
+  'trunk',
+  'primary',
+  'secondary',
+  'tertiary',
+]);
+
 /** Keep construction ground and marks beneath the roads that are already in service. */
 export function withStreetsConstruction(
   module: TileflowRoadsModuleConfig,
@@ -40,23 +49,62 @@ export function withStreetsConstruction(
       const fill = module.classes?.[roadClass]?.surface?.fill;
       if (!fill || fill.visible === false || module.classes?.[roadClass]?.enabled === false)
         return [];
-      const selector: TileflowRenderSelector = {
-        kind: 'all',
-        selectors: [
-          {kind: 'geometry', geometry: 'line'},
-          worldConstructionSelector(roadClass),
-          {kind: 'compare', field: 'structure', operator: 'ne', value: 'bridge'},
-          {kind: 'compare', field: 'structure', operator: 'ne', value: 'tunnel'},
-          {
-            kind: 'step',
-            fallback: {kind: 'compare', field: 'link', operator: 'ne', value: true},
-            stops: [{zoom: 12, selector: {kind: 'literal', value: true}}],
-          },
-        ],
-      };
-      return [
+      const base: TileflowRenderSelector[] = [
+        {kind: 'geometry', geometry: 'line'},
+        worldConstructionSelector(roadClass),
+        {kind: 'compare', field: 'structure', operator: 'ne', value: 'bridge'},
+        {kind: 'compare', field: 'structure', operator: 'ne', value: 'tunnel'},
+      ];
+      // Ramps join their class at z12, with a narrower width. Their own passes keep that width
+      // camera-only: in one layer it would depend on zoom and `link`, which MapLibre evaluates at
+      // each tile's zoom, so tilted views would draw the marks at a different width where tile
+      // zooms meet.
+      const variants: Array<[suffix: string, selector: TileflowRenderSelector]> = rampClasses.has(
+        roadClass,
+      )
+        ? [
+            [
+              '-ramp',
+              {
+                kind: 'all',
+                selectors: [
+                  ...base,
+                  {kind: 'compare', field: 'link', operator: 'eq', value: true},
+                  {
+                    kind: 'step',
+                    fallback: {kind: 'literal', value: false},
+                    stops: [{zoom: 12, selector: {kind: 'literal', value: true}}],
+                  },
+                ],
+              },
+            ],
+            [
+              '',
+              {
+                kind: 'all',
+                selectors: [...base, {kind: 'compare', field: 'link', operator: 'ne', value: true}],
+              },
+            ],
+          ]
+        : [
+            [
+              '',
+              {
+                kind: 'all',
+                selectors: [
+                  ...base,
+                  {
+                    kind: 'step',
+                    fallback: {kind: 'compare', field: 'link', operator: 'ne', value: true},
+                    stops: [{zoom: 12, selector: {kind: 'literal', value: true}}],
+                  },
+                ],
+              },
+            ],
+          ];
+      return variants.flatMap(([suffix, selector]) => [
         [
-          `construction-${roadClass}-underlay`,
+          `construction-${roadClass}${suffix}-underlay`,
           renderPass({
             feature: 'road',
             placement: 'below-roads',
@@ -71,7 +119,7 @@ export function withStreetsConstruction(
           }),
         ],
         [
-          `construction-${roadClass}`,
+          `construction-${roadClass}${suffix}`,
           renderPass({
             feature: 'road',
             placement: 'below-roads',
@@ -90,7 +138,7 @@ export function withStreetsConstruction(
             },
           }),
         ],
-      ];
+      ]);
     }),
   );
   return withRenderStack(

@@ -793,15 +793,28 @@ test('Streets-family road caps follow overview and structural reference geometry
           );
           const id = `${structure}-${roadClass}-${phase}`;
           assert.ok(layer, `Missing compiled ${mapId} road cohort ${id}`);
-          assert.deepEqual(
-            layer.layout?.['line-cap'] ?? 'butt',
-            structure === 'surface'
-              ? ['step', ['zoom'], 'butt', 14, 'round']
-              : structure === 'bridge' && phase === 'fill'
-                ? 'round'
-                : 'butt',
-            `${mapId} ${id} uses incorrect reference caps`,
-          );
+          // Surface roads round their caps from z14; a layer drawn only from there need not say so.
+          const cap = (zoom: number) => {
+            const parsed = createPropertyExpression(
+              layer.layout?.['line-cap'] ?? 'butt',
+              latest.layout_line['line-cap'] as never,
+            );
+            assert.equal(parsed.result, 'success');
+            return parsed.result === 'success' ? parsed.value.evaluate({zoom}) : undefined;
+          };
+          const zooms = (layer.minzoom ?? 0) <= 13 ? [13, 18] : [18];
+          for (const zoom of zooms)
+            assert.equal(
+              cap(zoom),
+              structure === 'surface'
+                ? zoom < 14
+                  ? 'butt'
+                  : 'round'
+                : structure === 'bridge' && phase === 'fill'
+                  ? 'round'
+                  : 'butt',
+              `${mapId} ${id} uses incorrect reference caps at z${zoom}`,
+            );
         }
       }
     }
@@ -839,6 +852,38 @@ test('Streets-family road caps follow overview and structural reference geometry
   }
 });
 
+test('official road widths depend on the camera zoom alone', () => {
+  // MapLibre evaluates a property that depends on zoom and feature data at each tile's zoom.
+  // Pitched street views draw tiles several zooms apart, so such a width would change where
+  // those tiles meet and jump as the camera moves.
+  for (const [mapId, map, theme] of [
+    ['streets', streets, 'light'],
+    ['streets', streets, 'dark'],
+    ['baedeker', baedeker, undefined],
+    ['civica', civica, undefined],
+    ['map-1777', map1777, undefined],
+    ['siegfried', siegfried, undefined],
+    ['blueprint', blueprint, undefined],
+  ] as const) {
+    const style = compileOfficialMap(map, theme);
+    const roads = style.layers.filter(
+      (layer) =>
+        layer.type === 'line' &&
+        (layer.id.startsWith('tileflow-road-') || layer.id.startsWith('tileflow-roads-')),
+    );
+    assert.ok(roads.length > 40, mapId);
+    for (const layer of roads)
+      for (const property of ['line-width', 'line-gap-width', 'line-offset'] as const) {
+        const value = (layer.paint as Record<string, unknown> | undefined)?.[property];
+        if (value === undefined) continue;
+        const parsed = createPropertyExpression(value, latest.paint_line[property] as never);
+        assert.equal(parsed.result, 'success');
+        if (parsed.result === 'success')
+          assert.notEqual(parsed.value.kind, 'composite', `${mapId} ${layer.id} ${property}`);
+      }
+  }
+});
+
 test('official road maps avoid seam-prone caps on ordinary surface and bridge segments', () => {
   for (const [mapId, map] of Object.entries({
     streets,
@@ -862,7 +907,7 @@ test('official road maps avoid seam-prone caps on ordinary surface and bridge se
       if (
         (mapId === 'streets' || mapId === 'map-1777') &&
         layer.id.startsWith('tileflow-road-bridge-') &&
-        layer.id.endsWith('-casing')
+        /-casing(?:-|$)/u.test(layer.id)
       )
         continue;
       assert.notEqual(

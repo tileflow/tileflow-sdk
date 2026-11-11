@@ -15,11 +15,11 @@ import {
   withRenderStack,
   zoom,
 } from '@tileflow/core';
-import {streetsIcons, terrainIcons} from '../assets';
+import {outdoorsIcons, streetsIcons} from '../assets';
+import {outdoorsThemes, outdoorsVisual} from './outdoors-themes';
 import {streets} from './streets';
 import {stackOf, withoutStack} from './streets-cartography';
 import {streetsVisual} from './streets-themes';
-import {terrainThemes, terrainVisual} from './terrain-themes';
 import {bindOfficialMapTheme} from './theme-helpers';
 
 const trailWidth = zoom.exponential(1.5, [
@@ -35,14 +35,14 @@ const trailCasingWidth = zoom.exponential(1.5, [
 
 /** A pale, broken center over a continuous ochre casing keeps paths distinct from contour ink. */
 function trail(
-  color: typeof terrainVisual.trail,
+  color: typeof outdoorsVisual.trail,
   minZoom: number,
   dash: readonly number[],
   opacity = 1,
 ): TileflowRoadClassStyle {
   const fill = {
     cap: 'butt',
-    color: terrainVisual.trailHalo,
+    color: outdoorsVisual.trailHalo,
     dash,
     minZoom,
     opacity,
@@ -66,12 +66,12 @@ function trail(
 const peakName = {
   minZoom: 10,
   priority: 64,
-  icon: {image: terrainVisual.peakIcon, size: 0.55, pitchAlignment: 'viewport'},
+  icon: {image: outdoorsVisual.peakIcon, size: 0.55, pitchAlignment: 'viewport'},
   text: {
     anchor: 'top',
-    color: terrainVisual.peak,
+    color: outdoorsVisual.peak,
     font: streetsVisual.font.navigation,
-    haloColor: terrainVisual.halo,
+    haloColor: outdoorsVisual.halo,
     haloWidth: 0.65,
     optional: false,
     offset: [0, 0.8],
@@ -109,15 +109,15 @@ function serviceRoadsOnly(pass: TileflowRenderStackOperation): TileflowRenderSta
   return {...pass, selector: {...pass.selector, selectors}} as TileflowRenderStackOperation;
 }
 
-function withTerrainStacks(base: TileflowMap) {
+function withOutdoorsStacks(base: TileflowMap) {
   const source = resolveMap(base);
   const {land, roads} = source.modules ?? {};
-  if (!land || !roads) throw new Error('Terrain requires the Streets land and road modules');
-  const terrainRoads = {...withoutStack(roads), classes: {...roads.classes}};
+  if (!land || !roads) throw new Error('Outdoors requires the Streets land and road modules');
+  const outdoorsRoads = {...withoutStack(roads), classes: {...roads.classes}};
   // Preserve the surface filters while separating underground roads at overview scales.
   for (const roadClass of ['motorway', 'trunk', 'primary'] as const) {
-    const road = terrainRoads.classes[roadClass];
-    terrainRoads.classes[roadClass] = {
+    const road = outdoorsRoads.classes[roadClass];
+    outdoorsRoads.classes[roadClass] = {
       ...road,
       surface: {
         ...road?.surface,
@@ -144,7 +144,7 @@ function withTerrainStacks(base: TileflowMap) {
           renderer: 'line',
           selector: {field: 'class', kind: 'compare', operator: 'eq', value: 'protected_area'},
           style: {
-            color: terrainVisual.protectedEdge,
+            color: outdoorsVisual.protectedEdge,
             dash: [3, 2],
             minZoom: 7,
             opacity: 0.7,
@@ -155,7 +155,7 @@ function withTerrainStacks(base: TileflowMap) {
           },
         }),
       }),
-      roads: withRenderStack(terrainRoads, {
+      roads: withRenderStack(outdoorsRoads, {
         ...Object.fromEntries(
           Object.entries(stackOf(roads))
             .filter(([name]) => !urbanPathRefinement.test(name))
@@ -174,16 +174,16 @@ function withTerrainStacks(base: TileflowMap) {
  * Contemporary topography with Streets' lettering, road hierarchy, POIs and times of day.
  * Resolve the shared cartography into an independent root before publishing the definition.
  */
-export const terrain = bindOfficialMapTheme(
+export const outdoors = bindOfficialMapTheme(
   resolveMap(
-    withTerrainStacks(
+    withOutdoorsStacks(
       defineMap({
-        id: 'terrain',
+        id: 'outdoors',
         version: 1,
-        name: 'Terrain',
+        name: 'Outdoors',
         extends: streets,
-        icons: [streetsIcons, terrainIcons],
-        themes: terrainThemes,
+        icons: [streetsIcons, outdoorsIcons],
+        themes: outdoorsThemes,
         timeOfDay: {light: {day: 'light', dawn: 'dawn', dusk: 'dusk', night: 'dark'}},
         defaultTheme: 'light',
         // Valley views need more tilt than Streets; steeper angles can intersect nearby slopes.
@@ -196,11 +196,11 @@ export const terrain = bindOfficialMapTheme(
           attribution: 'Terrain: <a href="https://mapterhorn.com/attribution">© Mapterhorn</a>',
           contours: {
             demMaxZoom: 12,
-            index: {color: terrainVisual.contour, opacity: 0.5, width: 0.8},
+            index: {color: outdoorsVisual.contour, opacity: 0.5, width: 0.8},
             labels: {
-              color: terrainVisual.contour,
+              color: outdoorsVisual.contour,
               font: streetsVisual.font.navigation,
-              haloColor: terrainVisual.halo,
+              haloColor: outdoorsVisual.halo,
               haloWidth: 1,
               minZoom: 12,
               opacity: 1,
@@ -209,9 +209,9 @@ export const terrain = bindOfficialMapTheme(
             },
             maxZoom: 14,
             minZoom: 8,
-            minor: {color: terrainVisual.contour, opacity: 0.3, width: 0.5},
+            minor: {color: outdoorsVisual.contour, opacity: 0.3, width: 0.5},
             overzoom: 2,
-            sourceId: 'terrain-contours',
+            sourceId: 'outdoors-contours',
             thresholds: {
               8: [500, 2_500],
               9: [200, 1_000],
@@ -271,7 +271,7 @@ export const terrain = bindOfficialMapTheme(
               saddle: {...landformName, minZoom: 12},
               volcano: peakName,
             },
-            elevation: false,
+            elevation: true,
           }),
           poi: refine({
             // Businesses give way to what a day outside needs: camps, huts, views, water, shelter.
@@ -334,12 +334,12 @@ export const terrain = bindOfficialMapTheme(
                     casing: {opacity: 0.35},
                   },
                 },
-                cycleway: trail(terrainVisual.track, 13, [1, 0]),
+                cycleway: trail(outdoorsVisual.track, 13, [1, 0]),
                 // Mostly town walkways: they stay behind the mountain paths until close in.
-                footway: trail(terrainVisual.trail, 14, [1.75, 0.3], 0.8),
-                pathway: trail(terrainVisual.trail, 12, [4, 0.5]),
-                steps: trail(terrainVisual.trail, 14, [1, 0.75]),
-                track: trail(terrainVisual.track, 12, [5, 0.5]),
+                footway: trail(outdoorsVisual.trail, 14, [1.75, 0.3], 0.8),
+                pathway: trail(outdoorsVisual.trail, 12, [4, 0.5]),
+                steps: trail(outdoorsVisual.trail, 14, [1, 0.75]),
+                track: trail(outdoorsVisual.track, 12, [5, 0.5]),
               },
               // Streets draws unpaved and restricted ways as solid carriageways; a trail stays a trail.
               modifiers: {unpaved: {enabled: false}},

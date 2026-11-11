@@ -63,7 +63,7 @@ The CLI owns the interface; compiler and runtime changes require rebuilding thos
 - `streets`: contemporary street cartography with Mapbox-inspired time-of-day and color themes,
   ranked POIs, Madrid transit network symbols, generic road-reference shields, and regional hillshade.
 - `soundings`: bathymetric reference cartography with depth bands, continuous relief, and port context.
-- `terrain`: contemporary topography with 3D relief, hillshade, contours, trails, peaks and natural
+- `outdoors`: contemporary topography with 3D relief, hillshade, contours, trails, peaks and natural
   landcover. It shares Streets' lettering, roads, POIs and four times of day.
 
 Every official map is a complete, independent root using the same Core compiler. Official map
@@ -215,16 +215,16 @@ reference uses DIN Pro Medium, so font shapes and stroke weight
 remain an approximation. Available POIs, abbreviated names,
 proprietary landmark models, transit branding, and building detail can differ from the reference.
 
-### Terrain
+### Outdoors
 
-Terrain includes `light`, `dawn`, `dusk` and `dark` themes, a `light` time-of-day family, and
-system light/dark selection. Its initial view looks across Chamonix in 3D. Use
-`packages/maps/terrain.config.ts` in an SDK checkout to preview or capture the regional, mountain,
+Outdoors includes `light`, `dawn`, `dusk` and `dark` themes, a `light` time-of-day family, and
+system light/dark selection. Summit labels include their elevation in metres when the data provides it. Its initial view looks across Chamonix in 3D. Use
+`packages/maps/outdoors.config.ts` in an SDK checkout to preview or capture the regional, mountain,
 trail, city and mobile scenes through the same CLI as Streets.
 
 The default elevation source is public Mapterhorn Terrarium tiles (512 px, maximum source zoom 12).
 Relief, hillshade and generated contours share that TileJSON. To change providers, retain the
-Terrain settings with `resolveMap(terrain).terrain` and replace its `url`, `encoding`, `tileSize`
+elevation settings with `resolveMap(outdoors).terrain` and replace its `url`, `encoding`, `tileSize`
 and `maxZoom` as appropriate; `terrain` is an atomic configuration field when extending a map.
 A custom `contours.demUrl` overrides the contour provider explicitly. Geographic tiles are requested
 at runtime and are not bundled. Local map detail depends on the available World and elevation data.
@@ -244,14 +244,14 @@ marks with its chart symbols and a "Not for navigation" notice; other maps opt i
 
 ## Themes and assets
 
-`streetsThemes` and `terrainThemes` expose their complete appearance collections. Import those
+`streetsThemes` and `outdoorsThemes` expose their complete appearance collections. Import those
 collections when using `defineTheme()` to derive a new appearance. A declared `themes` collection
 replaces the inherited collection, so also declare the intended `defaultTheme` and `systemThemes`
 and optional `timeOfDay` mappings. `system` belongs to browser selection; captures and builds use concrete theme names.
 
-The package exports `streetsIcons`, `soundingsIcons` and `terrainIcons`. These are installed
-resource directories, not sprite URLs. Terrain composes Streets' artwork with its own summit
-symbols. Streets and Terrain share `streetsFonts` (DINish and Noto Sans) and `streetsModels`.
+The package exports `streetsIcons`, `soundingsIcons` and `outdoorsIcons`. These are installed
+resource directories, not sprite URLs. Outdoors composes Streets' artwork with its own summit
+symbols. Streets and Outdoors share `streetsFonts` (DINish and Noto Sans) and `streetsModels`.
 Soundings declares a Noto Sans URL glyph provider from an immutable Hosted base-asset set.
 The CLI and build integrations prepare the selected directories into runtime assets.
 

@@ -125,6 +125,12 @@ export type TileflowTrees3D = {
     hedges: number;
     drawn: number;
   }>;
+  /**
+   * What the next frames still wait for: tiles of trees round the camera being read, placed or
+   * uploaded, and whether the trees are still growing or sinking. Zero and false once the view is
+   * complete, or while the trees are hidden.
+   */
+  pending(): Readonly<{tiles: number; transition: boolean}>;
   /** Takes the layer off the map and lets go of its buffers. */
   dispose(): void;
 };
@@ -1310,6 +1316,12 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
     grow,
     get scale() {
       return scale;
+    },
+    pending() {
+      if (disposed || (target <= 0 && scale <= 0)) return {tiles: 0, transition: false};
+      let count = 0;
+      for (const set of tiles) count += set.pending();
+      return {tiles: count, transition: motion !== undefined || scale !== target};
     },
     get stats() {
       let count = 0;

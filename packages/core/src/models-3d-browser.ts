@@ -120,6 +120,12 @@ export type TileflowPlacedModels = {
   ): number[][] | undefined;
   /** The models loaded and wanted now. */
   shown(): readonly TileflowPlacedModel[];
+  /**
+   * Models still on their way near the camera: the landmarks' TileJSON, region indexes and tiles,
+   * and the map's own models, downloading; and models standing but not yet on the GPU. A download
+   * that failed and waits to be tried again is not counted.
+   */
+  pending(): number;
   /** Uploads loaded models to the GPU. */
   upload(context: WebGL2RenderingContext): void;
   /** The level of detail to draw a model at, by how large it looks from the camera. */
@@ -722,6 +728,12 @@ export function createTileflowPlacedModels(
       return masks;
     },
     shown: () => active,
+    pending() {
+      if (disposed) return 0;
+      let count = loading.size + regionLoading.size + tileLoading.size + (tilesetLoad ? 1 : 0);
+      for (const entry of active) if (!entry.gl) count += 1;
+      return count;
+    },
     upload(context) {
       for (const entry of released.splice(0)) {
         releaseBuffers(context, entry);

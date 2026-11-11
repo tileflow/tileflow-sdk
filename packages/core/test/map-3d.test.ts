@@ -317,3 +317,20 @@ test('caller camera changes before lazy loading win, and removal never writes th
   assert.equal(attachment.scene, undefined);
   assert.equal(map.getVerticalFieldOfView(), before);
 });
+
+test('the scene reports what it still waits for, and nothing while hidden', async () => {
+  const map = {
+    ...fakeMap(buildings),
+    getSource: () => ({tiles: ['https://scene-test.invalid/{z}/{x}/{y}.pbf'], maxzoom: 15}),
+  };
+  const attachment = attachTileflowMap3D({map, load});
+  await mounted();
+  const scene = attachment.scene!;
+  // Mounted but not yet drawn: the building tiles round the camera are still to be read.
+  assert.ok(scene.pending().buildingTiles > 0);
+  assert.equal(scene.loaded(), false);
+  await scene.hide();
+  assert.deepEqual(scene.pending(), {buildingTiles: 0, models: 0, treeTiles: 0, transitions: 0});
+  assert.equal(scene.loaded(), true);
+  attachment.dispose();
+});

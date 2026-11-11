@@ -1,5 +1,7 @@
 import type {Command} from 'commander';
 import {spawn} from 'node:child_process';
+import {existsSync} from 'node:fs';
+import {readFile} from 'node:fs/promises';
 import {isAbsolute, relative, resolve, sep} from 'node:path';
 import {
   createTileflowCaptureSession,
@@ -45,20 +47,28 @@ import {
 } from './capture-output';
 import {saveCaptureRecord} from './capture-record';
 import {withTileflowConfigSecretsHidden} from './config-execution';
+import {
+  isTileflowOfficialMapName,
+  tileflowOfficialMapNames,
+  writeTileflowOfficialMapConfig,
+} from './official-map-config';
 
 export type CaptureCommandOptions = {
   all?: boolean;
   allShots?: boolean;
   appOrigin?: string;
+  batch?: string;
   bearing?: string;
   bounds?: string;
   browserInstall: boolean;
   center?: string;
   config: string;
+  contactSheet?: string;
   dpr?: string;
   force?: boolean;
   format?: string;
   frame?: 'map' | 'viewport';
+  gpu?: boolean;
   height?: string;
   json?: boolean;
   map?: string;
@@ -68,6 +78,7 @@ export type CaptureCommandOptions = {
   selector?: string;
   shot?: string[];
   theme?: string;
+  timeout?: string;
   url?: string;
   width?: string;
   watch?: boolean;
@@ -80,6 +91,8 @@ export type TileflowCaptureJsonV1 = {
   schemaVersion: 1;
   command: 'capture';
   captures: TileflowCaptureJsonEntry[];
+  /** The labelled grid of every capture, when `--contact-sheet` asked for one. */
+  contactSheetPath?: string;
 };
 
 export type TileflowCaptureJsonEntry = {
@@ -219,8 +232,18 @@ export function registerCaptureCommands(
     )
     .option('--all-shots', 'render every committed timed shot')
     .option('--format <format>', 'shot output: webm (default) or frames')
-    .option('--map <name>', 'capture one map with an uncommitted camera')
-    .option('--theme <name>', 'required concrete theme for exploratory --map capture')
+    .option(
+      '--map <name>',
+      'capture one map with an uncommitted camera; an official map (streets, soundings, terrain) needs no config',
+    )
+    .option(
+      '--theme <names>',
+      'concrete theme for exploratory capture; a comma-separated list captures each theme',
+    )
+    .option(
+      '--batch <path>',
+      'JSON list of exploratory captures, rendered in one browser session (see REFERENCE.md)',
+    )
     .option('--center <lng,lat>', 'exploratory center camera')
     .option('--bounds <west,south,east,north>', 'exploratory bounds camera')
     .option('--zoom <number>', 'exploratory center zoom')
@@ -236,6 +259,15 @@ export function registerCaptureCommands(
     .option('--out <path>', 'PNG path for one scene, or .webm/frame directory for one shot')
     .option('--out-dir <path>', 'directory for one or more captures')
     .option('--force', 'replace different explicit output files')
+    .option(
+      '--contact-sheet <path>',
+      'also write every capture of this command into one labelled grid PNG',
+    )
+    .option('--timeout <seconds>', 'per-capture budget, including the 3D scene settling', '30')
+    .option(
+      '--gpu',
+      "render exploratory captures with this machine's GPU: much faster 3D, hardware-dependent pixels",
+    )
     .option('--json', 'print deterministic schema-version-1 JSON')
     .option('--watch', 'keep running and recapture after each valid local edit')
     .option(
@@ -436,11 +468,19 @@ function validateShotSelectionOptions(
   if (options.allShots && shots.length > 0) {
     throw new Error('Use either --shot or --all-shots, not both.');
   }
-  if (positionalScenes.length > 0 || options.all || options.map) {
+  if (positionalScenes.length > 0 || options.all || options.map || options.batch) {
     throw new Error('Render shots separately from scenes; --shot and --all-shots take no scenes.');
   }
   if (options.watch) {
     throw new Error('--watch captures scenes; it does not render shots.');
+  }
+  if (options.gpu) {
+    throw new Error(
+      'Shots render in software so their frames compare across machines; drop --gpu.',
+    );
+  }
+  if (options.contactSheet !== undefined) {
+    throw new Error('--contact-sheet lays out still captures, not shots.');
   }
   const sceneOnlyOptions = [
     options.center,
@@ -571,26 +611,28 @@ async function runCaptureCommand(
     }
 
     const cwd = process.cwd();
+    const exploratoryDefinitions = isExploratorySelection(options)
+      ? await createExploratoryScenes(options, cwd)
+      : undefined;
+    const config = await resolveCaptureConfig(options, exploratoryDefinitions, cwd);
     const controller = installSignalAbortController();
     const session = createTileflowCaptureSession({
       allowBrowserInstall: options.browserInstall,
       appOrigin: options.url ? undefined : (options.appOrigin ?? process.env.TILEFLOW_APP_ORIGIN),
       appUrl: options.url,
-      config: options.config,
+      config,
       cwd,
       onBrowserInstallProgress: options.json ? undefined : printInstallProgress,
       frame: options.frame,
       selector: options.selector,
       signal: controller.signal,
+      timeoutMs: parseCaptureTimeout(options.timeout),
+      ...(options.gpu ? {graphics: 'gpu' as const} : {}),
     });
 
     try {
-      const exploratoryDefinition = options.map ? createExploratoryScene(options) : undefined;
-      const result = exploratoryDefinition
-        ? await session.captureDefinitions(
-            {[options.map!]: exploratoryDefinition},
-            controller.signal,
-          )
+      const result = exploratoryDefinitions
+        ? await session.captureDefinitions(exploratoryDefinitions, controller.signal)
         : options.all
           ? await session.captureAll(controller.signal)
           : await session.capture(positionalScenes, controller.signal);
@@ -613,10 +655,11 @@ async function runCaptureCommand(
           receipt: serializeTileflowCaptureReceipt(target.capture.receipt),
           receiptPath: target.receiptPath,
         });
+        const definition = exploratoryDefinitions?.[target.capture.scene];
         written.push({
           ...target,
           captureId: await saveCaptureRecord(target.capture, cwd),
-          ...(exploratoryDefinition ? {definition: exploratoryDefinition} : {}),
+          ...(definition ? {definition} : {}),
         });
       }
 
@@ -624,11 +667,31 @@ async function runCaptureCommand(
         await warnIfManagedCapturesAreNotIgnored(cwd);
       }
 
+      let contactSheetPath: string | undefined;
+      if (options.contactSheet) {
+        contactSheetPath = resolve(cwd, options.contactSheet);
+        const sheet = await session.contactSheet(
+          [...targets]
+            .sort((left, right) => compareCodeUnits(left.capture.scene, right.capture.scene))
+            .map(({capture}) => ({label: `${capture.scene} · ${capture.theme}`, png: capture.png})),
+          {signal: controller.signal},
+        );
+        await writeAtomicFileSet({
+          boundaryPath: resolve(contactSheetPath, '..'),
+          files: [{path: contactSheetPath, source: sheet}],
+          force: Boolean(options.force),
+          label: 'Contact sheet',
+          managed: false,
+        });
+      }
+
       const document = createTileflowCaptureJson(written, cwd);
+      if (contactSheetPath) document.contactSheetPath = relativePath(cwd, contactSheetPath);
       if (options.json) {
         process.stdout.write(serializeTileflowCaptureJson(document));
         return;
       }
+      if (contactSheetPath) console.log(`Contact sheet -> ${document.contactSheetPath}.`);
 
       for (const entry of document.captures) {
         console.log(
@@ -637,12 +700,57 @@ async function runCaptureCommand(
         if (entry.networkDependent) {
           console.error(`Capture ${entry.scene} used remote map resources.`);
         }
+        printCaptureWarnings(entry.scene, entry.warnings);
       }
     } finally {
       await session.close();
       controller.close();
     }
   });
+}
+
+/**
+ * Prints what makes an image incomplete. Remote-origin notes stay in `networkDependent`; the rest
+ * (a dataset the key cannot read, a 3D scene that had not settled) reach stderr in text mode too.
+ */
+function printCaptureWarnings(scene: string, warnings: readonly string[]): void {
+  for (const warning of warnings) {
+    if (warning.startsWith('Capture requested remote resources from ')) continue;
+    console.error(`Warning (${scene}): ${warning}`);
+  }
+}
+
+function parseCaptureTimeout(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds) || seconds < 5 || seconds > 600) {
+    throw new Error('--timeout expects seconds from 5 to 600.');
+  }
+  return Math.round(seconds * 1000);
+}
+
+function isExploratorySelection(options: CaptureCommandOptions): boolean {
+  return Boolean(options.map) || Boolean(options.batch);
+}
+
+/**
+ * The config to capture from. Without a project config, exploratory captures of official maps
+ * read a generated config that extends them, so `--map streets` works in an empty directory.
+ */
+async function resolveCaptureConfig(
+  options: CaptureCommandOptions,
+  definitions: Record<string, NormalizedTileflowCaptureScene> | undefined,
+  cwd: string,
+): Promise<string> {
+  if (!definitions || existsSync(resolve(cwd, options.config))) return options.config;
+  const maps = [...new Set(Object.values(definitions).map((definition) => definition.map))];
+  const official = maps.length === 1 && isTileflowOfficialMapName(maps[0]!) ? maps[0] : undefined;
+  if (!official) {
+    throw new Error(
+      `Config not found: ${options.config}. Without a config, exploratory capture opens one official map (${tileflowOfficialMapNames.join(', ')}).`,
+    );
+  }
+  return await writeTileflowOfficialMapConfig(official, cwd);
 }
 
 async function runCaptureWatchCommand(
@@ -870,6 +978,17 @@ function validateSelectionOptions(
   if (options.format !== undefined) {
     throw new Error('--format applies to --shot and --all-shots.');
   }
+  if (options.contactSheet !== undefined && !options.contactSheet.toLowerCase().endsWith('.png')) {
+    throw new Error('--contact-sheet must name a .png file.');
+  }
+  if (options.contactSheet !== undefined && options.watch) {
+    throw new Error('--contact-sheet applies to one capture run, not --watch.');
+  }
+  if (options.gpu && !options.map && !options.batch) {
+    throw new Error(
+      '--gpu applies to exploratory --map and --batch captures; committed scenes render in software so their images compare across machines.',
+    );
+  }
   const exploratoryOptions = [
     options.center,
     options.bounds,
@@ -910,16 +1029,20 @@ function validateSelectionOptions(
     throw new Error('Application URL/selector/frame overrides require exactly one named scene.');
   }
 
-  if (options.map) {
-    if (!tileflowCaptureSceneNameSchema.safeParse(options.map).success) {
+  if (options.map || options.batch) {
+    if (options.map && !tileflowCaptureSceneNameSchema.safeParse(options.map).success) {
       throw new Error('Exploratory --map output requires a portable, non-reserved artifact name.');
     }
     if (options.watch) {
-      throw new Error('--watch requires committed named scenes or --all, not exploratory --map.');
+      throw new Error(
+        '--watch requires committed named scenes or --all, not exploratory --map or --batch.',
+      );
     }
     if (options.all || positionalScenes.length > 0) {
-      throw new Error('Use --map only for an uncommitted exploratory capture.');
+      throw new Error('Use --map and --batch only for uncommitted exploratory captures.');
     }
+    // A batch file holds each capture's camera; the flags only give defaults.
+    if (options.batch) return;
     if (options.theme === undefined) {
       throw new Error('Exploratory --map capture requires one concrete --theme.');
     }
@@ -946,23 +1069,171 @@ function validateSelectionOptions(
   }
 }
 
+/** One exploratory capture as a `--batch` file lists it; flags fill what an entry leaves out. */
+type ExploratoryCaptureEntry = {
+  name?: unknown;
+  map?: unknown;
+  theme?: unknown;
+  camera?: unknown;
+  center?: unknown;
+  bounds?: unknown;
+  padding?: unknown;
+  zoom?: unknown;
+  bearing?: unknown;
+  pitch?: unknown;
+  width?: unknown;
+  height?: unknown;
+  dpr?: unknown;
+};
+
+const maximumExploratoryCaptures = 200;
+
+/**
+ * The exploratory captures a command asks for, by output name: one per theme of `--map`, or each
+ * entry of a `--batch` file (an array, or `{captures: [...]}`) per theme. They render in one
+ * browser session from one compiled artifact snapshot.
+ */
+export async function createExploratoryScenes(
+  options: CaptureCommandOptions,
+  cwd: string,
+): Promise<Record<string, NormalizedTileflowCaptureScene>> {
+  const entries: ExploratoryCaptureEntry[] = options.batch
+    ? await readExploratoryBatch(resolve(cwd, options.batch))
+    : [{}];
+  const scenes: Record<string, NormalizedTileflowCaptureScene> = {};
+  for (const [index, entry] of entries.entries()) {
+    const label = options.batch ? `--batch entry ${index + 1}` : '--map';
+    const map = optionalString(entry.map, `${label} map`) ?? options.map;
+    if (!map) throw new Error(`${label} names no map; set "map" or pass --map.`);
+    const themeList = optionalString(entry.theme, `${label} theme`) ?? options.theme;
+    if (!themeList) {
+      throw new Error(`${label} names no theme; set "theme" or pass --theme.`);
+    }
+    const themes = [...new Set(themeList.split(',').map((theme) => theme.trim()))];
+    const base = optionalString(entry.name, `${label} name`) ?? map;
+    for (const theme of themes) {
+      const name = themes.length > 1 ? `${base}-${theme}` : base;
+      if (!tileflowCaptureSceneNameSchema.safeParse(name).success) {
+        throw new Error(`${label} output name "${name}" is not a portable artifact name.`);
+      }
+      if (Object.hasOwn(scenes, name)) {
+        throw new Error(`Exploratory captures share the output name "${name}"; name each one.`);
+      }
+      scenes[name] = createExploratoryScene({...options, map, theme}, entry, label);
+      if (Object.keys(scenes).length > maximumExploratoryCaptures) {
+        throw new Error(`One command captures at most ${maximumExploratoryCaptures} images.`);
+      }
+    }
+  }
+  return scenes;
+}
+
+async function readExploratoryBatch(path: string): Promise<ExploratoryCaptureEntry[]> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readFile(path, 'utf8'));
+  } catch (error) {
+    throw new Error(
+      `--batch could not read ${path}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const list = Array.isArray(parsed)
+    ? parsed
+    : parsed &&
+        typeof parsed === 'object' &&
+        Array.isArray((parsed as {captures?: unknown}).captures)
+      ? (parsed as {captures: unknown[]}).captures
+      : undefined;
+  if (!list || list.length === 0) {
+    throw new Error('--batch expects a non-empty JSON array, or {"captures": [...]}.');
+  }
+  return list.map((entry, index) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      throw new Error(`--batch entry ${index + 1} is not an object.`);
+    }
+    return entry as ExploratoryCaptureEntry;
+  });
+}
+
+function optionalString(value: unknown, label: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error(`${label} expects a non-empty string.`);
+  }
+  return value;
+}
+
+/** Reads a number from a batch entry, or falls back to the flag's text. */
+function entryNumber(
+  value: unknown,
+  flag: string | undefined,
+  label: string,
+  fallback?: string,
+): number | undefined {
+  if (value !== undefined) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      throw new Error(`${label} expects a finite number.`);
+    }
+    return value;
+  }
+  const text = flag ?? fallback;
+  return text === undefined ? undefined : parseFiniteNumber(text, label);
+}
+
+function entryTuple(
+  value: unknown,
+  flag: string | undefined,
+  length: number,
+  label: string,
+): number[] | undefined {
+  if (value !== undefined) {
+    if (
+      !Array.isArray(value) ||
+      value.length !== length ||
+      value.some((item) => typeof item !== 'number' || !Number.isFinite(item))
+    ) {
+      throw new Error(`${label} expects ${length} finite numbers.`);
+    }
+    return value as number[];
+  }
+  return flag === undefined ? undefined : parseTuple(flag, length, label);
+}
+
 export function createExploratoryScene(
   options: CaptureCommandOptions,
+  entry: ExploratoryCaptureEntry = {},
+  label = '--map',
 ): NormalizedTileflowCaptureScene {
   const map = options.map!;
-  const bearing = parseFiniteNumber(options.bearing ?? '0', '--bearing');
-  const pitch = parseFiniteNumber(options.pitch ?? '0', '--pitch');
-  const camera = options.center
-    ? {
-        type: 'center' as const,
-        center: parseTuple(options.center, 2, '--center') as [number, number],
-        zoom: parseFiniteNumber(options.zoom!, '--zoom'),
-        bearing,
-        pitch,
-      }
+  if (
+    entry.camera !== undefined &&
+    (!entry.camera || typeof entry.camera !== 'object' || Array.isArray(entry.camera))
+  ) {
+    throw new Error(`${label} camera expects an object.`);
+  }
+  const nested = (entry.camera ?? {}) as ExploratoryCaptureEntry;
+  const pick = (key: keyof ExploratoryCaptureEntry) => entry[key] ?? nested[key];
+  // An entry's own center or bounds replaces the flags' position and zoom as a whole; bearing,
+  // pitch and viewport fall back to the flags one by one.
+  const ownCamera = pick('center') !== undefined || pick('bounds') !== undefined;
+  const flags: Partial<CaptureCommandOptions> = ownCamera ? {} : options;
+  const center = entryTuple(pick('center'), flags.center, 2, `${label} center`);
+  const bounds = entryTuple(pick('bounds'), flags.bounds, 4, `${label} bounds`);
+  if (Boolean(center) === Boolean(bounds)) {
+    throw new Error(`${label} needs exactly one of center or bounds.`);
+  }
+  const zoom = entryNumber(pick('zoom'), flags.zoom, `${label} zoom`);
+  if (center && zoom === undefined) throw new Error(`${label} center camera needs a zoom.`);
+  if (bounds && zoom !== undefined) throw new Error(`${label} bounds camera takes no zoom.`);
+  const bearing = entryNumber(pick('bearing'), options.bearing, `${label} bearing`, '0')!;
+  const pitch = entryNumber(pick('pitch'), options.pitch, `${label} pitch`, '0')!;
+  const padding = entryNumber(pick('padding'), undefined, `${label} padding`);
+  const camera = center
+    ? {type: 'center' as const, center: center as [number, number], zoom: zoom!, bearing, pitch}
     : {
         type: 'bounds' as const,
-        bounds: parseTuple(options.bounds!, 4, '--bounds') as [number, number, number, number],
+        bounds: bounds as [number, number, number, number],
+        ...(padding === undefined ? {} : {padding}),
         bearing,
         pitch,
       };
@@ -971,9 +1242,9 @@ export function createExploratoryScene(
     theme: options.theme!,
     camera,
     viewport: {
-      width: parseFiniteNumber(options.width ?? '1200', '--width'),
-      height: parseFiniteNumber(options.height ?? '800', '--height'),
-      dpr: parseFiniteNumber(options.dpr ?? '1', '--dpr'),
+      width: entryNumber(entry.width, options.width, `${label} width`, '1200')!,
+      height: entryNumber(entry.height, options.height, `${label} height`, '800')!,
+      dpr: entryNumber(entry.dpr, options.dpr, `${label} dpr`, '1')!,
     },
   };
   const parsed = tileflowCaptureSceneSchema.safeParse(candidate);

@@ -75,6 +75,27 @@ export function renderTileflowPreviewHtml(
         white-space: pre-wrap;
       }
       html[data-inspector-embedded=true] .status { display:none !important; }
+      .warnings {
+        position: fixed;
+        left: 16px;
+        bottom: 16px;
+        z-index: 2;
+        display: none;
+        max-width: 640px;
+        border: 1px solid rgba(150, 100, 20, 0.35);
+        border-radius: 8px;
+        background: rgba(255, 248, 230, 0.96);
+        color: #5c3d00;
+        padding: 10px 12px;
+        white-space: pre-wrap;
+        font-size: 13px;
+      }
+      /* chrome=off leaves only the map, for screenshots taken by any browser tool. */
+      html[data-tileflow-chrome=off] .badge,
+      html[data-tileflow-chrome=off] .status,
+      html[data-tileflow-chrome=off] .warnings,
+      html[data-tileflow-chrome=off] .maplibregl-ctrl-top-right,
+      html[data-tileflow-chrome=off] .maplibregl-ctrl-top-left { display:none !important; }
       .maplibregl-ctrl-group .tileflow-3d-toggle,
       .maplibregl-ctrl-group .tileflow-tree-toggle,
       .maplibregl-ctrl-group .tileflow-theme-toggle {
@@ -106,6 +127,7 @@ export function renderTileflowPreviewHtml(
   <body>
     <div class="badge" id="badge">Tileflow preview</div>
     <div class="status" id="status" role="status"></div>
+    <div class="warnings" id="warnings" role="status"></div>
     <div id="map"></div>
     <script type="importmap">{"imports":{"three":"${basePath}/__runtime/three.module.js"}}</script>
     <script type="module">
@@ -145,6 +167,9 @@ export function renderTileflowPreviewHtml(
       const mapBenchmarkEnabled = previewSearchParameters.get("mapBenchmark") === "1";
       const mapSweepEnabled = previewSearchParameters.get("mapSweep") === "1";
       const mapCompareEnabled = previewSearchParameters.get("mapCompare") === "1";
+      // chrome=off shows the map alone: no controls, badge or panels.
+      const chromeHidden = previewSearchParameters.get("chrome") === "off";
+      if (chromeHidden) document.documentElement.dataset.tileflowChrome = "off";
       const requestedMapCompareLimit = Number(previewSearchParameters.get("mapCompareLimit"));
       const mapCompareLimit =
         Number.isInteger(requestedMapCompareLimit) &&
@@ -1498,6 +1523,70 @@ export function renderTileflowPreviewHtml(
         map.fire("tileflow:visible-layer-groups", {groups: [...visibleLayerGroups]});
       }
 
+      // A screenshot is complete when MapLibre's tiles have loaded and the 3D scene has nothing
+      // pending. The root element carries data-tileflow-ready="true" then, so any browser tool can
+      // wait for it; a camera move or new data clears it. The scene asks for frames while it
+      // prepares, so its progress is read on those frames and when the map settles.
+      function watchPreviewReadiness(map) {
+        const root = document.documentElement;
+        let checkedAt = 0;
+        const check = (force) => {
+          const now = performance.now();
+          if (!force && now - checkedAt < 250) return;
+          checkedAt = now;
+          const scene = coreScene.scene;
+          const ready = map.loaded?.() === true && (!scene || scene.loaded());
+          root.dataset.tileflowReady = ready ? "true" : "false";
+        };
+        const reset = () => {
+          root.dataset.tileflowReady = "false";
+        };
+        globalThis.__tileflowPreviewReadiness = () => ({
+          ready: root.dataset.tileflowReady === "true",
+          mapLoaded: map.loaded?.() === true,
+          scene: coreScene.scene?.pending?.()
+        });
+        root.dataset.tileflowReady = "false";
+        map.on("idle", () => check(true));
+        map.on("render", () => check(false));
+        map.on("movestart", reset);
+        map.on("dataloading", reset);
+      }
+
+      // A dataset the session cannot read (HTTP 401 or 403) leaves its layers blank. Say so,
+      // naming the dataset, instead of drawing an unexplained empty sea or park.
+      const previewWarnings = new Set();
+      function watchRefusedData(map) {
+        const panel = document.getElementById("warnings");
+        map.on("error", (event) => {
+          const status = event?.error?.status;
+          if (status !== 401 && status !== 403) return;
+          let subject = "Map data";
+          try {
+            const url = new URL(event.error.url || "", location.href);
+            const dataset = /^\\/(?:v1\\/)?tiles\\/([^/]+)\\//u.exec(url.pathname)?.[1];
+            subject = dataset ? 'Tileflow dataset "' + decodeURIComponent(dataset) + '"' : "Data from " + url.origin;
+          } catch {}
+          const message = subject + " returned HTTP " + status + ": this session is not entitled to read it, so its layers are missing.";
+          if (previewWarnings.has(message)) return;
+          previewWarnings.add(message);
+          console.warn("Tileflow preview: " + message);
+          document.documentElement.dataset.tileflowWarnings = JSON.stringify([...previewWarnings]);
+          panel.textContent = [...previewWarnings].join("\\n");
+          panel.style.display = "block";
+          // MapLibre never finishes loading a style whose source it could not read; the source
+          // and its layers come off so the rest of the map, and its 3D scene, load.
+          const sourceId = event.sourceId;
+          if (!sourceId || !map.getSource(sourceId)) return;
+          try {
+            for (const layer of map.getStyle()?.layers || []) {
+              if (layer.source === sourceId) map.removeLayer(layer.id);
+            }
+            map.removeSource(sourceId);
+          } catch {}
+        });
+      }
+
       function previewTransformRequest(url) {
         try {
           return new URL(url, location.href).hostname === "dev-tiles.tileflow.dev"
@@ -1519,6 +1608,7 @@ export function renderTileflowPreviewHtml(
         registerTileflowPathGroundProtocol({addProtocol: maplibregl.addProtocol});
         registerTileflowPmtilesProtocol({addProtocol: maplibregl.addProtocol});
         const map = new maplibregl.Map({
+          ...(chromeHidden ? {attributionControl: false} : {}),
           canvasContextAttributes: tileflowCanvasContextAttributes({antialias: mapAntialias}),
           collectResourceTiming: mapBenchmarkEnabled || Boolean(inspectorObserver),
           container: "map",
@@ -1536,7 +1626,9 @@ export function renderTileflowPreviewHtml(
         attachTileflowHorizonQueries(map);
         inspectorObserver?.attach(map);
         installMapBenchmark(map);
-        if (window.parent === window) map.addControl(new maplibregl.NavigationControl(), "top-right");
+        if (window.parent === window && !chromeHidden) map.addControl(new maplibregl.NavigationControl(), "top-right");
+        watchPreviewReadiness(map);
+        watchRefusedData(map);
         let threeDimensionalControl;
         let treeControl;
         if (isSemanticPreview) {
@@ -1553,7 +1645,7 @@ export function renderTileflowPreviewHtml(
         }
         // Inspector has a shared theme selector in its Controls panel; keep the map-level
         // cycling button for standalone previews only.
-        if (previewThemes.length > 1 && window.parent === window) map.addControl(new ThemeControl(), "top-right");
+        if (previewThemes.length > 1 && window.parent === window && !chromeHidden) map.addControl(new ThemeControl(), "top-right");
         let ensuringThreeDimensionalLayers;
         const ensureThreeDimensionalLayers = () => {
           if (ensuringThreeDimensionalLayers) return ensuringThreeDimensionalLayers;

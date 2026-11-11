@@ -2956,6 +2956,7 @@ export {
   type TileflowMap3D,
   type TileflowMap3DMap,
   type TileflowMap3DOptions,
+  type TileflowMap3DPending,
 } from './map-3d-browser';
 
 export {

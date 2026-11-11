@@ -52,6 +52,18 @@ export type TileflowMap3DOptions = Readonly<{
   onError?: (error: unknown) => void;
 }>;
 
+/** What the scene's next frames still wait for, by renderer; see `TileflowMap3D.pending`. */
+export type TileflowMap3DPending = Readonly<{
+  /** Building tiles round the camera being read, built or uploaded. */
+  buildingTiles: number;
+  /** Landmarks and the map's own models downloading, uploading or fading in. */
+  models: number;
+  /** Tiles of 3D trees round the camera being read, placed or uploaded. */
+  treeTiles: number;
+  /** Renderers still rising, sinking or growing. */
+  transitions: number;
+}>;
+
 export type TileflowMap3D = {
   /** Shows the scene. A transition animates the buildings' rise; other parts change at once. */
   show(options?: TileflowBuildings3DChange): Promise<void>;
@@ -63,6 +75,13 @@ export type TileflowMap3D = {
   setVegetation(visible: boolean | undefined): void;
   /** Overrides the camera policy; undefined restores the map's authored default. */
   setAdaptivePerspective(enabled: boolean | undefined): void;
+  /**
+   * What the scene's next frames still wait for. MapLibre's `idle` covers only the style's own
+   * sources; the scene reads its tiles and models itself, so a complete image waits for both.
+   */
+  pending(): TileflowMap3DPending;
+  /** Whether nothing is pending: every renderer shown has drawn the view round the camera. */
+  loaded(): boolean;
   /** The mounted renderers, for diagnostics; each is present while the style declares it. */
   readonly buildings: TileflowBuildings3D | undefined;
   readonly vegetation: TileflowVegetationController | undefined;
@@ -249,6 +268,17 @@ export function createTileflowMap3D(options: TileflowMap3DOptions): TileflowMap3
   map.on('move', syncFlatBuildings);
   sync();
 
+  function pending(): TileflowMap3DPending {
+    const building = buildings?.pending();
+    const trees = vegetation?.pending();
+    return {
+      buildingTiles: building?.tiles ?? 0,
+      models: building?.models ?? 0,
+      treeTiles: trees?.tiles ?? 0,
+      transitions: (building?.transition ? 1 : 0) + (trees?.transition ? 1 : 0),
+    };
+  }
+
   return {
     show: (transition) => change('3d', transition),
     hide: (transition) => change('2d', transition),
@@ -263,6 +293,11 @@ export function createTileflowMap3D(options: TileflowMap3DOptions): TileflowMap3
       adaptivePerspective = enabled;
       camera.setEnabled(viewMode === '3d' && (adaptivePerspective ?? authoredPerspective ?? false));
       sync();
+    },
+    pending,
+    loaded() {
+      const now = pending();
+      return now.buildingTiles + now.models + now.treeTiles + now.transitions === 0;
     },
     get buildings() {
       return buildings;

@@ -111,8 +111,22 @@ the third. Moving the position updates the map at once. See
 theme, and `:emphasis="{recede: {roads: 0.3}, labels: 0.6}"` makes modules recede and labels fade so
 your own content reads first. Both ease in over `theme-transition`, stay through theme changes, and
 follow the props: an empty `colors` or no `emphasis` restores the map as designed. An unknown token or an
-invalid value is logged and leaves the colours unchanged.
+invalid value is reported as an error and leaves the colours unchanged.
 A map that declares colour knobs, as Streets does, also takes them by name, such as `:colors="{water: '#2563eb', roads: '#9aa5b1'}"`; see [Streets' knobs](https://github.com/tileflow/tileflow-sdk/blob/main/packages/maps/REFERENCE.md#streets-colour-knobs).
+
+`@error="onError"` receives `{code, error}` when the map cannot do what you asked, where `error` is
+an `Error` and `code` is one of:
+
+- `manifest`: the manifest could not be loaded, or it has no map named `source.map`.
+- `theme`: the requested theme or `timeOfDay` is not in the map, or the change failed.
+- `blend`: a `themeBlend` names a theme the map does not have, or the blend failed.
+- `colors` and `emphasis`: the setting was rejected, for example an unknown token or an invalid value.
+- `runtime`: the map could not be created, loaded, or taken down.
+- `scene`: the 3D scene could not be loaded.
+- `camera`: `bounds` or `fitAnnotations` could not be turned into a view.
+
+Without an `error` listener, these failures go to `console.error`. Interactive-state problems keep
+their own channel, the `interaction-diagnostic` event.
 
 Interactive maps show the 3D scene their style declares by default: buildings with Tileflow
 landmarks and the map's Team building models, 3D trees, and street lights where the map enables

@@ -58,8 +58,10 @@
     type TileflowAppearanceBinding,
     type TileflowFairUseNoticeController,
     type TileflowMapLifecycleAttachment,
+    reportTileflowMapError,
     resolveTileflowCameraFit,
     type TileflowCameraFit,
+    type TileflowMapErrorCode,
     type TileflowNavigationControlBinding,
     type TileflowThemeController,
     type TileflowContourRequestScope,
@@ -126,6 +128,7 @@
   export let onInteractionDiagnostic: TileflowMapProps['onInteractionDiagnostic'] = undefined;
   export let onInteractionEvent: TileflowMapProps['onInteractionEvent'] = undefined;
   export let onInteractionStateChange: TileflowMapProps['onInteractionStateChange'] = undefined;
+  export let onError: TileflowMapProps['onError'] = undefined;
   export let onThemeChange: TileflowMapProps['onThemeChange'] = undefined;
   export let popup: TileflowMapProps['popup'] = undefined;
   export let source: TileflowMapProps['source'];
@@ -199,6 +202,11 @@
   let readinessRunId = 0;
 
   const dispatch = createEventDispatcher<{load: MapLibreMap}>();
+
+  /** Without `onError` a failure goes to the console. */
+  function reportError(code: TileflowMapErrorCode, cause: unknown) {
+    reportTileflowMapError(onError, code, cause);
+  }
   const controlledInteractionOwnership = interactionState !== undefined;
   const initialInteractionState =
     validateInteractionStateInput(interactionState, defaultInteractionState).length === 0
@@ -257,7 +265,13 @@
           source,
           theme: themeResolution.name,
         });
-  $: blendStyles = resolveBlendStyles({isImageMode, key: themeBlendKey, manifestMap, source});
+  $: blendResolution = resolveBlendStyles({
+    isImageMode,
+    key: themeBlendKey,
+    manifestMap,
+    source,
+  });
+  $: blendStyles = blendResolution.styles;
   $: resolvedAnalytics = mergeTileflowAnalytics(analytics, runtimeStyle?.analytics);
   $: runtimeImageUrl =
     imageUrl ??
@@ -360,6 +374,24 @@
     syncSystemColorSchemeSubscription();
   }
 
+  // A resolution that fails the same way again is reported once; a new object does not repeat it.
+  let reportedThemeFailure: string | undefined;
+  $: {
+    const failure = themeResolution.error ? String(themeResolution.cause) : undefined;
+    if (mounted && failure !== reportedThemeFailure && failure !== undefined) {
+      reportError('theme', themeResolution.cause);
+    }
+    if (mounted || failure === undefined) reportedThemeFailure = failure;
+  }
+  let reportedBlendFailure: string | undefined;
+  $: {
+    const failure = blendResolution.cause === undefined ? undefined : String(blendResolution.cause);
+    if (mounted && failure !== reportedBlendFailure && failure !== undefined) {
+      reportError('blend', blendResolution.cause);
+    }
+    if (mounted || failure === undefined) reportedBlendFailure = failure;
+  }
+
   $: if (mounted) {
     blendStyles;
     themeBlendPosition;
@@ -432,7 +464,7 @@
   });
   $: if (mounted && mapInstance && appliedCameraFitKey !== cameraFit.key) {
     appliedCameraFitKey = cameraFit.key;
-    if (cameraFit.error) console.error(`Invalid Tileflow map ${cameraFit.error}`);
+    if (cameraFit.error) reportError('camera', new Error(cameraFit.error));
     if (cameraFit.fit) fitCamera(mapInstance, cameraFit.fit);
   }
 
@@ -485,10 +517,20 @@
           manifest && mapName ? resolveTileflowManifestMap(manifest, mapName) : null;
         loadedManifestMap = resolvedMap;
         manifestResolutionState = resolvedMap ? 'ready' : 'error';
+        if (!resolvedMap) {
+          reportError(
+            'manifest',
+            new Error(
+              manifest
+                ? `The Tileflow manifest at ${manifestUrl} has no map named "${mapName}".`
+                : `No Tileflow manifest was found at ${manifestUrl}.`,
+            ),
+          );
+        }
       }
     } catch (error) {
       if (mounted && loadId === manifestLoadId) {
-        console.error('Failed to load Tileflow manifest', error);
+        reportError('manifest', error);
         loadedManifestMap = null;
         manifestResolutionState = 'error';
       }
@@ -607,10 +649,7 @@
     }
     interactionRuntimesDisposing = false;
     if (errors.length > 0) {
-      console.error(
-        'Failed to fully dispose the Tileflow map runtime',
-        errors.length === 1 ? errors[0] : new AggregateError(errors),
-      );
+      reportError('runtime', errors.length === 1 ? errors[0] : new AggregateError(errors));
     }
   }
 
@@ -662,7 +701,7 @@
     } catch (error) {
       if (mounted && runId === refreshRunId && loadId === mapLoadId) {
         lifetime.abort();
-        console.error('Failed to load the Tileflow map runtime', error);
+        reportError('runtime', error);
         mapCaptureState = 'error';
       }
       return;
@@ -760,7 +799,7 @@
       appearanceBinding = createTileflowAppearanceBinding({
         controller: themeController,
         map: maplibreMap,
-        onError: (error, part) => console.error(`Failed to apply the Tileflow map ${part}`, error),
+        onError: (error, part) => reportError(part, error),
       });
       appearanceBinding.update({colors, emphasis}, {transition: {duration: 0}});
     }
@@ -772,7 +811,7 @@
       vegetation,
       viewMode,
       load: () => import('@tileflow/core/3d'),
-      onError: (error) => console.error('Failed to load the Tileflow 3D scene', error),
+      onError: (error) => reportError('scene', error),
       transformRequest: createTileflowTransformRequest({
         getAnalytics: () => resolvedAnalytics,
         sessionController: session,
@@ -935,7 +974,7 @@
     navigationBinding.update(resolvedInteractive ? navigationControl : false);
     // The first view is set without moving; later changes to the request move the camera.
     appliedCameraFitKey = cameraFit.key;
-    if (cameraFit.error) console.error(`Invalid Tileflow map ${cameraFit.error}`);
+    if (cameraFit.error) reportError('camera', new Error(cameraFit.error));
     if (cameraFit.fit) fitCamera(maplibreMap, cameraFit.fit, 0);
 
     mapResizeObserver = new ResizeObserver(() => {
@@ -985,7 +1024,7 @@
       {transition: themeTransition},
     );
     if (result.status === 'failed') {
-      console.error('Failed to blend the Tileflow map themes', result.error);
+      reportError('blend', result.error ?? new Error('The map themes could not be blended.'));
     }
   }
 
@@ -1005,7 +1044,7 @@
     activeRuntimeResource = next;
     const result = await themeController.setTheme(next, {transition: themeTransition});
     if (result.status === 'failed') {
-      console.error('Failed to change the Tileflow map theme', result.error);
+      reportError('theme', result.error ?? new Error('The map theme could not be changed.'));
     }
   }
 
@@ -1515,7 +1554,7 @@
     theme: TileflowMapProps['theme'];
     timeOfDay: TileflowMapProps['timeOfDay'];
     themeBlend: TileflowMapProps['themeBlend'];
-  }): Readonly<{error: boolean; name: string | undefined}> {
+  }): Readonly<{cause?: unknown; error: boolean; name: string | undefined}> {
     // A blend shows its nearest theme until the blend style is ready, and names it while blending.
     const selection = input.themeBlend ? nearestTileflowBlendTheme(input.themeBlend) : input.theme;
     if (!input.manifestMap) {
@@ -1538,8 +1577,8 @@
           input.themeBlend ? undefined : input.timeOfDay,
         ).name,
       };
-    } catch {
-      return {error: true, name: undefined};
+    } catch (cause) {
+      return {cause, error: true, name: undefined};
     }
   }
 
@@ -1548,16 +1587,18 @@
     key: string | undefined;
     manifestMap: TileflowRuntimeManifestMap | null;
     source: TileflowMapProps['source'];
-  }): TileflowRuntimeStyle[] | null {
-    if (input.isImageMode || !input.manifestMap || !input.key) return null;
+  }): Readonly<{cause?: unknown; styles: TileflowRuntimeStyle[] | null}> {
+    if (input.isImageMode || !input.manifestMap || !input.key) return {styles: null};
     try {
-      return resolveTileflowRuntimeThemeBlend({
-        blend: {position: 0, themes: JSON.parse(input.key) as string[]},
-        manifestMap: input.manifestMap,
-        source: input.source,
-      });
-    } catch {
-      return null;
+      return {
+        styles: resolveTileflowRuntimeThemeBlend({
+          blend: {position: 0, themes: JSON.parse(input.key) as string[]},
+          manifestMap: input.manifestMap,
+          source: input.source,
+        }),
+      };
+    } catch (cause) {
+      return {cause, styles: null};
     }
   }
 

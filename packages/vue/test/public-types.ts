@@ -4,6 +4,7 @@ import type {
   TileflowInteractionEvent,
   TileflowInteractionState,
 } from '@tileflow/interactions';
+import type {TileflowMapError} from '@tileflow/core/browser';
 import {
   configureTileflowMapLibre,
   TileflowMap,
@@ -143,6 +144,14 @@ void [
   propertyComponentProps,
   propertySlots,
 ];
+
+// The `error` event carries a stable code and an `Error`.
+const emitted = new TileflowMap({source});
+emitted.$emit('error', {code: 'manifest', error: new Error('offline')});
+// @ts-expect-error a code outside the stable set is not an error code.
+emitted.$emit('error', {code: 'other', error: new Error('offline')});
+const errorEvent: TileflowMapError['code'] = 'colors';
+void errorEvent;
 
 const clusteredProps: import('../src/index.js').TileflowMapProps = {
   annotationClusters: {clusterRadius: 60},

@@ -13,6 +13,7 @@ import {
   type CSSProperties,
   defineComponent,
   type DefineComponent,
+  getCurrentInstance,
   h,
   nextTick,
   onBeforeUnmount,
@@ -53,6 +54,7 @@ import {
   registerTileflowPathGroundProtocol,
   registerTileflowPmtilesProtocol,
   registerTileflowWorldRequestBridge,
+  reportTileflowMapError,
   resolveTileflowCameraFit,
   subscribeTileflowSystemColorScheme,
   type TileflowAppearanceBinding,
@@ -62,6 +64,8 @@ import {
   type TileflowEmphasis,
   type TileflowFairUseNoticeController,
   type TileflowMap3DAttachment,
+  type TileflowMapError,
+  type TileflowMapErrorCode,
   type TileflowMapLifecycleAttachment,
   tileflowMaxPitch,
   type TileflowBounds,
@@ -281,6 +285,7 @@ type PublicTileflowMapComponent = PublicTileflowMapStatics & {
     $emit: {
       (event: 'interactionDiagnostic', diagnostic: TileflowInteractionDiagnostic): void;
       (event: 'interactionEvent', interactionEvent: TileflowInteractionEvent<TAnnotation>): void;
+      (event: 'error', error: TileflowMapError): void;
       (event: 'load', map: MapLibreMap): void;
       (event: 'themeChange', transition: TileflowThemeTransition): void;
       (event: 'update:interactionState', state: TileflowInteractionState): void;
@@ -408,12 +413,21 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
   },
   emits: {
     interactionDiagnostic: (_diagnostic: TileflowInteractionDiagnostic) => true,
+    error: (_error: TileflowMapError) => true,
     interactionEvent: (_event: TileflowInteractionEvent<RuntimeTileflowAnnotation>) => true,
     load: (_map: MapLibreMap) => true,
     themeChange: (_transition: TileflowThemeTransition) => true,
     'update:interactionState': (_state: TileflowInteractionState) => true,
   },
   setup(props, {attrs, emit, slots}) {
+    const instance = getCurrentInstance();
+    // With a listener the failure is emitted as `error`; without one it goes to the console.
+    const reportError = (code: TileflowMapErrorCode, cause: unknown) =>
+      reportTileflowMapError(
+        instance?.vnode.props?.onError ? (event) => emit('error', event) : undefined,
+        code,
+        cause,
+      );
     const containerRef = ref<HTMLDivElement | null>(null);
     const loadedManifestMap = shallowRef<TileflowRuntimeManifestMap | null>(null);
     const manifestResolutionKey = ref('');
@@ -616,8 +630,8 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
             props.themeBlend ? undefined : props.timeOfDay,
           ).name,
         } as const;
-      } catch {
-        return {error: true, name: undefined} as const;
+      } catch (cause) {
+        return {cause, error: true, name: undefined} as const;
       }
     });
     const resolvedThemeName = computed(() => themeResolution.value.name);
@@ -665,19 +679,25 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
             theme: themeResolution.value.name,
           }),
     );
-    const blendStyles = computed<TileflowRuntimeStyle[] | null>(() => {
+    const blendResolution = computed<{
+      cause?: unknown;
+      styles: TileflowRuntimeStyle[] | null;
+    }>(() => {
       const key = themeBlendKey.value;
-      if (isImageMode.value || !manifestMap.value || !key) return null;
+      if (isImageMode.value || !manifestMap.value || !key) return {styles: null};
       try {
-        return resolveTileflowRuntimeThemeBlend({
-          blend: {position: 0, themes: JSON.parse(key) as string[]},
-          manifestMap: manifestMap.value,
-          source: props.source,
-        });
-      } catch {
-        return null;
+        return {
+          styles: resolveTileflowRuntimeThemeBlend({
+            blend: {position: 0, themes: JSON.parse(key) as string[]},
+            manifestMap: manifestMap.value,
+            source: props.source,
+          }),
+        };
+      } catch (cause) {
+        return {cause, styles: null};
       }
     });
+    const blendStyles = computed(() => blendResolution.value.styles);
     const resolvedAnalytics = computed(() =>
       mergeTileflowAnalytics(props.analytics, runtimeStyle.value?.analytics),
     );
@@ -871,10 +891,20 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
             manifest && mapName.value ? resolveTileflowManifestMap(manifest, mapName.value) : null;
           loadedManifestMap.value = resolvedMap;
           manifestResolutionState.value = resolvedMap ? 'ready' : 'error';
+          if (!resolvedMap) {
+            reportError(
+              'manifest',
+              new Error(
+                manifest
+                  ? `The Tileflow manifest at ${manifestUrl.value} has no map named "${mapName.value}".`
+                  : `No Tileflow manifest was found at ${manifestUrl.value}.`,
+              ),
+            );
+          }
         }
       } catch (error) {
         if (loadId === manifestLoadId) {
-          console.error('Failed to load Tileflow manifest', error);
+          reportError('manifest', error);
           loadedManifestMap.value = null;
           manifestResolutionState.value = 'error';
         }
@@ -999,7 +1029,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       interactionRuntimesDisposing = false;
       interactionCaptureState.value = hasInteractionErrors() ? 'error' : 'idle';
       if (teardownError) {
-        console.error('Failed to fully dispose the Tileflow map runtime', teardownError);
+        reportError('runtime', teardownError);
       }
     };
 
@@ -1119,7 +1149,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       } catch (error) {
         if (loadId === mapLoadId) {
           lifetime.abort();
-          console.error('Failed to load the Tileflow map runtime', error);
+          reportError('runtime', error);
           mapCaptureState.value = 'error';
         }
         return;
@@ -1215,8 +1245,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         appearanceBinding = createTileflowAppearanceBinding({
           controller: themeController,
           map,
-          onError: (error, part) =>
-            console.error(`Failed to apply the Tileflow map ${part}`, error),
+          onError: (error, part) => reportError(part, error),
         });
         appearanceBinding.update(
           {colors: props.colors, emphasis: props.emphasis},
@@ -1231,7 +1260,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         vegetation: props.vegetation,
         viewMode: props.viewMode ?? '3d',
         load: () => import('@tileflow/core/3d'),
-        onError: (error) => console.error('Failed to load the Tileflow 3D scene', error),
+        onError: (error) => reportError('scene', error),
         transformRequest: createTileflowTransformRequest({
           getAnalytics: () => resolvedAnalytics.value,
           sessionController: session,
@@ -1376,7 +1405,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       // The first view is set without moving; later changes to the request move the camera.
       const initialFit = cameraFit.value;
       appliedCameraFitKey = initialFit.key;
-      if (initialFit.error) console.error(`Invalid Tileflow map ${initialFit.error}`);
+      if (initialFit.error) reportError('camera', new Error(initialFit.error));
       if (initialFit.fit) fitCamera(map, initialFit.fit, 0);
 
       mapResizeObserver = new ResizeObserver(() => {
@@ -1429,7 +1458,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         .setBlend({hold, position, themes}, {transition: props.themeTransition})
         .then((result) => {
           if (result.status === 'failed') {
-            console.error('Failed to blend the Tileflow map themes', result.error);
+            reportError('blend', result.error ?? new Error('The map themes could not be blended.'));
           }
         });
     };
@@ -1450,7 +1479,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       activeRuntimeResource.value = next;
       void themeController.setTheme(next, {transition: props.themeTransition}).then((result) => {
         if (result.status === 'failed') {
-          console.error('Failed to change the Tileflow map theme', result.error);
+          reportError('theme', result.error ?? new Error('The map theme could not be changed.'));
         }
       });
     };
@@ -1553,6 +1582,23 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       {deep: true, flush: 'post'},
     );
     watch(
+      () => {
+        const resolution = themeResolution.value;
+        return resolution.error ? resolution.cause : undefined;
+      },
+      (cause) => {
+        if (cause !== undefined) reportError('theme', cause);
+      },
+      {flush: 'post'},
+    );
+    watch(
+      () => blendResolution.value.cause,
+      (cause) => {
+        if (cause !== undefined) reportError('blend', cause);
+      },
+      {flush: 'post'},
+    );
+    watch(
       () => [blendStyles.value, props.themeBlend?.position, props.themeBlend?.hold === true],
       () => switchBlend(),
       {flush: 'post'},
@@ -1569,7 +1615,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         const map = mapRef.value;
         if (!map || appliedCameraFitKey === fit.key) return;
         appliedCameraFitKey = fit.key;
-        if (fit.error) console.error(`Invalid Tileflow map ${fit.error}`);
+        if (fit.error) reportError('camera', new Error(fit.error));
         if (fit.fit) fitCamera(map, fit.fit);
       },
       {flush: 'post'},

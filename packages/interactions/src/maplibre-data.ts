@@ -14,6 +14,7 @@ import type {
   TileflowResolvedClusterTarget,
 } from './contracts';
 import type {TileflowMapLibrePositioned} from './maplibre-dom';
+import {roleVariable} from './surface-style';
 import type {TileflowInteractionDiagnostic} from './validation';
 
 const clusterMetadataKey = 'tileflow:cluster';
@@ -556,12 +557,16 @@ function jsonProperties(
 function configureClusterStyles(element: HTMLElement): void {
   element.style.alignItems = 'center';
   element.style.background = 'var(--tileflow-interaction-cluster-color, #2563eb)';
-  element.style.borderColor = 'var(--tileflow-interaction-border-color, #ffffff)';
-  element.style.borderRadius = '9999px';
+  element.style.borderColor = roleVariable(
+    'cluster',
+    'ring',
+    roleVariable('cluster', 'border-color', '#ffffff'),
+  );
+  element.style.borderRadius = roleVariable('cluster', 'border-radius', '9999px');
   element.style.borderStyle = 'solid';
   element.style.borderWidth = '2px';
-  element.style.boxShadow = 'var(--tileflow-interaction-shadow, 0 1px 4px rgb(0 0 0 / 0.25))';
-  element.style.color = 'var(--tileflow-interaction-foreground, #ffffff)';
+  element.style.boxShadow = roleVariable('cluster', 'shadow', '0 1px 4px rgb(0 0 0 / 0.25)');
+  element.style.color = roleVariable('cluster', 'foreground', '#ffffff');
   element.style.cursor = 'pointer';
   element.style.display = 'inline-flex';
   element.style.justifyContent = 'center';

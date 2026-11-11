@@ -4,6 +4,7 @@ import {
   type TileflowAnnotation,
   tileflowInteractionJsonValueSchema,
   tileflowInteractionLimits,
+  unusedTileflowRendererDiagnostics,
   validateTileflowAnnotations,
   validateTileflowInteractionBindings,
 } from '../src/index';
@@ -238,4 +239,50 @@ test('validates interaction bindings atomically and rejects duplicate IDs', () =
     assert.equal(duplicate.diagnostics[0]?.code, 'INVALID_DOCUMENT');
     assert.equal(duplicate.diagnostics[0]?.path, '/1/id');
   }
+});
+
+test('reports a renderer when nothing could open it', () => {
+  const marker = {
+    ariaLabel: 'Madrid',
+    coordinate: [-3.7, 40.4],
+    id: 'madrid',
+    kind: 'marker',
+  } satisfies TileflowAnnotation;
+  const popup = {content: {kind: 'view', name: 'card'}} as const;
+  const input = {
+    annotations: [marker],
+    bindings: [],
+    hasPopupRenderer: true,
+    hasTooltipRenderer: false,
+  };
+
+  const [diagnostic, ...rest] = unusedTileflowRendererDiagnostics(input);
+  assert.equal(rest.length, 0);
+  assert.equal(diagnostic?.code, 'UNUSED_RENDERER');
+  assert.equal(diagnostic?.level, 'warning');
+  assert.match(diagnostic?.message ?? '', /renderPopup has nothing to render/u);
+
+  assert.deepEqual(
+    unusedTileflowRendererDiagnostics({...input, annotations: [{...marker, popup}]}),
+    [],
+  );
+  assert.deepEqual(
+    unusedTileflowRendererDiagnostics({
+      ...input,
+      annotations: [marker],
+      bindings: [{id: 'poi', popup, target: {domain: 'poi', kind: 'semantic-feature'}}],
+    }),
+    [],
+  );
+  // Nothing to attach a renderer to yet, for example while data loads.
+  assert.deepEqual(unusedTileflowRendererDiagnostics({...input, annotations: []}), []);
+  assert.deepEqual(unusedTileflowRendererDiagnostics({...input, hasPopupRenderer: false}), []);
+  assert.equal(
+    unusedTileflowRendererDiagnostics({
+      ...input,
+      hasPopupRenderer: false,
+      hasTooltipRenderer: true,
+    })[0]?.message.startsWith('renderTooltip'),
+    true,
+  );
 });

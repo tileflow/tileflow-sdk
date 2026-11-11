@@ -125,6 +125,19 @@ They do not change camera pitch and do not apply in image mode. See
 [the map's 3D scene](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md)
 and [vegetation controls](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md).
 
+Interactive maps show no zoom or compass buttons unless you ask for them. `navigation-control` shows
+them at the top right, and `:navigation-control="{position: 'bottom-left', showCompass: false}"` moves
+them or limits their buttons.
+
+`:bounds` starts the map on those bounds and moves it when they change; `:fit-bounds-options` shapes the
+fit with `padding`, `maxZoom` and `duration`. `fit-annotations` fits the map to all `annotations`, with
+48 pixels of padding and at most zoom 15, and again when their positions change. `bounds` takes
+precedence, and `center` and `zoom` set the first view only until one of them is given.
+
+The marker slot receives `state`, `{hovered, focused, selected}`, where `selected` means the
+marker's popup is open. A popup or tooltip slot that no annotation or interaction can reach, because
+none sets `popup` or `tooltip`, reports an `UNUSED_RENDERER` warning diagnostic.
+
 `mapOptions` accepts native MapLibre options except `container` and `style`. Direct props take
 priority over those options, then the published view, then shared defaults. `TileflowMap` always
 selects a Tileflow map through its manifest; it has no renderer discriminator or direct-style mode.

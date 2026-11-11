@@ -434,12 +434,27 @@ export type TileflowResolvedInteractionTarget<
   | TileflowResolvedStyleFeatureTarget
   | TileflowResolvedMapTarget;
 
+/** What a visitor is doing to a marker, for a marker view that changes with it. */
+export type TileflowAnnotationMarkerState = Readonly<{
+  /** The marker holds keyboard focus. */
+  focused: boolean;
+  /** A pointer is over the marker. */
+  hovered: boolean;
+  /** The marker's popup is open. */
+  selected: boolean;
+}>;
+
 export type TileflowAnnotationViewContext<
   TAnnotation extends TileflowAnnotation = TileflowAnnotation,
 > = {
   annotation: TAnnotation;
   close: () => void;
   content?: TileflowInteractionContent;
+  /**
+   * Present in a marker view: hover, focus and whether the popup is open. Each marker's view is
+   * updated on its own, so a change to one marker does not render the others again.
+   */
+  state?: TileflowAnnotationMarkerState;
   target: TileflowResolvedAnnotationTarget<TAnnotation>;
   viewName?: string;
 };

@@ -127,6 +127,25 @@ an `Error` and `code` is one of:
 Without an `error` listener, these failures go to `console.error`. Interactive-state problems keep
 their own channel, the `interaction-diagnostic` event.
 
+A template `ref` on `TileflowMap` exposes two methods: `getMap()` returns the MapLibre map, and
+`getThemeController()` returns the controller that changes the map's theme, colours, and emphasis
+at run time. Both return `null` until the map has loaded, in image mode, and after it is taken
+down, so call them from event handlers and from `@load`. `TileflowMapHandle` types the ref.
+
+```vue
+<script setup lang="ts">
+import {ref} from 'vue';
+import {TileflowMap, type TileflowMapHandle} from '@tileflow/vue';
+
+const map = ref<TileflowMapHandle | null>(null);
+const fly = () => map.value?.getMap()?.flyTo({center: [-3.7, 40.4], zoom: 12});
+</script>
+
+<template>
+  <TileflowMap ref="map" :source="{map: 'madrid'}" />
+</template>
+```
+
 Interactive maps show the 3D scene their style declares by default: buildings with Tileflow
 landmarks and the map's Team building models, 3D trees, and street lights where the map enables
 them. The 3D renderers load only when the style declares a scene, so 2D maps do not download them.

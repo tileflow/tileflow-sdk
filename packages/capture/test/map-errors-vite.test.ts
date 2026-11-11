@@ -1,13 +1,6 @@
-import {svelte} from '@sveltejs/vite-plugin-svelte';
-import vue from '@vitejs/plugin-vue';
 import assert from 'node:assert/strict';
-import {mkdtemp, rm, symlink, writeFile} from 'node:fs/promises';
-import {dirname, join} from 'node:path';
 import test from 'node:test';
-import {fileURLToPath} from 'node:url';
-import {createServer as createViteServer, type PluginOption} from 'vite';
-import {launchTileflowCaptureBrowser} from '../src/browser';
-import {writeDataLayerFixture} from './tileflow-source-fixture';
+import {type MapAppFramework, withMapApp} from './map-app-harness';
 
 type AppWindow = typeof window & {
   __errors: {code: string; message: string}[];
@@ -60,77 +53,18 @@ ${caseScript}
 <TileflowMap captureId="errors" {colors} height={320} {onError} on:load={onLoad} {source} zoom={3} />
 `;
 
-const entry = (framework: string) =>
-  framework === 'vue'
-    ? `import {createApp} from 'vue';
-import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
-import {configureTileflowMapLibre} from '@tileflow/vue';
-import App from './App.vue';
-configureTileflowMapLibre({workerUrl});
-createApp(App).mount('#root');
-`
-    : `import {mount} from 'svelte';
-import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
-import {configureTileflowMapLibre} from '@tileflow/svelte';
-import App from './App.svelte';
-configureTileflowMapLibre({workerUrl});
-mount(App, {target: document.getElementById('root')});
-`;
+const apps: [MapAppFramework, string][] = [
+  ['react', reactApp],
+  ['vue', vueApp],
+  ['svelte', svelteApp],
+];
 
-const reactSource = fileURLToPath(new URL('../../react/src/index.ts', import.meta.url));
-
-for (const [framework, file, source, plugins] of [
-  ['react', 'main.tsx', reactApp, []],
-  ['vue', 'App.vue', vueApp, [vue()]],
-  ['svelte', 'App.svelte', svelteApp, [svelte()]],
-] as [string, string, string, PluginOption[]][])
+for (const [framework, source] of apps)
   test(
     `${framework} reports map failures to onError, and to the console without one`,
     {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 90_000},
-    async () => {
-      const root = dirname(fileURLToPath(new URL('../package.json', import.meta.url)));
-      const cwd = await mkdtemp(join(root, `.tileflow-test-${framework}-map-errors-`));
-      let browser: Awaited<ReturnType<typeof launchTileflowCaptureBrowser>> | undefined;
-      let vite: Awaited<ReturnType<typeof createViteServer>> | undefined;
-      try {
-        await symlink(join(root, 'node_modules'), join(cwd, 'node_modules'), 'dir');
-        await Promise.all([
-          writeFile(
-            join(cwd, 'index.html'),
-            `<!doctype html><html><body><div id="root" style="width:640px"></div><script type="module" src="/${framework === 'react' ? 'main.tsx' : 'main.js'}"></script></body></html>`,
-          ),
-          ...(framework === 'react' ? [] : [writeFile(join(cwd, 'main.js'), entry(framework))]),
-          writeFile(join(cwd, file), source),
-          writeDataLayerFixture(cwd, 'http://127.0.0.1'),
-        ]);
-        vite = await createViteServer({
-          cacheDir: join(cwd, '.vite-cache'),
-          configFile: false,
-          logLevel: 'silent',
-          plugins,
-          resolve: framework === 'react' ? {alias: {'@tileflow/react': reactSource}} : {},
-          root: cwd,
-          server: {host: '127.0.0.1', port: 0, watch: null},
-        });
-        await vite.listen();
-        const address = vite.httpServer?.address();
-        assert.ok(address && typeof address === 'object');
-        const origin = `http://127.0.0.1:${address.port}`;
-        await writeDataLayerFixture(cwd, origin);
-
-        browser = await launchTileflowCaptureBrowser({allowInstall: false});
-        const open = async (query: string) => {
-          const page = await browser!.newPage({viewport: {height: 480, width: 640}});
-          const consoleErrors: string[] = [];
-          const pageErrors: string[] = [];
-          page.on('console', (message) => {
-            if (message.type() === 'error') consoleErrors.push(message.text());
-          });
-          page.on('pageerror', (error) => pageErrors.push(error.message));
-          await page.goto(`${origin}/${query}`, {waitUntil: 'domcontentloaded'});
-          return {consoleErrors, page, pageErrors};
-        };
-
+    () =>
+      withMapApp(framework, source, async (open) => {
         // A colour token the map does not have: reported once as `colors`, nothing on the console.
         const colours = await open('?colors');
         await colours.page.waitForFunction(() => (window as AppWindow).__errors.length > 0);
@@ -169,10 +103,5 @@ for (const [framework, file, source, plugins] of [
           silent.consoleErrors.join('\n'),
         );
         assert.deepEqual(await silent.page.evaluate(() => (window as AppWindow).__errors), []);
-      } finally {
-        await browser?.close();
-        await vite?.close();
-        await rm(cwd, {force: true, recursive: true});
-      }
-    },
+      }),
   );

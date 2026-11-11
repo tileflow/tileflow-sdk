@@ -10,6 +10,7 @@ import type {
   TileflowEmphasis,
   TileflowFitBoundsOptions,
   TileflowMapError,
+  TileflowThemeController,
   TileflowThemeTransition,
   TileflowViewMode,
   TileflowThemeTransitionOptions,
@@ -186,8 +187,23 @@ export type TileflowMapProps<TAnnotation extends TileflowAnnotation = TileflowAn
     TileflowMapStyleSourceProps &
     (TileflowMapInteractiveProps<TAnnotation> | TileflowMapImageProps);
 
+/**
+ * What `bind:this` on `TileflowMap` gives an application: the objects behind the map, for the
+ * moments when the props are not enough. Both are `null` until the map has loaded, in image mode,
+ * and after it is taken down, so call them from event handlers and from `on:load`.
+ */
+export type TileflowMapHandle = {
+  /** The MapLibre map, or `null` while there is none. */
+  getMap(): MapLibreMap | null;
+  /** Changes the map's theme, colours and emphasis; `null` when the map's style has no themes. */
+  getThemeController(): TileflowThemeController | null;
+};
+
 export default class TileflowMap<
   TAnnotation extends TileflowAnnotation = TileflowAnnotation,
-> extends SvelteComponentTyped<TileflowMapProps<TAnnotation>, {load: CustomEvent<MapLibreMap>}> {}
+> extends SvelteComponentTyped<TileflowMapProps<TAnnotation>, {load: CustomEvent<MapLibreMap>}> {
+  getMap(): MapLibreMap | null;
+  getThemeController(): TileflowThemeController | null;
+}
 
 export {TileflowMap};

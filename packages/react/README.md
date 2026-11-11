@@ -138,6 +138,20 @@ invalid value is reported as an error and leaves the colours unchanged.
 Without a handler, these failures go to `console.error`. Interactive-state problems keep their own
 channel, `onInteractionDiagnostic`.
 
+A `ref` on `Map` gives a handle with two methods: `getMap()` returns the MapLibre map, and
+`getThemeController()` returns the controller that changes the map's theme, colours, and emphasis
+at run time. Both return `null` until the map has loaded, in image mode, and after it is taken
+down, so call them from event handlers and effects, not while rendering. `TileflowMapHandle` types the ref.
+
+```tsx
+import {useRef} from 'react';
+import {Map, type TileflowMapHandle} from '@tileflow/react';
+
+const handle = useRef<TileflowMapHandle>(null);
+// Later, in an event handler:
+handle.current?.getMap()?.flyTo({center: [-3.7, 40.4], zoom: 12});
+```
+
 Interactive maps show the 3D scene their style declares by default: buildings with Tileflow
 landmarks and the map's Team building models, 3D trees, and street lights where the map enables
 them. The 3D renderers load only when the style declares a scene, so 2D maps do not download them.

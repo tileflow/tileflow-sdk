@@ -2,7 +2,13 @@ import type {RasterLayerSpecification} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import {readdirSync} from 'node:fs';
 import test from 'node:test';
-import {createStyle, defineMap, disable, resolveMap} from '@tileflow/core';
+import {
+  createStyle,
+  defineMap,
+  disable,
+  resolveMap,
+  tileflowWorldAttribution,
+} from '@tileflow/core';
 import {streets} from '../src';
 import {streetsModels} from '../src/assets';
 import {streetsPreparedModels} from './streets-assets';
@@ -26,9 +32,10 @@ test('every Streets appearance shares one external climate image that only light
     tileSize: 512,
     minzoom: 0,
     maxzoom: 0,
-    attribution:
-      'Climate context: <a href="https://doi.org/10.1038/s41597-023-02549-6">Beck et al. (2023)</a>, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>; colours and smoothing adapted by Tileflow',
+    attribution: '<a href="https://tileflow.dev/copyright">© Tileflow</a>',
   };
+  // Renderers drop a credit contained in another, so the visible World credit stays unchanged.
+  assert.ok(tileflowWorldAttribution.includes(climateSource.attribution));
   const themes = Object.keys(resolveMap(streets).themes);
   assert.ok(themes.includes('light') && themes.length > 1);
   for (const theme of themes) {

@@ -3,8 +3,10 @@ import {copyFile, cp, mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/pro
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
+import {serializeCanonicalJson} from '@tileflow/core';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {createTileflowBuildArtifacts, writeTileflowBuildArtifacts} from '../src/artifacts';
+import {streetsFontFixtures} from './streets-font-fixture';
 
 const svg = (color: string) =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path fill="${color}" d="M2 20h20L12 2z"/></svg>`;
@@ -56,34 +58,21 @@ test('build manifest records effective package fonts and is emitted as canonical
   const cwd = await fixture(t, 'tileflow-map-revision-fonts-');
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
-    "import {defineMap} from '@tileflow/core'; import {baedeker} from '@tileflow/maps'; export default defineMap({id:'night',version:1,extends:baedeker});\n",
+    "import {defineMap} from '@tileflow/core'; import {streets} from '@tileflow/maps'; export default defineMap({id:'night',version:1,extends:streets});\n",
   );
 
   const plan = await writeTileflowBuildArtifacts({cwd, outDir: 'dist/tileflow'});
   const entry = plan.buildManifest.maps.night!;
   const serialized = await readFile(join(cwd, 'dist/tileflow/build-manifest.json'), 'utf8');
 
-  assert.equal(serialized, `${JSON.stringify(plan.buildManifest)}\n`);
+  assert.equal(serialized, `${serializeCanonicalJson(plan.buildManifest)}\n`);
   assert.deepEqual(entry.lineage, [
     {id: 'night', mapVersion: 1},
-    {id: 'baedeker', mapVersion: 1},
+    {id: 'streets', mapVersion: 1},
   ]);
   assert.deepEqual(
     entry.sourceAssets.fonts.map(({family, sha256}) => ({family, sha256})),
-    [
-      {
-        family: 'Cormorant Garamond Italic',
-        sha256: '50fccbdc299c232d25dd66868a2a2b55fd0e85d6238a58638986c5f66deca1bf',
-      },
-      {
-        family: 'Cormorant Garamond Regular',
-        sha256: '3f20a07914c56de160a4057f8fa48ec5372d77edf35c168fe4b0547b66502106',
-      },
-      {
-        family: 'Cormorant Garamond SemiBold',
-        sha256: '159bda7bac64c80f02612c163bc21da028e9f990cbc4d469005de694428aee83',
-      },
-    ],
+    streetsFontFixtures.map(({family, sha256}) => ({family, sha256})),
   );
   assert.ok(plan.files.some((file) => file.fileName === 'build-manifest.json'));
 });
@@ -109,7 +98,7 @@ test('package-owned map revision is identical from a workspace package and unpac
   );
 
   const config =
-    "import {defineMap} from '@tileflow/core'; import {baedeker} from '@tileflow/maps'; export default defineMap({id:'night',version:1,extends:baedeker});\n";
+    "import {defineMap} from '@tileflow/core'; import {streets} from '@tileflow/maps'; export default defineMap({id:'night',version:1,extends:streets});\n";
   await writeFile(join(sourceCwd, 'tileflow.config.ts'), config);
   await writeFile(join(unpackedCwd, 'tileflow.config.ts'), config);
   const source = await createTileflowBuildArtifacts({cwd: sourceCwd});

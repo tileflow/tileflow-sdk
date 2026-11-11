@@ -4,6 +4,7 @@
 // (`canopy`), inside the room the point leaves; and clipped pieces along World's hedges
 // (`traffic_control` with `type=hedge`). A tree keeps its form, size, turn and shade wherever
 // and whenever it is read. It has no DOM dependency.
+import {placeTileflowHedges} from './hedges-3d';
 import type {TileflowTreeModel} from './trees-3d-model';
 import type {TileflowTileLayer} from './vector-tile-decode';
 
@@ -137,6 +138,8 @@ export type TileflowTreePlacement = Readonly<{
    * as the crown, and its turn along the hedge.
    */
   hedges: Uint8Array;
+  /** Continuous hedge surfaces, with interleaved tree vertices and per-vertex placement. */
+  hedgeGeometry?: Uint8Array;
   /** The tallest tree or hedge, in metres. */
   tallest: number;
   /** Trees from the data's trees and rows, and trees from canopy points. */
@@ -175,15 +178,6 @@ export function tileflowTreeFormProportion(form: TileflowTreeForm): number {
 
 const heightBounds: readonly [number, number] = [2, 45];
 const crownBounds: readonly [number, number] = [1, 25];
-
-// Hedges stand as overlapping pieces 1.2 m apart, each 1.5 m long: the hedge mesh is 0.55 of its
-// length wide, so a hedge is 0.8 m thick. A hedge without a height is a clipped garden hedge of
-// 1.3 m; an earth bank raises it by 1 m.
-const hedgeSpacing = 1.2;
-const hedgeLength = 1.5;
-const hedgeHeight = 1.3;
-const hedgeBank = 1;
-const hedgeBounds: readonly [number, number] = [0.3, 10];
 
 // Genera whose form is known: palms, columns, conifers and the three broadleaf forms.
 const palms = new Set([
@@ -525,10 +519,16 @@ export function placeTileflowTrees(
             if (x < 0 || y < 0 || x >= extent || y >= extent) continue;
             const form = pick(mix, unit(seed, 3));
             const own = crown * (0.85 + unit(seed, 2) * 0.3);
-            // The measured canopy height, where the data has it, gives each tree its height.
+            // Clearance is room for decoration, not a measured crown diameter. A low canopy
+            // must keep its form's proportions: a wide, short tree would otherwise be widened
+            // again by the map's minimum display height.
             const tall =
               canopyHeight === undefined ? undefined : canopyHeight * (0.85 + unit(seed, 6) * 0.25);
-            const grown = sized(form, seed, tall, form === 'palm' ? undefined : own);
+            const diameter =
+              tall === undefined
+                ? own
+                : Math.min(own, tall * mixed(formSizes[form].crown, unit(seed, 2)));
+            const grown = sized(form, seed, tall, form === 'palm' ? undefined : diameter);
             placed.push({
               x,
               y,
@@ -546,61 +546,7 @@ export function placeTileflowTrees(
     }
   }
 
-  // A hedge stands a piece every `hedgeSpacing` metres along each line and round each area, turned
-  // along it, from half a spacing in. Pieces in the tile's buffer belong to the neighbouring tile.
-  const hedges: {
-    x: number;
-    y: number;
-    height: number;
-    turn: number;
-    shade: number;
-    seed: number;
-  }[] = [];
-  const barriers = layers.hedges;
-  if (barriers) {
-    const scale = extent / barriers.extent;
-    const step = hedgeSpacing / (tileMetres / barriers.extent);
-    for (const feature of barriers.features) {
-      if (feature.type === 'Point' || feature.properties[fields.subclass] !== 'hedge') continue;
-      const bank = feature.properties[fields.hedge] === 'hedge_bank' ? hedgeBank : 0;
-      const height =
-        (measured(feature.properties[fields.height], hedgeBounds) ?? hedgeHeight) + bank;
-      // An area's rings come closed, and their edges along the tile's clip lie in its buffer.
-      for (const points of feature.geometry) {
-        let next = step / 2;
-        let along = 0;
-        for (let index = 0; index + 3 < points.length; index += 2) {
-          const [ax, ay, bx, by] = [
-            points[index]!,
-            points[index + 1]!,
-            points[index + 2]!,
-            points[index + 3]!,
-          ];
-          const length = Math.hypot(bx - ax, by - ay);
-          // The tile's y runs south; a turn runs anticlockwise from east.
-          const turn = (Math.atan2(ay - by, bx - ax) / (Math.PI * 2) + 1) % 1;
-          while (next <= along + length) {
-            const t = length > 0 ? (next - along) / length : 0;
-            const px = ax + (bx - ax) * t;
-            const py = ay + (by - ay) * t;
-            if (px >= 0 && py >= 0 && px < barriers.extent && py < barriers.extent) {
-              const seed = hash(tile.x * extent + px * scale, tile.y * extent + py * scale, 17);
-              hedges.push({
-                x: px * scale,
-                y: py * scale,
-                height,
-                turn,
-                shade: unit(seed, 5),
-                seed: unit(seed, 7),
-              });
-            }
-            next += step;
-          }
-          along += length;
-        }
-      }
-    }
-  }
+  const hedges = placeTileflowHedges(layers.hedges, tileMetres, fields);
 
   const variantsOf = (form: number) =>
     clamp(Math.floor(options.variants?.[tileflowTreeForms[form]!] ?? 1), [1, 4]);
@@ -652,20 +598,15 @@ export function placeTileflowTrees(
     count(ranges, index, tree.rank);
     count(ranges.variants[variants[from]!]!, index, tree.rank);
   });
-  const hedgeBytes = new Uint8Array(hedges.length * tileflowTreeBytes);
-  const hedgeView = new DataView(hedgeBytes.buffer);
-  hedges.forEach((piece, index) => {
-    const at = index * tileflowTreeBytes;
-    hedgeView.setUint16(at, Math.min(extent - 1, Math.round(piece.x)), true);
-    hedgeView.setUint16(at + 2, Math.min(extent - 1, Math.round(piece.y)), true);
-    hedgeView.setUint16(at + 4, Math.round(piece.height * 10), true);
-    hedgeView.setUint16(at + 6, Math.round(hedgeLength * 10), true);
-    hedgeBytes[at + 8] = Math.round(piece.turn * 256) & 255;
-    hedgeBytes[at + 9] = Math.floor(piece.shade * 256) & 255;
-    hedgeBytes[at + 12] = Math.floor(piece.seed * 256) & 255;
-    tallest = Math.max(tallest, piece.height);
-  });
-  return {trees: bytes, forms, hedges: hedgeBytes, tallest, mapped, canopy};
+  return {
+    trees: bytes,
+    forms,
+    hedges: hedges.instances,
+    hedgeGeometry: hedges.geometry,
+    tallest: Math.max(tallest, hedges.tallest),
+    mapped,
+    canopy,
+  };
 }
 
 function broadleafOf(mix: TileflowTreeFormMix): TileflowTreeFormMix {

@@ -232,3 +232,112 @@ test('runtime colour overrides accept CSS Color 4 and name what they cannot read
     /Unknown colour tokens "surface\.nope", "surface\.also"\./u,
   );
 });
+
+const knobDusk = defineTheme(theme, {
+  id: 'knob-dusk',
+  version: 1,
+  colorScheme: 'dark',
+  tokens: {color: {'surface.water': '#005588', 'surface.background': '#102030'}},
+});
+const knobMap = extendStreets({
+  themes: {light: theme, dusk: knobDusk},
+  colorKnobs: {
+    sea: {
+      reference: 'surface.water',
+      tokens: {'surface.background': 'shift', 'surface.water': 'replace'},
+    },
+  },
+  modules: {
+    poi: disable(),
+    land: land({background: {color: token.color('surface.background')}}),
+  },
+});
+const background = (style: ReturnType<typeof createStyle>) =>
+  style.layers.find((layer) => layer.type === 'background')!.paint!['background-color'];
+
+test('a colour knob recolours the tokens it governs and leaves the rest as authored', () => {
+  const style = createStyle(knobMap, {theme: 'light', runtimeColors: true});
+  const catalog = style.metadata?.[tileflowColorMetadataKey] as TileflowColorBindings;
+  assert.deepEqual(Object.keys(catalog.knobs!), ['sea']);
+
+  const changed = applyTileflowColorOverrides(style, {sea: '#ff0000'});
+  // Both tokens were #00aaff, so replace and shift land on the same colour.
+  assert.equal(background(changed), '#ff0000');
+  assert.equal((changed.metadata?.['tileflow:sun'] as {color: string}).color, '#ff0000');
+  assert.equal(background(style), '#00aaff', 'the input is untouched');
+  assert.deepEqual(validateStyleMin(changed), []);
+});
+
+test('a token named in colors wins over the knob that governs it', () => {
+  const style = createStyle(knobMap, {theme: 'light', runtimeColors: true});
+  const changed = applyTileflowColorOverrides(style, {
+    sea: '#ff0000',
+    'surface.background': '#00ff00',
+  });
+  assert.equal(background(changed), '#00ff00');
+  assert.equal((changed.metadata?.['tileflow:sun'] as {color: string}).color, '#ff0000');
+});
+
+test("a knob works from each theme's own colours, so a darker theme keeps its offset", () => {
+  const dusk = createStyle(knobMap, {theme: 'dusk', runtimeColors: true});
+  // In dusk the background (#102030) is much darker than the water (#005588); a shift keeps that.
+  const changed = applyTileflowColorOverrides(dusk, {sea: '#ffcc00'});
+  const lightness = (hex: string) => parseInt(hex.slice(1, 3), 16) + parseInt(hex.slice(3, 5), 16);
+  assert.ok(lightness(background(changed) as string) < lightness('#ffcc00'));
+  assert.notEqual(background(changed), '#ffcc00');
+});
+
+test('an unknown knob, or a knob a map does not declare, is an error that says what exists', () => {
+  const style = createStyle(knobMap, {theme: 'light', runtimeColors: true});
+  assert.throws(
+    () => applyTileflowColorOverrides(style, {sky: '#ffffff'}),
+    /Unknown colour knob "sky"\. This map has sea\./u,
+  );
+  const plain = createStyle(map, {theme: 'light', runtimeColors: true});
+  assert.throws(
+    () => applyTileflowColorOverrides(plain, {sea: '#ffffff'}),
+    /Unknown colour token or knob "sea"\. This map declares no colour knobs/u,
+  );
+});
+
+test('a map whose knob governs a token its themes lack fails to compile with the knob and token', () => {
+  const broken = extendStreets({
+    themes: {light: theme, dusk: knobDusk},
+    colorKnobs: {sea: {tokens: {'surface.nowhere': 'replace'}}},
+    modules: {poi: disable()},
+  });
+  assert.throws(
+    () => createStyle(broken, {theme: 'light', runtimeColors: true}),
+    /colorKnobs.*sea governs "surface\.nowhere", which is not a colour token of the map/u,
+  );
+});
+
+test('knobs set through the family animator reach every theme and survive theme changes', async () => {
+  const family = prepareTileflowStyleFamilyForRendering(
+    createTileflowStyleFamily({
+      light: createStyle(knobMap, {theme: 'light', runtimeColors: true}),
+      dusk: createStyle(knobMap, {theme: 'dusk', runtimeColors: true}),
+    }),
+  );
+  const animator = createTileflowFamilyAnimator({
+    family,
+    initialTheme: 'light',
+    now: () => 0,
+    requestFrame: () => 0,
+    cancelFrame() {},
+    writePaint() {},
+    onFrame() {},
+  });
+  assert.equal((await animator.setColors({sea: '#ff0000'}, 0)).status, 'applied');
+  assert.deepEqual(animator.getColors(), {sea: '#ff0000'});
+  assert.equal(background(animator.getStyle('light') as ReturnType<typeof createStyle>), '#ff0000');
+  assert.notEqual(
+    background(animator.getStyle('dusk') as ReturnType<typeof createStyle>),
+    '#102030',
+  );
+  assert.equal((await animator.setTheme('dusk', 0)).status, 'applied');
+  assert.deepEqual(animator.getColors(), {sea: '#ff0000'});
+  assert.equal((await animator.setColors({}, 0)).status, 'applied');
+  assert.equal(background(animator.getStyle('light') as ReturnType<typeof createStyle>), '#00aaff');
+  animator.dispose();
+});

@@ -25,27 +25,14 @@ import {
 } from '@tileflow/core';
 import {createStyleWithInspection} from '@tileflow/core/build';
 import {
-  baedeker,
-  baedekerFonts,
-  baedekerIcons,
-  blueprint,
-  blueprintIcons,
-  civica,
-  civicaFonts,
-  civicaIcons,
-  map1777,
-  map1777Fonts,
-  map1777Icons,
-  siegfried,
-  siegfriedFonts,
-  siegfriedIcons,
-  siegfriedThemes,
   soundings,
   soundingsIcons,
   streets,
   streetsFonts,
   streetsIcons,
   streetsThemes,
+  terrain,
+  terrainIcons,
 } from '../src';
 import {streetsDayColors} from '../src/official/streets-day-colors';
 import {streetsPreparedModels, streetsTreeIconIds} from './streets-assets';
@@ -53,31 +40,9 @@ import {streetsPoiImageIds} from './streets-poi-fixture';
 import {standardCartographyReference as colorReference} from './streets-standard-cartography-fixture';
 
 const officialIconIds = [
+  'terrain-peak',
+  'terrain-peak-dark',
   ...streetsTreeIconIds,
-  'baedeker-hachures',
-  'baedeker-orchard',
-  'baedeker-paper-grain',
-  'baedeker-park-stipple',
-  'baedeker-residential',
-  'baedeker-sand',
-  'baedeker-water-lines',
-  'baedeker-wetland',
-  'civica-industrial-hatch',
-  'civica-orchard',
-  'civica-paper-grain',
-  'civica-park-groves',
-  'civica-poi-airport',
-  'civica-poi-civic-star',
-  'civica-poi-dot',
-  'civica-poi-food',
-  'civica-poi-garden',
-  'civica-poi-hospital',
-  'civica-poi-lodging',
-  'civica-poi-monument',
-  'civica-poi-museum',
-  'civica-poi-shopping',
-  'civica-poi-transit',
-  'civica-water-lines',
   'coffee',
   'nature',
   'sport',
@@ -99,17 +64,6 @@ const officialIconIds = [
   'culture',
 
   'education',
-  'map-1777-crop-cross',
-  'map-1777-crop-hatch',
-  'map-1777-crop-lines',
-  'map-1777-heath',
-  'map-1777-orchard',
-  'map-1777-paper-grain',
-  'map-1777-residential',
-  'map-1777-sand',
-  'map-1777-water-ripples',
-  'map-1777-wetland',
-  'map-1777-woodland',
   'food',
   'health',
   'lodging',
@@ -124,33 +78,10 @@ const officialIconIds = [
   'road-shield-rectangle-orange',
   'road-shield-rectangle-red',
   'road-shield-rectangle-yellow',
-  'blueprint-grid',
-  'blueprint-building-hatch',
-  'blueprint-landscape-hatch',
-  'blueprint-poi-node',
-  'blueprint-water-hatch',
   'services',
   'shopping',
   'sidewalk-dot',
   'sidewalk-dot-dark',
-  'siegfried-dark-forest',
-  'siegfried-dark-glacier',
-  'siegfried-dark-gravel',
-  'siegfried-dark-orchard',
-  'siegfried-dark-paper-grain',
-  'siegfried-dark-rock',
-  'siegfried-dark-scree',
-  'siegfried-dark-water-lines',
-  'siegfried-dark-wetland',
-  'siegfried-forest',
-  'siegfried-glacier',
-  'siegfried-gravel',
-  'siegfried-orchard',
-  'siegfried-paper-grain',
-  'siegfried-rock',
-  'siegfried-scree',
-  'siegfried-water-lines',
-  'siegfried-wetland',
   'soundings-boat-hoist',
   'soundings-boatyard',
   'soundings-buoy-cardinal',
@@ -179,29 +110,6 @@ const officialIconIds = [
   'soundings-water-tap',
   'soundings-wreck',
   ...streetsPoiImageIds,
-] as const;
-const baedekerPatternIds = [
-  'baedeker-hachures',
-  'baedeker-orchard',
-  'baedeker-paper-grain',
-  'baedeker-park-stipple',
-  'baedeker-residential',
-  'baedeker-sand',
-  'baedeker-water-lines',
-  'baedeker-wetland',
-] as const;
-const map1777PatternIds = [
-  'map-1777-crop-cross',
-  'map-1777-crop-hatch',
-  'map-1777-crop-lines',
-  'map-1777-heath',
-  'map-1777-orchard',
-  'map-1777-paper-grain',
-  'map-1777-residential',
-  'map-1777-sand',
-  'map-1777-water-ripples',
-  'map-1777-wetland',
-  'map-1777-woodland',
 ] as const;
 const soundingsIconIds = [
   'soundings-boat-hoist',
@@ -232,33 +140,6 @@ const soundingsIconIds = [
   'soundings-water-tap',
   'soundings-wreck',
 ] as const;
-const blueprintIconIds = [
-  'blueprint-grid',
-  'blueprint-building-hatch',
-  'blueprint-landscape-hatch',
-  'blueprint-poi-node',
-  'blueprint-water-hatch',
-] as const;
-const siegfriedPatternIds = [
-  'siegfried-dark-forest',
-  'siegfried-dark-glacier',
-  'siegfried-dark-gravel',
-  'siegfried-dark-orchard',
-  'siegfried-dark-paper-grain',
-  'siegfried-dark-rock',
-  'siegfried-dark-scree',
-  'siegfried-dark-water-lines',
-  'siegfried-dark-wetland',
-  'siegfried-forest',
-  'siegfried-glacier',
-  'siegfried-gravel',
-  'siegfried-orchard',
-  'siegfried-paper-grain',
-  'siegfried-rock',
-  'siegfried-scree',
-  'siegfried-water-lines',
-  'siegfried-wetland',
-] as const;
 const officialGlyphsUrl =
   'https://api.tileflow.dev/base/33d4de5e8086d9d629d67d3f39fedb87e23686c4c1ac653c27e2a52aee9d00b3/glyphs/{fontstack}/{range}.pbf';
 
@@ -287,7 +168,7 @@ test('official World styles read only layers and fields of the World v1 contract
       : /^route_\d+_/u.test(name)
         ? 'route_<n>_<field>'
         : name;
-  for (const map of [baedeker, blueprint, civica, map1777, siegfried, soundings, streets]) {
+  for (const map of [soundings, streets, terrain]) {
     const requirements = inferTileflowDataRequirements(compileOfficialMap(map));
     assert.equal(requirements.complete, true, `${map.id} reads fields it cannot name`);
     for (const layer of ['road', 'water']) {
@@ -330,14 +211,9 @@ function compiledLayerForTarget(
 
 test('exports every official map as an independent standalone semantic map', async () => {
   const officialMaps = {
-    baedeker,
-    civica,
-
-    'map-1777': map1777,
-    blueprint: blueprint,
-    siegfried,
     soundings,
     streets,
+    terrain,
   } as const;
   const officialMapSources = new Set(Object.keys(officialMaps));
 
@@ -358,28 +234,21 @@ test('exports every official map as an independent standalone semantic map', asy
       'utf8',
     );
     assert.match(source, /\bdefineMap\s*\(/u, `${id} is not authored as a standalone map`);
-    if (['civica', 'blueprint'].includes(id)) {
-      assert.match(source, /\bwithRenderStack\s*\(/u, `${id} lost its semantic render stack`);
-      assert.match(source, /\bfield\s*\(/u, `${id} lost its schema-bound field references`);
-      assert.doesNotMatch(
-        source,
-        /@tileflow\/core\/recipe|\b(?:addModuleLayer|defineModuleEffects|patchModuleLayer|semanticField|semanticLayer)\b/u,
-        `${id} regressed to the legacy raw-effects surface`,
-      );
-    }
-    for (const match of source.matchAll(/\bfrom\s+['"]\.\/([^'"]+)['"]/gu)) {
-      const importedModule = match[1]!.replace(/\.(?:js|ts)$/u, '');
-      assert.equal(
-        officialMapSources.has(importedModule),
-        false,
-        `${id} imports official map ${importedModule}`,
-      );
-    }
+
+    if (id !== 'terrain')
+      for (const match of source.matchAll(/\bfrom\s+['"]\.\/([^'"]+)['"]/gu)) {
+        const importedModule = match[1]!.replace(/\.(?:js|ts)$/u, '');
+        assert.equal(
+          officialMapSources.has(importedModule),
+          false,
+          `${id} imports official map ${importedModule}`,
+        );
+      }
   }
 });
 
 test('deep-freezes only the exported official map singletons', () => {
-  for (const map of [streets, baedeker, civica, map1777, siegfried, soundings, blueprint]) {
+  for (const map of [streets, soundings, terrain]) {
     assertDeepFrozen(map);
   }
 
@@ -387,7 +256,7 @@ test('deep-freezes only the exported official map singletons', () => {
     (streets as {name: string}).name = 'Mutated Streets';
   }, TypeError);
   assert.throws(() => {
-    (streets as {extends: typeof map1777}).extends = map1777;
+    (streets as {extends: typeof terrain}).extends = terrain;
   }, TypeError);
   assert.throws(() => {
     (streets.themes!.dark.typography as {font: string}).font = 'Unpinned Font';
@@ -417,138 +286,18 @@ test('deep-freezes only the exported official map singletons', () => {
   assert.equal('extends' in streets, false);
   assert.equal(streets.name, 'Streets');
 });
-
 test('official maps declare their expected icon and typography providers', () => {
-  const resolvedBaedeker = resolveMap(baedeker);
-  const resolvedCivica = resolveMap(civica);
-  const resolvedStreets = resolveMap(streets);
-  const resolvedMap1777 = resolveMap(map1777);
-  const resolvedBlueprint = resolveMap(blueprint);
-  const resolvedSiegfried = resolveMap(siegfried);
-  const resolvedSoundings = resolveMap(soundings);
-
-  assert.deepEqual(resolvedBaedeker.icons, [baedekerIcons]);
-  assert.deepEqual(resolvedCivica.icons, [civicaIcons]);
-  assert.deepEqual(resolvedStreets.icons, [streetsIcons]);
-  assert.deepEqual(resolvedMap1777.icons, [map1777Icons]);
-  assert.deepEqual(resolvedMap1777.fonts, [map1777Fonts]);
-  assert.equal(resolvedMap1777.glyphs, undefined);
-  assert.deepEqual(resolvedBlueprint.icons, [blueprintIcons]);
-  assert.deepEqual(resolvedSiegfried.icons, [siegfriedIcons]);
-  assert.deepEqual(resolvedSoundings.icons, [soundingsIcons]);
-  assert.deepEqual(resolvedBaedeker.fonts, [baedekerFonts]);
-  assert.deepEqual(resolvedSiegfried.fonts, [siegfriedFonts]);
-  assert.equal(resolvedBaedeker.glyphs, undefined);
-  assert.equal(resolvedSiegfried.glyphs, undefined);
-  assert.deepEqual(resolvedStreets.fonts, [streetsFonts]);
-  assert.equal(resolvedStreets.glyphs, undefined);
-  assert.deepEqual(resolvedCivica.fonts, [civicaFonts]);
-  assert.equal(resolvedCivica.glyphs, undefined);
-  for (const map of [resolvedSoundings, resolvedBlueprint]) {
-    assert.deepEqual(map.glyphs, {
-      fontStacks: ['Noto Sans Regular', 'Noto Sans Bold'],
-      kind: 'url',
-      url: officialGlyphsUrl,
-    });
+  for (const map of [streets, terrain]) {
+    const resolved = resolveMap(map);
+    assert.deepEqual(resolved.fonts, [streetsFonts]);
+    assert.equal(resolved.glyphs, undefined);
+    assert.deepEqual(
+      resolved.icons,
+      map.id === 'terrain' ? [streetsIcons, terrainIcons] : [streetsIcons],
+    );
   }
-  assert.equal(resolvedBaedeker.themes.light.typography?.font, 'Cormorant Garamond Regular');
-  assert.equal(
-    resolvedBaedeker.themes.light.typography?.places?.font,
-    'Cormorant Garamond SemiBold',
-  );
-  assert.equal(resolvedMap1777.themes.light.typography?.font, 'Cormorant Garamond Regular');
-  assert.equal(resolvedSiegfried.themes.light.typography?.font, 'Cormorant Garamond Regular');
-  assert.equal(resolvedSiegfried.themes.dark.typography?.font, 'Cormorant Garamond Regular');
-  assert.equal(resolvedSiegfried.defaultTheme, 'light');
-  assert.deepEqual(resolvedSiegfried.systemThemes, {light: 'light', dark: 'dark'});
-  assert.equal(siegfriedThemes.light.colorScheme, 'light');
-  assert.equal(siegfriedThemes.dark.colorScheme, 'dark');
-  assert.equal(resolvedSoundings.themes.light.typography?.font, 'Noto Sans Regular');
-  assert.equal(resolvedBlueprint.themes.blueprint.typography?.font, 'Noto Sans Regular');
-  assert.equal(resolvedBlueprint.themes.blueprint.typography?.places?.font, 'Noto Sans Bold');
-});
-
-test('Baedeker is self-contained and references exactly its package-owned patterns', () => {
-  const resolved = resolveMap(baedeker);
-  assert.equal('extends' in baedeker, false);
-  assert.equal('root' in resolved, false);
-  assert.deepEqual(resolved.icons, [baedekerIcons]);
-
-  const compiled = createStyleWithInspection(baedeker, {
-    preparedAssets: {
-      icons: {ids: baedekerPatternIds, sprite: '/tileflow/icons/baedeker/sprite'},
-    },
-  });
-  const {style} = compiled;
-  assert.equal(style.metadata?.['tileflow:extends'], undefined);
-  const patternIds = new Set(
-    style.layers.flatMap((layer) =>
-      Object.entries((layer.paint ?? {}) as Record<string, unknown>).flatMap(([property, value]) =>
-        property.endsWith('-pattern') && typeof value === 'string' ? [value] : [],
-      ),
-    ),
-  );
-  assert.deepEqual([...patternIds].sort(), [...baedekerPatternIds]);
-
-  const targets = compiledTargets(compiled);
-  for (const target of [
-    'buildings.render.engravedBlocks',
-    'land.render.rockHachures',
-    'land.render.scrubHachures',
-    'land.render.orchardTexture',
-    'land.render.sandTexture',
-    'land.render.wetlandTexture',
-    'land.render.parkStipple',
-    'land.render.woodStipple',
-    'land.render.residentialTexture',
-    'water.render.printLines',
-    'water.render.intermittentPrintLines',
-  ]) {
-    assert.equal(targets.has(target), true, `Missing Baedeker render target ${target}`);
-  }
-  assert.equal(targets.has('buildings.render.printShadow'), false);
-});
-
-test('1777 is self-contained and references exactly its package-owned patterns', () => {
-  const resolved = resolveMap(map1777);
-  assert.equal(map1777.name, '1777');
-  assert.equal('extends' in map1777, false);
-  assert.equal('root' in resolved, false);
-  assert.deepEqual(resolved.icons, [map1777Icons]);
-
-  const compiled = createStyleWithInspection(map1777, {
-    preparedAssets: {
-      icons: {ids: map1777PatternIds, sprite: '/tileflow/icons/map-1777/sprite'},
-    },
-  });
-  const {style} = compiled;
-  assert.equal(style.metadata?.['tileflow:extends'], undefined);
-  const patternIds = new Set(
-    style.layers.flatMap((layer) =>
-      Object.entries((layer.paint ?? {}) as Record<string, unknown>).flatMap(([property, value]) =>
-        property.endsWith('-pattern')
-          ? [...JSON.stringify(value).matchAll(/"(map-1777-[a-z-]+)"/g)].map((match) => match[1])
-          : [],
-      ),
-    ),
-  );
-  assert.deepEqual([...patternIds].sort(), map1777PatternIds);
-
-  const targets = compiledTargets(compiled);
-  for (const target of [
-    'land.render.farmlandTexture',
-    'land.render.heathTexture',
-    'land.render.orchardTexture',
-    'land.render.sandTexture',
-    'land.render.wetlandTexture',
-    'land.render.woodTexture',
-    'land.render.residentialTexture',
-    'water.render.ripples',
-    'water.render.intermittentRipples',
-    'buildings.render.printShadow',
-  ]) {
-    assert.equal(targets.has(target), true, `Missing 1777 render target ${target}`);
-  }
+  assert.deepEqual(resolveMap(soundings).icons, [soundingsIcons]);
+  assert.equal(resolveMap(soundings).glyphs?.kind, 'url');
 });
 
 test('Soundings is self-contained and references only its bathymetric-map artwork', () => {
@@ -614,49 +363,17 @@ test('Soundings is self-contained and references only its bathymetric-map artwor
   }
 });
 
-test('Blueprint is self-contained and references exactly its blueprint assets', () => {
-  const resolved = resolveMap(blueprint);
-  assert.equal('extends' in blueprint, false);
-  assert.equal('root' in resolved, false);
-  assert.deepEqual(resolved.icons, [blueprintIcons]);
-
-  const compiled = createStyleWithInspection(blueprint, {
-    preparedAssets: {
-      icons: {
-        ids: blueprintIconIds,
-        sprite: '/tileflow/icons/blueprint/sprite',
-      },
-    },
-  });
-  assert.equal(compiled.style.metadata?.['tileflow:extends'], undefined);
-  const serialized = JSON.stringify(compiled.style);
-  for (const id of blueprintIconIds) {
-    assert.match(serialized, new RegExp(`"${id}"`, 'u'), `Missing blueprint asset ${id}`);
-  }
-  assert.deepEqual(validateStyleMin(compiled.style as never), []);
-});
-
 test('all official maps compile directly after their packaged sprite is prepared', () => {
   for (const [id, map] of Object.entries({
-    baedeker,
-    civica,
-
-    'map-1777': map1777,
-    blueprint: blueprint,
-    siegfried,
     soundings,
     streets,
+    terrain,
   })) {
     const style = compileOfficialMap(map);
     assert.equal(style.metadata?.['tileflow:map'], id);
     assert.equal(style.metadata?.['tileflow:compiler'], 'tileflow-semantic');
     assert.equal(style.sprite, `/tileflow/icons/${id}/sprite`);
-    assert.equal(
-      style.glyphs,
-      ['baedeker', 'civica', 'map-1777', 'siegfried', 'streets'].includes(id)
-        ? undefined
-        : officialGlyphsUrl,
-    );
+    assert.equal(style.glyphs, ['streets', 'terrain'].includes(id) ? undefined : officialGlyphsUrl);
     assert.ok(
       style.layers.length > (id === 'soundings' ? 50 : 100),
       `${id} compiled an unexpectedly incomplete layer stack`,
@@ -859,11 +576,6 @@ test('official road widths depend on the camera zoom alone', () => {
   for (const [mapId, map, theme] of [
     ['streets', streets, 'light'],
     ['streets', streets, 'dark'],
-    ['baedeker', baedeker, undefined],
-    ['civica', civica, undefined],
-    ['map-1777', map1777, undefined],
-    ['siegfried', siegfried, undefined],
-    ['blueprint', blueprint, undefined],
   ] as const) {
     const style = compileOfficialMap(map, theme);
     const roads = style.layers.filter(
@@ -887,25 +599,20 @@ test('official road widths depend on the camera zoom alone', () => {
 test('official road maps avoid seam-prone caps on ordinary surface and bridge segments', () => {
   for (const [mapId, map] of Object.entries({
     streets,
-
-    baedeker,
-    civica,
-
-    'map-1777': map1777,
-    siegfried,
-    blueprint: blueprint,
+    terrain,
   })) {
     const style = compileOfficialMap(map);
     const ordinaryRoadLayers = style.layers.filter(
       (layer) =>
         layer.type === 'line' &&
         /^tileflow-road-(?:surface|bridge)-/u.test(layer.id) &&
-        !layer.id.includes('-steps-'),
+        !layer.id.includes('-steps-') &&
+        !(mapId === 'terrain' && /-(?:track|cycleway|footway|pathway)-/u.test(layer.id)),
     );
     assert.ok(ordinaryRoadLayers.length > 0, `${mapId} compiled no ordinary road lines`);
     for (const layer of ordinaryRoadLayers) {
       if (
-        (mapId === 'streets' || mapId === 'map-1777') &&
+        (mapId === 'streets' || mapId === 'terrain') &&
         layer.id.startsWith('tileflow-road-bridge-') &&
         /-casing(?:-|$)/u.test(layer.id)
       )
@@ -937,14 +644,9 @@ test('official maps compile against generic OpenMapTiles without optional capabi
   });
 
   for (const [id, map] of Object.entries({
-    baedeker,
-    civica,
-
-    'map-1777': map1777,
-    blueprint: blueprint,
-    siegfried,
     soundings,
     streets,
+    terrain,
   })) {
     const derived = defineMap({id: `${id}-generic`, version: 1, extends: map, data});
     const style = createStyle(derived, {preparedAssets: preparedAssets(id)});
@@ -985,35 +687,6 @@ test('official maps compile against generic OpenMapTiles without optional capabi
 
 test('official maps emit only exact declared font-face stacks', () => {
   const expected = {
-    baedeker: new Set([
-      JSON.stringify(['Cormorant Garamond Italic']),
-      JSON.stringify(['Cormorant Garamond Regular']),
-      JSON.stringify(['Cormorant Garamond SemiBold']),
-    ]),
-    civica: new Set([
-      JSON.stringify(['DM Serif Text Regular']),
-      JSON.stringify(['DM Serif Text Regular', 'Noto Sans Regular']),
-      JSON.stringify(['DM Serif Text Italic', 'Noto Sans Regular']),
-      JSON.stringify(['Barlow Semi Condensed Regular']),
-      JSON.stringify(['Barlow Semi Condensed Regular', 'Noto Sans Regular']),
-      JSON.stringify(['Barlow Semi Condensed SemiBold']),
-      JSON.stringify(['Barlow Semi Condensed SemiBold', 'Noto Sans Regular']),
-    ]),
-
-    'map-1777': new Set(
-      [
-        'Cormorant Garamond Regular',
-        'Cormorant Garamond SemiBold',
-        'Cormorant Garamond Italic',
-      ].map((font) => JSON.stringify([font])),
-    ),
-
-    blueprint: new Set([JSON.stringify(['Noto Sans Regular']), JSON.stringify(['Noto Sans Bold'])]),
-    siegfried: new Set([
-      JSON.stringify(['Cormorant Garamond Italic']),
-      JSON.stringify(['Cormorant Garamond Regular']),
-      JSON.stringify(['Cormorant Garamond SemiBold']),
-    ]),
     soundings: new Set([JSON.stringify(['Noto Sans Regular']), JSON.stringify(['Noto Sans Bold'])]),
     streets: new Set([
       JSON.stringify(['DINish Medium', 'Noto Sans Regular']),
@@ -1025,14 +698,9 @@ test('official maps emit only exact declared font-face stacks', () => {
   } as const;
 
   for (const [id, map] of Object.entries({
-    baedeker,
-    civica,
-
-    'map-1777': map1777,
-    blueprint: blueprint,
-    siegfried,
     soundings,
     streets,
+    terrain,
   })) {
     const actual = new Set(
       compileOfficialMap(map).layers.flatMap((layer) => {
@@ -1040,7 +708,12 @@ test('official maps emit only exact declared font-face stacks', () => {
         return Array.isArray(font) ? [JSON.stringify(font)] : [];
       }),
     );
-    assert.deepEqual(actual, expected[id as keyof typeof expected], `${id} font stacks drifted`);
+    // Numeric contour labels use the packaged DIN face without a text fallback stack.
+    const declared =
+      id === 'terrain'
+        ? new Set([...expected.streets, JSON.stringify(['DINish Medium'])])
+        : expected[id as keyof typeof expected];
+    assert.deepEqual(actual, declared, `${id} font stacks drifted`);
   }
 });
 
@@ -1124,7 +797,7 @@ test('Streets green surfaces are typed and contain no legacy raw detail layers',
   ]);
 });
 
-test('Streets road labels retain class thresholds and readable text below buildings and POIs', () => {
+test('Streets road labels retain class thresholds and whole-name visibility below POIs', () => {
   const expectations = [
     ['motorway', 'motorway', undefined, 10, 9, 16, 0.15],
     ['trunk', 'trunk', undefined, 10, 9, 16, 0.15],
@@ -1141,7 +814,7 @@ test('Streets road labels retain class thresholds and readable text below buildi
     ['pedestrian', 'pedestrian', undefined, 12, 9, 14, 0.01],
   ] as const;
   const resolved = resolveMap(streets);
-  assert.equal(resolved.modules.labels?.roadPlacement, 'ground');
+  assert.equal(resolved.modules.labels?.roadPlacement, 'readable');
   assert.equal(resolved.modules.labels?.roadGrouping, 'network');
   assert.equal(resolved.modules.labels?.roads, 'all');
   assert.deepEqual(
@@ -1183,7 +856,7 @@ test('Streets road labels retain class thresholds and readable text below buildi
     assert.ok(destinationIndex > buildingIndex);
     for (const layer of roadLayers) {
       assert.ok(layer.index > footprintIndex, `${theme}: flat footprints cannot clip street names`);
-      assert.ok(layer.index < buildingIndex, `${theme}: buildings hide street names`);
+      assert.ok(layer.index > buildingIndex, `${theme}: buildings cannot clip individual glyphs`);
       assert.ok(
         layer.index < destinationIndex,
         `${theme}: destinations win street-name collisions`,
@@ -1197,8 +870,7 @@ test('Streets road labels retain class thresholds and readable text below buildi
           (layer.maxzoom ?? 24) > zoom &&
           featureFilter(layer.filter as never).filter({zoom}, {type: 2, properties} as never),
       );
-    // Dense overview grids retain the main thoroughfare before parallel local streets;
-    // the extra screen padding must be gone by neighbourhood zoom.
+    // Dense grids retain the main thoroughfare before parallel local streets.
     for (const zoom of [13, 14, 17]) {
       const properties = {name: 'A road', class: 'primary'};
       const network = active(properties, zoom)[0]!;
@@ -1225,7 +897,7 @@ test('Streets road labels retain class thresholds and readable text below buildi
         evaluateLayout('symbol-sort-key', {class: 'primary'}),
         evaluateLayout('symbol-sort-key', {class: 'construction', type: 'primary'}),
       );
-      assert.equal(evaluateLayout('text-padding', {class: 'primary'}), zoom === 13 ? 5 : 1);
+      assert.equal(evaluateLayout('text-padding', {class: 'primary'}), 1);
     }
     for (const [
       roadClass,
@@ -1269,10 +941,7 @@ test('Streets road labels retain class thresholds and readable text below buildi
         const expectedSize = startSize + (endSize - startSize) * ((zoom - 10) / 8);
         assert.ok(Math.abs(Number(evaluate('text-size', 'layout')) - expectedSize) < 1e-6);
         assert.equal(evaluate('text-letter-spacing', 'layout'), letterSpacing);
-        assert.equal(
-          evaluate('symbol-spacing', 'layout'),
-          zoom < 17 ? 300 + (zoom - 15) * 50 : 400 + (zoom - 17) * 25,
-        );
+        assert.equal(evaluate('symbol-spacing', 'layout'), 250);
         assert.equal(evaluate('text-transform', 'layout'), 'uppercase');
         assert.equal(evaluate('text-pitch-alignment', 'layout'), 'viewport');
         assert.equal(evaluate('text-rotation-alignment', 'layout'), 'map');
@@ -1313,16 +982,11 @@ test('Streets road labels retain class thresholds and readable text below buildi
   }
 });
 
-test('non-Streets official maps do not use Streets surface colors', () => {
+test('Streets dark does not inherit light surface colors', () => {
   const compile = compileOfficialMap;
   const streetsSurfaceSignatures = ['#AEDBFC', '#B7E2AC', '#C2E8B3', '#D5E8D0', '#E0ECD8'];
 
   for (const [id, map, ownSignatures] of [
-    ['baedeker', baedeker, ['#E8DABD', '#9DC8CC']],
-    ['civica', civica, ['#F7F3E8', '#B4C8D9']],
-
-    ['blueprint', blueprint, ['#061D35', '#EEF3EA']],
-    ['siegfried', siegfried, ['#F0EBE0', '#A96C4D']],
     [
       'streets-dark',
       streets,

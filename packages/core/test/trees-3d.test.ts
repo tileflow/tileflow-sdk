@@ -11,7 +11,6 @@ import {
 } from '../src/trees-3d';
 import {createTileflowTrees3D, tileflowTrees3DLayerId} from '../src/trees-3d-browser';
 import {
-  tileflowHedgeMesh,
   tileflowTreeMeshes,
   tileflowTreeModelMeshOf,
   tileflowTreeVertexBytes,
@@ -335,52 +334,24 @@ test('hedges stand as pieces along their lines and round their areas, a metre hi
   const placement = placeTileflowTrees({hedges}, options);
   const pieces = hedgesOf(placement);
   assert.equal(treesOf(placement).length, 0, 'a hedge is no tree');
-  // A piece every 1.2 m from 0.6 m in, each 1.5 m long so they overlap; nothing in the buffer.
-  // Positions keep to the renderer's grid, half a metre in this 4096 m tile.
   const plain = pieces.filter((piece) => piece.y === 1000);
-  const expected = [0.6, 1.8, 3, 4.2, 5.4, 6.6, 7.8, 9, 10.2, 11.4];
-  assert.equal(plain.length, expected.length);
-  plain.forEach((piece, index) => assert.ok(Math.abs(piece.x - 1000 - expected[index]!) <= 0.25));
-  assert.ok(
-    plain.every((piece) => piece.height === 1.3 && piece.length === 1.5 && piece.turn === 0),
-  );
-  // The line leaving the tile stands pieces up to its edge and none beyond.
+  assert.deepEqual(plain, [{x: 1006, y: 1000, height: 1.3, length: 12, turn: 0}]);
   const edge = pieces.filter((piece) => piece.y === 2000);
-  assert.equal(edge.length, 5);
+  assert.equal(edge.length, 1);
   assert.ok(
     pieces.every((piece) => piece.x < 4096),
-    'nothing stands outside the tile',
+    'segment anchors stay in the tile',
   );
-  // Northward, on a bank: its height and a metre more.
   const bank = pieces.filter((piece) => piece.x === 2000);
-  assert.equal(bank.length, 5);
-  assert.ok(bank.every((piece) => piece.height === 3 && piece.turn === 90));
-  // Round the 24 m of the square's sides, turning at each corner; the fence stands nothing.
+  assert.deepEqual(bank, [{x: 2000, y: 2003, height: 3, length: 6, turn: 90}]);
   const area = pieces.filter((piece) => piece.height === 0.8);
-  assert.equal(area.length, 20);
+  assert.equal(area.length, 4, 'one continuous segment per side, with shared corners');
   assert.deepEqual(
     [...new Set(area.map((piece) => piece.turn))].sort((a, b) => a - b),
     [0, 90, 180, 270],
   );
   assert.equal(pieces.length, plain.length + edge.length + bank.length + area.length);
   assert.equal(placement.tallest, 3);
-});
-
-test('a hedge piece is a clipped unit hedge with its top facing up', () => {
-  const mesh = tileflowHedgeMesh();
-  assert.ok(mesh.count / 3 > 0 && mesh.count / 3 <= 24, `${mesh.count / 3} triangles`);
-  const view = new DataView(mesh.vertices.buffer);
-  let up = 0;
-  for (let index = 0; index < mesh.count; index += 1) {
-    const at = index * tileflowTreeVertexBytes;
-    const [x, y, z] = [0, 4, 8].map((offset) => view.getFloat32(at + offset, true));
-    assert.ok(Math.abs(x!) <= 0.5 && Math.abs(y!) <= 0.28 && z! >= 0 && z! <= 1);
-    assert.equal(mesh.vertices[at + 15], 1, 'a hedge is all leaves');
-    const normal = [12, 13, 14].map((offset) => view.getInt8(at + offset) / 127);
-    assert.ok(Math.abs(Math.hypot(...normal) - 1) < 0.05, 'unit normals');
-    if (z === 1) up += normal[2]!;
-  }
-  assert.ok(up > 0, 'the top of a hedge faces up');
 });
 
 test('a taxon gives a form, and a canopy point’s measured height sizes its trees', () => {
@@ -396,6 +367,32 @@ test('a taxon gives a form, and a canopy point’s measured height sizes its tre
     options,
   );
   for (const tree of treesOf(placement)) assert.ok(tree.height >= 17 && tree.height <= 22);
+});
+
+test('low decorative canopy keeps tree proportions even in a wide clearing', () => {
+  for (const form of tileflowTreeForms) {
+    const placement = placeTileflowTrees(
+      {
+        canopy: layer([
+          {
+            geometry: [[1000, 1000]],
+            properties: {clearance_px_z15: 24, cover_pct: 60, height_m: 3},
+          },
+        ]),
+      },
+      {...options, unknownForms: {[form]: 1}},
+    );
+    const trees = treesOf(placement);
+    assert.equal(trees.length, 3, 'sizing does not remove canopy trees');
+    for (const tree of trees) {
+      assert.ok(tree.height >= 2.5 && tree.height <= 3.3, 'keeps the measured canopy height');
+      assert.ok(tree.crown <= tree.height * 1.1, `${form}: clearance must not flatten the crown`);
+      assert.ok(
+        (tree.crown / tree.height) * 6.4 <= 7.1,
+        `${form}: a display height floor must not turn low canopy into a giant tree`,
+      );
+    }
+  }
 });
 
 test('the 3D tree description is read only in a known version and shape', () => {

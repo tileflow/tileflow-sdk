@@ -536,3 +536,26 @@ function mapIntoGamut(lightness: number, chroma: number, angle: number): [number
   }
   return clipped.map(linearToSrgb) as [number, number, number];
 }
+
+/** OKLab lightness, a and b, and alpha for an sRGB colour. */
+export function srgbaToOklab([red, green, blue, alpha]: TileflowSrgbaColor): [
+  number,
+  number,
+  number,
+  number,
+] {
+  const [lightness, a, b] = linearToOklab(
+    [red, green, blue].map((channel) => srgbToLinear(channel / 255)),
+  );
+  return [lightness, a, b, alpha];
+}
+
+/** The sRGB colour of OKLab coordinates, gamut-mapped when they fall outside sRGB. */
+export function oklabToSrgba(
+  lightness: number,
+  a: number,
+  b: number,
+  alpha = 1,
+): TileflowSrgbaColor {
+  return toSrgba({alpha, coords: [lightness, a, b], space: 'oklab'});
+}

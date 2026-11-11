@@ -39,11 +39,13 @@ import {
   attachTileflowMap3D,
   attachTileflowMapLifecycle,
   attachTileflowNauticalLights,
+  attachTileflowBranding,
   attachTileflowNotices,
   createTileflowAppearanceBinding,
   createTileflowSessionStarter,
   createTileflowThemeController,
   createTileflowNavigationControlBinding,
+  createTileflowContourRequestScope,
   createTileflowTransformRequest,
   getTileflowSystemColorScheme,
   loadTileflowRuntimeStyle,
@@ -75,6 +77,7 @@ import {
   type TileflowThemeTransition,
   type TileflowThemeTransitionOptions,
   type TileflowViewMode,
+  type TileflowContourRequestScope,
   type TileflowWorldRequestBridge,
 } from '@tileflow/core/browser';
 import {normalizeTileflowCaptureId} from '@tileflow/core/capture';
@@ -204,7 +207,8 @@ type TileflowMapInteractiveProps<TAnnotation extends TileflowAnnotation> = Tilef
     annotationClusters?: TileflowAnnotationClusterOptions;
     annotations?: readonly TAnnotation[];
     /**
-     * Colour token overrides for the map, for example `{'surface.land': '#f4f1ea'}`. The overrides ease in over
+     * Colour token overrides for the map, for example `{'surface.land': '#f4f1ea'}`, or colour knobs
+     * the map declares, for example `{water: '#2563eb'}`. The overrides ease in over
      * `themeTransition`, stay through theme changes, and an empty object restores the map's own
      * colours. A value may use CSS variables, such as `var(--primary)` or
      * `color-mix(in oklab, var(--primary) 40%, white)`, read where the map sits and read again when
@@ -480,6 +484,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     let mapResizeObserver: ResizeObserver | null = null;
     let navigationBinding: TileflowNavigationControlBinding | null = null;
     let mapWorldRequestBridge: TileflowWorldRequestBridge | null = null;
+    let mapContourRequestScope: TileflowContourRequestScope | null = null;
     let sceneAttachment: TileflowMap3DAttachment | null = null;
     let themeController: TileflowThemeController | null = null;
     let appearanceBinding: TileflowAppearanceBinding | null = null;
@@ -978,6 +983,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       const annotationInteractionsForMap = annotationRuntime;
       const semanticInteractionsForMap = semanticRuntime;
       const worldRequestBridge = mapWorldRequestBridge;
+      const contourRequestScope = mapContourRequestScope;
       const teardownSteps = [
         annotationRuntimeCoordinatorDetach,
         semanticRuntimeCoordinatorDetach,
@@ -991,6 +997,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         () => semanticInteractionsForMap?.dispose(),
         () => navigation?.dispose(),
         () => worldRequestBridge?.dispose(),
+        () => contourRequestScope?.dispose(),
         () => fairUseNotice?.dispose(),
         () => lifecycle?.dispose(),
         () => scene?.dispose(),
@@ -1022,6 +1029,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       mapResizeObserver = null;
       mapRef.value = null;
       mapWorldRequestBridge = null;
+      mapContourRequestScope = null;
       themeController = null;
 
       interactionRuntimesDisposing = true;
@@ -1179,6 +1187,24 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         addProtocol: maplibregl.addProtocol,
         onNotice: mapFairUseNotice.update,
       });
+      // Contour DEM requests leave through the shared protocol and come back to this map's
+      // transform, so they carry this map's session like its hillshade tiles.
+      const contourRequestScope = createTileflowContourRequestScope({
+        transformRequest: (url, resourceType) =>
+          mapTransformRequest(url, resourceType as Parameters<RequestTransformFunction>[1]),
+      });
+      mapContourRequestScope = contourRequestScope;
+      const mapTransformRequest = createTileflowTransformRequest<
+        RequestParameters,
+        Parameters<RequestTransformFunction>[1]
+      >({
+        contourRequestScope,
+        getAnalytics: () => resolvedAnalytics.value,
+        sessionController: session,
+        sessionId: session.sessionId,
+        transformRequest: props.mapOptions?.transformRequest ?? undefined,
+        worldRequestBridge: mapWorldRequestBridge,
+      });
       const map = new maplibregl.Map({
         ...props.mapOptions,
         canvasContextAttributes: tileflowCanvasContextAttributes(
@@ -1196,21 +1222,13 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         interactive: resolvedInteractive.value,
         pitch: resolvedPitch.value,
         style: prepared.style as StyleSpecification,
-        transformRequest: createTileflowTransformRequest<
-          RequestParameters,
-          Parameters<RequestTransformFunction>[1]
-        >({
-          getAnalytics: () => resolvedAnalytics.value,
-          sessionController: session,
-          sessionId: session.sessionId,
-          transformRequest: props.mapOptions?.transformRequest ?? undefined,
-          worldRequestBridge: mapWorldRequestBridge,
-        }),
+        transformRequest: mapTransformRequest,
         zoom: resolvedZoom.value,
       });
 
       mapRef.value = map;
       attachTileflowAtmosphere(map);
+      attachTileflowBranding(map);
       attachTileflowNotices(map);
       attachTileflowNauticalLights(map);
       attachTileflowLabelPlacement(map);

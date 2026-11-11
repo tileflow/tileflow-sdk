@@ -1,4 +1,8 @@
-import {resolveTileflowNativeResourceUrl} from '@tileflow/core/native';
+import {
+  bindTileflowBrandingSources,
+  rememberTileflowBrandingSources,
+  resolveTileflowNativeResourceUrl,
+} from '@tileflow/core/native';
 import type {NativeAdmissionResource} from './native-admission-contract';
 import {
   hasReservedNativeContext,
@@ -388,6 +392,12 @@ export async function projectNativeResources(ports: Ports) {
       style.layers.length > nativePreparationLimits.layers
     )
       throw invalid();
+    const catalogSources = rememberTileflowBrandingSources(style, {
+      baseUrl: document.url,
+      ...(ports.policy
+        ? {apiUrl: nativeDocumentOrigin(ports.styleUrl), mapId: ports.policy.mapId}
+        : {}),
+    });
     const rewrites: Array<() => void> = [];
     for (const sourceId of Object.keys(style.sources).sort()) {
       const source = style.sources[sourceId];
@@ -483,6 +493,7 @@ export async function projectNativeResources(ports: Ports) {
       throw invalid();
     await accept();
     for (const rewrite of rewrites) rewrite();
+    if (Object.keys(catalogSources).length) bindTileflowBrandingSources(style, catalogSources);
     current();
     return Object.freeze({
       style: freezeNativePreparedJson(style),

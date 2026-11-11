@@ -4,6 +4,7 @@ import type {TileflowCameraOptions} from '../camera';
 import type {TileflowCaptureScene} from '../capture-scene';
 import type {TileflowCaptureShot} from '../capture-shot';
 import type {TileflowResolvedSemanticModuleOverrides} from '../cartography/domain-registry';
+import type {TileflowColorKnob} from '../color-knobs';
 import type {TileflowDataConfig} from '../data';
 import type {TileflowIconSource} from '../icon-set';
 import type {TileflowMarine} from '../marine';
@@ -14,6 +15,7 @@ import type {
   TileflowSource,
 } from '../overlays';
 import {tileflowPortableIdSchema} from '../portable-identity';
+import type {TileflowRemoveOperation} from '../overlays';
 import type {TileflowSky} from '../sky';
 import type {TileflowTheme, TileflowThemeName} from '../themes';
 import type {TileflowTimeOfDayVariants} from '../time-of-day';
@@ -60,6 +62,12 @@ export type TileflowMapDesign = TileflowMapTextAssets & {
   boundaryAreas?: TileflowBoundaryAreas;
   /** Browser 3D camera policy. Omission inherits; an explicit false disables the effect. */
   camera?: TileflowCameraOptions;
+  /**
+   * Named colours that each stand for many tokens, so an application recolours a map with a
+   * handful of colours instead of naming its tokens. `Map`'s `colors` accepts a knob by name.
+   * Omission inherits; an entry replaces the inherited knob of its name; `remove()` drops it.
+   */
+  colorKnobs?: Readonly<Record<string, TileflowColorKnob | TileflowRemoveOperation>>;
   data?: TileflowDataConfig;
   /** Name used whenever a concrete theme is not explicitly requested. */
   defaultTheme?: TileflowThemeName;

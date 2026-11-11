@@ -140,6 +140,7 @@ internal class OfflineStoreCore(
     /** Tells maps which stored resources and regional credits they may use without a network. */
     private fun publishServing() {
         val index = index ?: return
+        val branding = HashMap<String, MutableList<Boolean?>>()
         val paths = HashSet<String>()
         val credits = HashMap<String, MutableList<OfflineCredit>>()
         for ((id, record) in records) {
@@ -148,12 +149,16 @@ internal class OfflineStoreCore(
             paths.addAll(keys(id, active).first)
             val origin = active.apiOrigin?.let { URI(it) } ?: continue
             if (active.packs == 0) continue
+            runCatching { plan(id, active) }.getOrNull()?.packs?.forEach { pack ->
+                val scope = ResourceCacheScope.grant(origin, pack.manifest.mapId).directory
+                branding.getOrPut(scope) { mutableListOf() }.add(pack.manifest.catalogLogoRequired)
+            }
             for ((scope, list) in credits(id, active, origin)) {
                 val merged = credits.getOrPut(scope) { mutableListOf() }
                 for (credit in list) if (merged.none { it.id == credit.id }) merged.add(credit)
             }
         }
-        index.publish(OfflineServingSnapshot(paths, credits), this)
+        index.publish(OfflineServingSnapshot(paths, credits, branding), this)
     }
 
     /** The regional credits of a Hosted version's packs, by the cache scope of their Map. */

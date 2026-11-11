@@ -29,6 +29,7 @@ import {
   attachTileflowMap3D,
   attachTileflowMapLifecycle,
   attachTileflowNauticalLights,
+  attachTileflowBranding,
   attachTileflowNotices,
   createTileflowSessionStarter,
   createTileflowThemeController,
@@ -918,6 +919,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
         setupResources.map = map;
         registerCleanup(() => map.remove());
         registerCleanup(attachTileflowAtmosphere(map));
+        registerCleanup(attachTileflowBranding(map));
         registerCleanup(attachTileflowNotices(map));
         registerCleanup(attachTileflowNauticalLights(map));
         registerCleanup(attachTileflowLabelPlacement(map));

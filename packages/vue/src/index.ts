@@ -37,6 +37,7 @@ import {
   attachTileflowMap3D,
   attachTileflowMapLifecycle,
   attachTileflowNauticalLights,
+  attachTileflowBranding,
   attachTileflowNotices,
   createTileflowSessionStarter,
   createTileflowThemeController,
@@ -1013,6 +1014,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
 
       mapRef.value = map;
       attachTileflowAtmosphere(map);
+      attachTileflowBranding(map);
       attachTileflowNotices(map);
       attachTileflowNauticalLights(map);
       attachTileflowLabelPlacement(map);

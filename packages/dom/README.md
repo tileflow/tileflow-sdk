@@ -22,13 +22,30 @@ npm install --save-dev --save-exact tileflow@alpha
 
 Build a map into `public/tileflow` with `npx tileflow build --out public/tileflow`, as the
 [React guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/react/README.md#prepare-a-map)
-shows, and configure MapLibre's worker once before the first map. With Vite:
+shows.
+
+With Vite, the plugin from `@tileflow/vite` gives every map MapLibre's worker, in development and
+in production builds, so the application configures nothing. `tileflow()` prepares maps and adds
+the worker. When the CLI build or a hosted manifest provides the maps, add only the worker
+(`npm install --save-dev @tileflow/vite@alpha`):
 
 ```ts
-import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+import {defineConfig} from 'vite';
+import {tileflowMapLibreWorker} from '@tileflow/vite';
+
+export default defineConfig({plugins: [tileflowMapLibreWorker()]});
+```
+
+The worker comes from the same installed MapLibre as the map's main module.
+
+With another bundler, configure the worker once before the first map, with the URL at which the
+page serves `maplibre-gl/dist/maplibre-gl-worker.mjs`. An explicit configuration wins over the
+Vite plugin's:
+
+```ts
 import {configureTileflowMapLibre} from '@tileflow/dom';
 
-configureTileflowMapLibre({workerUrl});
+configureTileflowMapLibre({workerUrl: '/assets/maplibre-gl-worker.mjs'});
 ```
 
 ## Mount a map

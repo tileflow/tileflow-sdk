@@ -26,40 +26,49 @@ const appFile: Record<MapAppFramework, string> = {
   vue: 'App.vue',
 };
 
-const entry = (framework: 'svelte' | 'vue') =>
-  framework === 'vue'
-    ? `import {createApp} from 'vue';
-import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
-import {configureTileflowMapLibre} from '@tileflow/vue';
-import App from './App.vue';
+const entry = (framework: 'svelte' | 'vue', configureWorker: boolean) => {
+  const adapter = `@tileflow/${framework}`;
+  const worker = configureWorker
+    ? `import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+import {configureTileflowMapLibre} from '${adapter}';
 configureTileflowMapLibre({workerUrl});
+`
+    : '';
+  return framework === 'vue'
+    ? `import {createApp} from 'vue';
+${worker}import App from './App.vue';
 createApp(App).mount('#root');
 `
     : `import {mount} from 'svelte';
-import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
-import {configureTileflowMapLibre} from '@tileflow/svelte';
-import App from './App.svelte';
-configureTileflowMapLibre({workerUrl});
+${worker}import App from './App.svelte';
 mount(App, {target: document.getElementById('root')});
 `;
+};
 
 /**
  * Serves a small application of one framework from a throwaway Vite server, with the test fixture's
  * manifest at `/tileflow-fixture/manifest.json`, and runs `body` with a way to open its pages in
  * Chromium. React runs from the workspace sources; the framework-free core, Vue and Svelte from
- * their built packages.
+ * their built packages. The Vue and Svelte entries configure MapLibre's worker themselves unless
+ * `configureWorker` is `false`; extra `plugins` run beside the framework's own.
  */
 export async function withMapApp(
   framework: MapAppFramework,
   source: string,
   body: (open: (query?: string) => Promise<MapAppPage>) => Promise<void>,
-  options: {writeFixture?: (cwd: string, origin: string) => Promise<void>} = {},
+  options: {
+    configureWorker?: boolean;
+    plugins?: PluginOption[];
+    writeFixture?: (cwd: string, origin: string) => Promise<void>;
+  } = {},
 ): Promise<void> {
   const writeFixture = options.writeFixture ?? writeDataLayerFixture;
   const root = dirname(fileURLToPath(new URL('../package.json', import.meta.url)));
   const cwd = await mkdtemp(join(root, `.tileflow-test-${framework}-map-app-`));
-  const plugins: PluginOption[] =
-    framework === 'vue' ? [vue()] : framework === 'svelte' ? [svelte()] : [];
+  const plugins: PluginOption[] = [
+    ...(framework === 'vue' ? [vue()] : framework === 'svelte' ? [svelte()] : []),
+    ...(options.plugins ?? []),
+  ];
   let browser: Awaited<ReturnType<typeof launchTileflowCaptureBrowser>> | undefined;
   let vite: Awaited<ReturnType<typeof createViteServer>> | undefined;
   try {
@@ -71,7 +80,7 @@ export async function withMapApp(
       ),
       ...(framework === 'react' || framework === 'dom'
         ? []
-        : [writeFile(join(cwd, 'main.js'), entry(framework))]),
+        : [writeFile(join(cwd, 'main.js'), entry(framework, options.configureWorker ?? true))]),
       writeFile(join(cwd, appFile[framework]), source),
       writeFixture(cwd, 'http://127.0.0.1'),
     ]);

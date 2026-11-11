@@ -10,12 +10,30 @@ import {
   createTileflowDevRequestHandler,
   type TileflowDevRequestHandler,
 } from '@tileflow/dev/server';
+import {
+  createTileflowSnapshotResponder,
+  emitTileflowRouteSnapshot,
+  findTileflowRouteSnapshot,
+  isTileflowNextBuildPhase,
+  type TileflowRouteSnapshotInput,
+} from './snapshot';
 
 export type TileflowNextRouteHandlerOptions = {
   apiBaseUrl?: string;
   base?: string;
+  /**
+   * How long a request waits for the map to finish compiling before the route answers
+   * `503 Service Unavailable` with `Retry-After`, in milliseconds. The Tileflow runtime asks again
+   * on its own. Defaults to 3000.
+   */
+  compileWaitMs?: number;
   config?: string;
   cwd?: string;
+  /**
+   * The Next.js `distDir`, where the build leaves the compiled map for the server to answer from.
+   * Defaults to `.next`.
+   */
+  distDir?: string;
   /**
    * Explicit shared Icon Set resolution settings.
    *
@@ -39,6 +57,8 @@ type SharedRouteHandler = {
   sessionPromise: Promise<TileflowArtifactSession>;
 };
 
+const defaultCompileWaitMs = 3_000;
+
 const sharedHandlers = ((
   globalThis as typeof globalThis & {
     __tileflowNextRouteHandlersV1?: Map<string, SharedRouteHandler>;
@@ -50,6 +70,66 @@ export function createTileflowRouteHandlers(
 ): TileflowNextRouteHandlers {
   const basePath = normalizeTileflowBasePath(options.base ?? '/tileflow');
   const routeBasePath = normalizeTileflowBasePath(options.routeBase ?? basePath);
+  const snapshotInput = getSnapshotInput(options, basePath);
+
+  if (isTileflowNextBuildPhase()) {
+    // `next build` loads this module only to read its exports. Compile the map now, so the server
+    // that starts afterwards has it, and serve nothing from this process.
+    if (snapshotInput) emitTileflowRouteSnapshot(snapshotInput);
+    return createLazyRouteHandlers(() => createLiveRouteHandlers(options, basePath, routeBasePath));
+  }
+
+  const snapshot =
+    snapshotInput && process.env.NODE_ENV === 'production'
+      ? findTileflowRouteSnapshot(snapshotInput)
+      : undefined;
+  if (snapshot) {
+    const respond = createTileflowSnapshotResponder(snapshot, basePath);
+    const handle = async (request: Request) =>
+      respond(rewriteRouteBasePath(request, routeBasePath, basePath));
+    return {close: async () => undefined, GET: handle, HEAD: handle};
+  }
+
+  return createLiveRouteHandlers(options, basePath, routeBasePath);
+}
+
+/**
+ * Handlers that answer from the map compiled at build time exist only when the route's
+ * configuration can be described to a child process; a custom icon transport cannot.
+ */
+function getSnapshotInput(
+  options: TileflowNextRouteHandlerOptions,
+  basePath: string,
+): TileflowRouteSnapshotInput | undefined {
+  if (options.onError || options.icons?.fetch || options.icons?.signal) return undefined;
+  return {
+    apiBaseUrl: options.apiBaseUrl,
+    basePath,
+    config: options.config ?? defaultTileflowConfigPath,
+    cwd: options.cwd ?? process.cwd(),
+    distDir: options.distDir,
+    ...(options.icons ? {icons: options.icons} : {}),
+    styleBaseUrl: options.styleBaseUrl ?? basePath,
+  };
+}
+
+function createLazyRouteHandlers(
+  create: () => TileflowNextRouteHandlers,
+): TileflowNextRouteHandlers {
+  let handlers: TileflowNextRouteHandlers | undefined;
+  const live = () => (handlers ??= create());
+  return {
+    close: async () => handlers?.close(),
+    GET: (request) => live().GET(request),
+    HEAD: (request) => live().HEAD(request),
+  };
+}
+
+function createLiveRouteHandlers(
+  options: TileflowNextRouteHandlerOptions,
+  basePath: string,
+  routeBasePath: string,
+): TileflowNextRouteHandlers {
   const sharedKey =
     options.onError || options.icons?.fetch || options.icons?.signal
       ? undefined
@@ -65,9 +145,11 @@ export function createTileflowRouteHandlers(
     }
   }
   const {handlerPromise, sessionPromise} = shared;
+  const compileWaitMs = options.compileWaitMs ?? defaultCompileWaitMs;
   const handle = async (request: Request) => {
     const rewritten = rewriteRouteBasePath(request, routeBasePath, basePath);
-    return (await handlerPromise)(rewritten);
+    const handler = await waitForHandler(handlerPromise, compileWaitMs);
+    return handler ? handler(rewritten) : preparingResponse();
   };
 
   return {
@@ -80,6 +162,43 @@ export function createTileflowRouteHandlers(
     GET: handle,
     HEAD: handle,
   };
+}
+
+/** The handler once the map has compiled, or undefined if it is still compiling after `waitMs`. */
+async function waitForHandler(
+  handlerPromise: Promise<TileflowDevRequestHandler>,
+  waitMs: number,
+): Promise<TileflowDevRequestHandler | undefined> {
+  let timer: Parameters<typeof clearTimeout>[0];
+  try {
+    return await Promise.race([
+      handlerPromise,
+      new Promise<undefined>((resolve) => {
+        timer = setTimeout(resolve, Math.max(0, waitMs));
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * The first compile of a map takes seconds. Answering at once tells the runtime to ask again,
+ * instead of holding its request past the time it is willing to wait.
+ */
+function preparingResponse(): Response {
+  return new Response(
+    `${JSON.stringify({error: 'Tileflow is still compiling this map. Ask again shortly.'})}\n`,
+    {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-store',
+        'Content-Type': 'application/json; charset=utf-8',
+        'Retry-After': '2',
+      },
+      status: 503,
+    },
+  );
 }
 
 function createSharedRouteHandler(

@@ -65,6 +65,14 @@ watched generation across repeated route-module evaluation. A custom harness tha
 must call `close()` on shutdown; this App Router module retains its shared handler for the process
 lifetime.
 
+The first access to a map does not fail while it compiles. `next build` compiles the map into
+`.next/tileflow` when it loads the route module, and a production server answers from those files.
+Without them, for example in `next dev` or with a `standalone` output that omits `.next/tileflow`,
+the route answers `503 Service Unavailable` with `Retry-After` until the map is ready, and the
+Tileflow runtime asks for its manifest again for up to 30 seconds. `compileWaitMs` sets how long a
+request waits for the first compile before the route answers `503` (3 seconds by default), and
+`distDir` names a custom Next.js `distDir`.
+
 ## Deliver the matching worker
 
 Create `scripts/copy-maplibre-worker.mjs` in the application. Run it from the application root after

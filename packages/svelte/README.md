@@ -114,7 +114,7 @@ theme, and `emphasis={{recede: {roads: 0.3}, labels: 0.6}}` makes modules recede
 your own content reads first. Both ease in over `themeTransition`, stay through theme changes, and
 follow the props: an empty `colors` or no `emphasis` restores the map as designed. An unknown token or an
 invalid value is logged and leaves the colours unchanged.
-A map that declares colour knobs, as Streets does, also takes them by name, such as `colors={{water: '#2563eb', roads: '#9aa5b1'}}`; see its package for the list.
+A map that declares colour knobs, as Streets does, also takes them by name, such as `colors={{water: '#2563eb', roads: '#9aa5b1'}}`; see [Streets' knobs](https://github.com/tileflow/tileflow-sdk/blob/main/packages/maps/REFERENCE.md#streets-colour-knobs).
 
 Interactive maps show the 3D scene their style declares by default: buildings with Tileflow
 landmarks and the map's Team building models, 3D trees, and street lights where the map enables

@@ -137,7 +137,7 @@ colour, so tokens lighter or darker than the reference stay so; `mix` moves it `
 may add a `lightness` offset, and a token's own alpha is kept. Knobs start from the colours of the
 theme on screen, so each theme keeps its own offsets. A token has one knob; a token named in
 `setColors` wins over its knob; an unknown knob is an error that lists the map's knobs. Derived
-maps inherit knobs, entries replace by name, and `remove()` drops one. Web builds retain token bindings; direct
+maps inherit knobs, entries replace by name, and `remove()` drops one. Streets' knobs are listed in [its reference](https://github.com/tileflow/tileflow-sdk/blob/main/packages/maps/REFERENCE.md#streets-colour-knobs). Web builds retain token bindings; direct
 `createStyle` calls opt in with `runtimeColors: true`. `createTileflowAppearanceController().set()`
 selects author-owned `fixed`, `system` or local `clock` behaviour without UI or location requests.
 Profile performance on target devices.

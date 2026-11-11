@@ -54,6 +54,8 @@
     tileflowCanvasContextAttributes,
     type TileflowFairUseNoticeController,
     type TileflowMapLifecycleAttachment,
+    resolveTileflowCameraFit,
+    type TileflowCameraFit,
     type TileflowNavigationControlBinding,
     type TileflowThemeController,
     type TileflowWorldRequestBridge,
@@ -61,6 +63,7 @@
   import {
     initialTileflowInteractionState,
     tileflowInteractionStateSchema,
+    unusedTileflowRendererDiagnostics,
     validateTileflowAnnotations,
     validateTileflowInteractionBindings,
     type TileflowAnnotation,
@@ -110,6 +113,9 @@
   export let marker: TileflowMapProps['marker'] = undefined;
   export let mode: NonNullable<TileflowMapProps['mode']> = 'interactive';
   export let navigationControl: TileflowMapProps['navigationControl'] = undefined;
+  export let bounds: TileflowMapProps['bounds'] = undefined;
+  export let fitAnnotations: TileflowMapProps['fitAnnotations'] = undefined;
+  export let fitBoundsOptions: TileflowMapProps['fitBoundsOptions'] = undefined;
   export let onInteractionDiagnostic: TileflowMapProps['onInteractionDiagnostic'] = undefined;
   export let onInteractionEvent: TileflowMapProps['onInteractionEvent'] = undefined;
   export let onInteractionStateChange: TileflowMapProps['onInteractionStateChange'] = undefined;
@@ -165,6 +171,7 @@
   let mapResizeObserver: ResizeObserver | null = null;
   let mapWorldRequestBridge: TileflowWorldRequestBridge | null = null;
   let navigationBinding: TileflowNavigationControlBinding | null = null;
+  let appliedCameraFitKey: string | undefined;
   let sceneAttachment: TileflowMap3DAttachment | null = null;
   $: sceneAttachment?.setVegetation(vegetation);
   $: sceneAttachment?.setViewMode(viewMode);
@@ -293,6 +300,14 @@
     ...annotationResolution.diagnostics,
     ...interactionBindingResolution.diagnostics,
     ...interactionStateDiagnostics,
+    ...(isImageMode
+      ? []
+      : unusedTileflowRendererDiagnostics({
+          annotations: annotationResolution.ok ? annotationResolution.annotations : [],
+          bindings: interactions ?? [],
+          hasPopupRenderer: popup !== undefined,
+          hasTooltipRenderer: tooltip !== undefined,
+        })),
     ...(isImageMode && hasInteractionConfiguration
       ? [
           createInteractionDiagnostic(
@@ -394,6 +409,18 @@
 
   $: if (mounted) {
     navigationBinding?.update(resolvedInteractive ? navigationControl : false);
+  }
+
+  $: cameraFit = resolveTileflowCameraFit({
+    annotations: annotationResolution.ok ? annotationResolution.annotations : [],
+    bounds,
+    fitAnnotations,
+    fitBoundsOptions,
+  });
+  $: if (mounted && mapInstance && appliedCameraFitKey !== cameraFit.key) {
+    appliedCameraFitKey = cameraFit.key;
+    if (cameraFit.error) console.error(`Invalid Tileflow map ${cameraFit.error}`);
+    if (cameraFit.fit) fitCamera(mapInstance, cameraFit.fit);
   }
 
   $: if (mounted && isImageMode) {
@@ -863,6 +890,10 @@
       map: maplibreMap,
     });
     navigationBinding.update(resolvedInteractive ? navigationControl : false);
+    // The first view is set without moving; later changes to the request move the camera.
+    appliedCameraFitKey = cameraFit.key;
+    if (cameraFit.error) console.error(`Invalid Tileflow map ${cameraFit.error}`);
+    if (cameraFit.fit) fitCamera(maplibreMap, cameraFit.fit, 0);
 
     mapResizeObserver = new ResizeObserver(() => {
       maplibreMap.resize();
@@ -1267,6 +1298,64 @@
       .join('');
   }
 
+  function fitCamera(map: MapLibreMap, fit: TileflowCameraFit, duration?: number) {
+    map.fitBounds(fit.bounds, {
+      ...(fit.options.maxZoom === undefined ? {} : {maxZoom: fit.options.maxZoom}),
+      ...(fit.options.padding === undefined ? {} : {padding: fit.options.padding}),
+      ...(duration !== undefined
+        ? {duration}
+        : fit.options.duration === undefined
+          ? {}
+          : {duration: fit.options.duration}),
+    });
+  }
+
+  type MarkerPointerState = {focused: boolean; hovered: boolean};
+  let markerPointer: Record<string, MarkerPointerState> = {};
+  // A marker is selected while its popup is open: the popup has a render target of its own.
+  $: openPopupAnnotationIds = new Set(
+    annotationRenderTargets
+      .filter((renderTarget) => renderTarget.kind === 'popup')
+      .map((renderTarget) => renderTarget.annotation.id),
+  );
+
+  /** Reads a marker's hover and focus from its element, for the `state` of its snippet. */
+  function trackMarker(
+    _node: HTMLElement,
+    renderTarget: TileflowMapLibreDomRenderTarget<TileflowAnnotation>,
+  ) {
+    const element = renderTarget.container.closest<HTMLElement>(
+      '[data-tileflow-interaction="marker"]',
+    );
+    const set = (patch: Partial<MarkerPointerState>) => {
+      markerPointer = {
+        ...markerPointer,
+        [renderTarget.key]: {
+          ...(markerPointer[renderTarget.key] ?? {focused: false, hovered: false}),
+          ...patch,
+        },
+      };
+    };
+    const enter = () => set({hovered: true});
+    const leave = () => set({hovered: false});
+    const focus = () => set({focused: true});
+    const blur = () => set({focused: false});
+    element?.addEventListener('pointerenter', enter);
+    element?.addEventListener('pointerleave', leave);
+    element?.addEventListener('focusin', focus);
+    element?.addEventListener('focusout', blur);
+    return {
+      destroy() {
+        element?.removeEventListener('pointerenter', enter);
+        element?.removeEventListener('pointerleave', leave);
+        element?.removeEventListener('focusin', focus);
+        element?.removeEventListener('focusout', blur);
+        const {[renderTarget.key]: _removed, ...rest} = markerPointer;
+        markerPointer = rest;
+      },
+    };
+  }
+
   function portal(node: HTMLElement, target: HTMLElement) {
     let currentTarget = target;
     const move = (nextTarget: HTMLElement) => {
@@ -1303,9 +1392,20 @@
 
   function createAnnotationViewContext(
     renderTarget: TileflowMapLibreDomRenderTarget<TileflowAnnotation>,
+    pointer?: MarkerPointerState,
+    openPopups?: ReadonlySet<string>,
   ): TileflowAnnotationViewContext {
     const content = getRenderTargetContent(renderTarget);
     return {
+      ...(renderTarget.kind === 'marker'
+        ? {
+            state: {
+              focused: pointer?.focused ?? false,
+              hovered: pointer?.hovered ?? false,
+              selected: openPopups?.has(renderTarget.annotation.id) ?? false,
+            },
+          }
+        : {}),
       annotation: renderTarget.annotation,
       close: renderTarget.close,
       content,
@@ -1461,8 +1561,18 @@
   {/if}
   {#each annotationRenderTargets as renderTarget (renderTarget.key)}
     {#if renderTarget.kind === 'marker' && marker}
-      <div style="display: contents;" use:portal={renderTarget.container}>
-        {@render marker(createAnnotationViewContext(renderTarget))}
+      <div
+        style="display: contents;"
+        use:portal={renderTarget.container}
+        use:trackMarker={renderTarget}
+      >
+        {@render marker(
+          createAnnotationViewContext(
+            renderTarget,
+            markerPointer[renderTarget.key],
+            openPopupAnnotationIds,
+          ),
+        )}
       </div>
     {:else if renderTarget.kind === 'tooltip' && tooltip}
       <div style="display: contents;" use:portal={renderTarget.container}>

@@ -1,6 +1,5 @@
 import {
   type TileflowAnnotation,
-  type TileflowInteractionBinding,
   type TileflowInteractionDiagnostic,
   validateTileflowAnnotations,
 } from '@tileflow/interactions';
@@ -74,37 +73,4 @@ export function imageModeMapInteractionDiagnostic(
             : 'Tileflow interaction state, callbacks, and renderers require mode="interactive"; image mode cannot render interactive overlays.',
     path: '',
   };
-}
-
-/**
- * A renderer for a surface that nothing opens is a mistake the visitor cannot see: the marker stays
- * a plain image with no popup. Say so, but only once there is something the renderer could belong to.
- */
-export function unusedRendererDiagnostics(input: {
-  annotations: readonly TileflowAnnotation[];
-  bindings: readonly TileflowInteractionBinding[];
-  hasPopupRenderer: boolean;
-  hasTooltipRenderer: boolean;
-}): TileflowInteractionDiagnostic[] {
-  const {annotations, bindings} = input;
-  if (annotations.length === 0 && bindings.length === 0) return [];
-  const diagnostics: TileflowInteractionDiagnostic[] = [];
-  for (const surface of ['popup', 'tooltip'] as const) {
-    const hasRenderer = surface === 'popup' ? input.hasPopupRenderer : input.hasTooltipRenderer;
-    if (!hasRenderer) continue;
-    if (
-      annotations.some((annotation) => annotation[surface]) ||
-      bindings.some((binding) => binding[surface])
-    ) {
-      continue;
-    }
-    const render = surface === 'popup' ? 'renderPopup' : 'renderTooltip';
-    diagnostics.push({
-      code: 'UNUSED_RENDERER',
-      level: 'warning',
-      message: `${render} has nothing to render: no annotation or interaction sets \`${surface}\`. Give an annotation \`${surface}: {content: {kind: 'view', name: '...'}}\` for ${render} to draw.`,
-      path: '',
-    });
-  }
-  return diagnostics;
 }

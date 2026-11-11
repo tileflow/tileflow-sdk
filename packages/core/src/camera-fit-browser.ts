@@ -1,5 +1,3 @@
-import type {TileflowAnnotation} from '@tileflow/interactions';
-
 /** `[west, south, east, north]` or `[[west, south], [east, north]]`, in degrees. */
 export type TileflowBounds =
   | readonly [west: number, south: number, east: number, north: number]
@@ -37,7 +35,8 @@ const defaultAnnotationMaxZoom = 15;
  * bounds are used only when `bounds` is left out.
  */
 export function resolveTileflowCameraFit(input: {
-  annotations?: readonly TileflowAnnotation[];
+  /** Anything with a `[longitude, latitude]` coordinate, such as a Tileflow annotation. */
+  annotations?: readonly {readonly coordinate: readonly [number, number]}[];
   bounds?: TileflowBounds;
   fitAnnotations?: boolean | TileflowFitBoundsOptions;
   fitBoundsOptions?: TileflowFitBoundsOptions;

@@ -129,9 +129,9 @@ They do not change camera pitch and do not apply in image mode. See
 [the map's 3D scene](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md)
 and [vegetation controls](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md).
 
-Interactive maps show the zoom and compass buttons at the top right.
-`navigationControl={false}` removes them, and `navigationControl={{position: 'bottom-left',
-showCompass: false}}` moves them or limits their buttons.
+Interactive maps show no zoom or compass buttons unless you ask for them. `navigationControl` shows
+them at the top right, and `navigationControl={{position: 'bottom-left', showCompass: false}}` moves
+them or limits their buttons.
 
 `bounds={[west, south, east, north]}` starts the map on those bounds and moves it when they change;
 `fitBoundsOptions={{padding: 24, maxZoom: 14, duration: 600}}` shapes the fit. `fitAnnotations` fits

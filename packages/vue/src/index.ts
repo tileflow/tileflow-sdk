@@ -24,6 +24,7 @@ import {
   type SlotsType,
   Teleport,
   toRaw,
+  type VNode,
   type VNodeChild,
   watch,
   watchEffect,
@@ -49,6 +50,7 @@ import {
   registerTileflowPathGroundProtocol,
   registerTileflowPmtilesProtocol,
   registerTileflowWorldRequestBridge,
+  resolveTileflowCameraFit,
   subscribeTileflowSystemColorScheme,
   type TileflowBrowserThemeBlendSelection,
   tileflowCanvasContextAttributes,
@@ -56,6 +58,9 @@ import {
   type TileflowMap3DAttachment,
   type TileflowMapLifecycleAttachment,
   tileflowMaxPitch,
+  type TileflowBounds,
+  type TileflowCameraFit,
+  type TileflowFitBoundsOptions,
   type TileflowNavigationControlBinding,
   type TileflowNavigationControlInput,
   type TileflowThemeController,
@@ -97,6 +102,7 @@ import {
   type TileflowInteractionJsonValue,
   type TileflowInteractionState,
   type TileflowInteractionViewContext,
+  unusedTileflowRendererDiagnostics,
 } from '@tileflow/interactions';
 import {
   createTileflowMapLibreDataRuntime,
@@ -156,10 +162,26 @@ type TileflowMapSharedProps = {
   zoom?: number;
 };
 
+type TileflowMapViewProps = {
+  /**
+   * Shows these bounds, `[west, south, east, north]` or `[[west, south], [east, north]]`. The map
+   * starts there, and moves to new bounds when this prop changes. `center` and `zoom` set the
+   * view only until bounds are given.
+   */
+  bounds?: TileflowBounds;
+  /**
+   * Fits the map to all `annotations`, with 48 pixels of padding and at most zoom 15 unless
+   * options say otherwise, and again whenever their positions change. `bounds` takes precedence.
+   */
+  fitAnnotations?: boolean | TileflowFitBoundsOptions;
+  /** How `bounds` is fitted: `padding`, `maxZoom` and `duration`. */
+  fitBoundsOptions?: TileflowFitBoundsOptions;
+};
+
 type TileflowMapNavigationProps = {
   /**
-   * The zoom and compass buttons of an interactive map. They show at `top-right` by default;
-   * `false` removes them, and an object moves them or limits their buttons.
+   * The zoom and compass buttons of an interactive map. A map shows none unless asked: `true` shows
+   * them at `top-right`, and an object moves them or limits their buttons.
    */
   navigationControl?: TileflowNavigationControlInput;
 };
@@ -180,7 +202,8 @@ type TileflowMapInteractiveProps<TAnnotation extends TileflowAnnotation> = Tilef
     interactions?: readonly TileflowInteractionBinding[];
     interactive?: boolean;
     mode?: 'interactive';
-  } & TileflowMapNavigationProps;
+  } & TileflowMapNavigationProps &
+  TileflowMapViewProps;
 
 type TileflowMapImageProps = TileflowMapSharedProps & {
   annotationClusters?: never;
@@ -193,6 +216,9 @@ type TileflowMapImageProps = TileflowMapSharedProps & {
   interactive?: never;
   mode: 'image';
   navigationControl?: never;
+  bounds?: never;
+  fitAnnotations?: never;
+  fitBoundsOptions?: never;
 };
 
 export type TileflowMapProps<TAnnotation extends TileflowAnnotation = TileflowAnnotation> = (
@@ -213,6 +239,9 @@ type RuntimeTileflowMapProps = TileflowMapSharedProps &
     interactive?: boolean;
     mode?: TileflowMapMode;
     navigationControl?: TileflowNavigationControlInput;
+    bounds?: TileflowBounds;
+    fitAnnotations?: boolean | TileflowFitBoundsOptions;
+    fitBoundsOptions?: TileflowFitBoundsOptions;
   };
 
 type PublicTileflowMapStatics = Pick<
@@ -235,6 +264,59 @@ type PublicTileflowMapComponent = PublicTileflowMapStatics & {
     $slots: TileflowMapSlots<TAnnotation>;
   };
 };
+
+/**
+ * One marker's view. It reads hover and focus from the marker's element, so only this marker's slot
+ * renders again when they change.
+ */
+const TileflowMarkerPortal = defineComponent({
+  name: 'TileflowMarkerPortal',
+  props: {
+    context: {
+      required: true,
+      type: Object as PropType<TileflowMapAnnotationSlotContext<RuntimeTileflowAnnotation>>,
+    },
+    selected: {required: true, type: Boolean},
+    slot: {
+      required: true,
+      type: Function as PropType<
+        (context: TileflowMapAnnotationSlotContext<RuntimeTileflowAnnotation>) => VNode[]
+      >,
+    },
+    to: {required: true, type: Object as PropType<HTMLElement>},
+  },
+  setup(props) {
+    const hovered = ref(false);
+    const focused = ref(false);
+    let element: HTMLElement | null = null;
+    const enter = () => (hovered.value = true);
+    const leave = () => (hovered.value = false);
+    const focus = () => (focused.value = true);
+    const blur = () => (focused.value = false);
+    onMounted(() => {
+      element = props.to.closest<HTMLElement>('[data-tileflow-interaction="marker"]');
+      element?.addEventListener('pointerenter', enter);
+      element?.addEventListener('pointerleave', leave);
+      element?.addEventListener('focusin', focus);
+      element?.addEventListener('focusout', blur);
+    });
+    onBeforeUnmount(() => {
+      element?.removeEventListener('pointerenter', enter);
+      element?.removeEventListener('pointerleave', leave);
+      element?.removeEventListener('focusin', focus);
+      element?.removeEventListener('focusout', blur);
+    });
+    return () =>
+      h(
+        Teleport,
+        {to: props.to},
+        props.slot({
+          ...props.context,
+          state: {focused: focused.value, hovered: hovered.value, selected: props.selected},
+        }),
+      );
+  },
+});
 
 export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
   name: 'TileflowMap',
@@ -275,10 +357,16 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       type: String as PropType<TileflowMapMode>,
     },
     navigationControl: {
-      // A Boolean prop that is left out would read as false, which removes the control.
       default: undefined,
       type: [Boolean, Object] as PropType<TileflowNavigationControlInput>,
     },
+    bounds: Array as unknown as PropType<TileflowBounds>,
+    fitAnnotations: {
+      // A Boolean prop that is left out would read as false and look like a choice.
+      default: undefined,
+      type: [Boolean, Object] as PropType<boolean | TileflowFitBoundsOptions>,
+    },
+    fitBoundsOptions: Object as PropType<TileflowFitBoundsOptions>,
     source: {
       required: true,
       type: Object as PropType<TileflowRuntimeSource>,
@@ -362,6 +450,26 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     const interactionBindingResolution = computed(() =>
       resolveTileflowVueInteractionBindings(props.interactions),
     );
+    const cameraFit = computed(() =>
+      resolveTileflowCameraFit({
+        annotations: props.annotations ?? [],
+        bounds: props.bounds,
+        fitAnnotations: props.fitAnnotations,
+        fitBoundsOptions: props.fitBoundsOptions,
+      }),
+    );
+    let appliedCameraFitKey: string | undefined;
+    const fitCamera = (map: MapLibreMap, fit: TileflowCameraFit, duration?: number) => {
+      map.fitBounds(fit.bounds, {
+        ...(fit.options.maxZoom === undefined ? {} : {maxZoom: fit.options.maxZoom}),
+        ...(fit.options.padding === undefined ? {} : {padding: fit.options.padding}),
+        ...(duration !== undefined
+          ? {duration}
+          : fit.options.duration === undefined
+            ? {}
+            : {duration: fit.options.duration}),
+      });
+    };
     const interactionStateDiagnostics = computed<readonly TileflowInteractionDiagnostic[]>(() => {
       const diagnostics = [
         ...validateTileflowVueInteractionState(
@@ -398,6 +506,17 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         ...interactionBindingResolution.value.diagnostics,
         ...interactionStateDiagnostics.value,
       ];
+
+      if (!isImageMode.value) {
+        diagnostics.push(
+          ...unusedTileflowRendererDiagnostics({
+            annotations: props.annotations ?? [],
+            bindings: props.interactions ?? [],
+            hasPopupRenderer: slots.popup !== undefined,
+            hasTooltipRenderer: slots.tooltip !== undefined,
+          }),
+        );
+      }
 
       if (isImageMode.value && hasInteractionConfiguration.value) {
         diagnostics.push(
@@ -1194,6 +1313,11 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         map,
       });
       navigationBinding.update(resolvedInteractive.value ? props.navigationControl : false);
+      // The first view is set without moving; later changes to the request move the camera.
+      const initialFit = cameraFit.value;
+      appliedCameraFitKey = initialFit.key;
+      if (initialFit.error) console.error(`Invalid Tileflow map ${initialFit.error}`);
+      if (initialFit.fit) fitCamera(map, initialFit.fit, 0);
 
       mapResizeObserver = new ResizeObserver(() => {
         map.resize();
@@ -1371,6 +1495,17 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       {deep: true, flush: 'post'},
     );
     watch(
+      cameraFit,
+      (fit) => {
+        const map = mapRef.value;
+        if (!map || appliedCameraFitKey === fit.key) return;
+        appliedCameraFitKey = fit.key;
+        if (fit.error) console.error(`Invalid Tileflow map ${fit.error}`);
+        if (fit.fit) fitCamera(map, fit.fit);
+      },
+      {flush: 'post'},
+    );
+    watch(
       () => [hasInteractionConfiguration.value, isImageMode.value, runtimeImageUrl.value],
       () => {
         void resetImageReadiness();
@@ -1465,6 +1600,12 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
               },
             })
           : undefined;
+      // A marker is selected while its popup is open: the popup has a render target of its own.
+      const openPopupAnnotationIds = new Set(
+        annotationRenderTargets.value
+          .filter((target) => target.kind === 'popup')
+          .map((target) => target.annotation.id),
+      );
       const annotationTeleports = annotationRenderTargets.value.flatMap((target) => {
         const slot =
           target.kind === 'marker'
@@ -1486,6 +1627,20 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
           },
           viewName: content?.kind === 'view' ? content.name : undefined,
         };
+
+        if (target.kind === 'marker') {
+          return [
+            h(TileflowMarkerPortal, {
+              context,
+              key: `annotation:${target.key}`,
+              selected: openPopupAnnotationIds.has(target.annotation.id),
+              slot: slot as (
+                context: TileflowMapAnnotationSlotContext<RuntimeTileflowAnnotation>,
+              ) => VNode[],
+              to: target.container,
+            }),
+          ];
+        }
 
         return [
           h(Teleport, {key: `annotation:${target.key}`, to: target.container}, slot(context)),

@@ -1,14 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type {TileflowAnnotation} from '@tileflow/interactions';
-import {resolveTileflowCameraFit} from '../src/map-camera';
+import {resolveTileflowCameraFit} from '../src/camera-fit-browser';
 
-const marker = (id: string, coordinate: [number, number]): TileflowAnnotation => ({
-  ariaLabel: id,
-  coordinate,
-  id,
-  kind: 'marker',
-});
+const marker = (id: string, coordinate: [number, number]) => ({coordinate, id});
 
 test('shows given bounds in either form', () => {
   const flat = resolveTileflowCameraFit({bounds: [-4, 40, -3, 41]});

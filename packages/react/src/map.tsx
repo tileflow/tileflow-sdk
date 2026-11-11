@@ -42,10 +42,14 @@ import {
   registerTileflowPathGroundProtocol,
   registerTileflowPmtilesProtocol,
   registerTileflowWorldRequestBridge,
+  resolveTileflowCameraFit,
   subscribeTileflowSystemColorScheme,
   tileflowCanvasContextAttributes,
   type TileflowMap3DAttachment,
   tileflowMaxPitch,
+  type TileflowBounds,
+  type TileflowCameraFit,
+  type TileflowFitBoundsOptions,
   type TileflowNavigationControlBinding,
   type TileflowNavigationControlInput,
   type TileflowThemeController,
@@ -75,9 +79,10 @@ import {
   type TileflowRuntimeStyle,
 } from '@tileflow/core/runtime';
 import type {TileflowGeoJsonSource, TileflowMapLibreOverlay} from '@tileflow/core';
-import type {
-  TileflowAnnotation,
-  TileflowAnnotationViewContext,
+import {
+  unusedTileflowRendererDiagnostics,
+  type TileflowAnnotation,
+  type TileflowAnnotationViewContext,
   TileflowInteractionBinding,
   TileflowInteractionDiagnostic,
   TileflowInteractionEvent,
@@ -99,19 +104,9 @@ import {
   type TileflowMapLibreSemanticDomRenderTarget,
   type TileflowMapLibreSemanticDomRuntime,
 } from '@tileflow/interactions/maplibre';
-import {
-  imageModeMapInteractionDiagnostic,
-  prepareTileflowReactAnnotations,
-  unusedRendererDiagnostics,
-} from './annotations';
+import {imageModeMapInteractionDiagnostic, prepareTileflowReactAnnotations} from './annotations';
 import {prepareTileflowReactInteractionBindings} from './interaction-bindings';
 import {prepareTileflowReactInteractionState} from './interaction-state-input';
-import {
-  resolveTileflowCameraFit,
-  type TileflowBounds,
-  type TileflowCameraFit,
-  type TileflowFitBoundsOptions,
-} from './map-camera';
 import {assertTileflowMapStyleInputs, type TileflowMapStyleSourceProps} from './map-style-inputs';
 import {loadTileflowMapLibre} from './maplibre';
 
@@ -204,8 +199,8 @@ type MapViewProps = {
   /** How `bounds` is fitted: `padding`, `maxZoom` and `duration`. */
   fitBoundsOptions?: TileflowFitBoundsOptions;
   /**
-   * The zoom and compass buttons of an interactive map. They show at `top-right` by default;
-   * `false` removes them, and an object moves them or limits their buttons.
+   * The zoom and compass buttons of an interactive map. A map shows none unless asked: `true` shows
+   * them at `top-right`, and an object moves them or limits their buttons.
    */
   navigationControl?: TileflowNavigationControlInput;
 };
@@ -533,7 +528,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
     () =>
       isImageMode
         ? []
-        : unusedRendererDiagnostics({
+        : unusedTileflowRendererDiagnostics({
             annotations: preparedAnnotations.annotations,
             bindings: interactions,
             hasPopupRenderer,

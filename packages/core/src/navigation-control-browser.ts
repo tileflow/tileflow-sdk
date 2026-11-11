@@ -13,7 +13,7 @@ export type TileflowNavigationControlOptions = Readonly<{
   visualizePitch?: boolean;
 }>;
 
-/** `false` removes the buttons, `true` or nothing shows them at their defaults. */
+/** `true` or an options object shows the buttons; `false` or nothing shows none. */
 export type TileflowNavigationControlInput = boolean | TileflowNavigationControlOptions | undefined;
 
 const positions: ReadonlySet<string> = new Set([
@@ -24,14 +24,14 @@ const positions: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * What to add to a map for a `navigationControl` setting, or null for no control. An unknown
- * position falls back to `top-right` and is named in the warning.
+ * What to add to a map for a `navigationControl` setting, or null for no control: a map shows none
+ * unless it is asked for. An unknown position falls back to `top-right` and is named in the warning.
  */
 export function resolveTileflowNavigationControl(input: TileflowNavigationControlInput): {
   options: {showCompass?: boolean; showZoom?: boolean; visualizePitch?: boolean};
   position: TileflowControlPosition;
 } | null {
-  if (input === false) return null;
+  if (input === undefined || input === false) return null;
   const {position, showCompass, showZoom, visualizePitch} =
     input && typeof input === 'object' ? input : ({} as TileflowNavigationControlOptions);
   let corner: TileflowControlPosition = 'top-right';

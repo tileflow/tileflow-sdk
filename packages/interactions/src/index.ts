@@ -64,7 +64,11 @@ export type {
   TileflowAnnotationClusterView,
 } from './annotation-clusters';
 export {tileflowInteractionReference} from './reference';
-export {validateTileflowAnnotations, validateTileflowInteractionBindings} from './validation';
+export {
+  unusedTileflowRendererDiagnostics,
+  validateTileflowAnnotations,
+  validateTileflowInteractionBindings,
+} from './validation';
 export type {
   TileflowAnnotationValidationResult,
   TileflowInteractionBindingValidationResult,

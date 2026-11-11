@@ -6,14 +6,13 @@ import {
   tileflowNavigationControlKey,
 } from '../src/navigation-control-browser';
 
-test('shows the navigation control at the top right unless it is turned off', () => {
-  assert.deepEqual(resolveTileflowNavigationControl(undefined), {
-    options: {},
-    position: 'top-right',
-  });
-  assert.deepEqual(resolveTileflowNavigationControl(true), {options: {}, position: 'top-right'});
+test('shows no navigation control unless it is asked for, and then at the top right', () => {
+  assert.equal(resolveTileflowNavigationControl(undefined), null);
   assert.equal(resolveTileflowNavigationControl(false), null);
+  assert.equal(tileflowNavigationControlKey(undefined), '');
   assert.equal(tileflowNavigationControlKey(false), '');
+  assert.deepEqual(resolveTileflowNavigationControl(true), {options: {}, position: 'top-right'});
+  assert.deepEqual(resolveTileflowNavigationControl({}), {options: {}, position: 'top-right'});
 });
 
 test('moves the control and limits its buttons', () => {
@@ -23,7 +22,7 @@ test('moves the control and limits its buttons', () => {
   );
   assert.notEqual(
     tileflowNavigationControlKey({position: 'bottom-left'}),
-    tileflowNavigationControlKey(undefined),
+    tileflowNavigationControlKey(true),
   );
   assert.equal(tileflowNavigationControlKey(true), tileflowNavigationControlKey({}));
 });
@@ -56,9 +55,9 @@ test('keeps one control in step with the setting and removes it on dispose', () 
   binding.update({position: 'bottom-left'});
   binding.update(false);
   binding.update(false);
-  binding.update(undefined);
+  binding.update(true);
   binding.dispose();
-  binding.update(undefined);
+  binding.update(true);
   assert.deepEqual(log, [
     'add 1 top-right',
     'remove 1',

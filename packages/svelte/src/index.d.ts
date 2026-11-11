@@ -4,7 +4,9 @@ import type {TileflowAnnotationClusterOptions} from '@tileflow/interactions/mapl
 import type {Map as MapLibreMap, MapOptions as MapLibreMapOptions} from 'maplibre-gl';
 import type {Snippet, SvelteComponentTyped} from 'svelte';
 import type {
+  TileflowBounds,
   TileflowBrowserThemeBlendSelection,
+  TileflowFitBoundsOptions,
   TileflowThemeTransition,
   TileflowViewMode,
   TileflowThemeTransitionOptions,
@@ -105,10 +107,24 @@ type TileflowMapInteractiveProps<TAnnotation extends TileflowAnnotation> =
       marker?: TileflowMapAnnotationSnippet<TAnnotation>;
       mode?: 'interactive';
       /**
-       * The zoom and compass buttons of an interactive map. They show at `top-right` by default;
-       * `false` removes them, and an object moves them or limits their buttons.
+       * The zoom and compass buttons of an interactive map. A map shows none unless asked: `true` shows
+       * them at `top-right`, and an object moves them or limits their buttons.
        */
       navigationControl?: TileflowNavigationControlInput;
+      /**
+       * Shows these bounds, `[west, south, east, north]` or `[[west, south], [east, north]]`. The
+       * map starts there, and moves to new bounds when this prop changes. `center` and `zoom` set
+       * the view only until bounds are given.
+       */
+      bounds?: TileflowBounds;
+      /**
+       * Fits the map to all `annotations`, with 48 pixels of padding and at most zoom 15 unless
+       * options say otherwise, and again whenever their positions change. `bounds` takes
+       * precedence.
+       */
+      fitAnnotations?: boolean | TileflowFitBoundsOptions;
+      /** How `bounds` is fitted: `padding`, `maxZoom` and `duration`. */
+      fitBoundsOptions?: TileflowFitBoundsOptions;
       onInteractionDiagnostic?: (diagnostic: TileflowInteractionDiagnostic) => void;
       onInteractionEvent?: (event: TileflowInteractionEvent<TAnnotation>) => void;
       onInteractionStateChange?: (state: TileflowInteractionState) => void;
@@ -127,6 +143,9 @@ type TileflowMapImageProps = {
   marker?: never;
   mode: 'image';
   navigationControl?: never;
+  bounds?: never;
+  fitAnnotations?: never;
+  fitBoundsOptions?: never;
   onInteractionDiagnostic?: never;
   onInteractionEvent?: never;
   onInteractionStateChange?: never;

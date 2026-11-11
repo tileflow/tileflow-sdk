@@ -11,7 +11,7 @@ import {
   type TileflowMap,
 } from '@tileflow/core';
 import {createStyleFromCatalog, type TileflowBuildCatalog} from '@tileflow/core/build';
-import {soundings, streets, terrain} from '@tileflow/maps';
+import {outdoors, soundings, streets} from '@tileflow/maps';
 import {
   compileTileflowIconPackages,
   prepareTileflowCatalogIcons,
@@ -107,7 +107,7 @@ test('prepares every independent official root from its package-owned directorie
       maps: {
         soundings: resolveFixtureMap(soundings),
         streets: resolveFixtureMap(streets),
-        terrain: resolveFixtureMap(terrain),
+        outdoors: resolveFixtureMap(outdoors),
       },
     };
     const compiled = await compileTileflowIconPackages(project, {cwd, target: 'hosted'});
@@ -145,7 +145,7 @@ test('prepares every independent official root from its package-owned directorie
         'soundings-wreck',
       ],
       streets: streetsIconIds,
-      terrain: [...streetsIconIds, 'terrain-peak', 'terrain-peak-dark'].sort(),
+      outdoors: [...streetsIconIds, 'outdoors-peak', 'outdoors-peak-dark'].sort(),
     } as const;
 
     assert.deepEqual(compiled.watchPaths, []);
@@ -158,7 +158,7 @@ test('prepares every independent official root from its package-owned directorie
     }
 
     const prepared = await prepareTileflowCatalogIcons(project, {assetBaseUrl: '/tileflow', cwd});
-    // Three sprites of four files each; Streets and Terrain each retain their transit credits.
+    // Three sprites of four files each; Streets and Outdoors each retain their transit credits.
     assert.equal(prepared.assets.length, 16);
     for (const binding of compiled.bindings) {
       assert.deepEqual(prepared.mapAssets[binding.mapName]?.icons?.ids, binding.iconIds);

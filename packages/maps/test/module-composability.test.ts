@@ -25,7 +25,7 @@ import {
   water,
 } from '@tileflow/core';
 import {createStyleWithInspection} from '@tileflow/core/build';
-import {soundings, streets, terrain} from '../src';
+import {outdoors, soundings, streets} from '../src';
 import {streetsPreparedModels, streetsTreeIconIds} from './streets-assets';
 import {streetsPoiImageIds} from './streets-poi-fixture';
 
@@ -49,7 +49,7 @@ type Domain = keyof typeof moduleFactories;
 
 const officialMaps = {
   streets,
-  terrain,
+  outdoors,
   soundings,
 };
 
@@ -58,8 +58,8 @@ const preparedOfficialAssets = {
     models: streetsPreparedModels,
     icons: {
       ids: [
-        'terrain-peak',
-        'terrain-peak-dark',
+        'outdoors-peak',
+        'outdoors-peak-dark',
         ...streetsTreeIconIds,
         'coffee',
         'nature',

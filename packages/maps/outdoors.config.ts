@@ -1,14 +1,14 @@
 import {defineMap} from '@tileflow/core';
-import {terrain} from './src/index';
+import {outdoors} from './src/index';
 
 const viewport = {width: 1280, height: 800, dpr: 1} as const;
 
-/** Repeatable Terrain views across regions, scales, light presets and screen sizes. */
+/** Repeatable Outdoors views across regions, scales, light presets and screen sizes. */
 export default defineMap({
-  id: 'terrain-workbench',
-  name: 'Terrain',
+  id: 'outdoors-workbench',
+  name: 'Outdoors',
   version: 1,
-  extends: terrain,
+  extends: outdoors,
   scenes: {
     world: {
       theme: 'light',

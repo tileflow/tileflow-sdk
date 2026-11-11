@@ -1,8 +1,8 @@
 import {freezeOfficialMap} from './official/freeze';
+import {outdoors as outdoorsDefinition} from './official/outdoors';
 import {soundings as soundingsDefinition} from './official/soundings';
 import {streets as streetsDefinition} from './official/streets';
 import {streetsThemes} from './official/streets-themes';
-import {terrain as terrainDefinition} from './official/terrain';
 
 export {soundingsIcons, streetsIcons, streetsFonts, streetsModels} from './assets';
 
@@ -12,6 +12,6 @@ export const soundings = freezeOfficialMap(soundingsDefinition);
 
 export {streetsThemes};
 
-export const terrain = freezeOfficialMap(terrainDefinition);
-export {terrainThemes} from './official/terrain-themes';
-export {terrainIcons} from './assets';
+export const outdoors = freezeOfficialMap(outdoorsDefinition);
+export {outdoorsThemes} from './official/outdoors-themes';
+export {outdoorsIcons} from './assets';

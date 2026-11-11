@@ -89,6 +89,7 @@ internal data class OfflineCredit(
 internal data class OfflineServingSnapshot(
     val paths: Set<String> = emptySet(),
     val credits: Map<String, List<OfflineCredit>> = emptyMap(),
+    val branding: Map<String, List<Boolean?>> = emptyMap(),
 )
 
 /**
@@ -108,16 +109,18 @@ internal class OfflineServingIndex {
     fun publish(snapshot: OfflineServingSnapshot, store: Any) {
         synchronized(stores) {
             stores[store] = snapshot
+            val branding = HashMap<String, MutableList<Boolean?>>()
             val paths = HashSet<String>()
             val credits = HashMap<String, MutableList<OfflineCredit>>()
             for (each in stores.values) {
                 paths.addAll(each.paths)
+                for ((scope, receipts) in each.branding) branding.getOrPut(scope) { mutableListOf() }.addAll(receipts)
                 for ((scope, list) in each.credits) {
                     val merged = credits.getOrPut(scope) { mutableListOf() }
                     for (credit in list) if (merged.none { it.id == credit.id }) merged.add(credit)
                 }
             }
-            merged = OfflineServingSnapshot(paths, credits)
+            merged = OfflineServingSnapshot(paths, credits, branding)
         }
         published.countDown()
     }
@@ -133,6 +136,12 @@ internal class OfflineServingIndex {
     }
 
     fun serves(key: ResourceCacheKey): Boolean = key.relativePath in snapshot().paths
+
+    fun catalogLogoRequired(scope: ResourceCacheScope): Boolean? {
+        val receipts = snapshot().branding[scope.directory].orEmpty()
+        if (receipts.isEmpty() || receipts.any { it == null }) return null
+        return receipts.any { it == true }
+    }
 
     fun credits(scope: ResourceCacheScope): List<OfflineCredit> =
         snapshot().credits[scope.directory].orEmpty()

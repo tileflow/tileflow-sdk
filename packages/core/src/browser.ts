@@ -83,6 +83,11 @@ export type {TileflowColorOverrides} from './color-program-runtime';
 
 export {loadTileflowRuntimeAppearance} from './style-family-runtime';
 
+export {attachTileflowBranding, createTileflowBrandingLink} from './branding-browser';
+export type {TileflowBrandingMap, TileflowBrandingOptions} from './branding-browser';
+export {readTileflowBrandingSources, parseTileflowBrandingPolicy} from './branding';
+export type {TileflowBrandingPolicy, TileflowBrandingSource} from './branding';
+
 export {
   loadTileflowRuntimeStyle,
   type TileflowLoadedRuntimeStyle,

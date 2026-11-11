@@ -91,6 +91,20 @@ final class OfflineServingTests: XCTestCase {
     XCTAssertTrue(resources.requests.isEmpty)
   }
 
+  func testBrandingRequiresEveryInstalledPackReceiptAndCombinesFreeRegions() async {
+    let index = OfflineServingIndex()
+    let store = NSObject()
+    for (receipts, expected): ([Bool?], Bool?) in [
+      ([false], false), ([false, true], true), ([false, nil], nil),
+    ] {
+      var snapshot = OfflineServingSnapshot()
+      snapshot.branding[scope.directory] = receipts
+      index.publish(snapshot, from: store)
+      let actual = await index.catalogLogoRequired(for: scope)
+      XCTAssertEqual(actual, expected)
+    }
+  }
+
   // MARK: Helpers
 
   @discardableResult

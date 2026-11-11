@@ -270,6 +270,115 @@ test('authored pitch caps hold through zoom 15 and release on closer views and s
   assert.equal(maximum, 30);
 });
 
+// Like the renderer, a camera change clamps its pitch against the maximum in force before any event
+// reports the new zoom; an animation clamps every frame and ends with `moveend`.
+function steerableMap(metadata: Record<string, unknown>) {
+  const map = fakeMap(metadata);
+  let animation:
+    {from: {zoom: number; pitch: number}; to: {zoom: number; pitch: number}} | undefined;
+  const camera = {zoom: 2, pitch: 0, maximum: 85};
+  const frame = (zoom: number, pitch: number) => {
+    camera.zoom = zoom;
+    camera.pitch = Math.min(pitch, camera.maximum);
+    map.fire('move');
+    map.fire('zoom');
+  };
+  const steerable = Object.assign(map, {
+    camera,
+    getZoom: () => camera.zoom,
+    getPitch: () => camera.pitch,
+    getMaxPitch: () => camera.maximum,
+    setMaxPitch(value: number) {
+      camera.maximum = value;
+      camera.pitch = Math.min(camera.pitch, value);
+    },
+    isMoving: () => animation !== undefined,
+    stop() {
+      if (!animation) return;
+      animation = undefined;
+      map.fire('moveend');
+    },
+    jumpTo(options: {zoom?: number; pitch?: number}) {
+      steerable.stop();
+      frame(options.zoom ?? camera.zoom, options.pitch ?? camera.pitch);
+      map.fire('moveend');
+    },
+    easeTo(options: {zoom?: number; pitch?: number}) {
+      steerable.stop();
+      animation = {
+        from: {zoom: camera.zoom, pitch: camera.pitch},
+        to: {zoom: options.zoom ?? camera.zoom, pitch: options.pitch ?? camera.pitch},
+      };
+    },
+    /** Draws the running animation at progress `k`; 1 ends it. */
+    step(k: number) {
+      const {from, to} = animation!;
+      frame(from.zoom + (to.zoom - from.zoom) * k, from.pitch + (to.pitch - from.pitch) * k);
+      if (k === 1) {
+        animation = undefined;
+        map.fire('moveend');
+      }
+    },
+    cameraForBounds: (_bounds: unknown, options?: {zoom?: number}) => ({zoom: options?.zoom ?? 17}),
+    fitBounds(bounds: unknown, options?: {pitch?: number}) {
+      steerable.jumpTo({zoom: steerable.cameraForBounds(bounds).zoom, ...options});
+    },
+  });
+  return steerable;
+}
+const capped = {
+  ...buildings,
+  'tileflow:camera': {version: 1, pitchLimit: {maxZoom: 15, maxPitch: 38}},
+};
+
+test('a camera change from an overview into a closer view keeps the pitch it asks for', async () => {
+  const map = steerableMap(capped);
+  const jumpTo = map.jumpTo;
+  const attachment = attachTileflowMap3D({map, load});
+  await mounted();
+  assert.notEqual(map.jumpTo, jumpTo);
+  assert.equal(map.camera.maximum, 38);
+  map.jumpTo({zoom: 16.4, pitch: 64});
+  assert.deepEqual([map.camera.zoom, map.camera.pitch, map.camera.maximum], [16.4, 64, 85]);
+  map.jumpTo({zoom: 2, pitch: 64});
+  assert.deepEqual([map.camera.pitch, map.camera.maximum], [38, 38], 'overviews stay capped');
+  map.jumpTo({zoom: 10, pitch: 64});
+  assert.equal(map.camera.pitch, 38, 'a change that ends at an overview zoom is capped');
+  map.fitBounds(
+    [
+      [2.29, 48.85],
+      [2.3, 48.86],
+    ],
+    {pitch: 64},
+  );
+  assert.deepEqual([map.camera.zoom, map.camera.pitch], [17, 64], 'fitted bounds use their zoom');
+  attachment.dispose();
+  assert.equal(map.jumpTo, jumpTo, 'disposal restores the map’s own camera calls');
+  assert.equal(map.camera.maximum, 85);
+});
+
+test('an animation into a closer view keeps its pitch; one stopped at an overview is capped', async () => {
+  const map = steerableMap(capped);
+  attachTileflowMap3D({map, load});
+  await mounted();
+  map.easeTo({zoom: 16.4, pitch: 64});
+  map.step(0.5);
+  assert.equal(map.camera.maximum, 85, 'the cap stays lifted until the movement ends');
+  map.step(1);
+  assert.deepEqual([map.camera.zoom, map.camera.pitch, map.camera.maximum], [16.4, 64, 85]);
+
+  map.jumpTo({zoom: 2, pitch: 0});
+  map.easeTo({zoom: 16.4, pitch: 64});
+  map.step(0.75);
+  assert.ok(map.camera.zoom < 15 && map.camera.pitch === 48, 'the flight tilts on its way in');
+  map.stop();
+  assert.deepEqual([map.camera.pitch, map.camera.maximum], [38, 38], 'an interrupted flight');
+  map.easeTo({zoom: 16.4, pitch: 70});
+  map.step(0.25);
+  map.easeTo({zoom: 4, pitch: 70});
+  assert.equal(map.camera.maximum, 38, 'a replacing animation that ends at an overview is capped');
+});
+
 test('flat footprints remain until the 3D renderer has a drawable frame', async () => {
   const native = {visibility: 'visible'};
   const map = fakeMap({

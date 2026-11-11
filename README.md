@@ -1,8 +1,8 @@
 <p align="center">
   <a href="https://tileflow.dev">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset=".github/assets/tileflow-lockup-dark.svg">
-      <img alt="Tileflow" src=".github/assets/tileflow-lockup-light.svg" width="240">
+      <source media="(prefers-color-scheme: dark)" srcset=".github/assets/tileflow-wordmark-dark.svg">
+      <img alt="Tileflow" src=".github/assets/tileflow-wordmark-light.svg" width="200">
     </picture>
   </a>
 </p>
@@ -26,7 +26,7 @@ design in one `tileflow.config.ts`.
 a [popup](https://tileflow.dev/docs/examples/show-a-popup-on-click) on the Royal Palace of Madrid with [3D landmarks](https://tileflow.dev/docs/examples/show-3d-landmarks), at dusk;
 a trail and its elevation profile, read from [3D terrain](https://tileflow.dev/docs/map-design/terrain-and-globe), on [Outdoors](https://tileflow.dev/docs/map-design/basemaps) around the Matterhorn;
 [custom markers](https://tileflow.dev/docs/examples/use-custom-marker-content) for bike stations on the [Super Tile World](https://tileflow.dev/gallery?map=super-tile-world) community map in Madrid;
-soundings, buoys, and lights near the Golden Gate (not for navigation);
+soundings, buoys, and lights near the Golden Gate;
 a walking tour drawn as a [dashed line](https://tileflow.dev/docs/examples/draw-a-dashed-line) on the [Baedeker](https://tileflow.dev/gallery?map=baedeker) community map of Paris.
 Map data © [OpenStreetMap contributors and other sources](https://tileflow.dev/copyright).
 

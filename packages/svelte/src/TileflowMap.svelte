@@ -37,6 +37,7 @@
     attachTileflowMapLifecycle,
     attachTileflowNauticalLights,
     attachTileflowNotices,
+    createTileflowAppearanceBinding,
     createTileflowSessionStarter,
     createTileflowThemeController,
     type TileflowMap3DAttachment,
@@ -52,6 +53,7 @@
     subscribeTileflowSystemColorScheme,
     tileflowMaxPitch,
     tileflowCanvasContextAttributes,
+    type TileflowAppearanceBinding,
     type TileflowFairUseNoticeController,
     type TileflowMapLifecycleAttachment,
     type TileflowThemeController,
@@ -93,6 +95,7 @@
   export let analytics: TileflowMapProps['analytics'] = undefined;
   export let annotationClusters: TileflowMapProps['annotationClusters'] = undefined;
   export let annotations: TileflowMapProps['annotations'] = undefined;
+  export let colors: TileflowMapProps['colors'] = undefined;
   export let dataOverlays: TileflowMapProps['dataOverlays'] = undefined;
   export let dataSources: TileflowMapProps['dataSources'] = undefined;
 
@@ -100,6 +103,7 @@
   export let captureId: TileflowMapProps['captureId'] = undefined;
   export let className: NonNullable<TileflowMapProps['className']> = '';
   export let defaultInteractionState: TileflowMapProps['defaultInteractionState'] = undefined;
+  export let emphasis: TileflowMapProps['emphasis'] = undefined;
   export let height: NonNullable<TileflowMapProps['height']> = 420;
   export let imageLoading: NonNullable<TileflowMapProps['imageLoading']> = 'eager';
   export let imageUrl: TileflowMapProps['imageUrl'] = undefined;
@@ -168,6 +172,7 @@
   $: sceneAttachment?.setVegetation(vegetation);
   $: sceneAttachment?.setViewMode(viewMode);
   let themeController: TileflowThemeController | null = null;
+  let appearanceBinding: TileflowAppearanceBinding | null = null;
   let systemColorScheme: 'dark' | 'light' = 'light';
   let unsubscribeSystemColorScheme: (() => void) | null = null;
   let loadedManifestMap: TileflowRuntimeManifestMap | null = null;
@@ -378,6 +383,10 @@
   }
 
   $: if (mounted) {
+    appearanceBinding?.update({colors, emphasis}, {transition: themeTransition});
+  }
+
+  $: if (mounted) {
     defaultInteractionState;
     interactionState;
     interactionStateDiagnostics;
@@ -492,6 +501,8 @@
     const unsubscribeSemanticTargets = semanticRuntimeTargetsUnsubscribe;
     const currentMap = mapInstance;
     const currentThemeController = themeController;
+    const currentAppearanceBinding = appearanceBinding;
+    appearanceBinding = null;
     const currentSceneAttachment = sceneAttachment;
     sceneAttachment = null;
     const worldRequestBridge = mapWorldRequestBridge;
@@ -539,6 +550,7 @@
       () => annotationInteractionsForMap?.dispose(),
       () => lifecycleAttachment?.dispose(),
       () => currentSceneAttachment?.dispose(),
+      () => currentAppearanceBinding?.dispose(),
       () => currentThemeController?.dispose(),
       () => worldRequestBridge?.dispose(),
       () => contourRequestScope?.dispose(),
@@ -701,6 +713,17 @@
               }
             },
           });
+
+    if (themeController) {
+      // Colours and emphasis the application declared show from the first frame the style
+      // allows, without easing in from the theme's own look.
+      appearanceBinding = createTileflowAppearanceBinding({
+        controller: themeController,
+        map: maplibreMap,
+        onError: (error, part) => console.error(`Failed to apply the Tileflow map ${part}`, error),
+      });
+      appearanceBinding.update({colors, emphasis}, {transition: {duration: 0}});
+    }
 
     // The map's 3D scene loads only once its style declares one, so 2D maps do not pay for it.
     sceneAttachment = attachTileflowMap3D({

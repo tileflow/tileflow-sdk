@@ -24,7 +24,20 @@ const validProps = [
   {source, themeBlend: {position: 1.25, themes: ['night', 'sunset', 'day']}},
   {source, themeBlend: {hold: true, position: 0.5, themes: ['night', 'day']}},
   {mode: 'image', imageUrl: '/maps/main.png', source},
+  {source, colors: {'surface.land': '#f4f1ea'}, emphasis: {labels: 0.6}},
+  {
+    source,
+    colors: {},
+    emphasis: {keep: {coordinates: [[[0, 0]]], type: 'Polygon'}, recede: {roads: 0.3}},
+  },
 ] satisfies MapProps[];
+
+// @ts-expect-error a colour override is a CSS colour string.
+const numericColor: MapProps = {source, colors: {'surface.land': 0xf4f1ea}};
+// @ts-expect-error an emphasis share is a number.
+const textShare: MapProps = {source, emphasis: {labels: '0.6'}};
+// @ts-expect-error colours and emphasis belong to interactive maps.
+const imageColors: MapProps = {mode: 'image', imageUrl: '/maps/main.png', source, colors: {}};
 
 // @ts-expect-error a blend position is a number.
 const textPosition: MapProps = {source, themeBlend: {position: '1', themes: ['night', 'day']}};
@@ -166,6 +179,9 @@ void [
   validProps,
   missingSource,
   textPosition,
+  numericColor,
+  textShare,
+  imageColors,
   textTransition,
   flattenedMap,
   configInput,

@@ -124,6 +124,14 @@ your own content reads first. Both ease in over `themeTransition`, stay through 
 follow the props: an empty `colors` or no `emphasis` restores the map as designed. An unknown token or an
 invalid value is reported as an error and leaves the colours unchanged.
 
+A colour may use CSS variables, so the map follows your design tokens: `colors={{'surface.land':
+'var(--background)', 'surface.water': 'color-mix(in oklab, var(--primary) 30%, var(--background))'}}`.
+The map reads each variable where it sits, with `var(--name, fallback)` and nested variables
+supported, and reads them again, showing new colours only if the result changed, when the `class`,
+`style`, or `data-theme` attribute of `<html>` or `<body>` changes (for example a `dark` class) and
+when the system's colour-scheme preference changes. A variable with no value and no fallback is
+reported through `onError` as `colors`, naming the variable.
+
 `onError` receives `{code, error}` when the map cannot do what you asked, where `error` is an `Error` and
 `code` is one of:
 

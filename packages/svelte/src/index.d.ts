@@ -92,8 +92,11 @@ export type TileflowMapAppearanceProps = {
   /**
    * Colour token overrides for the map, for example `{'surface.land': '#f4f1ea'}`. The overrides ease in over
    * `themeTransition`, stay through theme changes, and an empty object restores the map's own
-   * colours. The map must be configurable at run time; an unknown token or an invalid value is
-   * logged and leaves the colours unchanged.
+   * colours. A value may use CSS variables, such as `var(--primary)` or
+   * `color-mix(in oklab, var(--primary) 40%, white)`, read where the map sits and read again when
+   * the page's theme changes. The map must be configurable at run time; an unknown token, an
+   * invalid value or a variable with no value and no fallback is reported as an error and leaves
+   * the colours unchanged.
    */
   colors?: TileflowColorOverrides;
   /**

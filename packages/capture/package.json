@@ -66,6 +66,7 @@
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
+    "@tileflow/dom": "workspace:*",
     "@tileflow/maps": "workspace:*",
     "@tileflow/next": "workspace:*",
     "@tileflow/react": "workspace:*",

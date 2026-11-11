@@ -1,0 +1,62 @@
+{
+  "name": "@tileflow/dom",
+  "version": "0.0.0-development",
+  "license": "Apache-2.0",
+  "description": "Mount a Tileflow map in any DOM element, without a framework.",
+  "type": "module",
+  "sideEffects": false,
+  "homepage": "https://tileflow.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tileflow/tileflow-sdk.git",
+    "directory": "packages/dom"
+  },
+  "bugs": {
+    "url": "https://github.com/tileflow/tileflow-sdk/issues"
+  },
+  "keywords": [
+    "tileflow",
+    "maps",
+    "maplibre",
+    "web-components",
+    "tiles"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "REFERENCE.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "prepack": "node ../../scripts/package-license.mjs --prepare",
+    "postpack": "node ../../scripts/package-license.mjs --clean",
+    "build": "tsup src/index.ts --format esm --dts --clean --external maplibre-gl",
+    "test": "tsx --test test/*.test.ts",
+    "verify": "pnpm run typecheck && pnpm run build && pnpm run test",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "pnpm run typecheck"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@tileflow/core": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
+    "@tileflow/interactions": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0"
+  },
+  "peerDependencies": {
+    "maplibre-gl": ">=6.4.1 <7"
+  },
+  "devDependencies": {
+    "maplibre-gl": "6.16.0",
+    "tsx": "^4.23.15"
+  }
+}

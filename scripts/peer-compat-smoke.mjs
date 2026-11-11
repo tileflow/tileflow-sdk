@@ -15,6 +15,7 @@ const geoJsonTypesVersion = '7946.0.16';
 const tileflowPackageNames = new Set([
   '@tileflow/core',
   '@tileflow/dev',
+  '@tileflow/dom',
   '@tileflow/interactions',
   '@tileflow/next',
   '@tileflow/react',
@@ -27,8 +28,8 @@ const tileflowPackageNames = new Set([
 
 const suites = {
   react: {
-    build: ['core', 'interactions', 'static', 'react'],
-    packages: ['core', 'interactions', 'static', 'react'],
+    build: ['core', 'interactions', 'static', 'dom', 'react'],
+    packages: ['core', 'interactions', 'static', 'dom', 'react'],
     scenarios: [
       {
         dependencies: {
@@ -563,6 +564,7 @@ function orderedUnique(values) {
     'interactions',
     'static',
     'dev',
+    'dom',
     'react',
     'vue',
     'svelte',

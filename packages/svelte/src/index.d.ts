@@ -6,6 +6,8 @@ import type {Snippet, SvelteComponentTyped} from 'svelte';
 import type {
   TileflowBounds,
   TileflowBrowserThemeBlendSelection,
+  TileflowColorOverrides,
+  TileflowEmphasis,
   TileflowFitBoundsOptions,
   TileflowThemeTransition,
   TileflowViewMode,
@@ -78,6 +80,22 @@ export type TileflowMapAnnotationProps<
   annotations?: readonly TAnnotation[];
 };
 
+export type TileflowMapAppearanceProps = {
+  /**
+   * Colour token overrides for the map, for example `{'surface.land': '#f4f1ea'}`. The overrides ease in over
+   * `themeTransition`, stay through theme changes, and an empty object restores the map's own
+   * colours. The map must be configurable at run time; an unknown token or an invalid value is
+   * logged and leaves the colours unchanged.
+   */
+  colors?: TileflowColorOverrides;
+  /**
+   * Makes chosen modules of the map recede and its labels fade, so your own content reads first.
+   * It eases in over `themeTransition` and stays through theme changes; leave it out for the map
+   * as designed.
+   */
+  emphasis?: TileflowEmphasis;
+};
+
 export type TileflowMapDataProps = {
   /** Overlays drawn over `dataSources` or compiled sources, keyed as in `defineMap`. */
   dataOverlays?: Readonly<Record<string, TileflowMapLibreOverlay>>;
@@ -101,6 +119,7 @@ type TileflowMapStyleSourceProps = {
 
 type TileflowMapInteractiveProps<TAnnotation extends TileflowAnnotation> =
   TileflowMapAnnotationProps<TAnnotation> &
+    TileflowMapAppearanceProps &
     TileflowMapDataProps &
     TileflowMapInteractionStateProps & {
       interactions?: readonly TileflowInteractionBinding[];
@@ -135,9 +154,11 @@ type TileflowMapInteractiveProps<TAnnotation extends TileflowAnnotation> =
 type TileflowMapImageProps = {
   annotationClusters?: never;
   annotations?: never;
+  colors?: never;
   dataOverlays?: never;
   dataSources?: never;
   defaultInteractionState?: never;
+  emphasis?: never;
   interactions?: never;
   interactionState?: never;
   marker?: never;

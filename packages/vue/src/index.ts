@@ -38,10 +38,13 @@ import {
   attachTileflowMap3D,
   attachTileflowMapLifecycle,
   attachTileflowNauticalLights,
+  attachTileflowBranding,
   attachTileflowNotices,
+  createTileflowAppearanceBinding,
   createTileflowSessionStarter,
   createTileflowThemeController,
   createTileflowNavigationControlBinding,
+  createTileflowContourRequestScope,
   createTileflowTransformRequest,
   getTileflowSystemColorScheme,
   loadTileflowRuntimeStyle,
@@ -52,8 +55,11 @@ import {
   registerTileflowWorldRequestBridge,
   resolveTileflowCameraFit,
   subscribeTileflowSystemColorScheme,
+  type TileflowAppearanceBinding,
   type TileflowBrowserThemeBlendSelection,
   tileflowCanvasContextAttributes,
+  type TileflowColorOverrides,
+  type TileflowEmphasis,
   type TileflowFairUseNoticeController,
   type TileflowMap3DAttachment,
   type TileflowMapLifecycleAttachment,
@@ -67,6 +73,7 @@ import {
   type TileflowThemeTransition,
   type TileflowThemeTransitionOptions,
   type TileflowViewMode,
+  type TileflowContourRequestScope,
   type TileflowWorldRequestBridge,
 } from '@tileflow/core/browser';
 import {normalizeTileflowCaptureId} from '@tileflow/core/capture';
@@ -195,10 +202,24 @@ type TileflowMapInteractiveProps<TAnnotation extends TileflowAnnotation> = Tilef
     /** Group `annotations` into accessible cluster buttons. Up to 1,000 annotations. */
     annotationClusters?: TileflowAnnotationClusterOptions;
     annotations?: readonly TAnnotation[];
+    /**
+     * Colour token overrides for the map, for example `{'surface.land': '#f4f1ea'}`, or colour knobs
+     * the map declares, for example `{water: '#2563eb'}`. The overrides ease in over
+     * `themeTransition`, stay through theme changes, and an empty object restores the map's own
+     * colours. The map must be configurable at run time; an unknown token or an invalid value is
+     * logged and leaves the colours unchanged.
+     */
+    colors?: TileflowColorOverrides;
     /** Overlays drawn over `dataSources` or compiled sources, keyed as in `defineMap`. */
     dataOverlays?: Readonly<Record<string, TileflowMapLibreOverlay>>;
     /** Application GeoJSON, keyed as in `defineMap`. A compiled source of the same key is filled. */
     dataSources?: Readonly<Record<string, TileflowGeoJsonSource>>;
+    /**
+     * Makes chosen modules of the map recede and its labels fade, so your own content reads first.
+     * It eases in over `themeTransition` and stays through theme changes; leave it out for the map
+     * as designed.
+     */
+    emphasis?: TileflowEmphasis;
     interactions?: readonly TileflowInteractionBinding[];
     interactive?: boolean;
     mode?: 'interactive';
@@ -208,9 +229,11 @@ type TileflowMapInteractiveProps<TAnnotation extends TileflowAnnotation> = Tilef
 type TileflowMapImageProps = TileflowMapSharedProps & {
   annotationClusters?: never;
   annotations?: never;
+  colors?: never;
   dataOverlays?: never;
   dataSources?: never;
   defaultInteractionState?: never;
+  emphasis?: never;
   interactionState?: never;
   interactions?: never;
   interactive?: never;
@@ -231,9 +254,11 @@ type RuntimeTileflowMapProps = TileflowMapSharedProps &
   TileflowMapStyleSourceProps & {
     annotationClusters?: TileflowAnnotationClusterOptions;
     annotations?: readonly RuntimeTileflowAnnotation[];
+    colors?: TileflowColorOverrides;
     dataOverlays?: Readonly<Record<string, TileflowMapLibreOverlay>>;
     dataSources?: Readonly<Record<string, TileflowGeoJsonSource>>;
     defaultInteractionState?: TileflowInteractionState;
+    emphasis?: TileflowEmphasis;
     interactionState?: TileflowInteractionState;
     interactions?: readonly TileflowInteractionBinding[];
     interactive?: boolean;
@@ -333,9 +358,11 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     center: Array as unknown as PropType<[number, number]>,
     captureId: String,
     className: String,
+    colors: Object as PropType<TileflowColorOverrides>,
     dataOverlays: Object as PropType<Readonly<Record<string, TileflowMapLibreOverlay>>>,
     dataSources: Object as PropType<Readonly<Record<string, TileflowGeoJsonSource>>>,
     defaultInteractionState: Object as PropType<TileflowInteractionState>,
+    emphasis: Object as PropType<TileflowEmphasis>,
     height: {
       default: 420,
       type: [Number, String] as PropType<number | string>,
@@ -428,8 +455,10 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     let mapResizeObserver: ResizeObserver | null = null;
     let navigationBinding: TileflowNavigationControlBinding | null = null;
     let mapWorldRequestBridge: TileflowWorldRequestBridge | null = null;
+    let mapContourRequestScope: TileflowContourRequestScope | null = null;
     let sceneAttachment: TileflowMap3DAttachment | null = null;
     let themeController: TileflowThemeController | null = null;
+    let appearanceBinding: TileflowAppearanceBinding | null = null;
     let unsubscribeSystemColorScheme: (() => void) | null = null;
     let mapLoadId = 0;
     let resourceLifetime: AbortController | undefined;
@@ -898,6 +927,8 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       const resizeObserver = mapResizeObserver;
       const map = mapRef.value;
       const controller = themeController;
+      const appearance = appearanceBinding;
+      appearanceBinding = null;
       const scene = sceneAttachment;
       sceneAttachment = null;
       const navigation = navigationBinding;
@@ -907,6 +938,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       const annotationInteractionsForMap = annotationRuntime;
       const semanticInteractionsForMap = semanticRuntime;
       const worldRequestBridge = mapWorldRequestBridge;
+      const contourRequestScope = mapContourRequestScope;
       const teardownSteps = [
         annotationRuntimeCoordinatorDetach,
         semanticRuntimeCoordinatorDetach,
@@ -920,9 +952,11 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         () => semanticInteractionsForMap?.dispose(),
         () => navigation?.dispose(),
         () => worldRequestBridge?.dispose(),
+        () => contourRequestScope?.dispose(),
         () => fairUseNotice?.dispose(),
         () => lifecycle?.dispose(),
         () => scene?.dispose(),
+        () => appearance?.dispose(),
         () => controller?.dispose(),
         () => resizeObserver?.disconnect(),
         () => map?.remove(),
@@ -950,6 +984,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       mapResizeObserver = null;
       mapRef.value = null;
       mapWorldRequestBridge = null;
+      mapContourRequestScope = null;
       themeController = null;
 
       interactionRuntimesDisposing = true;
@@ -1107,6 +1142,24 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         addProtocol: maplibregl.addProtocol,
         onNotice: mapFairUseNotice.update,
       });
+      // Contour DEM requests leave through the shared protocol and come back to this map's
+      // transform, so they carry this map's session like its hillshade tiles.
+      const contourRequestScope = createTileflowContourRequestScope({
+        transformRequest: (url, resourceType) =>
+          mapTransformRequest(url, resourceType as Parameters<RequestTransformFunction>[1]),
+      });
+      mapContourRequestScope = contourRequestScope;
+      const mapTransformRequest = createTileflowTransformRequest<
+        RequestParameters,
+        Parameters<RequestTransformFunction>[1]
+      >({
+        contourRequestScope,
+        getAnalytics: () => resolvedAnalytics.value,
+        sessionController: session,
+        sessionId: session.sessionId,
+        transformRequest: props.mapOptions?.transformRequest ?? undefined,
+        worldRequestBridge: mapWorldRequestBridge,
+      });
       const map = new maplibregl.Map({
         ...props.mapOptions,
         canvasContextAttributes: tileflowCanvasContextAttributes(
@@ -1124,21 +1177,13 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         interactive: resolvedInteractive.value,
         pitch: resolvedPitch.value,
         style: prepared.style as StyleSpecification,
-        transformRequest: createTileflowTransformRequest<
-          RequestParameters,
-          Parameters<RequestTransformFunction>[1]
-        >({
-          getAnalytics: () => resolvedAnalytics.value,
-          sessionController: session,
-          sessionId: session.sessionId,
-          transformRequest: props.mapOptions?.transformRequest ?? undefined,
-          worldRequestBridge: mapWorldRequestBridge,
-        }),
+        transformRequest: mapTransformRequest,
         zoom: resolvedZoom.value,
       });
 
       mapRef.value = map;
       attachTileflowAtmosphere(map);
+      attachTileflowBranding(map);
       attachTileflowNotices(map);
       attachTileflowNauticalLights(map);
       attachTileflowLabelPlacement(map);
@@ -1163,6 +1208,21 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
                 }
               },
             });
+
+      if (themeController) {
+        // Colours and emphasis the application declared show from the first frame the style
+        // allows, without easing in from the theme's own look.
+        appearanceBinding = createTileflowAppearanceBinding({
+          controller: themeController,
+          map,
+          onError: (error, part) =>
+            console.error(`Failed to apply the Tileflow map ${part}`, error),
+        });
+        appearanceBinding.update(
+          {colors: props.colors, emphasis: props.emphasis},
+          {transition: {duration: 0}},
+        );
+      }
 
       // The map's 3D scene loads only once its style declares one, so 2D maps do not pay for it.
       sceneAttachment = attachTileflowMap3D({
@@ -1482,6 +1542,15 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       () => [runtimeStyle.value, themeBlendKey.value],
       () => switchTheme(),
       {flush: 'post'},
+    );
+    watch(
+      () => [props.colors, props.emphasis],
+      () =>
+        appearanceBinding?.update(
+          {colors: props.colors, emphasis: props.emphasis},
+          {transition: props.themeTransition},
+        ),
+      {deep: true, flush: 'post'},
     );
     watch(
       () => [blendStyles.value, props.themeBlend?.position, props.themeBlend?.hold === true],

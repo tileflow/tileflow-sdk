@@ -2,6 +2,7 @@ import * as maplibregl from 'maplibre-gl';
 import type {Map as MapLibreMap, StyleSpecification} from 'maplibre-gl';
 import {
   attachTileflowAtmosphere,
+  attachTileflowBranding,
   attachTileflowFairUseNotice,
   attachTileflowHorizonQueries,
   attachTileflowLabelPlacement,
@@ -109,7 +110,10 @@ export function createMobileMapRuntime(input: {
   const lifetime = new AbortController();
   const clock = input.clock ?? systemClock;
   const fetchResource = createResourceFetch(input.platform, lifetime.signal);
-  const styles = createStyleResourceLoader(fetchResource, lifetime.signal);
+  const styles = createStyleResourceLoader(fetchResource, lifetime.signal, () => ({
+    apiUrl: manifestMap?.apiUrl,
+    mapId: manifestMap?.mapId,
+  }));
   const readData = createDataReader(input.platform, lifetime.signal);
   const events = createEventHub({send: input.send, clock});
   const emit = (event: EventName, produce: Producer) => events.emit(event, produce);
@@ -263,6 +267,7 @@ export function createMobileMapRuntime(input: {
         {addProtocol: maplibregl.addProtocol},
         {
           transformDemUrl: (url) => resourceTemplateAddress(url, input.platform),
+          transformTileJsonUrl: (url) => resourceAddress(url, input.platform),
         },
       );
       registerTileflowPathGroundProtocol(
@@ -301,6 +306,27 @@ export function createMobileMapRuntime(input: {
       });
       cleanups.push(
         attachTileflowAtmosphere(map),
+        attachTileflowBranding(map, {
+          mobile: true,
+          mobileMapId: manifestMap.mapId,
+          apiUrl: manifestMap.apiUrl,
+          fetch: async (url, init) => {
+            // Installed packs preserve the service's presentation decision at download time.
+            if (
+              options.offlineCatalogLogoRequired !== undefined &&
+              manifestMap?.mapId &&
+              String(url) === `${manifestMap.apiUrl}/maps/${manifestMap.mapId}/mobile/branding`
+            ) {
+              return Response.json({
+                mapId: manifestMap.mapId,
+                catalogLogoRequired: options.offlineCatalogLogoRequired,
+                revision: '0',
+                validForMs: 900_000,
+              });
+            }
+            return fetchResource(url, init);
+          },
+        }),
         attachTileflowNotices(map),
         attachTileflowNauticalLights(map),
         attachTileflowLabelPlacement(map),

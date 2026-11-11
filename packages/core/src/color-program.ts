@@ -1,4 +1,5 @@
 import {isTileflowThemeColorOperation, isTileflowThemeTokenReference} from './cartography/values';
+import {type TileflowColorKnobs, validateTileflowColorKnobs} from './color-knobs';
 import type {TileflowTheme} from './themes/model';
 import {resolveThemeValues} from './themes/model';
 import type {MapLibreStyle} from './types';
@@ -14,6 +15,8 @@ export type TileflowColorBindings = {
   programs: TileflowColorProgram[];
   bindings: [Path, number][];
   tokens: Pick<TileflowTheme['tokens'], 'color' | 'number'>;
+  /** The map's colour knobs, which `colors` may name beside tokens. */
+  knobs?: TileflowColorKnobs;
 };
 export function colorProgramMarker(value: unknown, program: TileflowColorProgram): unknown[] {
   return [
@@ -91,6 +94,7 @@ function resolveProgramNumbers(value: unknown, theme: TileflowTheme): unknown {
 export function extractTileflowColorPrograms(
   style: MapLibreStyle,
   tokens: TileflowColorBindings['tokens'],
+  knobs?: TileflowColorKnobs,
 ): MapLibreStyle {
   const programs: unknown[] = [];
   const ids = new Map<string, number>();
@@ -128,7 +132,13 @@ export function extractTileflowColorPrograms(
       ...result.metadata,
       // Keep the declared catalog shape across presets. Per-preset pruning makes a shared
       // object structurally different and repeats the entire catalog in the transport.
-      [tileflowColorMetadataKey]: {version: 1, programs, bindings, tokens},
+      [tileflowColorMetadataKey]: {
+        version: 1,
+        programs,
+        bindings,
+        tokens,
+        ...(knobs && Object.keys(knobs).length > 0 ? {knobs} : {}),
+      },
     };
   return result;
 }
@@ -177,6 +187,8 @@ export function validateBindings(value: TileflowColorBindings): void {
     !record(value.tokens?.number)
   )
     throw new TypeError('Invalid colour program catalog.');
+  if (value.knobs !== undefined)
+    validateTileflowColorKnobs(value.knobs, new Set(Object.keys(value.tokens.color)), 'knobs');
   for (const [path, id] of value.bindings) {
     if (
       !Array.isArray(path) ||

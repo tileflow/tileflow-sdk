@@ -20,7 +20,7 @@ Prepared styles may retain relative asset URLs. The component loads them through
 resource loader before creating the map and before changing or blending themes. Sprites, fonts,
 data and model resources resolve against their declaring documents. Pending document loads are
 cancelled when the map is replaced or unmounted; `mapOptions.transformRequest` also applies to
-style and HTTP TileJSON requests.
+style and HTTP TileJSON requests, and to the DEM TileJSON and DEM tiles that contours read.
 
 ## Prepare a map
 
@@ -106,6 +106,13 @@ Theme and `time-of-day` changes cross-fade over 450 ms by default, respecting re
 map's themes instead of `theme`: position 0 is the first theme and 1.5 is halfway from the second to
 the third. Moving the position updates the map at once. See
 [theme transitions and blends](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md).
+
+`:colors="{'surface.land': '#f4f1ea'}"` overrides named colour tokens of the map's
+theme, and `:emphasis="{recede: {roads: 0.3}, labels: 0.6}"` makes modules recede and labels fade so
+your own content reads first. Both ease in over `theme-transition`, stay through theme changes, and
+follow the props: an empty `colors` or no `emphasis` restores the map as designed. An unknown token or an
+invalid value is logged and leaves the colours unchanged.
+A map that declares colour knobs, as Streets does, also takes them by name, such as `:colors="{water: '#2563eb', roads: '#9aa5b1'}"`; see [Streets' knobs](https://github.com/tileflow/tileflow-sdk/blob/main/packages/maps/REFERENCE.md#streets-colour-knobs).
 
 Interactive maps show the 3D scene their style declares by default: buildings with Tileflow
 landmarks and the map's Team building models, 3D trees, and street lights where the map enables

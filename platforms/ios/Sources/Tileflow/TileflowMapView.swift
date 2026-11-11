@@ -151,7 +151,8 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
 
   public override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
     let target = super.hitTest(point, with: event)
-    guard let shouldReceiveTouch, target !== controlsView, target?.isDescendant(of: controlsView) != true
+    guard let shouldReceiveTouch, target !== controlsView,
+      target?.isDescendant(of: controlsView) != true
     else { return target }
     return shouldReceiveTouch(point) ? target : nil
   }
@@ -296,7 +297,9 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
   }
 
   private var rightToLeft: Bool { effectiveUserInterfaceLayoutDirection == .rightToLeft }
-  private var wireOptions: JSONValue { get throws { try options.wireValue(rightToLeft: rightToLeft) } }
+  private var wireOptions: JSONValue {
+    get throws { try options.wireValue(rightToLeft: rightToLeft) }
+  }
 
   private func applyAppearance() async throws {
     guard initialized, let bridge, let appearance else { return }
@@ -571,6 +574,9 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
               networkEnabled: TileflowHTTPClient.shared.isNetworkEnabled,
               reachable: OfflineReachability.shared.isReachable)
           {
+            if let required = await OfflineServingIndex.shared.catalogLogoRequired(for: scope) {
+              options["offlineCatalogLogoRequired"] = .bool(required)
+            }
             let credits = await OfflineServingIndex.shared.credits(for: scope)
             if !credits.isEmpty { options["credits"] = .array(credits.map(\.wireValue)) }
           }

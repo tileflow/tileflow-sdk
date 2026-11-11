@@ -1,4 +1,5 @@
 import {readBoundedTileflowBrowserResource} from './browser-resource';
+import {bindTileflowBrandingSources, rememberTileflowBrandingSources} from './branding';
 import type {TileflowRuntimeStyle} from './runtime';
 import {
   createTileflowStyleFamily,
@@ -27,6 +28,8 @@ export type TileflowRuntimeStyleLoadOptions = {
   baseUrl?: string;
   fetch?: typeof globalThis.fetch;
   signal?: AbortSignal;
+  /** Origin of a self-hosted Tileflow API, when different from api.tileflow.dev. */
+  apiUrl?: string;
   /** Use the same authentication and URL rewrite rules as the map. */
   transformRequest?: (
     url: string,
@@ -106,6 +109,7 @@ async function prepareRuntimeStyle(
   // Only copy resource-bearing branches. GeoJSON, expressions and arbitrary metadata may contain
   // strings resembling URLs, but are application data and must keep their meaning and identity.
   const style = {...input, sources: {...input.sources}} as MapLibreStyle;
+  const branding = rememberTileflowBrandingSources(style, {...options, baseUrl: owner});
   const resolve = (value: string) => resolveResource(value, owner);
   if (typeof style.sprite === 'string' && style.sprite) style.sprite = resolve(style.sprite);
   else if (Array.isArray(style.sprite))
@@ -203,6 +207,7 @@ async function prepareRuntimeStyle(
     }),
   );
   options.signal?.throwIfAborted();
+  if (Object.keys(branding).length) bindTileflowBrandingSources(style, branding);
   return {
     ...runtime,
     style,

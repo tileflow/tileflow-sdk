@@ -9,6 +9,7 @@ import {
 import {resolveBoundaryAreas, validateBoundaryChoroplethOverlays} from '../boundary-areas/compile';
 import {tileflowBuildingsMetadata, tileflowBuildingsMetadataKey} from '../buildings-3d-design';
 import {tileflowCameraMetadataKey} from '../camera';
+import {type TileflowColorKnobs, validateTileflowColorKnobs} from '../color-knobs';
 import {extractTileflowColorPrograms, preserveThemeColorPrograms} from '../color-program';
 import {
   resolveTileflowData,
@@ -866,10 +867,21 @@ function compileSemanticStyleInternal(
       for (const key of Object.keys(style.metadata))
         if (style.metadata[key] === undefined) delete style.metadata[key];
     }
-    style = extractTileflowColorPrograms(style, {
-      color: theme.tokens.color,
-      number: theme.tokens.number,
-    });
+    const knobs = input.colorKnobs as TileflowColorKnobs | undefined;
+    if (knobs)
+      validateTileflowColorKnobs(
+        knobs,
+        new Set(Object.keys(theme.tokens.color)),
+        `map "${input.id}" colorKnobs`,
+      );
+    style = extractTileflowColorPrograms(
+      style,
+      {
+        color: theme.tokens.color,
+        number: theme.tokens.number,
+      },
+      knobs,
+    );
   }
   const report: TileflowCompilationReport = {
     ...partialReport,

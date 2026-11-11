@@ -5,16 +5,14 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
 import {
-  createStyle,
   defineMap,
   getTileflowStyleFontFaces,
   type MapLibreStyle,
   parseTileflowMap,
-  resolveMap,
   type TileflowFontDirectory,
 } from '@tileflow/core';
 import type {TileflowBuildCatalog} from '@tileflow/core/build';
-import {siegfried, siegfriedFonts} from '@tileflow/maps';
+import {streetsFonts} from '@tileflow/maps';
 import {
   bindTileflowStyleFontBundle,
   getTileflowFontWatchPaths,
@@ -23,6 +21,7 @@ import {
 } from '../src/fonts';
 import {getTileflowPreviewRuntimeResponse} from '../src/preview-assets';
 import {renderTileflowPreviewHtml} from '../src/preview-html';
+import {streetsFontFixtures} from './streets-font-fixture';
 import {fixtureThemeFields} from './theme-fixture';
 
 const oxaniumMedium = new URL('./fixtures/fonts/oxanium/Oxanium-Medium.ttf', import.meta.url);
@@ -120,70 +119,35 @@ test('later directories replace exact canonical faces', async (t) => {
   );
 });
 
-test('prepares all three packaged Siegfried faces with one OFL license', async (t) => {
+test('prepares the packaged Streets faces once across two themes with their combined OFL notice', async (t) => {
   const cwd = await fixture(t);
-  const icons = [
-    'siegfried-dark-forest',
-    'siegfried-dark-glacier',
-    'siegfried-dark-gravel',
-    'siegfried-dark-orchard',
-    'siegfried-dark-paper-grain',
-    'siegfried-dark-rock',
-    'siegfried-dark-scree',
-    'siegfried-dark-water-lines',
-    'siegfried-dark-wetland',
-    'siegfried-forest',
-    'siegfried-glacier',
-    'siegfried-gravel',
-    'siegfried-orchard',
-    'siegfried-paper-grain',
-    'siegfried-rock',
-    'siegfried-scree',
-    'siegfried-water-lines',
-    'siegfried-wetland',
-  ];
-  const light = createStyle(siegfried, {
-    preparedAssets: {icons: {ids: icons, sprite: '/assets/icons/siegfried/sprite'}},
-    theme: 'light',
-  });
-  const dark = createStyle(siegfried, {
-    preparedAssets: {icons: {ids: icons, sprite: '/assets/icons/siegfried/sprite'}},
-    theme: 'dark',
-  });
+  const project = fontProject([streetsFonts]);
+  project.maps.main!.themes.dark = project.maps.main!.themes.light!;
+  const style = {
+    ...fontStyle([]),
+    layers: streetsFontFixtures.flatMap(({family}, i) =>
+      fontStyle([family]).layers.map((layer) => ({...layer, id: `face-${i}`})),
+    ),
+  };
   const prepared = await prepareTileflowStyleFonts(
-    {maps: {siegfried: parseTileflowMap(siegfried)}},
-    {siegfried: {dark, light}},
+    project,
+    {main: {light: style, dark: style}},
     {assetBaseUrl: '/assets', cwd, target: 'local'},
   );
-
   assert.deepEqual(prepared.watchPaths, []);
-  assert.equal(prepared.assets.filter((asset) => asset.contentType === 'font/ttf').length, 3);
+  assert.equal(prepared.assets.filter((asset) => asset.contentType === 'font/ttf').length, 5);
   assert.equal(prepared.assets.filter((asset) => asset.fileName.includes('/licenses/')).length, 1);
-  assert.deepEqual(
-    getTileflowStyleFontFaces(prepared.styles.siegfried!.light!).map(
-      ({family, style: fontStyle, weight}) => ({family, style: fontStyle, weight}),
-    ),
-    [
-      {family: 'Cormorant Garamond Italic', style: 'italic', weight: '400'},
-      {family: 'Cormorant Garamond Regular', style: 'normal', weight: '400'},
-      {family: 'Cormorant Garamond SemiBold', style: 'normal', weight: '600'},
-    ],
-  );
-  assert.deepEqual(
-    getTileflowStyleFontFaces(prepared.styles.siegfried!.dark!).map(
-      ({family, style: fontStyle, weight}) => ({family, style: fontStyle, weight}),
-    ),
-    [
-      {family: 'Cormorant Garamond Italic', style: 'italic', weight: '400'},
-      {family: 'Cormorant Garamond Regular', style: 'normal', weight: '400'},
-      {family: 'Cormorant Garamond SemiBold', style: 'normal', weight: '600'},
-    ],
-  );
-  assert.deepEqual(
-    await getTileflowFontWatchPaths({maps: {siegfried: parseTileflowMap(siegfried)}}, cwd),
-    [],
-  );
-  assert.deepEqual(resolveMap(siegfried).fonts, [siegfriedFonts]);
+  for (const theme of ['light', 'dark']) {
+    assert.deepEqual(
+      getTileflowStyleFontFaces(prepared.styles.main![theme]!).map(({family, style, weight}) => ({
+        family,
+        style,
+        weight,
+      })),
+      streetsFontFixtures.map(({family, style, weight}) => ({family, style, weight})),
+    );
+  }
+  assert.deepEqual(await getTileflowFontWatchPaths(project, cwd), []);
 });
 
 test('font extension, MIME, and OpenType signature must agree', async (t) => {
@@ -417,7 +381,7 @@ test('discovers mutable font directories before compilation and excludes package
   assert.deepEqual(await getTileflowFontWatchPaths(fontProject(['./fonts']), cwd), [
     await realpath(join(cwd, 'fonts')),
   ]);
-  assert.deepEqual(await getTileflowFontWatchPaths(fontProject([siegfriedFonts]), cwd), []);
+  assert.deepEqual(await getTileflowFontWatchPaths(fontProject([streetsFonts]), cwd), []);
 });
 
 test('preview loads generic style metadata through the shared browser runtime', async () => {

@@ -100,7 +100,9 @@ export function prepareTileflowStyleFamilyForRendering(
         }
         return [
           name,
-          colors ? extractTileflowColorPrograms(preparedStyle, colors.tokens) : preparedStyle,
+          colors
+            ? extractTileflowColorPrograms(preparedStyle, colors.tokens, colors.knobs)
+            : preparedStyle,
         ];
       }),
     ),

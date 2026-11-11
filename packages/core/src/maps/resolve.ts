@@ -45,6 +45,7 @@ export const tileflowMapMergeStrategies = {
   atmosphere: 'atomic',
   boundaryAreas: 'atomic',
   camera: 'deep',
+  colorKnobs: 'keyed-resources',
   data: 'atomic',
   defaultTheme: 'atomic',
   extends: 'lineage',

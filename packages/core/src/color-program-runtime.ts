@@ -5,6 +5,7 @@ import {
   validateBindings,
   type TileflowColorBindings,
 } from './color-program';
+import {isTileflowColorKnobName, resolveTileflowColorKnobs} from './color-knobs';
 import {normalizeTileflowCssColor} from './css-color';
 import {mix} from './themes';
 import {resolveThemeValues, resolveTileflowTheme, type TileflowTheme} from './themes/model';
@@ -24,8 +25,14 @@ export function applyTileflowColorOverrides(
       'This style has no runtime colour bindings. Rebuild with runtimeColors enabled.',
     );
   validateBindings(catalog);
-  if (keys.length > 1024) throw new TypeError('At most 1024 colour tokens can be overridden.');
-  const unknown = keys.filter((key) => !Object.hasOwn(catalog.tokens.color, key));
+  if (keys.length > 1024) throw new TypeError('At most 1024 colours can be overridden.');
+  // A key that is a token, or has a dot as every token of Tileflow's maps does, names a token; any
+  // other key names a knob of the map.
+  const isToken = (key: string) =>
+    Object.hasOwn(catalog.tokens.color, key) || !isTileflowColorKnobName(key);
+  const tokenKeys = keys.filter(isToken);
+  const knobKeys = keys.filter((key) => !isToken(key));
+  const unknown = tokenKeys.filter((key) => !Object.hasOwn(catalog.tokens.color, key));
   if (unknown.length)
     throw new TypeError(
       `Unknown colour token${unknown.length > 1 ? 's' : ''} ${unknown
@@ -35,12 +42,37 @@ export function applyTileflowColorOverrides(
     );
   // The style language reads hex and comma-separated rgb() and hsl(); every other CSS colour is
   // converted here, and one that cannot be read is an error rather than a silently wrong colour.
-  overrides = Object.fromEntries(
+  const normalized = Object.fromEntries(
     keys.map((key) => [
       key,
-      normalizeTileflowCssColor(overrides[key] as string, `colour for "${key.slice(0, 80)}"`),
+      normalizeTileflowCssColor(
+        overrides[key] as string,
+        `colour for ${isToken(key) ? '' : 'knob '}"${key.slice(0, 80)}"`,
+      ),
     ]),
-  );
+  ) as Record<string, string>;
+  let knobColors: Record<string, string> = {};
+  if (knobKeys.length) {
+    // Knobs start from the colours this theme has without any override.
+    const base = resolveTileflowTheme({
+      id: 'runtime',
+      version: 1,
+      colorScheme: 'light',
+      lighting: {},
+      typography: {font: 'Noto Sans Regular'},
+      tokens: {...catalog.tokens, font: {}, image: {}},
+    }).tokens.color as Record<string, string>;
+    knobColors = resolveTileflowColorKnobs(
+      catalog.knobs,
+      Object.fromEntries(knobKeys.map((key) => [key, normalized[key]!])),
+      base,
+    );
+  }
+  // A token set by name wins over the knob that governs it.
+  overrides = {
+    ...knobColors,
+    ...Object.fromEntries(tokenKeys.map((key) => [key, normalized[key]!])),
+  };
   const theme: TileflowTheme = {
     id: 'runtime',
     version: 1,

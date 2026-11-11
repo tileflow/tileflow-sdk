@@ -1733,6 +1733,7 @@ function runPreviewScript(
       };
     },
     attachTileflowNauticalLights: () => () => {},
+    attachTileflowBranding: () => () => {},
     attachTileflowNotices: () => () => {},
     attachTileflowAtmosphere: () => () => {},
     tileflowMaxPitch: 85,

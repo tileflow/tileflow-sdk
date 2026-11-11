@@ -115,7 +115,7 @@ export function renderTileflowPreviewHtml(
       import {attachTileflowHorizonQueries, attachTileflowLabelPlacement} from "${basePath}/__runtime/tileflow-browser.js";
       import {registerTileflowContourProtocol, registerTileflowPathGroundProtocol} from "${basePath}/__runtime/tileflow-browser.js";
       import {registerTileflowPmtilesProtocol} from "${basePath}/__runtime/tileflow-browser.js";
-      import {attachTileflowNauticalLights, attachTileflowNotices} from "${basePath}/__runtime/tileflow-browser.js";
+      import {attachTileflowBranding, attachTileflowNauticalLights, attachTileflowNotices} from "${basePath}/__runtime/tileflow-browser.js";
       import {attachTileflowAtmosphere, tileflowMaxPitch} from "${basePath}/__runtime/tileflow-browser.js";
       import {tileflowCanvasContextAttributes} from "${basePath}/__runtime/tileflow-browser.js";
       import {createTileflowMap3D} from "${basePath}/__runtime/tileflow-browser.js";
@@ -1528,6 +1528,7 @@ export function renderTileflowPreviewHtml(
           ...resolveInitialMapOptions(previewMapOptions)
         });
         globalThis.__tileflowPreviewMap = map;
+        attachTileflowBranding(map);
         attachTileflowNotices(map);
         attachTileflowNauticalLights(map);
         attachTileflowAtmosphere(map);

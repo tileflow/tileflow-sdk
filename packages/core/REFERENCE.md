@@ -298,6 +298,25 @@ The React, Vue and Svelte components do this for every map. Framework adapters a
 tooling prepare browser resources; direct MapLibre integrations must register required protocols
 before loading a style.
 
+### Catalog branding
+
+The React, Vue, Svelte, React Native and embedded mobile maps manage the Tileflow symbol
+in the lower-left corner automatically. Preview and capture include it too. The symbol links to
+https://tileflow.dev and follows the active catalog sources, independently of data attribution.
+Own and third-party tiles do not require the Tileflow mark. Public Tileflow catalog delivery shows
+it; catalog delivery bound to a Map ID reads the owner's current branding entitlement. A paid map
+never inserts a provisional mark. While a managed decision is unavailable, the surface remains
+hidden instead of guessing Free; it retries and renews a short-lived decision while mounted.
+
+Direct MapLibre integrations call `attachTileflowBranding(map)` from `@tileflow/core/browser`
+synchronously after constructing the map, before yielding to the browser. It follows style/source
+changes and cleans up on `map.remove()`; its returned function also disposes it explicitly. Keep it
+when disabling other MapLibre controls. `apiUrl` selects an alternative Tileflow API origin and
+`baseUrl` resolves relative source URLs. `loadTileflowRuntimeStyle` preserves catalog provenance
+when expanding TileJSON. Applications that rewrite source URLs themselves must retain their source
+identity. This presentation control cannot prevent a modified open-source client from removing DOM;
+service branding requirements and third-party attribution obligations still apply.
+
 ### Load a portable style in MapLibre
 
 Await `loadTileflowRuntimeStyle` before giving MapLibre a runtime style. React, Vue and Svelte do
@@ -387,6 +406,10 @@ Land may supply a georeferenced `globalLandcoverUnderlay` image with `url`, four
 and themed `opacity`. It is drawn below global cover and omitted when land is disabled.
 Tree forms may use `sizeAnchor` and `crownAnchor` (metres) with `sizeCompression`
 from 0 to 1 to reduce size variation while preserving each tree’s proportions.
+Decorative canopy clearance bounds the available space; it is not a measured crown diameter.
+When canopy height is available, inferred crowns also follow the selected tree form's proportions.
+Individually mapped trees retain their measured dimensions. Hedges use continuous, joined surfaces
+with a 0.5 m footprint, a flat top, and clipped tile boundaries; tree size controls do not resize them.
 
 ## Flat footprints under 3D buildings
 

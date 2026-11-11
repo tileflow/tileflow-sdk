@@ -1,3 +1,4 @@
+import {rememberTileflowBrandingSources, bindTileflowBrandingSources} from '@tileflow/core/native';
 import {
   expandTileflowFamilyTemplate,
   loadTileflowStyleFamily,
@@ -31,7 +32,11 @@ export function absoluteResource(value: string, document: string): string {
 
 /** Load a bounded style graph once per generation. TileJSON is expanded natively before MapLibre
  * sees it, so nested relative tile addresses retain the TileJSON document's base. */
-export function createStyleResourceLoader(fetchResource: typeof fetch, signal: AbortSignal) {
+export function createStyleResourceLoader(
+  fetchResource: typeof fetch,
+  signal: AbortSignal,
+  branding: () => {apiUrl?: string; mapId?: string} = () => ({}),
+) {
   const styles = new Map<string, Promise<Style>>();
   const tilejson = new Map<string, Promise<RecordValue>>();
   const families = new Map<string, Promise<TileflowStyleFamily>>();
@@ -74,6 +79,7 @@ export function createStyleResourceLoader(fetchResource: typeof fetch, signal: A
         'The map style does not satisfy the mobile limits.',
       );
     }
+    const catalogSources = rememberTileflowBrandingSources(style, {...branding(), baseUrl: url});
     if (typeof style.glyphs === 'string') style.glyphs = absoluteResource(style.glyphs, url);
     if (typeof style.sprite === 'string') style.sprite = absoluteResource(style.sprite, url);
     else if (Array.isArray(style.sprite)) {
@@ -143,6 +149,7 @@ export function createStyleResourceLoader(fetchResource: typeof fetch, signal: A
         }),
       );
     }
+    if (Object.keys(catalogSources).length) bindTileflowBrandingSources(style, catalogSources);
     return style as Style;
   };
   const load = (url: string): Promise<Style> => {

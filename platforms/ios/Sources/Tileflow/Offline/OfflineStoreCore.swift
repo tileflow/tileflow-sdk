@@ -120,6 +120,13 @@ actor OfflineStoreCore {
       guard active.packs > 0, let origin = active.apiOrigin.flatMap(URL.init(string:)) else {
         continue
       }
+      if let plan = try? plan(id, active) {
+        for pack in plan.packs {
+          let scope = ResourceCacheScope.grant(apiOrigin: origin, mapID: pack.manifest.mapID)
+            .directory
+          snapshot.branding[scope, default: []].append(pack.manifest.catalogLogoRequired)
+        }
+      }
       for (scope, credits) in credits(id, active, apiOrigin: origin) {
         var merged = snapshot.credits[scope] ?? []
         for credit in credits where !merged.contains(where: { $0.id == credit.id }) {

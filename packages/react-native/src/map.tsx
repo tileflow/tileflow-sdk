@@ -19,16 +19,18 @@ import {
 } from 'react';
 import {AppState, findNodeHandle, View} from 'react-native';
 import type {TileflowAnnotation, TileflowInteractionDiagnostic} from '@tileflow/interactions';
+import {CatalogBranding} from './catalog-branding';
 import type {MapBoundaryFeatureState, MapProps} from './contract';
-import {createNativeAnnotationClusters} from './native-annotation-clusters';
 import type {MapInteractionEvent, MapMarkerRenderer} from './interaction-contract';
 import {createMapLifecycle} from './map-lifecycle';
 import type {NativeInteractionHost} from './mounted-map-interactions';
+import {createNativeAnnotationClusters} from './native-annotation-clusters';
 import {NativeBoundaryFeatureState} from './native-boundary-feature-state';
 import {NativeClusterMarker, NativeDataLayers, type NativeDataTarget} from './native-data-layers';
 import {planNativeDataLayers} from './native-data-layers-plan';
 import {NativeAnnotationMarker} from './native-marker';
 import {createNativeMapOwner, retireNativeMapOwner} from './native-runtime';
+import {useCatalogBranding} from './use-catalog-branding';
 
 type Lifecycle = ReturnType<typeof createMapLifecycle>;
 type Snapshot = ReturnType<Lifecycle['getSnapshot']>;
@@ -56,6 +58,7 @@ function NativeScene<TAnnotation extends TileflowAnnotation>({
   boundaryFeatureState?: MapBoundaryFeatureState;
   data: NativeDataInput<TAnnotation>;
 }): ReactElement {
+  const branding = useCatalogBranding(scene.style);
   const view = useRef<View | null>(null);
   const camera = useRef<NativeCameraRef | null>(null);
   const nativeMap = useRef<NativeMapRef | null>(null);
@@ -167,7 +170,10 @@ function NativeScene<TAnnotation extends TileflowAnnotation>({
     <View
       ref={bind}
       collapsable={false}
-      style={fill}
+      style={[fill, branding === 'pending' ? {opacity: 0} : undefined]}
+      pointerEvents={branding === 'pending' ? 'none' : 'auto'}
+      accessibilityElementsHidden={branding === 'pending'}
+      importantForAccessibility={branding === 'pending' ? 'no-hide-descendants' : 'auto'}
       onStartShouldSetResponderCapture={() => {
         lifecycle.beginTouch(scene.key);
         return false;
@@ -274,6 +280,7 @@ function NativeScene<TAnnotation extends TileflowAnnotation>({
         ) : null}
         {children}
       </NativeMap>
+      {branding === 'required' ? <CatalogBranding /> : null}
     </View>
   );
 }

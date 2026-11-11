@@ -19,15 +19,15 @@ design in one `tileflow.config.ts`.
 
 [Documentation](https://tileflow.dev/docs) · [Gallery](https://tileflow.dev/gallery) · [Quickstart](https://tileflow.dev/docs/get-started/quickstart)
 
-[![Six maps made with the Tileflow SDK: 3D Paris with the Eiffel Tower, a tileflow.config.ts file, Cape Town over 3D terrain, a nautical chart near the Golden Gate, a neon map of Madrid, and a playful 3D map of Madrid.](.github/assets/showcase.jpg)](https://tileflow.dev/gallery)
+[![Six maps made with the Tileflow SDK: Miami's streets and bay, the Royal Palace of Madrid in 3D at dusk, the mountains around the Matterhorn in 3D, a playful 3D map around Madrid's Puerta de Alcalá, a nautical chart near the Golden Gate, and an engraved-style map of Paris.](.github/assets/showcase.jpg)](https://tileflow.dev/gallery)
 
 **Made with the Tileflow SDK** (left to right, top to bottom):
-[1777](https://tileflow.dev/gallery?map=map-1777) with 3D buildings and a landmark model in Paris;
-a complete map definition in `tileflow.config.ts`;
-[Streets](https://tileflow.dev/gallery?map=streets) over [3D terrain](https://tileflow.dev/docs/map-design/terrain-and-globe) in Cape Town;
+[Streets](https://tileflow.dev/gallery?map=streets) in Miami;
+Streets with 3D buildings and landmark models at the Royal Palace of Madrid, at dusk;
+[Outdoors](https://tileflow.dev/docs/map-design/basemaps) over [3D terrain](https://tileflow.dev/docs/map-design/terrain-and-globe) around the Matterhorn;
+the [Super Tile World](https://tileflow.dev/gallery?map=super-tile-world) community map at Madrid's Puerta de Alcalá;
 soundings, buoys, and lights near the Golden Gate (not for navigation);
-the [Cyberpunk](https://tileflow.dev/gallery?map=cyberpunk) and
-[Super Tile World](https://tileflow.dev/gallery?map=super-tile-world) community maps of Madrid.
+the [Baedeker](https://tileflow.dev/gallery?map=baedeker) community map of Paris.
 Map data © [OpenStreetMap contributors and other sources](https://tileflow.dev/copyright).
 
 ## Create your first map

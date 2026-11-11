@@ -8,6 +8,10 @@ import {
 } from '../src/branding';
 import {attachTileflowBranding, type TileflowBrandingMap} from '../src/branding-browser';
 import {loadTileflowRuntimeStyle} from '../src/style-resources-browser';
+import {
+  createTileflowContourProtocolUrl,
+  type TileflowContourDemSource,
+} from '../src/terrain/contour-protocol';
 
 const mapId = 'map_0123456789abcdef';
 const secondId = 'map_fedcba9876543210';
@@ -112,6 +116,46 @@ test('catalog identity follows referenced delivery URLs, never SDK use, source n
     [{apiUrl: 'https://api.tileflow.dev'}],
   );
   assert.throws(() => readTileflowBrandingSources(style(`${catalog}?map=invalid`)));
+});
+
+test('contours retain the delivery identity of their DEM without a separate terrain source', () => {
+  const contours = (dem: TileflowContourDemSource) => ({
+    sources: {
+      contours: {
+        type: 'vector',
+        tiles: [
+          createTileflowContourProtocolUrl({
+            ...dem,
+            demMaxzoom: 14,
+            maxzoom: 14,
+            overzoom: 0,
+            multiplier: 1,
+            encoding: 'terrarium',
+            thresholds: {0: [500, 1000]},
+          }),
+        ],
+      },
+    },
+    layers: [{id: 'contours', type: 'line', source: 'contours'}],
+  });
+  const terrain = 'https://api.tileflow.dev/tiles/terrain/tiles.json';
+  assert.deepEqual(readTileflowBrandingSources(contours({demTileJson: terrain})), [
+    {apiUrl: 'https://api.tileflow.dev'},
+  ]);
+  assert.deepEqual(
+    readTileflowBrandingSources(contours({demTileJson: `${terrain}?map=${mapId}`})),
+    [{apiUrl: 'https://api.tileflow.dev', mapId}],
+  );
+  assert.deepEqual(
+    readTileflowBrandingSources(
+      contours({demUrl: `https://api.tileflow.dev/tiles/terrain/{z}/{x}/{y}.png?map=${mapId}`}),
+    ),
+    [{apiUrl: 'https://api.tileflow.dev', mapId}],
+  );
+  assert.deepEqual(
+    readTileflowBrandingSources(contours({demTileJson: 'https://customer.example/elevation.json'})),
+    [],
+  );
 });
 
 test('TileJSON expansion preserves catalog identity and source replacement invalidates it', async () => {

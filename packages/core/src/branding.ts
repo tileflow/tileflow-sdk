@@ -28,6 +28,7 @@ type UrlParser = (
 ) => {
   origin: string;
   protocol: string;
+  hostname: string;
   pathname: string;
   search: string;
 };
@@ -43,6 +44,16 @@ function resourceUrls(source: Record<string, unknown>): string[] {
   );
 }
 
+function queryValue(search: string, name: string): string | null {
+  const decode = (part: string) => decodeURIComponent(part.replace(/\+/gu, ' '));
+  for (const part of search.slice(1).split('&')) {
+    const separator = part.indexOf('=');
+    if (decode(separator === -1 ? part : part.slice(0, separator)) === name)
+      return separator === -1 ? '' : decode(part.slice(separator + 1));
+  }
+  return null;
+}
+
 /** Recognize catalog routes on the configured API, never a source name or its schema. */
 export function tileflowBrandingSource(
   value: string,
@@ -52,6 +63,12 @@ export function tileflowBrandingSource(
   let url: ReturnType<UrlParser>;
   try {
     url = parseUrl(value, options.baseUrl);
+    // The contour renderer loads its declared DEM even without a separate terrain layer.
+    if (url.protocol === 'tileflow-contour:' && url.hostname === 'tiles') {
+      const dem = queryValue(url.search, 'demTileJson') ?? queryValue(url.search, 'demUrl');
+      if (!dem || !/^https?:\/\//u.test(dem)) return undefined;
+      url = parseUrl(dem);
+    }
   } catch {
     return undefined;
   }
@@ -63,12 +80,7 @@ export function tileflowBrandingSource(
   const match = /^\/(?:v1\/)?tiles\/([^/]+)(?:\/|$)/u.exec(url.pathname);
   if (!match || !catalog.has(match[1]!)) return undefined;
   // Native shares its private URL parser and does not need ambient URLSearchParams.
-  const decode = (part: string) => decodeURIComponent(part.replace(/\+/gu, ' '));
-  const mapEntry = url.search
-    .slice(1)
-    .split('&')
-    .find((part) => decode(part.split('=')[0]!) === 'map');
-  const mapId = mapEntry === undefined ? null : decode(mapEntry.slice(mapEntry.indexOf('=') + 1));
+  const mapId = queryValue(url.search, 'map');
   if (mapId !== null && !mapPattern.test(mapId))
     throw new TypeError('Invalid Tileflow branding Map ID.');
   return {apiUrl: apiOrigin, ...(mapId ? {mapId} : {})};

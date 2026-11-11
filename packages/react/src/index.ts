@@ -7,6 +7,7 @@ export type {
   MapProps,
   TileflowAnnotationRenderer,
   TileflowInteractionRenderer,
+  TileflowMapHandle,
   TileflowMapOptions,
   TileflowMapSource,
 } from './map';

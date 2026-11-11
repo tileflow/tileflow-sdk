@@ -2,11 +2,15 @@
 
 import {
   type CSSProperties,
+  type ForwardedRef,
+  forwardRef,
   type ImgHTMLAttributes,
   type ReactElement,
   type ReactNode,
+  type RefAttributes,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -293,15 +297,32 @@ export type MapInteractionProps<TAnnotation extends TileflowAnnotation> = Exclud
 > &
   TileflowMapStyleSourceProps;
 
-export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>(
-  props: MapAnnotationProps<TAnnotation>,
-): ReactElement;
-export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>(
-  props: MapInteractionProps<TAnnotation>,
-): ReactElement;
-export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>(
-  props: MapProps<TAnnotation>,
-): ReactElement {
+/**
+ * What a `ref` on `Map` gives an application: the objects behind the map, for the moments when the
+ * props are not enough. Both are `null` until the map has loaded, in image mode, and after it is
+ * taken down, so call them from event handlers and effects, not while rendering.
+ */
+export type TileflowMapHandle = Readonly<{
+  /** The MapLibre map, or `null` while there is none. */
+  getMap(): MapLibreMap | null;
+  /** Changes the map's theme, colours and emphasis; `null` when the map's style has no themes. */
+  getThemeController(): TileflowThemeController | null;
+}>;
+
+type MapComponent = {
+  <TAnnotation extends TileflowAnnotation = TileflowAnnotation>(
+    props: MapAnnotationProps<TAnnotation> & RefAttributes<TileflowMapHandle>,
+  ): ReactElement;
+  <TAnnotation extends TileflowAnnotation = TileflowAnnotation>(
+    props: MapInteractionProps<TAnnotation> & RefAttributes<TileflowMapHandle>,
+  ): ReactElement;
+  displayName?: string;
+};
+
+// `forwardRef` serves React 18 and 19; React 19 would also accept `ref` as a plain prop.
+export const Map = forwardRef(function Map<
+  TAnnotation extends TileflowAnnotation = TileflowAnnotation,
+>(props: MapProps<TAnnotation>, ref: ForwardedRef<TileflowMapHandle>): ReactElement {
   assertTileflowMapStyleInputs(props);
 
   const {
@@ -383,6 +404,14 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
     sceneRef.current?.setViewMode(viewMode);
   }, [vegetation, viewMode]);
   const themeControllerRef = useRef<TileflowThemeController | undefined>(undefined);
+  useImperativeHandle(
+    ref,
+    () => ({
+      getMap: () => mapRef.current,
+      getThemeController: () => themeControllerRef.current ?? null,
+    }),
+    [],
+  );
   const navigationControlRef = useRef(navigationControl);
   navigationControlRef.current = navigationControl;
   const navigationBindingRef = useRef<TileflowNavigationControlBinding | undefined>(undefined);
@@ -1622,7 +1651,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
       })}
     </>
   );
-}
+}) as unknown as MapComponent;
 
 const mapContainerStyle: CSSProperties = {
   inset: 0,

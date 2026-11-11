@@ -1,6 +1,8 @@
-import type {TileflowMapError} from '@tileflow/core/browser';
+import type {TileflowMapError, TileflowThemeController} from '@tileflow/core/browser';
+import type {Map as MapLibreMap} from 'maplibre-gl';
+import {createRef} from 'react';
 import type {TileflowAnnotation} from '@tileflow/interactions';
-import {Map, type MapAnnotationProps} from '../src/index';
+import {Map, type MapAnnotationProps, type TileflowMapHandle} from '../src/index';
 
 type Property = Readonly<{
   price: number;
@@ -114,6 +116,29 @@ const reportedImage = (
 );
 // @ts-expect-error a code outside the stable set is not an error code.
 const unknownCode: TileflowMapError['code'] = 'other';
+
+// A `ref` gives the MapLibre map and the theme controller, with either overload and any annotation type.
+const handle = createRef<TileflowMapHandle>();
+const withRef = <Map ref={handle} source={{map: 'main'}} />;
+const withRefAndAnnotations = (
+  <Map<TileflowAnnotation<Property>>
+    annotations={properties}
+    ref={handle}
+    renderPopup={({annotation}) => annotation.data!.title}
+    source={{map: 'main'}}
+  />
+);
+const withRefAndInteractions = <Map interactions={[]} ref={handle} source={{map: 'main'}} />;
+function useHandle() {
+  const map: MapLibreMap | null | undefined = handle.current?.getMap();
+  const controller: TileflowThemeController | null | undefined =
+    handle.current?.getThemeController();
+  return [map, controller];
+}
+// @ts-expect-error a ref to anything else is not a map handle.
+const wrongRef = <Map ref={createRef<HTMLDivElement>()} source={{map: 'main'}} />;
+
+void [withRef, withRefAndAnnotations, withRefAndInteractions, useHandle, wrongRef];
 
 void [
   inferredPopup,

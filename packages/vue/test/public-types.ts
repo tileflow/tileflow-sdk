@@ -4,10 +4,12 @@ import type {
   TileflowInteractionEvent,
   TileflowInteractionState,
 } from '@tileflow/interactions';
-import type {TileflowMapError} from '@tileflow/core/browser';
+import type {TileflowMapError, TileflowThemeController} from '@tileflow/core/browser';
+import type {Map as MapLibreMap} from 'maplibre-gl';
 import {
   configureTileflowMapLibre,
   TileflowMap,
+  type TileflowMapHandle,
   type TileflowMapLibreConfiguration,
   type TileflowMapProps,
   type TileflowMapSlots,
@@ -151,6 +153,13 @@ emitted.$emit('error', {code: 'manifest', error: new Error('offline')});
 // @ts-expect-error a code outside the stable set is not an error code.
 emitted.$emit('error', {code: 'other', error: new Error('offline')});
 const errorEvent: TileflowMapError['code'] = 'colors';
+// A template ref reaches the MapLibre map and the theme controller.
+const map: MapLibreMap | null = emitted.getMap();
+const controller: TileflowThemeController | null = emitted.getThemeController();
+const exposed: TileflowMapHandle = emitted;
+// @ts-expect-error the handle has no other methods.
+emitted.getEverything();
+void [map, controller, exposed];
 void errorEvent;
 
 const clusteredProps: import('../src/index.js').TileflowMapProps = {

@@ -65,6 +65,10 @@ export function streetsTimeColors(
   }[preset];
   return Object.fromEntries(
     Object.entries(day).map(([role, value]) => {
+      // Road lettering is emitted ink: preserve its neutral contrast pair instead of
+      // grading it like a surface under the scene's warm or cool illumination.
+      if (role === 'labels.road' || role === 'labels.roadHalo')
+        return [role, referenceTime[role] ?? value];
       // Sky and emitted light have their own time-dependent physical profiles. Sign artwork
       // and pavement alpha are fixed inks, independent of the surrounding illumination.
       if (role.startsWith('sky.') || /^(?:buildings\.(?:floodLight|modelEmission))$/.test(role))

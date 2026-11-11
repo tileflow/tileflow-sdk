@@ -118,7 +118,7 @@ test('a thematic map can place park tint above mapped details using existing tar
 test('road placement keeps foreground behavior by default and moves only street names', () => {
   assert.equal(resolveLabels(labels()).roadPlacement, 'foreground');
   assert.equal(resolveLabels(labels()).roads, 'streets');
-  for (const roadPlacement of ['foreground', 'ground'] as const) {
+  for (const roadPlacement of ['foreground', 'ground', 'readable'] as const) {
     const names = compileLabels(
       labels({roadPlacement, collisionPriority: 'navigation'}),
       roads(),
@@ -133,14 +133,14 @@ test('road placement keeps foreground behavior by default and moves only street 
     const building = indexOf(layers, 'tileflow-buildings-native-extrusion');
     const destination = indexOf(layers, 'tileflow-poi-label');
     assert.equal(street < building, roadPlacement === 'ground');
-    assert.equal(street < destination, roadPlacement === 'ground');
+    assert.equal(street < destination, roadPlacement !== 'foreground');
     assert.ok(indexOf(layers, 'tileflow-label-road-shield-detail') > building);
     const layout = layers[street]!.layout as Record<string, unknown>;
     assert.equal(layout['text-pitch-alignment'], roadPlacement === 'ground' ? 'map' : undefined);
     assert.equal(layout['text-allow-overlap'], false);
     assert.deepEqual(
       (layers[street]!.metadata as Record<string, unknown>)?.['tileflow:road-label-placement'],
-      roadPlacement === 'ground' ? {version: 1, mode: 'ground'} : undefined,
+      roadPlacement !== 'foreground' ? {version: 1, mode: roadPlacement} : undefined,
     );
     assert.deepEqual(
       validateStyleMin({

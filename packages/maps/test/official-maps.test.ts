@@ -1124,7 +1124,7 @@ test('Streets green surfaces are typed and contain no legacy raw detail layers',
   ]);
 });
 
-test('Streets road labels retain class thresholds and readable text below buildings and POIs', () => {
+test('Streets road labels retain class thresholds and whole-name visibility below POIs', () => {
   const expectations = [
     ['motorway', 'motorway', undefined, 10, 9, 16, 0.15],
     ['trunk', 'trunk', undefined, 10, 9, 16, 0.15],
@@ -1141,7 +1141,7 @@ test('Streets road labels retain class thresholds and readable text below buildi
     ['pedestrian', 'pedestrian', undefined, 12, 9, 14, 0.01],
   ] as const;
   const resolved = resolveMap(streets);
-  assert.equal(resolved.modules.labels?.roadPlacement, 'ground');
+  assert.equal(resolved.modules.labels?.roadPlacement, 'readable');
   assert.equal(resolved.modules.labels?.roadGrouping, 'network');
   assert.equal(resolved.modules.labels?.roads, 'all');
   assert.deepEqual(
@@ -1183,7 +1183,7 @@ test('Streets road labels retain class thresholds and readable text below buildi
     assert.ok(destinationIndex > buildingIndex);
     for (const layer of roadLayers) {
       assert.ok(layer.index > footprintIndex, `${theme}: flat footprints cannot clip street names`);
-      assert.ok(layer.index < buildingIndex, `${theme}: buildings hide street names`);
+      assert.ok(layer.index > buildingIndex, `${theme}: buildings cannot clip individual glyphs`);
       assert.ok(
         layer.index < destinationIndex,
         `${theme}: destinations win street-name collisions`,
@@ -1197,8 +1197,7 @@ test('Streets road labels retain class thresholds and readable text below buildi
           (layer.maxzoom ?? 24) > zoom &&
           featureFilter(layer.filter as never).filter({zoom}, {type: 2, properties} as never),
       );
-    // Dense overview grids retain the main thoroughfare before parallel local streets;
-    // the extra screen padding must be gone by neighbourhood zoom.
+    // Dense grids retain the main thoroughfare before parallel local streets.
     for (const zoom of [13, 14, 17]) {
       const properties = {name: 'A road', class: 'primary'};
       const network = active(properties, zoom)[0]!;
@@ -1225,7 +1224,7 @@ test('Streets road labels retain class thresholds and readable text below buildi
         evaluateLayout('symbol-sort-key', {class: 'primary'}),
         evaluateLayout('symbol-sort-key', {class: 'construction', type: 'primary'}),
       );
-      assert.equal(evaluateLayout('text-padding', {class: 'primary'}), zoom === 13 ? 5 : 1);
+      assert.equal(evaluateLayout('text-padding', {class: 'primary'}), 1);
     }
     for (const [
       roadClass,
@@ -1269,10 +1268,7 @@ test('Streets road labels retain class thresholds and readable text below buildi
         const expectedSize = startSize + (endSize - startSize) * ((zoom - 10) / 8);
         assert.ok(Math.abs(Number(evaluate('text-size', 'layout')) - expectedSize) < 1e-6);
         assert.equal(evaluate('text-letter-spacing', 'layout'), letterSpacing);
-        assert.equal(
-          evaluate('symbol-spacing', 'layout'),
-          zoom < 17 ? 300 + (zoom - 15) * 50 : 400 + (zoom - 17) * 25,
-        );
+        assert.equal(evaluate('symbol-spacing', 'layout'), 250);
         assert.equal(evaluate('text-transform', 'layout'), 'uppercase');
         assert.equal(evaluate('text-pitch-alignment', 'layout'), 'viewport');
         assert.equal(evaluate('text-rotation-alignment', 'layout'), 'map');

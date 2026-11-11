@@ -21,7 +21,7 @@ export type ResolvedLabelsModuleOptions = {
   roadClasses?: readonly TileflowRoadClass[];
   roadGrouping: 'class' | 'network';
   roadNameFormat: 'full' | 'compact';
-  roadPlacement: 'ground' | 'foreground';
+  roadPlacement: 'ground' | 'foreground' | 'readable';
   roads: TileflowRoadLabelDetail;
   shields: TileflowRoadShieldDetail;
   water: TileflowLabelDetail;

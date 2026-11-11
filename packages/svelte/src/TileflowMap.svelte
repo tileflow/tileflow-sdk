@@ -808,6 +808,8 @@
       // allows, without easing in from the theme's own look.
       appearanceBinding = createTileflowAppearanceBinding({
         controller: themeController,
+        // CSS variables in `colors` are read where the map sits.
+        element: targetContainer,
         map: maplibreMap,
         onError: (error, part) => reportError(part, error),
       });

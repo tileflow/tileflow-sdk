@@ -174,6 +174,10 @@ export function Unemployment({rates}: {rates: {ine: string; rate: number}[]}) {
 }
 ```
 
+A map that declares only `boundaryAreas` still carries the Boundaries source, so the choropleth does
+not have to be declared in `tileflow.config.ts` either: pass `boundaryChoropleth({classes, scale, id})`
+through `dataOverlays`, keyed by its `id`, and the app owns both the colours and the rows.
+
 Rows join by `ref` here, so this map declares `boundaryAreas: {family: 'boundaries', promoteId:
 'ref'}`. Without `promoteId`, rows join by registry `id`. See
 [boundary areas and choropleths](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md)

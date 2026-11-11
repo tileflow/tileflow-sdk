@@ -69,6 +69,7 @@ function createMap(initial: {layers?: FakeLayer[]; metadata?: Record<string, unk
   const listeners = new Map<string, Set<Listener>>();
   const layerListeners = new Set<string>();
   const sources = new Map<string, FakeSource>();
+  const styleLoaded = {value: true};
   let layers: FakeLayer[] = [...(initial.layers ?? [])];
   const eased: {center: [number, number]; zoom: number}[] = [];
   const canvas = {
@@ -113,7 +114,7 @@ function createMap(initial: {layers?: FakeLayer[]; metadata?: Record<string, unk
     getSource: (id: string) => sources.get(id),
     getStyle: () => ({layers, metadata: initial.metadata}),
     getZoom: () => zoom,
-    isStyleLoaded: () => true,
+    isStyleLoaded: () => styleLoaded.value,
     off(event: string, second: unknown, third?: unknown) {
       if (third) layerListeners.delete(event);
       else listeners.get(event)?.delete(second as Listener);
@@ -164,6 +165,7 @@ function createMap(initial: {layers?: FakeLayer[]; metadata?: Record<string, unk
       this.fire('zoom');
     },
     sources,
+    styleLoaded,
   };
 }
 
@@ -329,6 +331,31 @@ test('reports an overlay without a source and a source that is not GeoJSON', () 
     ],
   );
   assert.deepEqual(fake.layerIds(), []);
+});
+
+test('waits for a compiled source while the style loads, then reports one that never comes', () => {
+  const fake = createMap({layers: [labels]});
+  fake.styleLoaded.value = false;
+  const {diagnostics, runtime} = attach(fake);
+  runtime.reconcile({dataOverlays: {stores: overlay}});
+
+  assert.deepEqual(diagnostics, []);
+  assert.deepEqual(fake.layerIds(), ['labels']);
+
+  // The style finishes loading and brings the source: the overlay appears, with nothing reported.
+  fake.sources.set('stores', {} as FakeSource);
+  fake.fire('styledata');
+  assert.deepEqual(diagnostics, []);
+  assert.equal(fake.layerIds().length > 1, true);
+
+  // A source that is still missing once the style has loaded is the application's mistake.
+  const other = createMap({layers: [labels]});
+  const second = attach(other);
+  second.runtime.reconcile({dataOverlays: {stores: overlay}});
+  assert.deepEqual(
+    second.diagnostics.map(({code, path}) => [code, path]),
+    [['INVALID_DATA_LAYER', '/dataOverlays/stores/source']],
+  );
 });
 
 test('reports a count layer on a style with no label font', () => {

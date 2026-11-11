@@ -203,6 +203,16 @@
 
   const dispatch = createEventDispatcher<{load: MapLibreMap}>();
 
+  /** The MapLibre map, or `null` until the map has loaded, in image mode and after it is taken down. */
+  export function getMap(): MapLibreMap | null {
+    return mapInstance;
+  }
+
+  /** Changes the map's theme, colours and emphasis; `null` when the map's style has no themes. */
+  export function getThemeController(): TileflowThemeController | null {
+    return themeController;
+  }
+
   /** Without `onError` a failure goes to the console. */
   function reportError(code: TileflowMapErrorCode, cause: unknown) {
     reportTileflowMapError(onError, code, cause);

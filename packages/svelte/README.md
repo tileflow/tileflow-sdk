@@ -130,6 +130,23 @@ A map that declares colour knobs, as Streets does, also takes them by name, such
 Without a handler, these failures go to `console.error`. Interactive-state problems keep their own
 channel, `onInteractionDiagnostic`.
 
+`bind:this` on `TileflowMap` gives the component, which has two methods: `getMap()` returns the
+MapLibre map, and `getThemeController()` returns the controller that changes the map's theme,
+colours, and emphasis at run time. Both return `null` until the map has loaded, in image mode, and
+after it is taken down, so call them from event handlers and from `on:load`. `TileflowMapHandle`
+types the bound value.
+
+```svelte
+<script lang="ts">
+  import {TileflowMap, type TileflowMapHandle} from '@tileflow/svelte';
+
+  let map: TileflowMapHandle | undefined;
+  const fly = () => map?.getMap()?.flyTo({center: [-3.7, 40.4], zoom: 12});
+</script>
+
+<TileflowMap bind:this={map} source={{map: 'madrid'}} />
+```
+
 Interactive maps show the 3D scene their style declares by default: buildings with Tileflow
 landmarks and the map's Team building models, 3D trees, and street lights where the map enables
 them. The 3D renderers load only when the style declares a scene, so 2D maps do not download them.

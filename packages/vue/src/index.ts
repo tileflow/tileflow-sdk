@@ -278,10 +278,22 @@ type PublicTileflowMapStatics = Pick<
   keyof DefineComponent<RuntimeTileflowMapProps>
 >;
 
+/**
+ * What a template `ref` on `TileflowMap` exposes: the objects behind the map, for the moments when
+ * the props are not enough. Both are `null` until the map has loaded, in image mode, and after it
+ * is taken down, so call them from event handlers and `onMounted` callbacks that wait for `load`.
+ */
+export type TileflowMapHandle = {
+  /** The MapLibre map, or `null` while there is none. */
+  getMap(): MapLibreMap | null;
+  /** Changes the map's theme, colours and emphasis; `null` when the map's style has no themes. */
+  getThemeController(): TileflowThemeController | null;
+};
+
 type PublicTileflowMapComponent = PublicTileflowMapStatics & {
   new <TAnnotation extends TileflowAnnotation = TileflowAnnotation>(
     props: TileflowMapProps<TAnnotation>,
-  ): {
+  ): TileflowMapHandle & {
     $emit: {
       (event: 'interactionDiagnostic', diagnostic: TileflowInteractionDiagnostic): void;
       (event: 'interactionEvent', interactionEvent: TileflowInteractionEvent<TAnnotation>): void;
@@ -419,7 +431,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     themeChange: (_transition: TileflowThemeTransition) => true,
     'update:interactionState': (_state: TileflowInteractionState) => true,
   },
-  setup(props, {attrs, emit, slots}) {
+  setup(props, {attrs, emit, expose, slots}) {
     const instance = getCurrentInstance();
     // With a listener the failure is emitted as `error`; without one it goes to the console.
     const reportError = (code: TileflowMapErrorCode, cause: unknown) =>
@@ -1686,6 +1698,11 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       },
       {deep: true, flush: 'post'},
     );
+
+    expose({
+      getMap: () => mapRef.value,
+      getThemeController: () => themeController,
+    } satisfies TileflowMapHandle);
 
     return () => {
       const rootAttrs = {...attrs};

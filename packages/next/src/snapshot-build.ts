@@ -1,8 +1,8 @@
 // Compiles one map into a directory. `@tileflow/next/server` runs this in a child process while
 // Next.js builds the application; it is not a public entry point.
 import {
-  writeTileflowBuildArtifacts,
   type TileflowIconResolutionOptions,
+  writeTileflowBuildArtifacts,
 } from '@tileflow/dev/artifacts';
 
 type Payload = {

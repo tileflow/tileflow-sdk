@@ -405,12 +405,13 @@ export type TileflowLabelsModuleConfig = {
   /**
    * Where street names draw. `foreground` (the default) keeps them above buildings and
    * vegetation. `ground` places them above flat footprints and below raised buildings,
-   * with map-aligned text by default.
-   * Ground names retain their road-class collision order, but foreground symbols are offered
-   * first by the renderer; `collisionPriority` cannot make ground names outrank those symbols.
+   * with map-aligned text by default. `readable` keeps names above the scene but below
+   * foreground destinations; the web runtime hides whole occluded or distant names.
+   * Ground and readable names retain their road-class collision order, but foreground symbols
+   * are offered first; `collisionPriority` cannot make these names outrank those symbols.
    * Shields and junction numbers keep their foreground placement.
    */
-  roadPlacement?: 'ground' | 'foreground';
+  roadPlacement?: 'ground' | 'foreground' | 'readable';
   /** Defaults to streets, including local street names where their geometry is enabled. */
   roads?: TileflowRoadLabelDetail;
   shields?: TileflowRoadShieldDetail;

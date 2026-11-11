@@ -1,6 +1,10 @@
 import {type TileflowDomainCompileContext, typographyTextStyle} from '../../cartography/context';
 import type {TileflowLayerContribution} from '../../cartography/contributions';
-import {groundRoadLabelMetadata, labelOrder} from '../../cartography/label-placement';
+import {
+  groundRoadLabelMetadata,
+  labelOrder,
+  readableRoadLabelMetadata,
+} from '../../cartography/label-placement';
 import {applySymbolStyle} from '../../cartography/layer-style';
 import {labelField, labelFieldExpression} from '../../cartography/localization';
 import {mergeTileflowDesign} from '../../cartography/merge';
@@ -69,6 +73,8 @@ export function compileLabels(
   if (request?.enabled === false) return [];
   const semantics = resolveLabels(request);
   const groundRoadNames = semantics.roadPlacement === 'ground';
+  const readableRoadNames = semantics.roadPlacement === 'readable';
+  const sceneRoadNames = groundRoadNames || readableRoadNames;
   const roads = resolveRoads(roadRequest);
   const {colors} = context;
   const rankField = context.data.schema.fields.symbolrank;
@@ -286,9 +292,9 @@ export function compileLabels(
 
   const visibleRoads = visibleRoadLabelClasses(semantics.roads, roads, semantics.roadClasses);
   // MapLibre resolves collisions from the top of the drawing stack. Foreground
-  // navigation names outrank ordinary POIs. Ground names retain this road-class
-  // ordering, but foreground symbols are offered first; moving them below buildings
-  // does not preserve priority over POIs. Shields and junctions remain foreground.
+  // navigation names outrank ordinary POIs. Ground and readable names retain this
+  // road-class ordering, but destination symbols are offered first.
+  // Shields and junctions remain foreground.
   const orderedRoads = navigationPriority ? [...visibleRoads].reverse() : visibleRoads;
   for (const roadClass of orderedRoads as TileflowRoadClass[]) {
     const style = styles.roads?.[roadClass];
@@ -297,7 +303,7 @@ export function compileLabels(
     result.push(
       symbolContribution(
         `labels.roads.${roadClass}`,
-        (groundRoadNames
+        (sceneRoadNames
           ? 2
           : navigationPriority
             ? labelOrder.navigationRoad
@@ -311,6 +317,7 @@ export function compileLabels(
             source,
             'source-layer': schema.layers.roadLabel,
             ...(groundRoadNames ? {metadata: groundRoadLabelMetadata} : {}),
+            ...(readableRoadNames ? {metadata: readableRoadLabelMetadata} : {}),
             filter: [
               'all',
               ['has', schema.fields.name],
@@ -332,7 +339,7 @@ export function compileLabels(
 
   // Shield visibility is independent from road-name visibility. A map may
   // deliberately suppress road names while retaining route references. Shields
-  // and junction numbers retain foreground orientation priority in both modes.
+  // and junction numbers retain foreground orientation priority in every mode.
   const shieldRoads =
     semantics.shields === 'none'
       ? []

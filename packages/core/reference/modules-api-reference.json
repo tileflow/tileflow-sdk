@@ -5416,8 +5416,8 @@
             },
             "roadPlacement": {
               "type": "string",
-              "enum": ["ground", "foreground"],
-              "description": "Street names draw in the foreground by default. Ground names draw below buildings, use map-aligned text by default, and yield collisions to foreground symbols. Shields and junction numbers stay in the foreground."
+              "enum": ["ground", "foreground", "readable"],
+              "description": "Street names draw in the foreground by default. Ground names draw below buildings and use map-aligned text by default. Readable names draw above the scene and the web runtime hides whole occluded or distant names. Ground and readable names yield collisions to foreground symbols. Shields and junction numbers stay in the foreground."
             },
             "renderStack": {
               "$ref": "#/$defs/__schema172"
@@ -32908,8 +32908,8 @@
         },
         "roadPlacement": {
           "type": "string",
-          "enum": ["ground", "foreground"],
-          "description": "Street names draw in the foreground by default. Ground names draw below buildings, use map-aligned text by default, and yield collisions to foreground symbols. Shields and junction numbers stay in the foreground."
+          "enum": ["ground", "foreground", "readable"],
+          "description": "Street names draw in the foreground by default. Ground names draw below buildings and use map-aligned text by default. Readable names draw above the scene and the web runtime hides whole occluded or distant names. Ground and readable names yield collisions to foreground symbols. Shields and junction numbers stay in the foreground."
         },
         "renderStack": {
           "$ref": "#/$defs/__schema172"
@@ -33087,8 +33087,8 @@
         },
         "roadPlacement": {
           "type": "string",
-          "enum": ["ground", "foreground"],
-          "description": "Street names draw in the foreground by default. Ground names draw below buildings, use map-aligned text by default, and yield collisions to foreground symbols. Shields and junction numbers stay in the foreground."
+          "enum": ["ground", "foreground", "readable"],
+          "description": "Street names draw in the foreground by default. Ground names draw below buildings and use map-aligned text by default. Readable names draw above the scene and the web runtime hides whole occluded or distant names. Ground and readable names yield collisions to foreground symbols. Shields and junction numbers stay in the foreground."
         },
         "renderStack": {
           "$ref": "#/$defs/__schema172"
@@ -33328,8 +33328,8 @@
             },
             {
               "type": "string",
-              "enum": ["ground", "foreground"],
-              "description": "Street names draw in the foreground by default. Ground names draw below buildings, use map-aligned text by default, and yield collisions to foreground symbols. Shields and junction numbers stay in the foreground."
+              "enum": ["ground", "foreground", "readable"],
+              "description": "Street names draw in the foreground by default. Ground names draw below buildings and use map-aligned text by default. Readable names draw above the scene and the web runtime hides whole occluded or distant names. Ground and readable names yield collisions to foreground symbols. Shields and junction numbers stay in the foreground."
             }
           ]
         },

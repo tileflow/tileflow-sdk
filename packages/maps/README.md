@@ -155,12 +155,10 @@ Street lights are opt-in: set `roads.streetLights.enabled: true`.
 Streets uses `groundOcclusion: 0.07` and `groundOcclusionRadius: 1.5` for subtle ground contact.
 `buildings.threeDimensional.occlusion: false` disables contact and model occlusion.
 `buildings.contactShadow` styles the flat fallback.
-Streets selects Core's `labels.roadPlacement: 'ground'`: street names follow the road plane below
-buildings; POIs, transit names and shields remain above.
-Road names retain class zoom/size curves, favor major roads and add padding through z13.
-Pedestrian paths group separately. Compact types preserve language;
-`labels.roadNameFormat: 'full'` keeps source names.
-Disabling roads omits their names.
+Streets uses `labels.roadPlacement: 'readable'`: whole street names above buildings, yielding to
+destinations. The web runtime hides occluded/distant names; other renderers keep them complete.
+Names repeat at 250 px with a neutral 1 px halo. Pedestrian paths group separately.
+`labels.roadNameFormat: 'full'` preserves source names. Disabling roads omits their names.
 Road rings, ramp and surface ordering use [Core's replaceable defaults](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md).
 All non-day themes grade day's ground, water, roads, trees and 2D/3D materials across zooms:
 yellow warmth at dawn, dimmer stone at dusk, cool night. Day palettes stay unchanged.

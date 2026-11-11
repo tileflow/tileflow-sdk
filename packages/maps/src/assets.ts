@@ -16,5 +16,5 @@ export const streetsModels = packageDirectory('assets/streets/models');
 /** Package-owned Soundings symbols and patterns. This root does not compose Streets assets. */
 export const soundingsIcons = packageDirectory('assets/soundings/icons');
 
-/** Summit symbols for the Terrain map. */
-export const terrainIcons = packageDirectory('assets/terrain/icons');
+/** Summit symbols for the Outdoors map. */
+export const outdoorsIcons = packageDirectory('assets/outdoors/icons');

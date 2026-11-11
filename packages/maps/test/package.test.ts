@@ -38,7 +38,7 @@ test('publishes official maps and their assets as one package', async () => {
 
 test('publishes every official icon and font directory with provenance', async () => {
   const expected = {
-    terrain: ['terrain-peak.svg', 'terrain-peak-dark.svg'],
+    outdoors: ['outdoors-peak.svg', 'outdoors-peak-dark.svg'],
     soundings: [
       'soundings-boat-hoist.svg',
       'soundings-boatyard.svg',
@@ -181,7 +181,7 @@ test('imports and compiles the three packaged official maps against public Core 
   const script = `const assert = (await import('node:assert/strict')).default;
     const core = await import('@tileflow/core'); const maps = await import('@tileflow/maps');
     const names = Object.entries(maps).filter(([,v])=>v && typeof v === 'object' && typeof v.id === 'string').map(([k])=>k).sort();
-    assert.deepEqual(names, ['soundings','streets','terrain']);
+    assert.deepEqual(names, ['outdoors', 'soundings', 'streets']);
     for (const name of ['baedeker','blueprint','civica','map1777','siegfried','baedekerFonts','blueprintIcons','civicaFonts','map1777Fonts','siegfriedThemes']) assert.equal(name in maps, false);
     for (const name of names) {
       assert.equal(maps[name].extends, undefined);
@@ -190,7 +190,7 @@ test('imports and compiles the three packaged official maps against public Core 
       assert.equal(style.metadata['tileflow:map'], name);
       assert.ok(style.layers.length > 50);
     }
-    for (const name of ['streets','terrain']) {
+    for (const name of ['streets','outdoors']) {
       assert.equal(maps[name].defaultTheme,'light');
       assert.equal(maps[name].systemThemes.dark,'dark');
       assert.equal(core.resolveMap(maps[name]).fonts[0].package,'@tileflow/maps');

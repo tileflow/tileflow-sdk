@@ -3,8 +3,11 @@ import {createHash} from 'node:crypto';
 import {existsSync, mkdirSync, renameSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {readFile} from 'node:fs/promises';
 import {createRequire} from 'node:module';
-import {extname, join, resolve, sep} from 'node:path';
-import type {TileflowIconResolutionOptions} from '@tileflow/dev/artifacts';
+import {extname, join, relative, resolve, sep} from 'node:path';
+import {
+  getTileflowAssetBasePath,
+  type TileflowIconResolutionOptions,
+} from '@tileflow/dev/artifacts';
 
 /** What a build-time snapshot of a route's artifacts depends on. */
 export type TileflowRouteSnapshotInput = {
@@ -17,6 +20,23 @@ export type TileflowRouteSnapshotInput = {
   icons?: TileflowIconResolutionOptions;
   styleBaseUrl: string;
 };
+
+/**
+ * The directory of static artifacts a build left in `<publicDir>/<base>`, where `withTileflow`
+ * writes them, or undefined when it holds no manifest. Their files are the ones a snapshot holds.
+ * An application that has them serves its map from them, so its route has no map of its own to
+ * compile ahead of time, and answers from them if a request does reach it.
+ */
+export function findTileflowStaticArtifacts(
+  input: Pick<TileflowRouteSnapshotInput, 'basePath' | 'cwd'> & {publicDir?: string},
+): string | undefined {
+  const directory = resolve(
+    input.cwd,
+    input.publicDir ?? 'public',
+    getTileflowAssetBasePath(input.basePath),
+  );
+  return existsSync(join(directory, 'manifest.json')) ? directory : undefined;
+}
 
 /** The command that compiles one snapshot. Only tests replace it. */
 export type TileflowRouteSnapshotRunner = {args: readonly string[]; command: string};
@@ -40,7 +60,8 @@ export function getTileflowRouteSnapshotDirectory(input: TileflowRouteSnapshotIn
       JSON.stringify({
         apiBaseUrl: input.apiBaseUrl ?? null,
         basePath: input.basePath,
-        config: resolve(input.cwd, input.config),
+        // Relative to the project, which a `standalone` output moves to another directory.
+        config: relative(resolve(input.cwd), resolve(input.cwd, input.config)),
         icons: input.icons
           ? {
               cacheRoot: input.icons.cacheRoot ?? null,

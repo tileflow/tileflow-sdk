@@ -14,6 +14,7 @@ import {
   createTileflowSnapshotResponder,
   emitTileflowRouteSnapshot,
   findTileflowRouteSnapshot,
+  findTileflowStaticArtifacts,
   isTileflowNextBuildPhase,
   type TileflowRouteSnapshotInput,
 } from './snapshot';
@@ -42,6 +43,12 @@ export type TileflowNextRouteHandlerOptions = {
    */
   icons?: TileflowIconResolutionOptions;
   onError?: (error: unknown) => void;
+  /**
+   * The directory `withTileflow` writes static artifacts to. When the build has left a manifest
+   * there, the route does not compile a copy of its own and answers from those files. Match
+   * `withTileflow`'s `publicDir`. Defaults to `public`.
+   */
+  publicDir?: string;
   routeBase?: string;
   styleBaseUrl?: string;
 };
@@ -72,16 +79,25 @@ export function createTileflowRouteHandlers(
   const routeBasePath = normalizeTileflowBasePath(options.routeBase ?? basePath);
   const snapshotInput = getSnapshotInput(options, basePath);
 
+  const staticInput = {
+    basePath,
+    cwd: resolve(options.cwd ?? process.cwd()),
+    publicDir: options.publicDir,
+  };
+
   if (isTileflowNextBuildPhase()) {
     // `next build` loads this module only to read its exports. Compile the map now, so the server
-    // that starts afterwards has it, and serve nothing from this process.
-    if (snapshotInput) emitTileflowRouteSnapshot(snapshotInput);
+    // that starts afterwards has it, and serve nothing from this process. An application whose
+    // static artifacts the build already wrote does not need a second compile of the same map.
+    if (snapshotInput && !findTileflowStaticArtifacts(staticInput)) {
+      emitTileflowRouteSnapshot(snapshotInput);
+    }
     return createLazyRouteHandlers(() => createLiveRouteHandlers(options, basePath, routeBasePath));
   }
 
   const snapshot =
     snapshotInput && process.env.NODE_ENV === 'production'
-      ? findTileflowRouteSnapshot(snapshotInput)
+      ? (findTileflowRouteSnapshot(snapshotInput) ?? findTileflowStaticArtifacts(staticInput))
       : undefined;
   if (snapshot) {
     const respond = createTileflowSnapshotResponder(snapshot, basePath);

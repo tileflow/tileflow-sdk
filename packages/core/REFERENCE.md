@@ -128,7 +128,16 @@ Fades use premultiplied OKLab. Parameter columns are not semantic tokens.
 colours. Values may be hex, `rgb()`, `hsl()`, `oklch()`, `oklab()` or `color-mix()` in `srgb`,
 `srgb-linear`, `oklab` or `oklch`; they are converted to sRGB, with chroma reduced for a colour
 outside the gamut. A value the SDK cannot read, such as `var(--x)` or a named colour, is an error
-that names it. Fixed colours and application layers remain. Web builds retain token bindings; direct
+that names it. Fixed colours and application layers remain. A map may declare colour knobs with
+`colorKnobs`: named colours with no dot that stand for many tokens, so `setColors({water: '#2563eb'})`
+works without naming a token. A knob lists its tokens, each with an operation: `replace` gives the
+token the colour; `shift` moves it by as much as the knob's `reference` token moves to reach the
+colour, so tokens lighter or darker than the reference stay so; `mix` moves it `amount` of the way;
+`tint` keeps its lightness and takes the colour's hue and chroma (`chroma` scales it). Any operation
+may add a `lightness` offset, and a token's own alpha is kept. Knobs start from the colours of the
+theme on screen, so each theme keeps its own offsets. A token has one knob; a token named in
+`setColors` wins over its knob; an unknown knob is an error that lists the map's knobs. Derived
+maps inherit knobs, entries replace by name, and `remove()` drops one. Streets' knobs are listed in [its reference](https://github.com/tileflow/tileflow-sdk/blob/main/packages/maps/REFERENCE.md#streets-colour-knobs). Web builds retain token bindings; direct
 `createStyle` calls opt in with `runtimeColors: true`. `createTileflowAppearanceController().set()`
 selects author-owned `fixed`, `system` or local `clock` behaviour without UI or location requests.
 Profile performance on target devices.
@@ -285,10 +294,40 @@ World attribution credits Tileflow and OpenStreetMap; other vector data keeps it
 attribution.
 
 `projection` accepts `mercator` or `globe`. Terrain supports `none`, `hillshade`, `3d`, and an object
-form for explicit hillshade and contour configuration. Browser-derived contours require a DEM tile
-template, zoom limits, thresholds, and the Tileflow contour protocol. Framework adapters and local
+form for explicit hillshade and contour configuration. Browser-derived contours require zoom limits,
+thresholds, and the Tileflow contour protocol. They read the terrain's DEM: `contours.demUrl` when
+given, else the first `terrain.tiles` template, else the `terrain.url` TileJSON, which defaults to
+hosted Tileflow Terrain. A TileJSON is read when the first contour tile is requested; its first tile
+template is the DEM, so contours follow the same Terrain release and map binding as hillshade.
+`registerTileflowContourProtocol` accepts `fetch` and `transformTileJsonUrl` to route that request
+through an application transport. The protocol is registered once per page, so a map that sends a
+Hosted session gives its contours a request scope: `createTileflowContourRequestScope` takes the
+map's `transformRequest`, `createTileflowTransformRequest({contourRequestScope})` names the scope
+on each contour tile request, and the protocol sends the DEM TileJSON (`Source`) and every DEM tile
+(`Tile`) back through that transform when it fetches them. Each request then carries the map's
+current `session` and `grant`, as hillshade tiles do; dispose the scope when the map is removed.
+The React, Vue and Svelte components do this for every map. Framework adapters and local
 tooling prepare browser resources; direct MapLibre integrations must register required protocols
 before loading a style.
+
+### Catalog branding
+
+The React, Vue, Svelte, React Native and embedded mobile maps manage the Tileflow symbol
+in the lower-left corner automatically. Preview and capture include it too. The symbol links to
+https://tileflow.dev and follows the active catalog sources, independently of data attribution.
+Own and third-party tiles do not require the Tileflow mark. Public Tileflow catalog delivery shows
+it; catalog delivery bound to a Map ID reads the owner's current branding entitlement. A paid map
+never inserts a provisional mark. While a managed decision is unavailable, the surface remains
+hidden instead of guessing Free; it retries and renews a short-lived decision while mounted.
+
+Direct MapLibre integrations call `attachTileflowBranding(map)` from `@tileflow/core/browser`
+synchronously after constructing the map, before yielding to the browser. It follows style/source
+changes and cleans up on `map.remove()`; its returned function also disposes it explicitly. Keep it
+when disabling other MapLibre controls. `apiUrl` selects an alternative Tileflow API origin and
+`baseUrl` resolves relative source URLs. `loadTileflowRuntimeStyle` preserves catalog provenance
+when expanding TileJSON. Applications that rewrite source URLs themselves must retain their source
+identity. This presentation control cannot prevent a modified open-source client from removing DOM;
+service branding requirements and third-party attribution obligations still apply.
 
 ### Load a portable style in MapLibre
 
@@ -346,10 +385,20 @@ their lighting. Model corners belong to the asset; ordinary buildings use `edgeR
 entrance zooms, without zoom/arrival growth or fading. Equal endpoints such as
 `entrance: {buildings: [14.25, 14.25], models: [14.25, 14.25]}` switch immediately at that zoom.
 
-Text requires exactly one provider. Soundings and Blueprint use URL glyphs; Streets packages DINish
-and Noto Sans; Baedeker, 1777 and Siegfried package Cormorant; Cívica packages its lettering. Hosted
+Text requires exactly one provider. Soundings and Blueprint use URL glyphs; Streets and Terrain package DINish
+and Noto Sans; the community Baedeker, 1777 and Siegfried maps package Cormorant. Hosted
 rejects packaged/local fonts: self-host or replace them with compatible public glyphs. Tile and font
 URLs do not grant redistribution rights.
+
+`labels.roadPlacement: 'readable'` draws complete street names above the 3D scene, below foreground
+destinations. `attachTileflowLabelPlacement(map)` from `@tileflow/core/browser` adds per-instance
+visibility to supported MapLibre WebGL2 line-symbol buffers; frameworks, preview and capture
+attach it automatically. Asynchronous depth queries hide whole names whose ground anchors are
+occluded, without changing source filters or collision placement. Above 40° the distant view is
+reduced, at 55° names beyond the centre yield, and at 60° only the near foreground remains.
+Native renderers, terrain, globe and unsupported browser bucket layouts keep complete text above
+buildings.
+The adapter does not reproduce Mapbox's proprietary layout engine or its placement transitions.
 
 `glyphs.fontStacks` lists the stacks the provider serves, exactly as MapLibre joins a `text-font`
 array with commas. A Tileflow glyph set URL (`/base/<assetSetSha256>/glyphs/{fontstack}/{range}.pbf`)
@@ -379,6 +428,10 @@ Land may supply a georeferenced `globalLandcoverUnderlay` image with `url`, four
 and themed `opacity`. It is drawn below global cover and omitted when land is disabled.
 Tree forms may use `sizeAnchor` and `crownAnchor` (metres) with `sizeCompression`
 from 0 to 1 to reduce size variation while preserving each tree’s proportions.
+Decorative canopy clearance bounds the available space; it is not a measured crown diameter.
+When canopy height is available, inferred crowns also follow the selected tree form's proportions.
+Individually mapped trees retain their measured dimensions. Hedges use continuous, joined surfaces
+with a 0.5 m footprint, a flat top, and clipped tile boundaries; tree size controls do not resize them.
 
 ## Flat footprints under 3D buildings
 

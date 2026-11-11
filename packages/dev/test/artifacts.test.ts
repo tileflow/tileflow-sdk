@@ -13,6 +13,7 @@ import {
   TileflowHostedManifestOverwriteError,
   writeTileflowBuildArtifacts,
 } from '../src/artifacts';
+import {streetsFontFixtures} from './streets-font-fixture';
 
 test('models source, prepared and artifact-plan boundaries with a complete input graph', async (t) => {
   const cwd = await fixture(t, 'tileflow-artifact-plan-');
@@ -116,11 +117,11 @@ test('resolves and watches local assets from a nested config directory within cw
   assert.ok(plan.files.some((file) => file.fileName.endsWith('/icons/nested/sprite.png')));
 });
 
-test('materializes package-owned Baedeker fonts and retargets immutable runtime metadata', async (t) => {
+test('materializes package-owned Streets fonts and retargets immutable runtime metadata', async (t) => {
   const cwd = await fixture(t, 'tileflow-artifact-fonts-');
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
-    "import {defineMap} from '@tileflow/core'; import {baedeker} from '@tileflow/maps'; export default defineMap({id:'night',name:'Night',version:1,extends:baedeker});\n",
+    "import {defineMap} from '@tileflow/core'; import {streets} from '@tileflow/maps'; export default defineMap({id:'night',name:'Night',version:1,extends:streets});\n",
   );
 
   const plan = await createTileflowBuildArtifacts({
@@ -132,14 +133,12 @@ test('materializes package-owned Baedeker fonts and retargets immutable runtime 
   assert.deepEqual(
     stableFontAssets.map((asset) => asset.fileName),
     [
-      'fonts/cormorant-garamond-italic-50fccbdc299c232d25dd66868a2a2b55fd0e85d6238a58638986c5f66deca1bf.ttf',
-      'fonts/cormorant-garamond-regular-3f20a07914c56de160a4057f8fa48ec5372d77edf35c168fe4b0547b66502106.ttf',
-      'fonts/cormorant-garamond-semibold-159bda7bac64c80f02612c163bc21da028e9f990cbc4d469005de694428aee83.ttf',
-      stableFontAssets[3]?.fileName,
-    ],
+      ...streetsFontFixtures.map(({fileName}) => fileName),
+      stableFontAssets.find((asset) => asset.fileName.includes('/licenses/'))?.fileName,
+    ].sort(),
   );
   assert.match(
-    stableFontAssets[3]?.fileName ?? '',
+    stableFontAssets.find((asset) => asset.fileName.includes('/licenses/'))?.fileName ?? '',
     /^fonts\/licenses\/license-[a-f0-9]{64}\.txt$/u,
   );
   const stableFaces = plan.styles.night?.light?.metadata?.['tileflow:fontFaces'] as Array<{
@@ -149,20 +148,11 @@ test('materializes package-owned Baedeker fonts and retargets immutable runtime 
   }>;
   assert.deepEqual(
     stableFaces.map(({family, weight}) => ({family, weight})),
-    [
-      {family: 'Cormorant Garamond Italic', weight: '400'},
-      {family: 'Cormorant Garamond Regular', weight: '400'},
-      {family: 'Cormorant Garamond SemiBold', weight: '600'},
-    ],
+    streetsFontFixtures.map(({family, weight}) => ({family, weight})),
   );
-  assert.ok(
-    stableFaces.every((face) => face.source.startsWith('/tileflow/fonts/cormorant-garamond-')),
-  );
+  assert.ok(stableFaces.every((face) => face.source.startsWith('/tileflow/fonts/')));
   assert.equal(
-    await readFile(
-      new URL('../../maps/assets/baedeker/fonts/LICENSE.txt', import.meta.url),
-      'utf8',
-    ),
+    await readFile(new URL('../../maps/assets/streets/fonts/LICENSE.txt', import.meta.url), 'utf8'),
     new TextDecoder().decode(
       stableFontAssets.find((asset) => asset.fileName.includes('/licenses/'))?.source as Uint8Array,
     ),
@@ -180,7 +170,7 @@ test('materializes package-owned Baedeker fonts and retargets immutable runtime 
   const immutableFaces = immutableStyle.metadata?.['tileflow:fontFaces'] ?? [];
   assert.ok(
     immutableFaces.every((face) =>
-      /^\/tileflow\/generations\/[a-f0-9]{64}\/fonts\/cormorant-garamond-/u.test(face.source),
+      /^\/tileflow\/generations\/[a-f0-9]{64}\/fonts\/(?:dinish|noto-sans)-/u.test(face.source),
     ),
   );
   assert.deepEqual(immutableTheme.fontFaces, immutableFaces);
@@ -226,7 +216,7 @@ test('materializes package-owned Baedeker fonts and retargets immutable runtime 
 
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
-    "import {defineMap} from '@tileflow/core'; import {baedeker} from '@tileflow/maps'; export default defineMap({id:'night',name:'Night',version:2,extends:baedeker,glyphs:{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Cormorant Garamond Regular','Cormorant Garamond Italic','Cormorant Garamond SemiBold']}});\n",
+    "import {defineMap} from '@tileflow/core'; import {streets} from '@tileflow/maps'; export default defineMap({id:'night',name:'Night',version:2,extends:streets,glyphs:{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['DINish Bold,Noto Sans Regular', 'DINish Medium,Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic', 'Noto Sans Regular']}});\n",
   );
   const remoteGlyphPlan = await createTileflowBuildArtifacts({cwd});
   assert.equal(

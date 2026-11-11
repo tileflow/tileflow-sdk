@@ -36,12 +36,14 @@
     attachTileflowMap3D,
     attachTileflowMapLifecycle,
     attachTileflowNauticalLights,
+    attachTileflowBranding,
     attachTileflowNotices,
     createTileflowAppearanceBinding,
     createTileflowSessionStarter,
     createTileflowThemeController,
     type TileflowMap3DAttachment,
     createTileflowNavigationControlBinding,
+    createTileflowContourRequestScope,
     createTileflowTransformRequest,
     getTileflowSystemColorScheme,
     loadTileflowRuntimeStyle,
@@ -62,6 +64,7 @@
     type TileflowMapErrorCode,
     type TileflowNavigationControlBinding,
     type TileflowThemeController,
+    type TileflowContourRequestScope,
     type TileflowWorldRequestBridge,
   } from '@tileflow/core/browser';
   import {
@@ -179,6 +182,7 @@
   let mapWorldRequestBridge: TileflowWorldRequestBridge | null = null;
   let navigationBinding: TileflowNavigationControlBinding | null = null;
   let appliedCameraFitKey: string | undefined;
+  let mapContourRequestScope: TileflowContourRequestScope | null = null;
   let sceneAttachment: TileflowMap3DAttachment | null = null;
   $: sceneAttachment?.setVegetation(vegetation);
   $: sceneAttachment?.setViewMode(viewMode);
@@ -582,6 +586,7 @@
     const worldRequestBridge = mapWorldRequestBridge;
     const currentNavigationBinding = navigationBinding;
     navigationBinding = null;
+    const contourRequestScope = mapContourRequestScope;
     interactionRuntimesDisposing = true;
     mapFairUseNotice = null;
     mapLifecycleAttachment = null;
@@ -606,6 +611,7 @@
     semanticRuntimeDiagnostics = [];
     bridgeInteractionDiagnostics = {};
     mapWorldRequestBridge = null;
+    mapContourRequestScope = null;
     themeController = null;
     mapResizeObserver?.disconnect();
     mapResizeObserver = null;
@@ -628,6 +634,7 @@
       () => currentThemeController?.dispose(),
       () => currentNavigationBinding?.dispose(),
       () => worldRequestBridge?.dispose(),
+      () => contourRequestScope?.dispose(),
       () => fairUseNotice?.dispose(),
       () => currentMap?.remove(),
     ];
@@ -723,6 +730,24 @@
       addProtocol: maplibregl.addProtocol,
       onNotice: mapFairUseNotice.update,
     });
+    // Contour DEM requests leave through the shared protocol and come back to this map's
+    // transform, so they carry this map's session like its hillshade tiles.
+    const contourRequestScope = createTileflowContourRequestScope({
+      transformRequest: (url, resourceType) =>
+        mapTransformRequest(
+          url,
+          resourceType as Parameters<NonNullable<TileflowMapOptions['transformRequest']>>[1],
+        ),
+    });
+    mapContourRequestScope = contourRequestScope;
+    const mapTransformRequest = createTileflowTransformRequest({
+      contourRequestScope,
+      getAnalytics: () => resolvedAnalytics,
+      sessionController: session,
+      sessionId: session.sessionId,
+      transformRequest: mapOptions?.transformRequest ?? undefined,
+      worldRequestBridge: mapWorldRequestBridge,
+    });
     const maplibreMap = new maplibregl.Map({
       ...mapOptions,
       canvasContextAttributes: tileflowCanvasContextAttributes(mapOptions?.canvasContextAttributes),
@@ -736,18 +761,13 @@
       interactive: resolvedInteractive,
       pitch: resolvedPitch,
       style: prepared.style as StyleSpecification,
-      transformRequest: createTileflowTransformRequest({
-        getAnalytics: () => resolvedAnalytics,
-        sessionController: session,
-        sessionId: session.sessionId,
-        transformRequest: mapOptions?.transformRequest ?? undefined,
-        worldRequestBridge: mapWorldRequestBridge,
-      }),
+      transformRequest: mapTransformRequest,
       zoom: resolvedZoom,
     });
 
     mapInstance = maplibreMap;
     attachTileflowAtmosphere(maplibreMap);
+    attachTileflowBranding(maplibreMap);
     attachTileflowNotices(maplibreMap);
     attachTileflowNauticalLights(maplibreMap);
     attachTileflowLabelPlacement(maplibreMap);

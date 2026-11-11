@@ -30,11 +30,13 @@ import {
   attachTileflowMap3D,
   attachTileflowMapLifecycle,
   attachTileflowNauticalLights,
+  attachTileflowBranding,
   attachTileflowNotices,
   createTileflowAppearanceBinding,
   createTileflowSessionStarter,
   createTileflowThemeController,
   createTileflowNavigationControlBinding,
+  createTileflowContourRequestScope,
   createTileflowTransformRequest,
   getTileflowSystemColorScheme,
   loadTileflowRuntimeStyle,
@@ -187,7 +189,8 @@ type MapInteractiveProps<TAnnotation extends TileflowAnnotation> = MapSharedProp
     annotationClusters?: TileflowAnnotationClusterOptions;
     annotations?: readonly TAnnotation[];
     /**
-     * Colour token overrides for the map, for example `{'surface.land': '#f4f1ea'}`. The overrides ease in over
+     * Colour token overrides for the map, for example `{'surface.land': '#f4f1ea'}`, or colour knobs
+     * the map declares, for example `{water: '#2563eb'}`. The overrides ease in over
      * `themeTransition`, stay through theme changes, and an empty object restores the map's own
      * colours. The map must be configurable at run time; an unknown token or an invalid value is
      * logged and leaves the colours unchanged.
@@ -1054,7 +1057,18 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
           onNotice: fairUseNotice.update,
         });
         registerCleanup(() => worldRequestBridge.dispose());
+        // Contour DEM requests leave through the shared protocol and come back to this map's
+        // transform, so they carry this map's session like its hillshade tiles.
+        const contourRequestScope = createTileflowContourRequestScope({
+          transformRequest: (url, resourceType) =>
+            transformRequest(
+              url,
+              resourceType as Parameters<NonNullable<TileflowMapOptions['transformRequest']>>[1],
+            ),
+        });
+        registerCleanup(() => contourRequestScope.dispose());
         const transformRequest = createTileflowTransformRequest({
+          contourRequestScope,
           getAnalytics: () => resolvedAnalyticsRef.current,
           sessionController: session,
           sessionId: session.sessionId,
@@ -1087,6 +1101,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
         setupResources.map = map;
         registerCleanup(() => map.remove());
         registerCleanup(attachTileflowAtmosphere(map));
+        registerCleanup(attachTileflowBranding(map));
         registerCleanup(attachTileflowNotices(map));
         registerCleanup(attachTileflowNauticalLights(map));
         registerCleanup(attachTileflowLabelPlacement(map));

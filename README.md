@@ -19,15 +19,15 @@ design in one `tileflow.config.ts`.
 
 [Documentation](https://tileflow.dev/docs) · [Gallery](https://tileflow.dev/gallery) · [Quickstart](https://tileflow.dev/docs/get-started/quickstart)
 
-[![Six maps made with the Tileflow SDK: Miami's streets and bay, the Royal Palace of Madrid in 3D at dusk, the mountains around the Matterhorn in 3D, a playful 3D map around Madrid's Puerta de Alcalá, a nautical chart near the Golden Gate, and an engraved-style map of Paris.](.github/assets/showcase.jpg)](https://tileflow.dev/gallery)
+[![Six maps made with the Tileflow SDK: clustered restaurants over Miami's streets, a popup on the Royal Palace of Madrid in 3D at dusk, a trail with its elevation profile around the Matterhorn, bike-station markers on a playful 3D map of Madrid, a nautical chart near the Golden Gate, and a numbered walking tour on an engraved-style map of Paris.](.github/assets/showcase.jpg)](https://tileflow.dev/gallery)
 
 **Made with the Tileflow SDK** (left to right, top to bottom):
-[Streets](https://tileflow.dev/gallery?map=streets) in Miami;
-Streets with 3D buildings and landmark models at the Royal Palace of Madrid, at dusk;
-[Outdoors](https://tileflow.dev/docs/map-design/basemaps) over [3D terrain](https://tileflow.dev/docs/map-design/terrain-and-globe) around the Matterhorn;
-the [Super Tile World](https://tileflow.dev/gallery?map=super-tile-world) community map at Madrid's Puerta de Alcalá;
+[clustered points](https://tileflow.dev/docs/examples/cluster-points) over [Streets](https://tileflow.dev/gallery?map=streets) in Miami;
+a [popup](https://tileflow.dev/docs/examples/show-a-popup-on-click) on the Royal Palace of Madrid with [3D landmarks](https://tileflow.dev/docs/examples/show-3d-landmarks), at dusk;
+a trail and its elevation profile, read from [3D terrain](https://tileflow.dev/docs/map-design/terrain-and-globe), on [Outdoors](https://tileflow.dev/docs/map-design/basemaps) around the Matterhorn;
+[custom markers](https://tileflow.dev/docs/examples/use-custom-marker-content) for bike stations on the [Super Tile World](https://tileflow.dev/gallery?map=super-tile-world) community map in Madrid;
 soundings, buoys, and lights near the Golden Gate (not for navigation);
-the [Baedeker](https://tileflow.dev/gallery?map=baedeker) community map of Paris.
+a walking tour drawn as a [dashed line](https://tileflow.dev/docs/examples/draw-a-dashed-line) on the [Baedeker](https://tileflow.dev/gallery?map=baedeker) community map of Paris.
 Map data © [OpenStreetMap contributors and other sources](https://tileflow.dev/copyright).
 
 ## Create your first map

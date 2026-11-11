@@ -3,6 +3,7 @@ import {streetsBuildingColors} from './streets-building-colors';
 import {streetsDayColors, streetsDayImages} from './streets-day-colors';
 import {streetsDayGroundColors} from './streets-ground-and-access';
 import {streetsNetworkDayColors} from './streets-network-overview';
+import {streetsRouteColors} from './streets-route-colors';
 import {streetsTimeColors} from './streets-time-colors';
 
 const palettes = {
@@ -115,13 +116,17 @@ export function streetsCartographyThemes(base: Record<string, TileflowTheme>) {
       version: 1,
       colorScheme: theme.colorScheme,
       tokens: {
-        color: streetsTimeColors(
-          {...day, 'landcover.global.crop': streetsDayGroundColors['landcover.global.crop']},
-          referenceDay,
-          referenceTime,
-          name.includes('monochrome'),
-          name.startsWith('dawn') ? 'dawn' : name.startsWith('dusk') ? 'dusk' : 'night',
-        ),
+        color: {
+          ...streetsTimeColors(
+            {...day, 'landcover.global.crop': streetsDayGroundColors['landcover.global.crop']},
+            referenceDay,
+            referenceTime,
+            name.includes('monochrome'),
+            name.startsWith('dawn') ? 'dawn' : name.startsWith('dusk') ? 'dusk' : 'night',
+          ),
+          // A route's inks are not part of the map's time of day.
+          ...streetsRouteColors(theme.colorScheme === 'dark' ? 'dark' : 'light'),
+        },
       },
     });
   }

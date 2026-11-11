@@ -1,6 +1,7 @@
 import {Color} from '@maplibre/maplibre-gl-style-spec';
 import {z} from 'zod';
 import {tileflowMaxPitch} from './camera-limits';
+import {tileflowColorKnobNamePattern, validateTileflowColorKnobs} from './color-knobs';
 import {
   type TileflowBandPlacement,
   tileflowBandPlacements,
@@ -2250,6 +2251,42 @@ const maplibreOverlaySchema = z
   })
   .strict();
 const overlaysSchema = z.record(tileflowMapIdSchema, maplibreOverlaySchema);
+const colorKnobOperationNameSchema = z.enum(['mix', 'replace', 'shift', 'tint']);
+const colorKnobsSchema = z
+  .record(
+    z.string().regex(tileflowColorKnobNamePattern),
+    z
+      .object({
+        description: z.string().trim().min(1).max(200).optional(),
+        reference: z.string().min(1).max(160).optional(),
+        tokens: z.record(
+          z.string().min(1).max(160),
+          z.union([
+            colorKnobOperationNameSchema,
+            z
+              .object({
+                amount: z.number().min(0).max(1).optional(),
+                chroma: z.number().min(0).max(8).optional(),
+                lightness: z.number().min(-1).max(1).optional(),
+                op: colorKnobOperationNameSchema,
+              })
+              .strict(),
+          ]),
+        ),
+      })
+      .strict(),
+  )
+  .superRefine((knobs, context) => {
+    // Token names are checked against the themes when the map compiles.
+    try {
+      validateTileflowColorKnobs(knobs, undefined);
+    } catch (error) {
+      context.addIssue({
+        code: 'custom',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
 const localAssetDirectorySchema = z
   .string()
   .min(3)
@@ -2634,6 +2671,7 @@ export const resolvedTileflowMapSchema: z.ZodType<TileflowCompilerConfig> = z
       })
       .strict()
       .optional(),
+    colorKnobs: colorKnobsSchema.optional(),
     data: dataSchema.optional(),
     defaultTheme: tileflowThemeNameSchema,
     fonts: fontDirectoriesSchema.optional(),

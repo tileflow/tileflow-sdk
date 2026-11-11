@@ -170,7 +170,8 @@ type TileflowMapInteractiveProps<TAnnotation extends TileflowAnnotation> = Tilef
     annotationClusters?: TileflowAnnotationClusterOptions;
     annotations?: readonly TAnnotation[];
     /**
-     * Colour token overrides for the map, for example `{'surface.land': '#f4f1ea'}`. The overrides ease in over
+     * Colour token overrides for the map, for example `{'surface.land': '#f4f1ea'}`, or colour knobs
+     * the map declares, for example `{water: '#2563eb'}`. The overrides ease in over
      * `themeTransition`, stay through theme changes, and an empty object restores the map's own
      * colours. The map must be configurable at run time; an unknown token or an invalid value is
      * logged and leaves the colours unchanged.

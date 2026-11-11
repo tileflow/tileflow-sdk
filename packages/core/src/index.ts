@@ -260,6 +260,12 @@ export {
   tileflowOverlayPlacements,
 } from './overlays';
 export type {
+  TileflowColorKnob,
+  TileflowColorKnobOperation,
+  TileflowColorKnobOperationName,
+  TileflowColorKnobs,
+} from './color-knobs';
+export type {
   TileflowClusterProperty,
   TileflowGeoJsonClusterOptions,
   TileflowGeoJsonFeatureCollection,

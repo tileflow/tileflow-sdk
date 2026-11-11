@@ -33,7 +33,8 @@
     "!assets/streets/climate/streets-climate-v1.png",
     "dist",
     "THIRD_PARTY_NOTICES.md",
-    "LICENSE"
+    "LICENSE",
+    "REFERENCE.md"
   ],
   "scripts": {
     "prepack": "node ../../scripts/package-license.mjs --prepare",

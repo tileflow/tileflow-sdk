@@ -128,7 +128,16 @@ Fades use premultiplied OKLab. Parameter columns are not semantic tokens.
 colours. Values may be hex, `rgb()`, `hsl()`, `oklch()`, `oklab()` or `color-mix()` in `srgb`,
 `srgb-linear`, `oklab` or `oklch`; they are converted to sRGB, with chroma reduced for a colour
 outside the gamut. A value the SDK cannot read, such as `var(--x)` or a named colour, is an error
-that names it. Fixed colours and application layers remain. Web builds retain token bindings; direct
+that names it. Fixed colours and application layers remain. A map may declare colour knobs with
+`colorKnobs`: named colours with no dot that stand for many tokens, so `setColors({water: '#2563eb'})`
+works without naming a token. A knob lists its tokens, each with an operation: `replace` gives the
+token the colour; `shift` moves it by as much as the knob's `reference` token moves to reach the
+colour, so tokens lighter or darker than the reference stay so; `mix` moves it `amount` of the way;
+`tint` keeps its lightness and takes the colour's hue and chroma (`chroma` scales it). Any operation
+may add a `lightness` offset, and a token's own alpha is kept. Knobs start from the colours of the
+theme on screen, so each theme keeps its own offsets. A token has one knob; a token named in
+`setColors` wins over its knob; an unknown knob is an error that lists the map's knobs. Derived
+maps inherit knobs, entries replace by name, and `remove()` drops one. Streets' knobs are listed in [its reference](https://github.com/tileflow/tileflow-sdk/blob/main/packages/maps/REFERENCE.md#streets-colour-knobs). Web builds retain token bindings; direct
 `createStyle` calls opt in with `runtimeColors: true`. `createTileflowAppearanceController().set()`
 selects author-owned `fixed`, `system` or local `clock` behaviour without UI or location requests.
 Profile performance on target devices.

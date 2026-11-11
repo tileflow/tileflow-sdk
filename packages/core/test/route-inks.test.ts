@@ -136,6 +136,30 @@ test('inks mix in OKLab between themes and step through blend positions', () => 
   assert.equal(tileflowRouteInksAt([], 0), undefined);
 });
 
+test('route inks mix CSS Color 4 inks and refuse one they cannot read', () => {
+  const from: TileflowRouteInks = {...tileflowDefaultRouteInks.light, line: 'oklch(0.5 0.12 155)'};
+  const to: TileflowRouteInks = {
+    ...tileflowDefaultRouteInks.dark,
+    line: 'color-mix(in oklab, oklch(0.5 0.12 155) 50%, #ffffff)',
+  };
+  const half = mixTileflowRouteInks(from, to, 0.5);
+  assert.match(half.line, /^rgba\(\d+, \d+, \d+, 1\)$/u);
+  assert.notEqual(half.line, from.line);
+  assert.notEqual(half.line, to.line);
+
+  const unreadable: TileflowRouteInks = {...to, casing: 'var(--border)'};
+  assert.throws(
+    () => mixTileflowRouteInks(from, unreadable, 0.5),
+    /route ink "casing" "var\(--border\)" depends on the page/u,
+  );
+  assert.throws(
+    () => mixTileflowRouteInks({...from, glow: 'papayawhip'}, to, 0.5),
+    /route ink "glow" "papayawhip" is not a colour Tileflow reads/u,
+  );
+  // The ends of a blend never mix, so they never read the other ink.
+  assert.equal(mixTileflowRouteInks(from, unreadable, 0), from);
+});
+
 type Listener = (event?: unknown) => void;
 
 class BlendMap {

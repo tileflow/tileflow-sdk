@@ -2,6 +2,7 @@
 // `route.*` tokens; the compiler publishes them, resolved, in the style's metadata, so a browser
 // application draws its routes in the inks of the theme on screen and follows theme changes and
 // blends without colour tables of its own.
+import {normalizeTileflowCssColor, parseTileflowCssColor} from './css-color';
 import {mixTileflowColours} from './theme-blend';
 import type {ResolvedTileflowTheme, TileflowThemeColorScheme} from './themes/model';
 
@@ -150,8 +151,15 @@ export function mixTileflowRouteInks(
   if (at === 0) return from;
   if (at === 1) return to;
   const inks: Record<string, string | number> = {};
-  for (const key of colourKeys)
-    inks[key] = mixTileflowColours(from[key], to[key], at) ?? (at < 0.5 ? from[key] : to[key]);
+  for (const key of colourKeys) {
+    const mixed = mixTileflowColours(from[key], to[key], at);
+    if (mixed === undefined) {
+      // Returning one of the colours would draw a route in the wrong ink without a word.
+      const unreadable = parseTileflowCssColor(from[key]) ? to[key] : from[key];
+      throw new TypeError(describeUnreadableInk(key, unreadable));
+    }
+    inks[key] = mixed;
+  }
   for (const key of numberKeys) inks[key] = from[key] + (to[key] - from[key]) * at;
   return Object.freeze(inks) as TileflowRouteInks;
 }
@@ -170,4 +178,13 @@ export function tileflowRouteInksAt(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function describeUnreadableInk(ink: string, colour: string): string {
+  try {
+    normalizeTileflowCssColor(colour, `route ink "${ink}"`);
+  } catch (error) {
+    if (error instanceof TypeError) return error.message;
+  }
+  return `The route ink "${ink}" cannot be mixed.`;
 }

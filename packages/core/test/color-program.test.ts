@@ -206,3 +206,29 @@ test('prepared families apply and reset colours without replacing styles or chan
   assert.deepEqual(validateStyleMin(controller.getCurrent().style), []);
   controller.dispose();
 });
+
+test('runtime colour overrides accept CSS Color 4 and name what they cannot read', () => {
+  const style = createStyle(map, {runtimeColors: true});
+  const changed = applyTileflowColorOverrides(style, {
+    'surface.water': 'oklch(0.145 0 0)',
+  });
+  assert.equal((changed.metadata?.['tileflow:sun'] as {color: string}).color, '#0a0a0a');
+  assert.deepEqual(validateStyleMin(changed), []);
+  assert.equal(
+    JSON.stringify(applyTileflowColorOverrides(style, {'surface.water': '#0a0a0a'})),
+    JSON.stringify(changed),
+    'oklch() gives the style of the sRGB colour it converts to',
+  );
+  assert.throws(
+    () => applyTileflowColorOverrides(style, {'surface.water': 'var(--primary)'}),
+    /colour for "surface\.water" "var\(--primary\)" depends on the page/u,
+  );
+  assert.throws(
+    () => applyTileflowColorOverrides(style, {'surface.water': 'papayawhip'}),
+    /not a colour Tileflow reads/u,
+  );
+  assert.throws(
+    () => applyTileflowColorOverrides(style, {'surface.nope': '#fff', 'surface.also': '#fff'}),
+    /Unknown colour tokens "surface\.nope", "surface\.also"\./u,
+  );
+});

@@ -125,7 +125,10 @@ prepare once; discrete values and RGBA icons switch at the dominant theme withou
 Fades use premultiplied OKLab. Parameter columns are not semantic tokens.
 
 `controller.setColors({'surface.water': '#008800'})` overrides named tokens; `{}` restores authored
-colours. Fixed colours and application layers remain. Web builds retain token bindings; direct
+colours. Values may be hex, `rgb()`, `hsl()`, `oklch()`, `oklab()` or `color-mix()` in `srgb`,
+`srgb-linear`, `oklab` or `oklch`; they are converted to sRGB, with chroma reduced for a colour
+outside the gamut. A value the SDK cannot read, such as `var(--x)` or a named colour, is an error
+that names it. Fixed colours and application layers remain. Web builds retain token bindings; direct
 `createStyle` calls opt in with `runtimeColors: true`. `createTileflowAppearanceController().set()`
 selects author-owned `fixed`, `system` or local `clock` behaviour without UI or location requests.
 Profile performance on target devices.

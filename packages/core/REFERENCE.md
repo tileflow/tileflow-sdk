@@ -158,7 +158,10 @@ mix 3D directions (angular fallback for opposite vectors) and OKLab light colour
 `createTileflowBuildings3D` enables worker-meshed buildings rising at zoom 15–15.3, scene sun,
 cast/contact shadows and 0.8 m rounded corners; effects are independently overridable. Its
 `tileflow-buildings-scene-3d` layer replaces `tileflow-buildings-native-extrusion` only after visible
-building tiles draw. Failure keeps the native fallback; 2D restores authored visibility.
+building tiles draw. Until then the native extrusion leaves out the buildings that landmarks and
+placed models stand in for (`standIns`). It draws once their footprints round the view are known, or
+their downloads have taken 1.5 s, and after a change only once its tiles are read again. Failure
+keeps the native fallback; 2D restores authored visibility.
 Street lights default off, including in Streets: enable `roads.streetLights.enabled` and mount
 `createTileflowStreetLights`. `createTileflowVegetation` follows the map's `3d`, `flat` or `auto` policy.
 

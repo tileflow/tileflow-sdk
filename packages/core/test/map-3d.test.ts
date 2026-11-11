@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {tileflowBuildings3DLayerId} from '../src/buildings-3d-browser';
 import {tileflowNativeBuildingsLayerId} from '../src/building-layer-ids';
+import {tileflowBuildings3DLayerId} from '../src/buildings-3d-browser';
 import {attachTileflowMap3D} from '../src/map-3d-attach-browser';
 
 // React, Vue and Svelte mount the scene through attachTileflowMap3D with this loader.
@@ -69,16 +69,34 @@ test('a style that declares buildings mounts the 3D buildings by default', async
   assert.equal(map.layers.has(tileflowBuildings3DLayerId), false);
 });
 
-test('the native extrusion stays visible through lazy loading and takes over if loading fails', async () => {
-  const map = fakeMap(buildings);
+function nativeVisibility(map: ReturnType<typeof fakeMap>) {
   map.layers.set(tileflowNativeBuildingsLayerId, {id: tileflowNativeBuildingsLayerId});
-  let visibility = 'none';
+  const state = {visibility: 'none'};
   Object.assign(map, {
-    getLayoutProperty: () => visibility,
+    getLayoutProperty: () => state.visibility,
     setLayoutProperty: (_id: string, _property: string, next: string) => {
-      visibility = next;
+      state.visibility = next;
     },
   });
+  return state;
+}
+
+test('while the renderers load, the native extrusion draws buildings no model stands in for', async () => {
+  const map = fakeMap({'tileflow:buildings': {version: 1}});
+  const native = nativeVisibility(map);
+  const attachment = attachTileflowMap3D({
+    map,
+    load: () => new Promise(() => {}),
+  });
+  assert.equal(native.visibility, 'visible');
+  attachment.setViewMode('2d');
+  assert.equal(native.visibility, 'none');
+  attachment.dispose();
+});
+
+test('while the renderers load, a map with landmarks keeps the native extrusion until the scene knows which buildings they replace, or loading fails', async () => {
+  const map = fakeMap(buildings);
+  const native = nativeVisibility(map);
   let fail!: (error: Error) => void;
   const errors: unknown[] = [];
   const attachment = attachTileflowMap3D({
@@ -86,36 +104,40 @@ test('the native extrusion stays visible through lazy loading and takes over if 
     load: () => new Promise((_resolve, reject) => (fail = reject)),
     onError: (error) => errors.push(error),
   });
-  assert.equal(visibility, 'visible');
+  assert.equal(native.visibility, 'none');
   attachment.setViewMode('2d');
-  assert.equal(visibility, 'none');
   attachment.setViewMode('3d');
-  assert.equal(visibility, 'visible');
+  assert.equal(native.visibility, 'none');
   fail(new Error('loader failed'));
   await mounted();
-  assert.equal(visibility, 'visible');
+  // Without the scene, the native extrusion draws every building.
+  assert.equal(native.visibility, 'visible');
   assert.equal(errors.length, 1);
+  attachment.setViewMode('2d');
+  assert.equal(native.visibility, 'none');
+  attachment.setViewMode('3d');
+  assert.equal(native.visibility, 'visible');
   attachment.dispose();
-  assert.equal(visibility, 'none');
+  assert.equal(native.visibility, 'none');
 });
 
-test('mounting the scene keeps native buildings until its first drawable frame', async () => {
+test('a mounted scene keeps the native extrusion off a landmark until it knows its footprint, waiting a moment at most', async (t) => {
+  t.mock.timers.enable({apis: ['setTimeout']});
   const map = fakeMap(buildings);
-  map.layers.set(tileflowNativeBuildingsLayerId, {id: tileflowNativeBuildingsLayerId});
-  let visibility = 'none';
-  Object.assign(map, {
-    getLayoutProperty: () => visibility,
-    setLayoutProperty: (_id: string, _property: string, next: string) => {
-      visibility = next;
-    },
-  });
+  const native = nativeVisibility(map);
   const attachment = attachTileflowMap3D({map, load});
-  assert.equal(visibility, 'visible');
-  await mounted();
+  for (let turns = 0; turns < 1000 && !attachment.scene; turns += 1)
+    await new Promise((resolve) => setImmediate(resolve));
   assert.ok(map.layers.has(tileflowBuildings3DLayerId));
-  assert.equal(visibility, 'visible');
+  // The landmarks round the view are not known yet: nothing may draw what they replace.
+  assert.equal(attachment.scene?.buildings?.standIns.known, false);
+  assert.equal(native.visibility, 'none');
+  t.mock.timers.tick(5_000);
+  // They did not arrive in time: the map's own buildings draw until the scene is ready.
+  assert.equal(attachment.scene?.buildings?.standIns.known, true);
+  assert.equal(native.visibility, 'visible');
   attachment.dispose();
-  assert.equal(visibility, 'none');
+  assert.equal(native.visibility, 'none');
 });
 
 test('the 2D view opts out: no 3D layer is mounted until the scene is shown', async () => {

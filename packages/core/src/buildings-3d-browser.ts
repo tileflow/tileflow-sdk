@@ -8,6 +8,11 @@ import {
 } from './building-illumination';
 import {tileflowBuildingsSceneLayerId, tileflowNativeBuildingsLayerId} from './building-layer-ids';
 import {
+  tileflowSameStandInArea,
+  tileflowStandInArea,
+  type TileflowStandInArea,
+} from './building-stand-ins';
+import {
   readTileflowBuildings3D,
   type TileflowBuildings3DDesign,
   tileflowBuildingsMetadataKey,
@@ -124,8 +129,15 @@ export type TileflowBuildings3DOptions = Readonly<{
   transformRequest?: TileflowTileRequestTransform;
   /** Called when the custom layer gains or loses a drawable frame. */
   onReadyChange?: (ready: boolean) => void;
+  /** Called when `standIns` changes. */
+  onStandInsChange?: () => void;
   /** Rendering failures leave the compiled extrusion available as a fallback. */
   onError?: (error: unknown) => void;
+}>;
+
+export type TileflowBuildingStandIns = Readonly<{
+  known: boolean;
+  area: TileflowStandInArea | undefined;
 }>;
 
 export type TileflowBuildings3DChange = Readonly<{
@@ -145,6 +157,14 @@ export type TileflowBuildings3D = {
   readonly scale: number;
   /** True after a frame has drawn with its visible building tiles prepared. */
   readonly ready: boolean;
+  /**
+   * The buildings placed models and landmarks stand in for round the camera, for the compiled
+   * extrusion drawn while the layer is not `ready`: `known` once the landmark indexes and models
+   * round the view have arrived, failed or been waited for long enough, and `area`, the ground
+   * whose buildings are left to the models while they show. The extrusion must not draw before
+   * they are known, nor draw the buildings under the area.
+   */
+  readonly standIns: TileflowBuildingStandIns;
   /**
    * Whether the map's style describes its 3D buildings (the buildings module's
    * `threeDimensional`), tiles raised, buildings and vertices, and the placed models standing, for
@@ -279,10 +299,64 @@ export function createTileflowBuildings3D(
     options.onReadyChange?.(next);
   }
 
+  let standIns: TileflowBuildingStandIns = {known: false, area: undefined};
+  // A WebGL 1 context draws neither the buildings nor the models.
+  let cannotDraw = false;
+  let standInsKey: string | undefined;
+  // Whether the wait for the models round the view ran out before they were all known. Downloads
+  // on their way give up after a moment by themselves; this ends a wait no frame comes to check.
+  let waitedOut = false;
+  let unknownTimer: ReturnType<typeof setTimeout> | undefined;
+  const footprintIds = new WeakMap<object, number>();
+  let footprintCount = 0;
+  const idOf = (footprint: object) => {
+    let id = footprintIds.get(footprint);
+    if (id === undefined) footprintIds.set(footprint, (id = footprintCount++));
+    return id;
+  };
+
+  /**
+   * Works out which buildings the models round the camera stand in for, once the models show.
+   * Until the indexes and models round the view are in, or a moment has passed, they are unknown;
+   * a context that cannot draw them, or a frame that failed, leaves every building to the map.
+   */
+  function updateStandIns(): void {
+    if (disposed) return;
+    const showing = !cannotDraw && !reportedError && modelScale() > 0;
+    const coverage = camera.coverage();
+    let known = !showing || (coverage.length > 0 && models.settled(coverage, camera.zoom));
+    if (known) {
+      waitedOut = false;
+      if (unknownTimer !== undefined) clearTimeout(unknownTimer);
+      unknownTimer = undefined;
+    } else if (waitedOut) known = true;
+    else
+      // The wait ends even when no frame is drawn.
+      unknownTimer ??= setTimeout(() => {
+        unknownTimer = undefined;
+        waitedOut = true;
+        updateStandIns();
+        map.triggerRepaint();
+      }, standInsWait);
+    const entries = showing && known ? models.standIns() : [];
+    // Footprints keep their identity while they stand, so the area is drawn up only on a change.
+    const key = `${known}:${entries.map(({placement, footprint}) => `${idOf(footprint)}@${placement.at.join(',')},${placement.heading}`).join(';')}`;
+    if (key === standInsKey) return;
+    standInsKey = key;
+    // The same ground keeps the same area, so the extrusion is not filtered again for nothing.
+    const area = tileflowStandInArea(entries);
+    const same = tileflowSameStandInArea(area, standIns.area);
+    if (same && known === standIns.known) return;
+    standIns = {known, area: same ? standIns.area : area};
+    options.onStandInsChange?.();
+  }
+
   function reportError(error: unknown): void {
     setReady(false);
     if (reportedError) return;
     reportedError = true;
+    // Models that fail to draw stand in for nothing.
+    updateStandIns();
     options.onError?.(error);
   }
   /** The view depth past which the distance haze hides everything, as drawn last. */
@@ -366,7 +440,13 @@ export function createTileflowBuildings3D(
       ground = undefined;
     },
     prerender(context: WebGLRenderingContext | WebGL2RenderingContext, args: ProjectionArgs) {
-      if (!isWebGL2(context)) return;
+      if (!isWebGL2(context)) {
+        if (!cannotDraw) {
+          cannotDraw = true;
+          updateStandIns();
+        }
+        return;
+      }
       ahead = aheadNow();
       ensureCamera();
       // Models and landmarks are read for every tile the camera wants, from a zoom before the
@@ -379,6 +459,7 @@ export function createTileflowBuildings3D(
           camera.zoom,
           visibleScale() > 0,
         );
+      updateStandIns();
       drawMasks(context, args);
       if (!programs.depth) return;
       // A disabled building shadow pass must not claim the ground pass from the trees.
@@ -2056,6 +2137,8 @@ export function createTileflowBuildings3D(
   map.on('idle', attach);
   onStyle();
   camera.update();
+  // Starts the wait for the models round the view, which ends even if no frame is drawn.
+  updateStandIns();
 
   // --- Motion ---
 
@@ -2158,6 +2241,9 @@ export function createTileflowBuildings3D(
     get ready() {
       return ready;
     },
+    get standIns() {
+      return standIns;
+    },
     get stats() {
       let buildings = 0;
       let vertices = 0;
@@ -2180,6 +2266,8 @@ export function createTileflowBuildings3D(
       if (disposed) return;
       disposed = true;
       motion?.done();
+      if (unknownTimer !== undefined) clearTimeout(unknownTimer);
+      unknownTimer = undefined;
       map.off('styledata', onStyle);
       map.off('idle', attach);
       unregister();
@@ -2198,6 +2286,9 @@ export function createTileflowBuildings3D(
     },
   };
 }
+
+/** The longest, in ms, the map's own extrusion waits to learn which buildings models replace. */
+const standInsWait = 5_000;
 
 const emptyTile: BuildingTile = Object.freeze({
   mesh: Object.freeze({wallsFrom: 0, top: 0, features: [], vertexCount: 0, indexCount: 0}),

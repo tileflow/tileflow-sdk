@@ -559,24 +559,35 @@ test(
       assert.ok(done());
     };
 
-    // A tile of buildings waits for the index round it, then builds with the footprint held.
+    // A tile of buildings waits for the index round it, then builds with the footprint held. The
+    // map's own extrusion is told the same: nothing is known before the index.
+    assert.equal(models.settled([tile], 15), false);
     update();
+    assert.equal(models.settled([tile], 15), false);
     let settled = false;
     void models.settle(tile, new AbortController().signal).then(() => {
       settled = true;
     });
     await until(() => settled);
+    assert.equal(models.settled([tile], 15), true);
     assert.ok(models.masksIn(tile, 8192), 'the footprint holds its buildings flat');
+    assert.deepEqual(models.standIns(), [
+      {placement: {at: landmarks[0]!.at, heading: 0}, footprint: landmarks[0]!.footprint},
+    ]);
     assert.equal(models.shown().length, 0);
     assert.equal(tileRequests, 1);
 
     // The tile is late: after the hold, the buildings rise.
     await until(() => models.masksIn(tile, 8192) === undefined);
+    assert.deepEqual(models.standIns(), []);
 
     // It arrives: the tower stands, fading in, and its footprint is left to it again.
     release(new Response(bytes));
     await until(() => models.shown().length === 1);
     assert.ok(models.masksIn(tile, 8192));
+    assert.deepEqual(models.standIns(), [
+      {placement: models.shown()[0]!.placement, footprint: models.shown()[0]!.model.footprint},
+    ]);
     assert.equal(typeof models.shown()[0]!.standingSince, 'number');
   },
 );

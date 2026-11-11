@@ -7,10 +7,27 @@ import {prepareBuildingTile} from '../src/buildings-3d-tile';
 import {createCameraTileBuilder} from '../src/camera-tile-builder';
 import {type CameraTileTask} from '../src/camera-tile-tasks';
 import {placeTileflowStreetLights} from '../src/street-lights';
+import {placeTileflowTrees} from '../src/trees-3d';
 import {decodeTileflowVectorTile} from '../src/vector-tile-decode';
 import {encodeTile} from './vector-tile-fixture';
 
 const bytes = encodeTile({
+  traffic_control: {
+    extent: 8192,
+    features: [
+      {
+        type: 2,
+        properties: {type: 'hedge'},
+        parts: [
+          [
+            [500, 500],
+            [1000, 500],
+            [1000, 1000],
+          ],
+        ],
+      },
+    ],
+  },
   building: {
     extent: 8192,
     features: [500, 4500].map((x) => ({
@@ -53,6 +70,11 @@ const lights: CameraTileTask & {kind: 'lights'} = {
   layers: {streetFurniture: 'street_furniture', transportation: 'transportation'},
   options: {tileMetres: 1000},
 };
+const trees: CameraTileTask & {kind: 'trees'} = {
+  kind: 'trees',
+  layers: {hedge: 'traffic_control'},
+  options: {tile: {x: 1, y: 1, z: 15}, tileMetres: 1000},
+};
 const meshed = () =>
   prepareBuildingTile(meshTileflowBuildings(decoded.building!, buildings.options)!);
 const job = <Task extends CameraTileTask>(task: Task, priority = 0, url = 'tile/15/1/1') => ({
@@ -86,6 +108,11 @@ test('the packaged worker builds as the page does, decoding each tile once', asy
       placed.result,
       placeTileflowStreetLights({transportation: decoded.transportation!}, lights.options),
     );
+    const hedge = await send({...job(trees), bytes: new Uint8Array([255, 255, 255])});
+    assert.equal(hedge.error, undefined);
+    const expected = placeTileflowTrees({hedges: decoded.traffic_control!}, trees.options);
+    assert.ok(expected.hedgeGeometry!.length > 0);
+    assert.deepEqual(hedge.result, expected, 'the worker transfers the continuous hedge mesh');
   } finally {
     await worker.terminate();
   }

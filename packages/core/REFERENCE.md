@@ -406,6 +406,10 @@ Land may supply a georeferenced `globalLandcoverUnderlay` image with `url`, four
 and themed `opacity`. It is drawn below global cover and omitted when land is disabled.
 Tree forms may use `sizeAnchor` and `crownAnchor` (metres) with `sizeCompression`
 from 0 to 1 to reduce size variation while preserving each tree’s proportions.
+Decorative canopy clearance bounds the available space; it is not a measured crown diameter.
+When canopy height is available, inferred crowns also follow the selected tree form's proportions.
+Individually mapped trees retain their measured dimensions. Hedges use continuous, joined surfaces
+with a 0.5 m footprint, a flat top, and clipped tile boundaries; tree size controls do not resize them.
 
 ## Flat footprints under 3D buildings
 

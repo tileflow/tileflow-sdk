@@ -400,3 +400,67 @@ test('manifest loading applies a bounded timeout and composes an external abort 
     (error: unknown) => error instanceof DOMException && error.name === 'AbortError',
   );
 });
+
+test('manifest loading asks again while a same-origin route answers 503', async () => {
+  let calls = 0;
+  const manifest = await loadTileflowManifest('/tileflow/manifest.json', {
+    cacheTtlMs: 0,
+    fetch: (async () => {
+      calls += 1;
+      return calls < 3
+        ? new Response('{}', {headers: {'retry-after': '1'}, status: 503})
+        : Response.json(validManifest);
+    }) as typeof fetch,
+    retryTimeoutMs: 10_000,
+  });
+  assert.equal(calls, 3);
+  assert.ok(manifest);
+});
+
+test('manifest loading stops asking after its retry window and reports the last status', async () => {
+  let calls = 0;
+  await assert.rejects(
+    loadTileflowManifest('/tileflow/manifest.json', {
+      cacheTtlMs: 0,
+      fetch: (async () => {
+        calls += 1;
+        return new Response('{}', {headers: {'retry-after': '1'}, status: 503});
+      }) as typeof fetch,
+      retryTimeoutMs: 500,
+    }),
+    /Tileflow manifest failed: 503/u,
+  );
+  assert.equal(calls, 1);
+});
+
+test('manifest loading does not retry another origin unless asked, and honours an abort', async () => {
+  let calls = 0;
+  const unavailable = (async () => {
+    calls += 1;
+    return new Response('{}', {headers: {'retry-after': '1'}, status: 503});
+  }) as typeof fetch;
+  await assert.rejects(
+    loadTileflowManifest('https://maps.example.test/manifest.json', {
+      cacheTtlMs: 0,
+      fetch: unavailable,
+    }),
+    /failed: 503/u,
+  );
+  assert.equal(calls, 1);
+
+  const controller = new AbortController();
+  const pending = loadTileflowManifest('/tileflow/manifest.json', {
+    cacheTtlMs: 0,
+    fetch: unavailable,
+    signal: controller.signal,
+  });
+  setTimeout(() => controller.abort(new DOMException('Cancelled', 'AbortError')), 50);
+  await assert.rejects(
+    pending,
+    (error: unknown) => error instanceof DOMException && error.name === 'AbortError',
+  );
+  assert.throws(
+    () => loadTileflowManifest('/tileflow/manifest.json', {retryTimeoutMs: 60_001}),
+    /retryTimeoutMs/u,
+  );
+});

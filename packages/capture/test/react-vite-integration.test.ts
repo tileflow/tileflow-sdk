@@ -284,6 +284,7 @@ const popupAnnotations = [{
 const defaultPopupState = {popup: {id: 'react-browser-popup', kind: 'annotation'}};
 
 function App() {
+  const showMissingMap = new URLSearchParams(window.location.search).has('missing-map');
   return <main>
     <div className="primary"><Map
       annotations={popupAnnotations}
@@ -298,7 +299,7 @@ function App() {
     /></div>
     <div className="secondary"><Map captureId="secondary" height={80} source={source} /></div>
     <div className="image"><Map captureId="image" height={80} imageUrl="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVQImWP4WSz2H4QZYAwAWswKBc9NlmIAAAAASUVORK5CYII=" mode="image" source={source} /></div>
-    <div className="image"><Map captureId="missing-map" height={80} source={{...source, map: 'missing'}} /></div>
+    {showMissingMap ? <div className="image"><Map captureId="missing-map" height={80} source={{...source, map: 'missing'}} /></div> : null}
     <div className="image"><Map captureId="unresolved-image" height={80} mode="image" source={source} /></div>
   </main>;
 }
@@ -345,7 +346,7 @@ export default defineMap({
       theme: 'light',
       camera: {type: 'center', center: [0, 0], zoom: 1},
       viewport: {width: 320, height: 480},
-      target: {kind: 'application', path: '/', captureId: 'missing-map'}
+      target: {kind: 'application', path: '/?missing-map', captureId: 'missing-map'}
     },
     popup: {
       theme: 'light',

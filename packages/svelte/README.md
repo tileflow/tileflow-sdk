@@ -113,8 +113,47 @@ third. Moving the position updates the map at once. See
 theme, and `emphasis={{recede: {roads: 0.3}, labels: 0.6}}` makes modules recede and labels fade so
 your own content reads first. Both ease in over `themeTransition`, stay through theme changes, and
 follow the props: an empty `colors` or no `emphasis` restores the map as designed. An unknown token or an
-invalid value is logged and leaves the colours unchanged.
+invalid value is reported as an error and leaves the colours unchanged.
 A map that declares colour knobs, as Streets does, also takes them by name, such as `colors={{water: '#2563eb', roads: '#9aa5b1'}}`; see [Streets' knobs](https://github.com/tileflow/tileflow-sdk/blob/main/packages/maps/REFERENCE.md#streets-colour-knobs).
+
+A colour may use CSS variables, so the map follows your design tokens: `colors={{'surface.land':
+'var(--background)', 'surface.water': 'color-mix(in oklab, var(--primary) 30%, var(--background))'}}`.
+The map reads each variable where it sits, with `var(--name, fallback)` and nested variables
+supported, and reads them again, showing new colours only if the result changed, when the `class`,
+`style`, or `data-theme` attribute of `<html>` or `<body>` changes (for example a `dark` class) and
+when the system's colour-scheme preference changes. A variable with no value and no fallback is
+reported through `onError` as `colors`, naming the variable.
+
+`onError` receives `{code, error}` when the map cannot do what you asked, where `error` is an `Error` and
+`code` is one of:
+
+- `manifest`: the manifest could not be loaded, or it has no map named `source.map`.
+- `theme`: the requested theme or `timeOfDay` is not in the map, or the change failed.
+- `blend`: a `themeBlend` names a theme the map does not have, or the blend failed.
+- `colors` and `emphasis`: the setting was rejected, for example an unknown token or an invalid value.
+- `runtime`: the map could not be created, loaded, or taken down.
+- `scene`: the 3D scene could not be loaded.
+- `camera`: `bounds` or `fitAnnotations` could not be turned into a view.
+
+Without a handler, these failures go to `console.error`. Interactive-state problems keep their own
+channel, `onInteractionDiagnostic`.
+
+`bind:this` on `TileflowMap` gives the component, which has two methods: `getMap()` returns the
+MapLibre map, and `getThemeController()` returns the controller that changes the map's theme,
+colours, and emphasis at run time. Both return `null` until the map has loaded, in image mode, and
+after it is taken down, so call them from event handlers and from `on:load`. `TileflowMapHandle`
+types the bound value.
+
+```svelte
+<script lang="ts">
+  import {TileflowMap, type TileflowMapHandle} from '@tileflow/svelte';
+
+  let map: TileflowMapHandle | undefined;
+  const fly = () => map?.getMap()?.flyTo({center: [-3.7, 40.4], zoom: 12});
+</script>
+
+<TileflowMap bind:this={map} source={{map: 'madrid'}} />
+```
 
 Interactive maps show the 3D scene their style declares by default: buildings with Tileflow
 landmarks and the map's Team building models, 3D trees, and street lights where the map enables
@@ -126,6 +165,19 @@ hides models and flat artwork alike. Changing either prop updates the existing m
 They do not change camera pitch and do not apply in image mode. See
 [the map's 3D scene](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md)
 and [vegetation controls](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md).
+
+Interactive maps show no zoom or compass buttons unless you ask for them. `navigationControl` shows
+them at the top right, and `navigationControl={{position: 'bottom-left', showCompass: false}}` moves
+them or limits their buttons.
+
+`bounds` starts the map on those bounds and moves it when they change; `fitBoundsOptions` shapes the
+fit with `padding`, `maxZoom` and `duration`. `fitAnnotations` fits the map to all `annotations`, with
+48 pixels of padding and at most zoom 15, and again when their positions change. `bounds` takes
+precedence, and `center` and `zoom` set the first view only until one of them is given.
+
+The marker snippet receives `state`, `{hovered, focused, selected}`, where `selected` means the
+marker's popup is open. A popup or tooltip snippet that no annotation or interaction can reach, because
+none sets `popup` or `tooltip`, reports an `UNUSED_RENDERER` warning diagnostic.
 
 `mapOptions` accepts native MapLibre options except `container` and `style`. Direct props win over
 those options, then the manifest view, then shared defaults. `TileflowMap` always selects a Tileflow

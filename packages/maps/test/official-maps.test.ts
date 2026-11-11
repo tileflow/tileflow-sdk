@@ -25,14 +25,14 @@ import {
 } from '@tileflow/core';
 import {createStyleWithInspection} from '@tileflow/core/build';
 import {
+  outdoors,
+  outdoorsIcons,
   soundings,
   soundingsIcons,
   streets,
   streetsFonts,
   streetsIcons,
   streetsThemes,
-  terrain,
-  terrainIcons,
 } from '../src';
 import {streetsDayColors} from '../src/official/streets-day-colors';
 import {streetsPreparedModels, streetsTreeIconIds} from './streets-assets';
@@ -40,8 +40,8 @@ import {streetsPoiImageIds} from './streets-poi-fixture';
 import {standardCartographyReference as colorReference} from './streets-standard-cartography-fixture';
 
 const officialIconIds = [
-  'terrain-peak',
-  'terrain-peak-dark',
+  'outdoors-peak',
+  'outdoors-peak-dark',
   ...streetsTreeIconIds,
   'coffee',
   'nature',
@@ -168,7 +168,7 @@ test('official World styles read only layers and fields of the World v1 contract
       : /^route_\d+_/u.test(name)
         ? 'route_<n>_<field>'
         : name;
-  for (const map of [soundings, streets, terrain]) {
+  for (const map of [soundings, streets, outdoors]) {
     const requirements = inferTileflowDataRequirements(compileOfficialMap(map));
     assert.equal(requirements.complete, true, `${map.id} reads fields it cannot name`);
     for (const layer of ['road', 'water']) {
@@ -213,7 +213,7 @@ test('exports every official map as an independent standalone semantic map', asy
   const officialMaps = {
     soundings,
     streets,
-    terrain,
+    outdoors,
   } as const;
   const officialMapSources = new Set(Object.keys(officialMaps));
 
@@ -235,7 +235,7 @@ test('exports every official map as an independent standalone semantic map', asy
     );
     assert.match(source, /\bdefineMap\s*\(/u, `${id} is not authored as a standalone map`);
 
-    if (id !== 'terrain')
+    if (id !== 'outdoors')
       for (const match of source.matchAll(/\bfrom\s+['"]\.\/([^'"]+)['"]/gu)) {
         const importedModule = match[1]!.replace(/\.(?:js|ts)$/u, '');
         assert.equal(
@@ -248,7 +248,7 @@ test('exports every official map as an independent standalone semantic map', asy
 });
 
 test('deep-freezes only the exported official map singletons', () => {
-  for (const map of [streets, soundings, terrain]) {
+  for (const map of [streets, soundings, outdoors]) {
     assertDeepFrozen(map);
   }
 
@@ -256,7 +256,7 @@ test('deep-freezes only the exported official map singletons', () => {
     (streets as {name: string}).name = 'Mutated Streets';
   }, TypeError);
   assert.throws(() => {
-    (streets as {extends: typeof terrain}).extends = terrain;
+    (streets as {extends: typeof outdoors}).extends = outdoors;
   }, TypeError);
   assert.throws(() => {
     (streets.themes!.dark.typography as {font: string}).font = 'Unpinned Font';
@@ -287,13 +287,13 @@ test('deep-freezes only the exported official map singletons', () => {
   assert.equal(streets.name, 'Streets');
 });
 test('official maps declare their expected icon and typography providers', () => {
-  for (const map of [streets, terrain]) {
+  for (const map of [streets, outdoors]) {
     const resolved = resolveMap(map);
     assert.deepEqual(resolved.fonts, [streetsFonts]);
     assert.equal(resolved.glyphs, undefined);
     assert.deepEqual(
       resolved.icons,
-      map.id === 'terrain' ? [streetsIcons, terrainIcons] : [streetsIcons],
+      map.id === 'outdoors' ? [streetsIcons, outdoorsIcons] : [streetsIcons],
     );
   }
   assert.deepEqual(resolveMap(soundings).icons, [soundingsIcons]);
@@ -367,13 +367,16 @@ test('all official maps compile directly after their packaged sprite is prepared
   for (const [id, map] of Object.entries({
     soundings,
     streets,
-    terrain,
+    outdoors,
   })) {
     const style = compileOfficialMap(map);
     assert.equal(style.metadata?.['tileflow:map'], id);
     assert.equal(style.metadata?.['tileflow:compiler'], 'tileflow-semantic');
     assert.equal(style.sprite, `/tileflow/icons/${id}/sprite`);
-    assert.equal(style.glyphs, ['streets', 'terrain'].includes(id) ? undefined : officialGlyphsUrl);
+    assert.equal(
+      style.glyphs,
+      ['streets', 'outdoors'].includes(id) ? undefined : officialGlyphsUrl,
+    );
     assert.ok(
       style.layers.length > (id === 'soundings' ? 50 : 100),
       `${id} compiled an unexpectedly incomplete layer stack`,
@@ -599,7 +602,7 @@ test('official road widths depend on the camera zoom alone', () => {
 test('official road maps avoid seam-prone caps on ordinary surface and bridge segments', () => {
   for (const [mapId, map] of Object.entries({
     streets,
-    terrain,
+    outdoors,
   })) {
     const style = compileOfficialMap(map);
     const ordinaryRoadLayers = style.layers.filter(
@@ -607,12 +610,12 @@ test('official road maps avoid seam-prone caps on ordinary surface and bridge se
         layer.type === 'line' &&
         /^tileflow-road-(?:surface|bridge)-/u.test(layer.id) &&
         !layer.id.includes('-steps-') &&
-        !(mapId === 'terrain' && /-(?:track|cycleway|footway|pathway)-/u.test(layer.id)),
+        !(mapId === 'outdoors' && /-(?:track|cycleway|footway|pathway)-/u.test(layer.id)),
     );
     assert.ok(ordinaryRoadLayers.length > 0, `${mapId} compiled no ordinary road lines`);
     for (const layer of ordinaryRoadLayers) {
       if (
-        (mapId === 'streets' || mapId === 'terrain') &&
+        (mapId === 'streets' || mapId === 'outdoors') &&
         layer.id.startsWith('tileflow-road-bridge-') &&
         /-casing(?:-|$)/u.test(layer.id)
       )
@@ -646,7 +649,7 @@ test('official maps compile against generic OpenMapTiles without optional capabi
   for (const [id, map] of Object.entries({
     soundings,
     streets,
-    terrain,
+    outdoors,
   })) {
     const derived = defineMap({id: `${id}-generic`, version: 1, extends: map, data});
     const style = createStyle(derived, {preparedAssets: preparedAssets(id)});
@@ -700,7 +703,7 @@ test('official maps emit only exact declared font-face stacks', () => {
   for (const [id, map] of Object.entries({
     soundings,
     streets,
-    terrain,
+    outdoors,
   })) {
     const actual = new Set(
       compileOfficialMap(map).layers.flatMap((layer) => {
@@ -710,7 +713,7 @@ test('official maps emit only exact declared font-face stacks', () => {
     );
     // Numeric contour labels use the packaged DIN face without a text fallback stack.
     const declared =
-      id === 'terrain'
+      id === 'outdoors'
         ? new Set([...expected.streets, JSON.stringify(['DINish Medium'])])
         : expected[id as keyof typeof expected];
     assert.deepEqual(actual, declared, `${id} font stacks drifted`);

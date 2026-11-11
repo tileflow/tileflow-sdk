@@ -12,7 +12,7 @@ version-specific behavior; the GitHub `main` branch can contain unreleased chang
 ### Explore without committing a scene
 
 `--map` captures one map at a camera given by flags. In a directory without a config,
-`--map streets`, `--map soundings` and `--map terrain` open the official map that this CLI ships
+`--map streets`, `--map soundings` and `--map outdoors` open the official map that this CLI ships
 with, so nothing needs installing:
 
 ```sh

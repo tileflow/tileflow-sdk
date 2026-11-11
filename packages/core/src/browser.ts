@@ -161,7 +161,9 @@ export {
   type TileflowBuildings3DMap,
   type TileflowBuildings3DOptions,
   type TileflowBuildings3DThemes,
+  type TileflowBuildingStandIns,
 } from './buildings-3d-browser';
+export type {TileflowStandInArea} from './building-stand-ins';
 export {
   meshTileflowBuildings,
   tileflowBuildingExtent,
@@ -333,6 +335,12 @@ export {
 } from './nautical-light-rhythm';
 
 export * from './fair-use-browser';
+export * from './map-error';
+export {
+  hasTileflowCssVariable,
+  resolveTileflowCssVariables,
+  TileflowCssVariableError,
+} from './css-variables';
 export * from './theme-appearance-browser';
 export {createTileflowAppearanceController} from './appearance-browser';
 export type {TileflowAppearanceSelection} from './appearance';
@@ -340,6 +348,8 @@ export {
   registerTileflowPathGroundProtocol,
   type TileflowPathGroundRegistry,
 } from './path-ground-browser';
+export * from './navigation-control-browser';
+export * from './camera-fit-browser';
 export {
   createTileflowContourRequestScope,
   registerTileflowContourProtocol,

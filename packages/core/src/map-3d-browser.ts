@@ -124,10 +124,18 @@ export function createTileflowMap3D(options: TileflowMap3DOptions): TileflowMap3
   let declarations: ReadonlySet<string> | undefined;
   let declaresBuildings = false;
 
+  // The native extrusion draws until the scene is ready, but never before it knows which buildings
+  // the models round the view stand in for, and never those buildings.
   function syncNativeBuildings(): void {
     if (disposed) return;
+    nativeBuildings.setStandIns(buildings?.standIns.area);
     nativeBuildings.setVisible(
-      declaresBuildings ? viewMode === '3d' && !buildings?.ready : undefined,
+      declaresBuildings
+        ? viewMode === '3d' &&
+            buildings !== undefined &&
+            !buildings.ready &&
+            buildings.standIns.known
+        : undefined,
     );
     syncFlatBuildings();
   }
@@ -168,6 +176,7 @@ export function createTileflowMap3D(options: TileflowMap3DOptions): TileflowMap3
         buildings ??= createTileflowBuildings3D({
           ...shared,
           onReadyChange: syncNativeBuildings,
+          onStandInsChange: syncNativeBuildings,
           ...(options.onError ? {onError: options.onError} : {}),
         });
       else if (!declaresBuildings && buildings) {

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import {mkdir, mkdtemp, readFile, rm, stat, writeFile} from 'node:fs/promises';
+import {existsSync} from 'node:fs';
+import {cp, mkdir, mkdtemp, readFile, rm, stat, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
@@ -7,13 +8,18 @@ import {createTileflowIconSetProject} from '../../../test-support/icon-set-proje
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {withTileflow} from '../src/index';
 import {createTileflowRouteHandlers} from '../src/server';
+import {
+  emitTileflowRouteSnapshot,
+  findTileflowRouteSnapshot,
+  getTileflowRouteSnapshotDirectory,
+} from '../src/snapshot';
 
 test('reuses one watched generation across repeated mutable requests', async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), 'tileflow-next-watched-server-'));
   await linkWorkspacePackages(cwd);
   t.after(() => rm(cwd, {force: true, recursive: true}));
   await writeFile(join(cwd, 'tileflow.config.ts'), rootConfig('#112233'));
-  const handlers = createTileflowRouteHandlers({cwd});
+  const handlers = createTileflowRouteHandlers({compileWaitMs: 60_000, cwd});
   t.after(() => handlers.close());
   const style = new Request('http://localhost/tileflow/styles/main/light.json');
 
@@ -32,10 +38,12 @@ test('does not share a Next session across distinct explicit icon transports', a
   t.after(() => rm(cwd, {force: true, recursive: true}));
   await writeFile(join(cwd, 'tileflow.config.ts'), rootConfig());
   const first = createTileflowRouteHandlers({
+    compileWaitMs: 60_000,
     cwd,
     icons: {cacheRoot: cwd, fetch: async () => Response.error()},
   });
   const second = createTileflowRouteHandlers({
+    compileWaitMs: 60_000,
     cwd,
     icons: {cacheRoot: cwd, fetch: async () => Response.error()},
   });
@@ -272,7 +280,7 @@ test('refreshes direct style requests after a config edit without requiring a ma
   let handlers: ReturnType<typeof createTileflowRouteHandlers> | undefined;
   try {
     await writeFile(configPath, configWithBackground('#112233'));
-    handlers = createTileflowRouteHandlers({cwd});
+    handlers = createTileflowRouteHandlers({compileWaitMs: 60_000, cwd});
     const request = new Request('http://localhost/tileflow/styles/main/light.json');
     const first = await handlers.GET(request);
     const firstStyle = await first.json();
@@ -382,10 +390,10 @@ test('the Next production build and dev route serve the exact locked icon compos
   const icons = {cacheRoot: cwd, offline: true} as const;
   const previousNodeEnv = process.env.NODE_ENV;
 
-  const handlers = createTileflowRouteHandlers({cwd, icons});
+  const handlers = createTileflowRouteHandlers({compileWaitMs: 60_000, cwd, icons});
   t.after(() => handlers.close());
   let sprite = await handlers.GET(new Request('http://localhost/tileflow/icons/main/sprite.json'));
-  for (let attempt = 0; attempt < 40 && sprite.status === 409; attempt += 1) {
+  for (let attempt = 0; attempt < 40 && sprite.status === 503; attempt += 1) {
     await new Promise((settle) => setTimeout(settle, 50));
     sprite = await handlers.GET(new Request('http://localhost/tileflow/icons/main/sprite.json'));
   }
@@ -422,3 +430,254 @@ test('the Next production build and dev route serve the exact locked icon compos
     process.env.NODE_ENV = previousNodeEnv;
   }
 });
+
+test('answers 503 with Retry-After while the first compile runs, then serves the map', async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tileflow-next-cold-'));
+  await linkWorkspacePackages(cwd);
+  t.after(() => rm(cwd, {force: true, recursive: true}));
+  await writeFile(join(cwd, 'tileflow.config.ts'), rootConfig());
+  const handlers = createTileflowRouteHandlers({compileWaitMs: 0, cwd});
+  t.after(() => handlers.close());
+  const request = new Request('http://localhost/tileflow/manifest.json');
+
+  const preparing = await handlers.GET(request);
+  assert.equal(preparing.status, 503);
+  assert.equal(preparing.headers.get('retry-after'), '2');
+  assert.equal(preparing.headers.get('cache-control'), 'no-store');
+
+  const deadline = Date.now() + 60_000;
+  let response = await handlers.GET(request);
+  while (response.status === 503 && Date.now() < deadline) {
+    await new Promise((settle) => setTimeout(settle, 100));
+    response = await handlers.GET(request);
+  }
+  assert.equal(response.status, 200);
+  assert.equal(((await response.json()) as RuntimeManifest).version, 3);
+});
+
+test('compiles the map while Next.js builds and serves it from the build output', async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tileflow-next-snapshot-'));
+  await linkWorkspacePackages(cwd, ['core', 'maps', 'next']);
+  t.after(() => rm(cwd, {force: true, recursive: true}));
+  await writeFile(join(cwd, 'tileflow.config.ts'), rootConfig('#112233'));
+  const previous = {nodeEnv: process.env.NODE_ENV, phase: process.env.NEXT_PHASE};
+  t.after(() => {
+    restoreEnvironment('NODE_ENV', previous.nodeEnv);
+    restoreEnvironment('NEXT_PHASE', previous.phase);
+  });
+  const input = {
+    basePath: '/api/tileflow',
+    config: 'tileflow.config.ts',
+    cwd,
+    styleBaseUrl: '/api/tileflow',
+  };
+
+  process.env.NEXT_PHASE = 'phase-production-build';
+  const built = createTileflowRouteHandlers({base: '/api/tileflow', cwd});
+  assert.ok(findTileflowRouteSnapshot(input), 'the build leaves a snapshot');
+  // A second worker loading the module finds the snapshot instead of compiling again.
+  assert.equal(emitTileflowRouteSnapshot(input), 'exists');
+  await built.close();
+
+  delete process.env.NEXT_PHASE;
+  process.env.NODE_ENV = 'production';
+  const handlers = createTileflowRouteHandlers({base: '/api/tileflow', cwd, routeBase: '/map'});
+  t.after(() => handlers.close());
+  const manifest = await handlers.GET(new Request('http://localhost/map/manifest.json'));
+  assert.equal(manifest.status, 200);
+  assert.match(manifest.headers.get('content-type') ?? '', /application\/json/u);
+  const body = (await manifest.json()) as RuntimeManifest;
+  const styleUrl = body.maps.main!.themes.light!.styleUrl;
+  assert.ok(styleUrl.startsWith('/api/tileflow/'));
+  const style = await handlers.GET(
+    new Request(`http://localhost/map${styleUrl.slice('/api/tileflow'.length)}`),
+  );
+  assert.equal(style.status, 200);
+  assert.equal(backgroundColor(await style.json()), '#112233');
+  assert.equal(
+    (await handlers.HEAD(new Request('http://localhost/map/manifest.json'))).status,
+    200,
+  );
+  assert.equal(
+    (await handlers.GET(new Request('http://localhost/map/../tileflow.config.ts'))).status,
+    404,
+  );
+  assert.equal(
+    (await handlers.GET(new Request('http://localhost/map/%2e%2e/tileflow.config.ts'))).status,
+    404,
+  );
+  assert.equal((await handlers.GET(new Request('http://localhost/map/nothing.json'))).status, 404);
+});
+
+test('a failed build-time compile leaves no snapshot and the route compiles at run time', async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tileflow-next-snapshot-failed-'));
+  await linkWorkspacePackages(cwd);
+  t.after(() => rm(cwd, {force: true, recursive: true}));
+  await writeFile(join(cwd, 'tileflow.config.ts'), 'throw new Error("broken config");\n');
+  const input = {
+    basePath: '/tileflow',
+    config: 'tileflow.config.ts',
+    cwd,
+    styleBaseUrl: '/tileflow',
+  };
+  const warn = console.warn;
+  console.warn = () => undefined;
+  try {
+    const runner = {args: ['-e', 'process.exit(1)'], command: process.execPath};
+    assert.equal(emitTileflowRouteSnapshot(input, runner), 'failed');
+    assert.equal(emitTileflowRouteSnapshot(input, runner), 'failed');
+  } finally {
+    console.warn = warn;
+  }
+  assert.equal(findTileflowRouteSnapshot(input), undefined);
+  assert.ok(existsSync(`${getTileflowRouteSnapshotDirectory(input)}.failed`));
+});
+
+test('keeps @tileflow/dev out of the route bundle without duplicating the application list', async (t) => {
+  const cwd = await createProjectWithNext(t, '16.4.2');
+
+  assert.deepEqual(withTileflow({}, {cwd}).serverExternalPackages, ['@tileflow/dev']);
+  assert.deepEqual(
+    withTileflow({serverExternalPackages: ['sharp']}, {cwd}).serverExternalPackages,
+    ['sharp', '@tileflow/dev'],
+  );
+  assert.deepEqual(
+    withTileflow({serverExternalPackages: ['@tileflow/dev', 'sharp']}, {cwd})
+      .serverExternalPackages,
+    ['@tileflow/dev', 'sharp'],
+  );
+});
+
+test('keeps the files a route answers from in its file trace', async (t) => {
+  const cwd = await createProjectWithNext(t, '15.0.0');
+
+  assert.deepEqual(withTileflow({}, {cwd}).outputFileTracingIncludes, {
+    '/api/tileflow/**': ['./.next/tileflow/**/*', './public/tileflow/**/*'],
+  });
+  assert.deepEqual(
+    withTileflow(
+      {
+        distDir: 'build',
+        outputFileTracingIncludes: {'/api/tileflow/**': ['./data/**/*'], '/other': ['./x']},
+      },
+      {base: '/maps', cwd, publicDir: join(cwd, 'static'), routeBase: '/maps-api'},
+    ).outputFileTracingIncludes,
+    {
+      '/api/tileflow/**': ['./data/**/*'],
+      '/maps-api/**': ['./build/tileflow/**/*', './static/maps/**/*'],
+      '/other': ['./x'],
+    },
+  );
+  assert.equal(withTileflow({}, {cwd, routeBase: false}).outputFileTracingIncludes, undefined);
+  assert.deepEqual(
+    withTileflow({outputFileTracingIncludes: {'/maps/**': ['./a']}}, {cwd, routeBase: '/maps'})
+      .outputFileTracingIncludes,
+    {'/maps/**': ['./a', './.next/tileflow/**/*', './public/tileflow/**/*']},
+  );
+});
+
+test('uses the experimental options Next.js 14 reads', async (t) => {
+  const cwd = await createProjectWithNext(t, '14.2.5');
+  const config = withTileflow(
+    {experimental: {serverComponentsExternalPackages: ['sharp']} as never},
+    {cwd},
+  );
+  const experimental = config.experimental as unknown as Record<string, unknown>;
+
+  assert.equal(config.serverExternalPackages, undefined);
+  assert.equal(config.outputFileTracingIncludes, undefined);
+  assert.deepEqual(experimental.serverComponentsExternalPackages, ['sharp', '@tileflow/dev']);
+  assert.deepEqual(experimental.outputFileTracingIncludes, {
+    '/api/tileflow/**': ['./.next/tileflow/**/*', './public/tileflow/**/*'],
+  });
+});
+
+test('does not compile a second copy of a map the build already wrote as static files', async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tileflow-next-static-'));
+  await linkWorkspacePackages(cwd, ['core', 'maps', 'next']);
+  t.after(() => rm(cwd, {force: true, recursive: true}));
+  await writeFile(join(cwd, 'tileflow.config.ts'), rootConfig('#112233'));
+  const previous = {nodeEnv: process.env.NODE_ENV, phase: process.env.NEXT_PHASE};
+  t.after(() => {
+    restoreEnvironment('NODE_ENV', previous.nodeEnv);
+    restoreEnvironment('NEXT_PHASE', previous.phase);
+  });
+  const input = {
+    basePath: '/tileflow',
+    config: 'tileflow.config.ts',
+    cwd,
+    styleBaseUrl: '/tileflow',
+  };
+
+  process.env.NODE_ENV = 'production';
+  await withTileflow({}, {cwd}).rewrites!();
+  assert.ok(existsSync(join(cwd, 'public/tileflow/manifest.json')));
+
+  process.env.NEXT_PHASE = 'phase-production-build';
+  createTileflowRouteHandlers({cwd});
+  assert.equal(
+    findTileflowRouteSnapshot(input),
+    undefined,
+    'the route compiles no copy of its own',
+  );
+  assert.equal(existsSync(`${getTileflowRouteSnapshotDirectory(input)}.lock`), false);
+
+  // A running server then answers from the static files if a request reaches the route.
+  delete process.env.NEXT_PHASE;
+  const handlers = createTileflowRouteHandlers({cwd, routeBase: '/map'});
+  t.after(() => handlers.close());
+  const manifest = await handlers.GET(new Request('http://localhost/map/manifest.json'));
+  assert.equal(manifest.status, 200);
+  assert.equal(manifest.headers.get('cache-control'), 'public, max-age=0, must-revalidate');
+  assert.equal(
+    ((await manifest.json()) as RuntimeManifest).maps.main?.themes.light?.styleUrl.startsWith(
+      '/tileflow/',
+    ),
+    true,
+  );
+
+  // Another public directory, or another base, holds no manifest: the route compiles its map.
+  process.env.NEXT_PHASE = 'phase-production-build';
+  createTileflowRouteHandlers({cwd, publicDir: 'elsewhere'});
+  assert.ok(findTileflowRouteSnapshot(input), 'a different publicDir leaves the route to compile');
+});
+
+test('finds a snapshot after the project moves to another directory', async (t) => {
+  const first = await mkdtemp(join(tmpdir(), 'tileflow-next-moved-a-'));
+  const second = join(await mkdtemp(join(tmpdir(), 'tileflow-next-moved-b-')), 'app');
+  t.after(() =>
+    Promise.all([
+      rm(first, {force: true, recursive: true}),
+      rm(second, {force: true, recursive: true}),
+    ]),
+  );
+  const input = (cwd: string) => ({
+    basePath: '/tileflow',
+    config: 'tileflow.config.ts',
+    cwd,
+    styleBaseUrl: '/tileflow',
+  });
+  const runner = {
+    args: ['-e', "require('node:fs').mkdirSync(JSON.parse(process.argv[1]).outDir)"],
+    command: process.execPath,
+  };
+  const directory = getTileflowRouteSnapshotDirectory(input(first));
+  assert.equal(emitTileflowRouteSnapshot(input(first), runner), 'written');
+  await writeFile(join(directory, 'manifest.json'), '{}\n');
+
+  await cp(first, second, {recursive: true});
+  assert.ok(findTileflowRouteSnapshot(input(second)), 'a standalone output carries the snapshot');
+});
+
+async function createProjectWithNext(t: test.TestContext, version: string): Promise<string> {
+  const cwd = await mkdtemp(join(tmpdir(), 'tileflow-next-version-'));
+  t.after(() => rm(cwd, {force: true, recursive: true}));
+  await mkdir(join(cwd, 'node_modules', 'next'), {recursive: true});
+  await writeFile(join(cwd, 'node_modules/next/package.json'), JSON.stringify({version}));
+  return cwd;
+}
+
+function restoreEnvironment(name: string, value: string | undefined) {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+}

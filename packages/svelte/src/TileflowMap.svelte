@@ -42,6 +42,7 @@
     createTileflowSessionStarter,
     createTileflowThemeController,
     type TileflowMap3DAttachment,
+    createTileflowNavigationControlBinding,
     createTileflowContourRequestScope,
     createTileflowTransformRequest,
     getTileflowSystemColorScheme,
@@ -57,6 +58,11 @@
     type TileflowAppearanceBinding,
     type TileflowFairUseNoticeController,
     type TileflowMapLifecycleAttachment,
+    reportTileflowMapError,
+    resolveTileflowCameraFit,
+    type TileflowCameraFit,
+    type TileflowMapErrorCode,
+    type TileflowNavigationControlBinding,
     type TileflowThemeController,
     type TileflowContourRequestScope,
     type TileflowWorldRequestBridge,
@@ -64,6 +70,7 @@
   import {
     initialTileflowInteractionState,
     tileflowInteractionStateSchema,
+    unusedTileflowRendererDiagnostics,
     validateTileflowAnnotations,
     validateTileflowInteractionBindings,
     type TileflowAnnotation,
@@ -114,9 +121,14 @@
   export let mapOptions: TileflowMapProps['mapOptions'] = undefined;
   export let marker: TileflowMapProps['marker'] = undefined;
   export let mode: NonNullable<TileflowMapProps['mode']> = 'interactive';
+  export let navigationControl: TileflowMapProps['navigationControl'] = undefined;
+  export let bounds: TileflowMapProps['bounds'] = undefined;
+  export let fitAnnotations: TileflowMapProps['fitAnnotations'] = undefined;
+  export let fitBoundsOptions: TileflowMapProps['fitBoundsOptions'] = undefined;
   export let onInteractionDiagnostic: TileflowMapProps['onInteractionDiagnostic'] = undefined;
   export let onInteractionEvent: TileflowMapProps['onInteractionEvent'] = undefined;
   export let onInteractionStateChange: TileflowMapProps['onInteractionStateChange'] = undefined;
+  export let onError: TileflowMapProps['onError'] = undefined;
   export let onThemeChange: TileflowMapProps['onThemeChange'] = undefined;
   export let popup: TileflowMapProps['popup'] = undefined;
   export let source: TileflowMapProps['source'];
@@ -168,6 +180,8 @@
   let interactionRuntimesDisposing = false;
   let mapResizeObserver: ResizeObserver | null = null;
   let mapWorldRequestBridge: TileflowWorldRequestBridge | null = null;
+  let navigationBinding: TileflowNavigationControlBinding | null = null;
+  let appliedCameraFitKey: string | undefined;
   let mapContourRequestScope: TileflowContourRequestScope | null = null;
   let sceneAttachment: TileflowMap3DAttachment | null = null;
   $: sceneAttachment?.setVegetation(vegetation);
@@ -188,6 +202,21 @@
   let readinessRunId = 0;
 
   const dispatch = createEventDispatcher<{load: MapLibreMap}>();
+
+  /** The MapLibre map, or `null` until the map has loaded, in image mode and after it is taken down. */
+  export function getMap(): MapLibreMap | null {
+    return mapInstance;
+  }
+
+  /** Changes the map's theme, colours and emphasis; `null` when the map's style has no themes. */
+  export function getThemeController(): TileflowThemeController | null {
+    return themeController;
+  }
+
+  /** Without `onError` a failure goes to the console. */
+  function reportError(code: TileflowMapErrorCode, cause: unknown) {
+    reportTileflowMapError(onError, code, cause);
+  }
   const controlledInteractionOwnership = interactionState !== undefined;
   const initialInteractionState =
     validateInteractionStateInput(interactionState, defaultInteractionState).length === 0
@@ -246,7 +275,13 @@
           source,
           theme: themeResolution.name,
         });
-  $: blendStyles = resolveBlendStyles({isImageMode, key: themeBlendKey, manifestMap, source});
+  $: blendResolution = resolveBlendStyles({
+    isImageMode,
+    key: themeBlendKey,
+    manifestMap,
+    source,
+  });
+  $: blendStyles = blendResolution.styles;
   $: resolvedAnalytics = mergeTileflowAnalytics(analytics, runtimeStyle?.analytics);
   $: runtimeImageUrl =
     imageUrl ??
@@ -298,6 +333,14 @@
     ...annotationResolution.diagnostics,
     ...interactionBindingResolution.diagnostics,
     ...interactionStateDiagnostics,
+    ...(isImageMode
+      ? []
+      : unusedTileflowRendererDiagnostics({
+          annotations: annotationResolution.ok ? annotationResolution.annotations : [],
+          bindings: interactions ?? [],
+          hasPopupRenderer: popup !== undefined,
+          hasTooltipRenderer: tooltip !== undefined,
+        })),
     ...(isImageMode && hasInteractionConfiguration
       ? [
           createInteractionDiagnostic(
@@ -339,6 +382,24 @@
   $: if (mounted) {
     theme;
     syncSystemColorSchemeSubscription();
+  }
+
+  // A resolution that fails the same way again is reported once; a new object does not repeat it.
+  let reportedThemeFailure: string | undefined;
+  $: {
+    const failure = themeResolution.error ? String(themeResolution.cause) : undefined;
+    if (mounted && failure !== reportedThemeFailure && failure !== undefined) {
+      reportError('theme', themeResolution.cause);
+    }
+    if (mounted || failure === undefined) reportedThemeFailure = failure;
+  }
+  let reportedBlendFailure: string | undefined;
+  $: {
+    const failure = blendResolution.cause === undefined ? undefined : String(blendResolution.cause);
+    if (mounted && failure !== reportedBlendFailure && failure !== undefined) {
+      reportError('blend', blendResolution.cause);
+    }
+    if (mounted || failure === undefined) reportedBlendFailure = failure;
   }
 
   $: if (mounted) {
@@ -401,6 +462,22 @@
     syncCustomRenderers();
   }
 
+  $: if (mounted) {
+    navigationBinding?.update(resolvedInteractive ? navigationControl : false);
+  }
+
+  $: cameraFit = resolveTileflowCameraFit({
+    annotations: annotationResolution.ok ? annotationResolution.annotations : [],
+    bounds,
+    fitAnnotations,
+    fitBoundsOptions,
+  });
+  $: if (mounted && mapInstance && appliedCameraFitKey !== cameraFit.key) {
+    appliedCameraFitKey = cameraFit.key;
+    if (cameraFit.error) reportError('camera', new Error(cameraFit.error));
+    if (cameraFit.fit) fitCamera(mapInstance, cameraFit.fit);
+  }
+
   $: if (mounted && isImageMode) {
     runtimeImageUrl;
     void markImageLoading();
@@ -450,10 +527,20 @@
           manifest && mapName ? resolveTileflowManifestMap(manifest, mapName) : null;
         loadedManifestMap = resolvedMap;
         manifestResolutionState = resolvedMap ? 'ready' : 'error';
+        if (!resolvedMap) {
+          reportError(
+            'manifest',
+            new Error(
+              manifest
+                ? `The Tileflow manifest at ${manifestUrl} has no map named "${mapName}".`
+                : `No Tileflow manifest was found at ${manifestUrl}.`,
+            ),
+          );
+        }
       }
     } catch (error) {
       if (mounted && loadId === manifestLoadId) {
-        console.error('Failed to load Tileflow manifest', error);
+        reportError('manifest', error);
         loadedManifestMap = null;
         manifestResolutionState = 'error';
       }
@@ -507,6 +594,8 @@
     const currentSceneAttachment = sceneAttachment;
     sceneAttachment = null;
     const worldRequestBridge = mapWorldRequestBridge;
+    const currentNavigationBinding = navigationBinding;
+    navigationBinding = null;
     const contourRequestScope = mapContourRequestScope;
     interactionRuntimesDisposing = true;
     mapFairUseNotice = null;
@@ -553,6 +642,7 @@
       () => currentSceneAttachment?.dispose(),
       () => currentAppearanceBinding?.dispose(),
       () => currentThemeController?.dispose(),
+      () => currentNavigationBinding?.dispose(),
       () => worldRequestBridge?.dispose(),
       () => contourRequestScope?.dispose(),
       () => fairUseNotice?.dispose(),
@@ -569,10 +659,7 @@
     }
     interactionRuntimesDisposing = false;
     if (errors.length > 0) {
-      console.error(
-        'Failed to fully dispose the Tileflow map runtime',
-        errors.length === 1 ? errors[0] : new AggregateError(errors),
-      );
+      reportError('runtime', errors.length === 1 ? errors[0] : new AggregateError(errors));
     }
   }
 
@@ -624,7 +711,7 @@
     } catch (error) {
       if (mounted && runId === refreshRunId && loadId === mapLoadId) {
         lifetime.abort();
-        console.error('Failed to load the Tileflow map runtime', error);
+        reportError('runtime', error);
         mapCaptureState = 'error';
       }
       return;
@@ -721,8 +808,10 @@
       // allows, without easing in from the theme's own look.
       appearanceBinding = createTileflowAppearanceBinding({
         controller: themeController,
+        // CSS variables in `colors` are read where the map sits.
+        element: targetContainer,
         map: maplibreMap,
-        onError: (error, part) => console.error(`Failed to apply the Tileflow map ${part}`, error),
+        onError: (error, part) => reportError(part, error),
       });
       appearanceBinding.update({colors, emphasis}, {transition: {duration: 0}});
     }
@@ -734,7 +823,7 @@
       vegetation,
       viewMode,
       load: () => import('@tileflow/core/3d'),
-      onError: (error) => console.error('Failed to load the Tileflow 3D scene', error),
+      onError: (error) => reportError('scene', error),
       transformRequest: createTileflowTransformRequest({
         getAnalytics: () => resolvedAnalytics,
         sessionController: session,
@@ -890,9 +979,15 @@
     };
     syncSemanticInteractions();
 
-    if (resolvedInteractive) {
-      maplibreMap.addControl(new maplibregl.NavigationControl(), 'top-right');
-    }
+    navigationBinding = createTileflowNavigationControlBinding({
+      createControl: (controlOptions) => new maplibregl.NavigationControl(controlOptions),
+      map: maplibreMap,
+    });
+    navigationBinding.update(resolvedInteractive ? navigationControl : false);
+    // The first view is set without moving; later changes to the request move the camera.
+    appliedCameraFitKey = cameraFit.key;
+    if (cameraFit.error) reportError('camera', new Error(cameraFit.error));
+    if (cameraFit.fit) fitCamera(maplibreMap, cameraFit.fit, 0);
 
     mapResizeObserver = new ResizeObserver(() => {
       maplibreMap.resize();
@@ -941,7 +1036,7 @@
       {transition: themeTransition},
     );
     if (result.status === 'failed') {
-      console.error('Failed to blend the Tileflow map themes', result.error);
+      reportError('blend', result.error ?? new Error('The map themes could not be blended.'));
     }
   }
 
@@ -961,7 +1056,7 @@
     activeRuntimeResource = next;
     const result = await themeController.setTheme(next, {transition: themeTransition});
     if (result.status === 'failed') {
-      console.error('Failed to change the Tileflow map theme', result.error);
+      reportError('theme', result.error ?? new Error('The map theme could not be changed.'));
     }
   }
 
@@ -1297,6 +1392,65 @@
       .join('');
   }
 
+  function fitCamera(map: MapLibreMap, fit: TileflowCameraFit, duration?: number) {
+    map.fitBounds(fit.bounds, {
+      ...(fit.options.maxZoom === undefined ? {} : {maxZoom: fit.options.maxZoom}),
+      ...(fit.options.padding === undefined ? {} : {padding: fit.options.padding}),
+      ...(duration !== undefined
+        ? {duration}
+        : fit.options.duration === undefined
+          ? {}
+          : {duration: fit.options.duration}),
+    });
+  }
+
+  type MarkerPointerState = {focused: boolean; hovered: boolean};
+  let markerPointer: Record<string, MarkerPointerState> = {};
+  // A marker is selected while its popup is open: the popup has a render target of its own.
+  $: openPopupAnnotationIds = new Set(
+    annotationRenderTargets
+      .filter((renderTarget) => renderTarget.kind === 'popup')
+      .map((renderTarget) => renderTarget.annotation.id),
+  );
+
+  /** Reads a marker's hover and focus from its element, for the `state` of its snippet. */
+  function trackMarker(
+    _node: HTMLElement,
+    renderTarget: TileflowMapLibreDomRenderTarget<TileflowAnnotation>,
+  ) {
+    const element = renderTarget.container.closest<HTMLElement>(
+      '[data-tileflow-interaction="marker"]',
+    );
+    const set = (patch: Partial<MarkerPointerState>) => {
+      markerPointer = {
+        ...markerPointer,
+        [renderTarget.key]: {
+          ...(markerPointer[renderTarget.key] ?? {focused: false, hovered: false}),
+          ...patch,
+        },
+      };
+    };
+    const enter = () => set({hovered: true});
+    const leave = () => set({hovered: false});
+    const focus = () => set({focused: true});
+    const blur = () => set({focused: false});
+    element?.addEventListener('pointerenter', enter);
+    element?.addEventListener('pointerleave', leave);
+    element?.addEventListener('focusin', focus);
+    element?.addEventListener('focusout', blur);
+    return {
+      destroy() {
+        element?.removeEventListener('pointerenter', enter);
+        element?.removeEventListener('pointerleave', leave);
+        element?.removeEventListener('focusin', focus);
+        element?.removeEventListener('focusout', blur);
+        const rest = {...markerPointer};
+        delete rest[renderTarget.key];
+        markerPointer = rest;
+      },
+    };
+  }
+
   function portal(node: HTMLElement, target: HTMLElement) {
     let currentTarget = target;
     const move = (nextTarget: HTMLElement) => {
@@ -1333,9 +1487,20 @@
 
   function createAnnotationViewContext(
     renderTarget: TileflowMapLibreDomRenderTarget<TileflowAnnotation>,
+    pointer?: MarkerPointerState,
+    openPopups?: ReadonlySet<string>,
   ): TileflowAnnotationViewContext {
     const content = getRenderTargetContent(renderTarget);
     return {
+      ...(renderTarget.kind === 'marker'
+        ? {
+            state: {
+              focused: pointer?.focused ?? false,
+              hovered: pointer?.hovered ?? false,
+              selected: openPopups?.has(renderTarget.annotation.id) ?? false,
+            },
+          }
+        : {}),
       annotation: renderTarget.annotation,
       close: renderTarget.close,
       content,
@@ -1402,7 +1567,7 @@
     theme: TileflowMapProps['theme'];
     timeOfDay: TileflowMapProps['timeOfDay'];
     themeBlend: TileflowMapProps['themeBlend'];
-  }): Readonly<{error: boolean; name: string | undefined}> {
+  }): Readonly<{cause?: unknown; error: boolean; name: string | undefined}> {
     // A blend shows its nearest theme until the blend style is ready, and names it while blending.
     const selection = input.themeBlend ? nearestTileflowBlendTheme(input.themeBlend) : input.theme;
     if (!input.manifestMap) {
@@ -1425,8 +1590,8 @@
           input.themeBlend ? undefined : input.timeOfDay,
         ).name,
       };
-    } catch {
-      return {error: true, name: undefined};
+    } catch (cause) {
+      return {cause, error: true, name: undefined};
     }
   }
 
@@ -1435,16 +1600,18 @@
     key: string | undefined;
     manifestMap: TileflowRuntimeManifestMap | null;
     source: TileflowMapProps['source'];
-  }): TileflowRuntimeStyle[] | null {
-    if (input.isImageMode || !input.manifestMap || !input.key) return null;
+  }): Readonly<{cause?: unknown; styles: TileflowRuntimeStyle[] | null}> {
+    if (input.isImageMode || !input.manifestMap || !input.key) return {styles: null};
     try {
-      return resolveTileflowRuntimeThemeBlend({
-        blend: {position: 0, themes: JSON.parse(input.key) as string[]},
-        manifestMap: input.manifestMap,
-        source: input.source,
-      });
-    } catch {
-      return null;
+      return {
+        styles: resolveTileflowRuntimeThemeBlend({
+          blend: {position: 0, themes: JSON.parse(input.key) as string[]},
+          manifestMap: input.manifestMap,
+          source: input.source,
+        }),
+      };
+    } catch (cause) {
+      return {cause, styles: null};
     }
   }
 
@@ -1491,8 +1658,18 @@
   {/if}
   {#each annotationRenderTargets as renderTarget (renderTarget.key)}
     {#if renderTarget.kind === 'marker' && marker}
-      <div style="display: contents;" use:portal={renderTarget.container}>
-        {@render marker(createAnnotationViewContext(renderTarget))}
+      <div
+        style="display: contents;"
+        use:portal={renderTarget.container}
+        use:trackMarker={renderTarget}
+      >
+        {@render marker(
+          createAnnotationViewContext(
+            renderTarget,
+            markerPointer[renderTarget.key],
+            openPopupAnnotationIds,
+          ),
+        )}
       </div>
     {:else if renderTarget.kind === 'tooltip' && tooltip}
       <div style="display: contents;" use:portal={renderTarget.container}>

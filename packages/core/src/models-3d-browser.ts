@@ -13,13 +13,13 @@
 // is built once the indexes round it, and the map's own models near it, have arrived (or a moment
 // has passed). A model or tile that fails to load, or does not arrive in a few seconds, leaves the
 // map's own buildings standing.
+import type {TileflowStandIn} from './building-stand-ins';
 import {
   readTileflowTeamModelName,
   type TileflowBuildingModelPlacement,
 } from './buildings-3d-design';
 import {cameraTileAt} from './camera-tiles-browser';
 import {decodeTileflowModels} from './models-3d-file';
-import {tileflowModelLevel, type TileflowModelLevelView} from './models-3d-levels';
 import {
   readTileflowLandmarkRegion,
   readTileflowLandmarksTileJson,
@@ -27,6 +27,7 @@ import {
   tileflowLandmarkRegionOf,
   type TileflowLandmarksTileJson,
 } from './models-3d-landmarks';
+import {tileflowModelLevel, type TileflowModelLevelView} from './models-3d-levels';
 import {
   closeModelImages,
   readModelImages,
@@ -57,7 +58,8 @@ const reachTiles = 1;
 const retryAfter = 30_000;
 const tilesetRetryAfter = 300_000;
 // A landmark's footprint holds the buildings under it flat for this long, in milliseconds, while its
-// tile is on its way; then they are raised until it arrives.
+// tile is on its way, and for as long as the tile, arrived, is being read; then they are raised until
+// it arrives.
 const landmarkHold = 3_000;
 // A tile of buildings waits at most this long for the indexes and models round it.
 const settleWait = 1_500;
@@ -118,6 +120,14 @@ export type TileflowPlacedModels = {
     tile: Readonly<{x: number; y: number; z: number}>,
     extent: number,
   ): number[][] | undefined;
+  /**
+   * Whether every tile (at `zoom`) can be told which buildings a model stands in for: the indexes
+   * round it, and the map's own models near it, have arrived, failed or been on their way for a
+   * moment. False before the first update.
+   */
+  settled(tiles: readonly Readonly<{x: number; y: number}>[], zoom: number): boolean;
+  /** The footprints standing, or held for a landmark on its way, anywhere near the camera. */
+  standIns(): readonly TileflowStandIn[];
   /** The models loaded and wanted now. */
   shown(): readonly TileflowPlacedModel[];
   /**
@@ -150,12 +160,14 @@ export function createTileflowPlacedModels(
   const settleFor = options.timing?.settle ?? settleWait;
   const loaded = new Map<string, TileflowPlacedModel>();
   const loading = new Map<string, AbortController>();
+  // When each download still on its way, of a model or a region's index, began.
+  const since = new Map<string, number>();
   const failed = new Map<string, number>();
   let wanted = new Set<string>();
   // Tileflow's landmarks: the tileset's TileJSON, the indexes of its regions near the camera by
   // `x/y`, and its tiles near the camera by their hash.
   let tileset: TileflowLandmarksTileJson | undefined;
-  let tilesetLoad: {url: string; controller: AbortController} | undefined;
+  let tilesetLoad: {url: string; controller: AbortController; since: number} | undefined;
   let tilesetFailed: {url: string; until: number} | undefined;
   const regions = new Map<
     string,
@@ -168,6 +180,10 @@ export function createTileflowPlacedModels(
   const regionFailed = new Map<string, number>();
   const landmarkTiles = new Map<string, {entries: TileflowPlacedModel[]; used: number}>();
   const tileLoading = new Map<string, AbortController>();
+  // Landmark tiles that have arrived and are being read.
+  const decoding = new Set<string>();
+  // Each landmark as the indexes read so far name it.
+  const indexed = new Map<string, TileflowLandmarkFootprint>();
   const tileFailed = new Map<string, number>();
   let wantedTiles = new Set<string>();
   // What stands now, the map's own models first, and the landmarks held on their way.
@@ -185,6 +201,8 @@ export function createTileflowPlacedModels(
   let disposed = false;
   let version = 0;
   let lastZoom = 15;
+  let lastTiles: readonly Readonly<{x: number; y: number}>[] = [];
+  let updated = false;
   // Models let go of while their buffers are still on the GPU; the next upload deletes them.
   const released: TileflowPlacedModel[] = [];
 
@@ -244,6 +262,7 @@ export function createTileflowPlacedModels(
   function load(placement: TileflowBuildingModelPlacement, key: string): void {
     const controller = new AbortController();
     loading.set(key, controller);
+    since.set(key, performance.now());
     download(placement.url, controller.signal)
       .then(async (response) => decodeTileflowModels(await response.arrayBuffer()))
       .then(async (models) => {
@@ -252,6 +271,7 @@ export function createTileflowPlacedModels(
         if (!model) throw new Error('not a Tileflow model');
         const images = await readModelImages(model, controller.signal);
         loading.delete(key);
+        since.delete(key);
         if (disposed || controller.signal.aborted) {
           closeModelImages(images);
           return;
@@ -261,6 +281,7 @@ export function createTileflowPlacedModels(
       })
       .catch(() => {
         loading.delete(key);
+        since.delete(key);
         // A model that failed is tried again after a while; the buildings stay meanwhile.
         failed.set(key, performance.now() + retryAfter);
         recheck();
@@ -269,7 +290,7 @@ export function createTileflowPlacedModels(
 
   function loadTileset(url: string): void {
     const controller = new AbortController();
-    tilesetLoad = {url, controller};
+    tilesetLoad = {url, controller, since: performance.now()};
     download(url, controller.signal)
       .then((response) => response.json())
       .then((json: unknown) => {
@@ -279,6 +300,9 @@ export function createTileflowPlacedModels(
         const read = readTileflowLandmarksTileJson(json, url);
         if (!read) throw new Error('not a Tileflow landmarks tileset');
         tileset = read;
+        // The indexes round the view are asked for at once, not on the next frame: the map's own
+        // extrusion waits for them.
+        requestRegions(lastTiles, lastZoom);
         arrived();
       })
       .catch(() => {
@@ -300,10 +324,12 @@ export function createTileflowPlacedModels(
     ).href;
     const controller = new AbortController();
     regionLoading.set(regionKey, controller);
+    since.set(`region:${regionKey}`, performance.now());
     download(url, controller.signal)
       .then((response) => response.json())
       .then((json: unknown) => {
         regionLoading.delete(regionKey);
+        since.delete(`region:${regionKey}`);
         if (disposed || tileset !== source) return;
         const region = readTileflowLandmarkRegion(json);
         if (!region || region.region[0] !== x || region.region[1] !== y)
@@ -315,10 +341,13 @@ export function createTileflowPlacedModels(
           ]),
         );
         regions.set(regionKey, {tiles, used: performance.now()});
+        for (const {landmarks} of tiles.values())
+          for (const landmark of landmarks) indexed.set(landmark.id, landmark);
         arrived();
       })
       .catch(() => {
         regionLoading.delete(regionKey);
+        since.delete(`region:${regionKey}`);
         regionFailed.set(regionKey, performance.now() + retryAfter);
         recheck();
       });
@@ -330,7 +359,12 @@ export function createTileflowPlacedModels(
     const controller = new AbortController();
     tileLoading.set(hash, controller);
     download(url, controller.signal)
-      .then(async (response) => decodeTileflowModels(await response.arrayBuffer()))
+      .then(async (response) => {
+        const bytes = await response.arrayBuffer();
+        // Arrived, a tile is read to the end, well or badly: its landmarks hold until then.
+        decoding.add(hash);
+        return decodeTileflowModels(bytes);
+      })
       .then(async (models) => {
         if (disposed || tileset !== source) return;
         if (!models) throw new Error('not a Tileflow landmarks tile');
@@ -357,15 +391,30 @@ export function createTileflowPlacedModels(
           throw error;
         }
         tileLoading.delete(hash);
+        decoding.delete(hash);
         landmarkTiles.set(hash, {entries, used: now});
         arrived();
       })
       .catch(() => {
         tileLoading.delete(hash);
+        decoding.delete(hash);
         tileFailed.set(hash, performance.now() + retryAfter);
         // A held landmark whose tile failed lets its buildings rise.
         arrived();
       });
+  }
+
+  /** Asks for the indexes of the regions near the camera's tiles that are not in or on their way. */
+  function requestRegions(tiles: readonly Readonly<{x: number; y: number}>[], zoom: number): void {
+    if (!tileset) return;
+    const now = performance.now();
+    for (const [x, y] of landmarkTilesNear(tiles, zoom).values()) {
+      const [rx, ry] = tileflowLandmarkRegionOf([x, y]);
+      const regionKey = `${rx}/${ry}`;
+      if (!tileset.regions.has(regionKey) || regions.has(regionKey)) continue;
+      if (regionLoading.has(regionKey) || (regionFailed.get(regionKey) ?? 0) > now) continue;
+      loadRegion(regionKey, rx, ry);
+    }
   }
 
   /** The tileset's tiles near the camera's tiles (`tiles` at `zoom`), as `x/y` with `[x, y]`. */
@@ -421,15 +470,16 @@ export function createTileflowPlacedModels(
   ): HeldLandmark[] {
     const out: HeldLandmark[] = [];
     const seen = new Set<string>();
-    for (const landmarks of near.values())
+    for (const [hash, landmarks] of near)
       for (const landmark of landmarks) {
         const key = `landmark:${landmark.id}`;
         if (seen.has(key) || ownIds.has(landmark.id)) continue;
         seen.add(key);
-        // The hold counts down from when the buildings round it show, not while they are hidden.
+        // The hold counts down from when the buildings round it show, not while they are hidden,
+        // and does not end while its tile, arrived, is being read.
         const since = holding.get(key) ?? (shown ? now : undefined);
         if (since !== undefined) holding.set(key, since);
-        if (since !== undefined && now - since >= holdFor) continue;
+        if (since !== undefined && now - since >= holdFor && !decoding.has(hash)) continue;
         const entry: HeldLandmark = {
           key,
           placement: {at: landmark.at, heading: landmark.heading},
@@ -464,20 +514,28 @@ export function createTileflowPlacedModels(
   }
 
   /** Whether the indexes round a tile of buildings, and the map's own models near it, are in. */
-  function settledAround(tile: Readonly<{x: number; y: number; z: number}>): boolean {
+  function settledAround(
+    tile: Readonly<{x: number; y: number; z: number}>,
+    patience = Infinity,
+  ): boolean {
     if (disposed) return true;
     const now = performance.now();
+    // A download on its way for longer than the patience is no longer waited for.
+    const late = (key: string) => now - (since.get(key) ?? now) >= patience;
     for (const placement of lastPlacements ?? []) {
       const [px, py] = cameraTileAt(placement.at[0], placement.at[1], tile.z);
       if (Math.abs(Math.floor(px) - tile.x) > reachTiles) continue;
       if (Math.abs(Math.floor(py) - tile.y) > reachTiles) continue;
       const key = keyOf(placement);
-      if (!loaded.has(key) && (failed.get(key) ?? 0) <= now) return false;
+      if (!loaded.has(key) && (failed.get(key) ?? 0) <= now && !late(key)) return false;
     }
     const url = lastLandmarks;
     if (!url) return true;
     if (!tileset || tileset.url !== url)
-      return tilesetFailed?.url === url && tilesetFailed.until > now;
+      return (
+        (tilesetFailed?.url === url && tilesetFailed.until > now) ||
+        (tilesetLoad?.url === url && now - tilesetLoad.since >= patience)
+      );
     // The landmark tiles over this tile, and the ones beside them, whose landmarks reach into it.
     const scale = 2 ** (tileset.tileZoom - tile.z);
     const left = Math.floor(tile.x * scale) - 1;
@@ -490,6 +548,7 @@ export function createTileflowPlacedModels(
         const regionKey = `${rx}/${ry}`;
         if (!tileset.regions.has(regionKey) || regions.has(regionKey)) continue;
         if ((regionFailed.get(regionKey) ?? 0) > now) continue;
+        if (regionLoading.has(regionKey) && late(`region:${regionKey}`)) continue;
         return false;
       }
     return true;
@@ -498,7 +557,9 @@ export function createTileflowPlacedModels(
   return {
     update(placements, landmarks, tiles, zoom, shown = true) {
       if (disposed) return;
+      updated = true;
       lastZoom = zoom;
+      lastTiles = tiles;
       lastLandmarks = landmarks;
       const near = new Set<string>();
       const now = performance.now();
@@ -542,6 +603,7 @@ export function createTileflowPlacedModels(
         if (!near.has(key)) {
           controller.abort();
           loading.delete(key);
+          since.delete(key);
         }
       const spare = [...loaded.values()]
         .filter((entry) => !near.has(entry.key))
@@ -617,6 +679,7 @@ export function createTileflowPlacedModels(
         if (!nearRegions.has(regionKey)) {
           controller.abort();
           regionLoading.delete(regionKey);
+          since.delete(`region:${regionKey}`);
         }
       for (const [hash, controller] of tileLoading)
         if (!nearHashes.has(hash)) {
@@ -726,6 +789,27 @@ export function createTileflowPlacedModels(
         if (inside) (masks ??= []).push(...rings);
       }
       return masks;
+    },
+    settled(tiles, zoom) {
+      return updated && tiles.every((tile) => settledAround({...tile, z: zoom}, settleFor));
+    },
+    standIns() {
+      const out: TileflowStandIn[] = [];
+      for (const entry of active) {
+        // A landmark stands in for the footprint its index named while it was held, so the ground
+        // left to it does not change when it arrives.
+        const named = entry.landmark ? indexed.get(entry.placement.model) : undefined;
+        const footprint =
+          named &&
+          named.at[0] === entry.placement.at[0] &&
+          named.at[1] === entry.placement.at[1] &&
+          named.heading === entry.placement.heading
+            ? named.footprint
+            : entry.model.footprint;
+        if (footprint.length > 0) out.push({placement: entry.placement, footprint});
+      }
+      for (const {placement, footprint} of held) out.push({placement, footprint});
+      return out;
     },
     shown: () => active,
     pending() {

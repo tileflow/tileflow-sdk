@@ -26,6 +26,7 @@ const runtimeExports = [
   'tileflowInteractionTargetRefsEqual',
   'tileflowInteractionTargetSchema',
   'tileflowPoiCategories',
+  'unusedTileflowRendererDiagnostics',
   'validateTileflowAnnotations',
   'validateTileflowInteractionBindings',
   'withTileflowClusterLabelFont',

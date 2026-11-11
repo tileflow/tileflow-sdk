@@ -345,7 +345,11 @@ test('renders secure accessible defaults through textContent and stable DOM surf
   assert.equal(popup.container.className, 'tileflow-interaction-popup');
   assert.equal(popup.container.getAttribute('role'), 'dialog');
   assert.equal(contentOf(popup.container).textContent, unsafe);
-  assert.equal(popup.container.children[1]!.textContent, 'Close');
+  const closeButton = popup.container.children[1]!;
+  assert.equal(closeButton.getAttribute('aria-label'), 'Close Annotation safe');
+  assert.equal(closeButton.textContent, '');
+  assert.equal(closeButton.children[0]!.textContent, '\u00d7');
+  assert.equal(closeButton.children[0]!.getAttribute('aria-hidden'), 'true');
   assert.equal(harness.document.activeElement, popup.container.children[1]);
   assert.equal(marker.getAttribute('aria-expanded'), 'true');
   assert.equal(marker.getAttribute('aria-controls'), popup.container.id);

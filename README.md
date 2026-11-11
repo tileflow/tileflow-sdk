@@ -1,4 +1,17 @@
+<p align="center">
+  <a href="https://tileflow.dev">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset=".github/assets/tileflow-logo-dark.svg">
+      <img alt="Tileflow" src=".github/assets/tileflow-logo-light.svg" width="240">
+    </picture>
+  </a>
+</p>
+
 # Tileflow SDK
+
+[![npm](https://img.shields.io/npm/v/%40tileflow%2Fcore/alpha?label=%40tileflow%2Fcore)](https://www.npmjs.com/package/@tileflow/core)
+[![CI](https://github.com/tileflow/tileflow-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/tileflow/tileflow-sdk/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 Create and customize maps in TypeScript. Preview them locally and use them in your application
 with MapLibre. Start from an official map, adjust its themes, roads, and labels, and keep your
@@ -6,7 +19,16 @@ design in one `tileflow.config.ts`.
 
 [Documentation](https://tileflow.dev/docs) · [Gallery](https://tileflow.dev/gallery) · [Quickstart](https://tileflow.dev/docs/get-started/quickstart)
 
-[![Streets, a Tileflow map of central Madrid in light mode.](https://tileflow.dev/images/docs/map-design/streets-light.webp)](https://tileflow.dev/gallery)
+[![Six maps made with the Tileflow SDK: clustered restaurants over Miami's streets, a popup on the Royal Palace of Madrid in 3D at dusk, a trail with its elevation profile around the Matterhorn, bike-station markers on a playful 3D map of Madrid, a nautical chart near the Golden Gate, and a numbered walking tour on an engraved-style map of Paris.](.github/assets/showcase.jpg)](https://tileflow.dev/gallery)
+
+**Made with the Tileflow SDK** (left to right, top to bottom):
+[clustered points](https://tileflow.dev/docs/examples/cluster-points) over [Streets](https://tileflow.dev/gallery?map=streets) in Miami;
+a [popup](https://tileflow.dev/docs/examples/show-a-popup-on-click) on the Royal Palace of Madrid with [3D landmarks](https://tileflow.dev/docs/examples/show-3d-landmarks), at dusk;
+a trail and its elevation profile, read from [3D terrain](https://tileflow.dev/docs/map-design/terrain-and-globe), on [Outdoors](https://tileflow.dev/docs/map-design/basemaps) around the Matterhorn;
+[custom markers](https://tileflow.dev/docs/examples/use-custom-marker-content) for bike stations on the [Super Tile World](https://tileflow.dev/gallery?map=super-tile-world) community map in Madrid;
+soundings, buoys, and lights near the Golden Gate;
+a walking tour drawn as a [dashed line](https://tileflow.dev/docs/examples/draw-a-dashed-line) on the [Baedeker](https://tileflow.dev/gallery?map=baedeker) community map of Paris.
+Map data © [OpenStreetMap contributors and other sources](https://tileflow.dev/copyright).
 
 ## Create your first map
 

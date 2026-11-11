@@ -507,14 +507,19 @@ export function createTileflowArtifactStatus(state: TileflowArtifactSessionState
   };
 }
 
+/**
+ * A generation that is still building is `503` with `Retry-After`, so clients know to ask again.
+ * Invalid sources stay `409`: asking again does not change the answer until the source changes.
+ */
 function unavailableArtifactsResponse(state: TileflowArtifactSessionState): Response {
-  return jsonResponse(
-    {
-      error: 'No valid Tileflow artifact generation is available.',
-      ...createTileflowArtifactStatus(state),
-    },
-    409,
-  );
+  const body = {
+    error: 'No valid Tileflow artifact generation is available.',
+    ...createTileflowArtifactStatus(state),
+  };
+  if (state.status !== 'building') return jsonResponse(body, 409);
+  const response = jsonResponse(body, 503);
+  response.headers.set('Retry-After', '1');
+  return response;
 }
 
 function eventStreamResponse(session: TileflowArtifactSession): Response {

@@ -5,7 +5,7 @@ import {streetsThemes} from './streets-themes';
  * Natural ground, relief and trail inks for one light preset. Everything else, including roads,
  * sky, lighting and POI discs, stays with the matching Streets appearance.
  */
-type TerrainPalette = {
+type OutdoorsPalette = {
   boundary: string;
   boundaryHalo: string;
   contour: string;
@@ -117,12 +117,12 @@ const palettes = {
     wetland: '#3B504E',
     wood: '#2D4235',
   },
-} as const satisfies Record<string, TerrainPalette>;
+} as const satisfies Record<string, OutdoorsPalette>;
 
-function terrainTheme(id: keyof typeof palettes, parent: TileflowTheme) {
+function outdoorsTheme(id: keyof typeof palettes, parent: TileflowTheme) {
   const palette = palettes[id];
   return defineTheme(parent, {
-    id: `terrain-${id}`,
+    id: `outdoors-${id}`,
     version: 1,
     colorScheme: id === 'dark' || id === 'dusk' ? 'dark' : 'light',
     tokens: {
@@ -164,26 +164,26 @@ function terrainTheme(id: keyof typeof palettes, parent: TileflowTheme) {
         'roads.trailHalo': palette.trailHalo,
       },
       image: {
-        'terrain.peak': id === 'dark' || id === 'dusk' ? 'terrain-peak-dark' : 'terrain-peak',
+        'landforms.peak': id === 'dark' || id === 'dusk' ? 'outdoors-peak-dark' : 'outdoors-peak',
       },
     },
   });
 }
 
 /** Streets' four times of day, repainted for natural ground and trails. */
-export const terrainThemes = Object.freeze({
-  light: terrainTheme('light', streetsThemes.light),
-  dawn: terrainTheme('dawn', streetsThemes.dawn),
-  dusk: terrainTheme('dusk', streetsThemes.dusk),
-  dark: terrainTheme('dark', streetsThemes.dark),
+export const outdoorsThemes = Object.freeze({
+  light: outdoorsTheme('light', streetsThemes.light),
+  dawn: outdoorsTheme('dawn', streetsThemes.dawn),
+  dusk: outdoorsTheme('dusk', streetsThemes.dusk),
+  dark: outdoorsTheme('dark', streetsThemes.dark),
 });
 
-/** Theme references consumed by the Terrain modules. */
-export const terrainVisual = Object.freeze({
+/** Theme references consumed by the Outdoors modules. */
+export const outdoorsVisual = Object.freeze({
   contour: token.color('terrain.contour'),
   halo: token.color('labels.placeHalo'),
   peak: token.color('labels.peak'),
-  peakIcon: token.image('terrain.peak'),
+  peakIcon: token.image('landforms.peak'),
   protectedEdge: token.color('landcover.protectedEdge'),
   track: token.color('roads.track'),
   trail: token.color('roads.trail'),

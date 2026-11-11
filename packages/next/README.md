@@ -65,6 +65,45 @@ watched generation across repeated route-module evaluation. A custom harness tha
 must call `close()` on shutdown; this App Router module retains its shared handler for the process
 lifetime.
 
+The first access to a map does not fail while it compiles. `next build` compiles the map into
+`.next/tileflow` when it loads the route module, and a production server answers from those files.
+When `withTileflow()` has already written static artifacts to `public/tileflow`, the route compiles
+no second copy and answers from those files if a request reaches it; set the route's `publicDir`
+to match `withTileflow`'s when you changed it. Without either, for example in `next dev`, the route
+answers `503 Service Unavailable` with `Retry-After` until the map is ready, and the Tileflow
+runtime asks for its manifest again for up to 30 seconds. `compileWaitMs` sets how long a request
+waits for the first compile before the route answers `503` (3 seconds by default), and `distDir`
+names a custom Next.js `distDir`.
+
+## Deploy a standalone output
+
+`withTileflow()` keeps `@tileflow/dev` out of the route bundle with `serverExternalPackages`,
+merging with your list, and adds the files the route answers from to the route's
+`outputFileTracingIncludes`, so `output: 'standalone'` carries them. Copy `public` into the
+standalone directory as Next.js asks for any static files. In Next.js 14 the same options live under
+`experimental`, and `withTileflow()` uses them there.
+
+Turbopack lists the files to trace before it collects page data and skips `.next`, so with it only
+`public/tileflow` reaches a standalone output. A standalone build with Turbopack and no static
+artifacts, for example with `emitBuildArtifacts: false`, compiles the map on the first request. Build
+with `next build --webpack`, or keep `emitBuildArtifacts` on, to avoid that.
+
+Without `withTileflow()`, add the package to your Next.js configuration yourself. This also stops
+Turbopack from bundling the compiler into the route:
+
+<!-- docs:check -->
+
+```js
+export default {
+  serverExternalPackages: ['@tileflow/dev'],
+};
+```
+
+Turbopack reports warnings about dynamic file access (`Can't resolve <dynamic>`) only for packages
+it bundles from outside `node_modules`, as when a monorepo links `@tileflow/next` from its
+workspace. It cannot leave such a linked package external, so the option does not silence them
+there. Packages installed from a registry produce none.
+
 ## Deliver the matching worker
 
 Create `scripts/copy-maplibre-worker.mjs` in the application. Run it from the application root after

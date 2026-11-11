@@ -224,7 +224,7 @@ test('expands themes and batch entries into named exploratory captures', async (
     JSON.stringify({
       captures: [
         {name: 'eiffel', theme: 'dusk', camera: {center: [2.295, 48.8565], zoom: 16.4, pitch: 64}},
-        {name: 'madrid', bounds: [-3.8, 40.3, -3.6, 40.5], width: 640, map: 'terrain'},
+        {name: 'madrid', bounds: [-3.8, 40.3, -3.6, 40.5], width: 640, map: 'outdoors'},
       ],
     }),
   );
@@ -241,7 +241,7 @@ test('expands themes and batch entries into named exploratory captures', async (
     pitch: 64,
   });
   assert.deepEqual(batch.eiffel?.viewport, {width: 900, height: 800, dpr: 1});
-  assert.equal(batch.madrid?.map, 'terrain');
+  assert.equal(batch.madrid?.map, 'outdoors');
   assert.equal(batch.madrid?.theme, 'light');
   assert.equal(batch.madrid?.camera.type, 'bounds');
   assert.equal(batch.madrid?.viewport.width, 640);

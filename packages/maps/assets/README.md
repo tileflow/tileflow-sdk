@@ -1,8 +1,8 @@
 # Official map assets
 
-These directories contain the package-owned sources for Streets, Soundings and Terrain.
-Streets' icons, fonts and models are shared by Terrain; Terrain adds its own summit symbols.
-Use the exported `streetsIcons`, `streetsFonts`, `streetsModels`, `soundingsIcons` and `terrainIcons`
+These directories contain the package-owned sources for Streets, Soundings and Outdoors.
+Streets' icons, fonts and models are shared by Outdoors; Outdoors adds its own summit symbols.
+Use the exported `streetsIcons`, `streetsFonts`, `streetsModels`, `soundingsIcons` and `outdoorsIcons`
 descriptors to compose resources. Streets includes a pinned CC0 subset of Maki pictograms inside
 Tileflow-authored circular POI markers; provenance is in `../THIRD_PARTY_NOTICES.md` and the
 upstream license is kept at `streets/LICENSE-MAKI.txt`.
@@ -57,7 +57,7 @@ fixed-colour artwork and is unused because rocks are drawn as chart crosses. A g
 deliberately not relabelled as a harbour. Soundings uses GEBCO-derived depth bands only as broad
 cartographic context, and neither it nor its Nautical marks is a navigation product.
 
-Terrain adds two original circular summit badges, one for light ground and one for dark ground.
+Outdoors adds two original circular summit badges, one for light ground and one for dark ground.
 It shares Streets’ packaged lettering and POI resources. No elevation tiles are bundled.
 
 `@tileflow/dev` resolves each package descriptor, verifies that its real path remains inside the
@@ -68,7 +68,7 @@ lower-kebab, and a later directory wins on an exact duplicate ID.
 
 Font preparation is generic: it reads any map's declared `fonts` directories, derives IDs from
 OpenType full names, includes only used faces, and publishes content-addressed font and license
-assets. Streets and Terrain materialize their selected DINish and Noto Sans faces and licenses.
+assets. Streets and Outdoors materialize their selected DINish and Noto Sans faces and licenses.
 Their manifest and Style carry the strict `tileflow:fontFaces` public-asset contract;
 Style font values are exact OpenType full names. Soundings declares the canonical Tileflow
 glyph URL with exact `Noto Sans Regular` and `Noto Sans Bold` stacks. The compiler never

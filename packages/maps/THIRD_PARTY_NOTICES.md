@@ -1,6 +1,6 @@
 # Third-party notices
 
-Except for the Streets POI pictograms documented below, the official Streets, Soundings, and Terrain icon and pattern
+Except for the Streets POI pictograms documented below, the official Streets, Soundings, and Outdoors icon and pattern
 artwork published under `assets/` is original Tileflow artwork.
 
 This file is shipped with `@tileflow/maps` so future third-party assets have a stable place for
@@ -107,9 +107,9 @@ Source, attribution and adaptation details: assets/streets/climate/NOTICE.txt. T
 credit links to <https://tileflow.dev/copyright#streets-climate>, which carries the same notice.
 The image is historical context, not live vegetation.
 
-## Terrain elevation and shared artwork
+## Outdoors elevation and shared artwork
 
-Terrain uses Mapterhorn elevation at runtime for its 3D surface, hillshade and contours. No DEM
-tile is packaged here. Its source links to <https://mapterhorn.com/attribution/>. Terrain shares
+Outdoors uses Mapterhorn elevation at runtime for its 3D surface, hillshade and contours. No DEM
+tile is packaged here. Its source links to <https://mapterhorn.com/attribution/>. Outdoors shares
 Streets lettering, POI pictograms, transport symbols and climate context, with the notices above.
-The two summit symbols in `assets/terrain/icons/` are original Tileflow artwork.
+The two summit symbols in `assets/outdoors/icons/` are original Tileflow artwork.

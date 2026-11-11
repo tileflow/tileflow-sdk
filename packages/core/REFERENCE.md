@@ -125,10 +125,15 @@ prepare once; discrete values and RGBA icons switch at the dominant theme withou
 Fades use premultiplied OKLab. Parameter columns are not semantic tokens.
 
 `controller.setColors({'surface.water': '#008800'})` overrides named tokens; `{}` restores authored
-colours. Values may be hex, `rgb()`, `hsl()`, `oklch()`, `oklab()` or `color-mix()` in `srgb`,
+colours. Values may be hex, `rgb()`, `hsl()`, `lab()`, `lch()`, `oklch()`, `oklab()` or `color-mix()` in `srgb`,
 `srgb-linear`, `oklab` or `oklch`; they are converted to sRGB, with chroma reduced for a colour
 outside the gamut. A value the SDK cannot read, such as `var(--x)` or a named colour, is an error
-that names it. Fixed colours and application layers remain. A map may declare colour knobs with
+that names it. `createTileflowAppearanceBinding` (`@tileflow/core/browser`), which the React, Vue and
+Svelte maps use for `colors` and `emphasis`, takes an `element` and resolves `var(--name, fallback)`,
+also inside `color-mix()` and nested, against its computed style. It resolves again when the `class`,
+`style` or `data-theme` attribute of `<html>` or `<body>`, or `prefers-color-scheme`, changes, and
+shows colours again only if the result changed. A variable with no value and no fallback is reported
+to `onError` with the `colors` part, by name. Fixed colours and application layers remain. A map may declare colour knobs with
 `colorKnobs`: named colours with no dot that stand for many tokens, so `setColors({water: '#2563eb'})`
 works without naming a token. A knob lists its tokens, each with an operation: `replace` gives the
 token the colour; `shift` moves it by as much as the knob's `reference` token moves to reach the
@@ -153,7 +158,10 @@ mix 3D directions (angular fallback for opposite vectors) and OKLab light colour
 `createTileflowBuildings3D` enables worker-meshed buildings rising at zoom 15–15.3, scene sun,
 cast/contact shadows and 0.8 m rounded corners; effects are independently overridable. Its
 `tileflow-buildings-scene-3d` layer replaces `tileflow-buildings-native-extrusion` only after visible
-building tiles draw. Failure keeps the native fallback; 2D restores authored visibility.
+building tiles draw. Until then the native extrusion leaves out the buildings that landmarks and
+placed models stand in for (`standIns`). It draws once their footprints round the view are known, or
+their downloads have taken 1.5 s, and after a change only once its tiles are read again. Failure
+keeps the native fallback; 2D restores authored visibility.
 Street lights default off, including in Streets: enable `roads.streetLights.enabled` and mount
 `createTileflowStreetLights`. `createTileflowVegetation` follows the map's `3d`, `flat` or `auto` policy.
 

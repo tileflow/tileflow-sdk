@@ -122,8 +122,43 @@ third. Moving the position updates the map at once. See
 theme, and `emphasis={{recede: {roads: 0.3}, labels: 0.6}}` makes modules recede and labels fade so
 your own content reads first. Both ease in over `themeTransition`, stay through theme changes, and
 follow the props: an empty `colors` or no `emphasis` restores the map as designed. An unknown token or an
-invalid value is logged and leaves the colours unchanged.
+invalid value is reported as an error and leaves the colours unchanged.
 A map that declares colour knobs, as Streets does, also takes them by name, such as `colors={{water: '#2563eb', roads: '#9aa5b1'}}`; see [Streets' knobs](https://github.com/tileflow/tileflow-sdk/blob/main/packages/maps/REFERENCE.md#streets-colour-knobs).
+
+A colour may use CSS variables, so the map follows your design tokens: `colors={{'surface.land':
+'var(--background)', 'surface.water': 'color-mix(in oklab, var(--primary) 30%, var(--background))'}}`.
+The map reads each variable where it sits, with `var(--name, fallback)` and nested variables, and
+reads them again when the `class`, `style`, or `data-theme` attribute of `<html>` or `<body>`, or the
+system colour scheme, changes. A variable with no value and no fallback is reported through
+`onError` as `colors`, naming the variable.
+
+`onError` receives `{code, error}` when the map cannot do what you asked, where `error` is an `Error` and
+`code` is one of:
+
+- `manifest`: the manifest could not be loaded, or it has no map named `source.map`.
+- `theme`: the requested theme or `timeOfDay` is not in the map, or the change failed.
+- `blend`: a `themeBlend` names a theme the map does not have, or the blend failed.
+- `colors` and `emphasis`: the setting was rejected, for example an unknown token or an invalid value.
+- `runtime`: the map could not be created, loaded, or taken down.
+- `scene`: the 3D scene could not be loaded.
+- `camera`: `bounds` or `fitAnnotations` could not be turned into a view.
+
+Without a handler, these failures go to `console.error`. Interactive-state problems keep their own
+channel, `onInteractionDiagnostic`.
+
+A `ref` on `Map` gives a handle with two methods: `getMap()` returns the MapLibre map, and
+`getThemeController()` returns the controller that changes the map's theme, colours, and emphasis
+at run time. Both return `null` until the map has loaded, in image mode, and after it is taken
+down, so call them from event handlers and effects, not while rendering. `TileflowMapHandle` types the ref.
+
+```tsx
+import {useRef} from 'react';
+import {Map, type TileflowMapHandle} from '@tileflow/react';
+
+const handle = useRef<TileflowMapHandle>(null);
+// Later, in an event handler:
+handle.current?.getMap()?.flyTo({center: [-3.7, 40.4], zoom: 12});
+```
 
 Interactive maps show the 3D scene their style declares by default: buildings with Tileflow
 landmarks and the map's Team building models, 3D trees, and street lights where the map enables
@@ -135,6 +170,16 @@ hides models and flat artwork alike. Changing either prop updates the existing m
 They do not change camera pitch and do not apply in image mode. See
 [the map's 3D scene](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md)
 and [vegetation controls](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md).
+
+Interactive maps show no zoom or compass buttons unless you ask for them. `navigationControl` shows
+them at the top right, and `navigationControl={{position: 'bottom-left', showCompass: false}}` moves
+them or limits their buttons.
+
+`bounds={[west, south, east, north]}` starts the map on those bounds and moves it when they change;
+`fitBoundsOptions={{padding: 24, maxZoom: 14, duration: 600}}` shapes the fit. `fitAnnotations` fits
+the map to all `annotations`, with 48 pixels of padding and at most zoom 15, and again when their
+positions change. `bounds` takes precedence over it, and `center` and `zoom` set the first view only
+until one of them is given.
 
 `mapOptions` accepts native MapLibre options except `container` and `style`. Direct camera props
 take priority over `mapOptions`, then the manifest view, then shared defaults. `Map` always selects
@@ -173,6 +218,10 @@ export function Unemployment({rates}: {rates: {ine: string; rate: number}[]}) {
   return <Map source={{map: 'madrid-unemployment'}} onLoad={setMap} />;
 }
 ```
+
+A map that declares only `boundaryAreas` still carries the Boundaries source, so the choropleth does
+not have to be declared in `tileflow.config.ts` either: pass `boundaryChoropleth({classes, scale, id})`
+through `dataOverlays`, keyed by its `id`, and the app owns both the colours and the rows.
 
 Rows join by `ref` here, so this map declares `boundaryAreas: {family: 'boundaries', promoteId:
 'ref'}`. Without `promoteId`, rows join by registry `id`. See
@@ -248,6 +297,13 @@ compatible interaction metadata. With semantic bindings, narrow `context.target.
 `renderTooltip` or `renderPopup` before accessing annotation or feature data. `renderMarker` remains
 annotation-only. See the
 [interaction guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/interactions/README.md).
+
+`renderMarker` receives `state`, `{hovered, focused, selected}`, where `selected` means the marker's
+popup is open. Each marker's view updates on its own when its state changes. A `renderPopup` or
+`renderTooltip` with no annotation or interaction that sets `popup` or `tooltip` has nothing to draw,
+so the map reports an `UNUSED_RENDERER` diagnostic. A wrapper component that forwards its props to
+`Map` can type them as `MapAnnotationProps<TAnnotation>`, or `MapInteractionProps<TAnnotation>` when
+it takes `interactions`, so an inline `renderPopup` keeps its parameter types.
 
 Text/field content uses safe text defaults. A `view` is an application renderer name, not HTML.
 Keep tooltips non-interactive; put buttons, links, and forms in popups.

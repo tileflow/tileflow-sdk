@@ -5,7 +5,8 @@
 /** sRGB channels from 0 to 255 and alpha from 0 to 1. */
 export type TileflowSrgbaColor = [red: number, green: number, blue: number, alpha: number];
 
-type Space = 'oklab' | 'oklch' | 'srgb' | 'srgb-linear';
+/** `lab` and `lch` (CIE, D50) are read, never produced: a mix happens in the other four. */
+type Space = 'lab' | 'lch' | 'oklab' | 'oklch' | 'srgb' | 'srgb-linear';
 /** Coordinates in `space`; `NaN` marks a missing component (`none`, or a powerless hue). */
 type Colour = {alpha: number; coords: [number, number, number]; space: Space};
 
@@ -16,7 +17,7 @@ const powerlessChroma = 1e-4;
 
 /** The syntaxes `parseTileflowCssColor` reads, for error messages. */
 export const tileflowCssColorSyntaxes =
-  'a hex colour, rgb(), rgba(), hsl(), hsla(), oklab(), oklch(), color-mix() or transparent';
+  'a hex colour, rgb(), rgba(), hsl(), hsla(), lab(), lch(), oklab(), oklch(), color-mix() or transparent';
 
 /** The colour as sRGB, or null when it is not written in a syntax this reads. */
 export function parseTileflowCssColor(value: string): TileflowSrgbaColor | null {
@@ -72,6 +73,10 @@ function parse(text: string, depth: number): Colour | null {
     case 'hsl':
     case 'hsla':
       return parseHsl(body);
+    case 'lab':
+      return parseLab(body);
+    case 'lch':
+      return parseLch(body);
     case 'oklab':
       return parseOklab(body);
     case 'oklch':
@@ -183,6 +188,30 @@ function parseHsl(body: string): Colour | null {
     return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
   };
   return {alpha: split.alpha, coords: [channel(0), channel(8), channel(4)], space: 'srgb'};
+}
+
+function parseLab(body: string): Colour | null {
+  const split = splitArguments(body);
+  if (!split) return null;
+  const lightness = component(split.parts[0]!, 100);
+  const a = component(split.parts[1]!, 125);
+  const b = component(split.parts[2]!, 125);
+  if (lightness === null || a === null || b === null) return null;
+  return {alpha: split.alpha, coords: [lightness, a, b], space: 'lab'};
+}
+
+function parseLch(body: string): Colour | null {
+  const split = splitArguments(body);
+  if (!split) return null;
+  const lightness = component(split.parts[0]!, 100);
+  const chroma = component(split.parts[1]!, 150);
+  const angle = hue(split.parts[2]!);
+  if (lightness === null || chroma === null || angle === null) return null;
+  return {
+    alpha: split.alpha,
+    coords: [lightness, Number.isNaN(chroma) ? chroma : Math.max(0, chroma), angle],
+    space: 'lch',
+  };
 }
 
 function parseOklab(body: string): Colour | null {
@@ -352,6 +381,30 @@ function oklabToLinear([lightness, a, b]: readonly number[]): [number, number, n
   ];
 }
 
+// CIE Lab with the D50 white point, as CSS Color 4 defines `lab()`, to linear sRGB (D65) through
+// XYZ and a Bradford adaptation.
+
+const d50White = [0.3457 / 0.3585, 1, (1 - 0.3457 - 0.3585) / 0.3585] as const;
+
+function labToLinear([lightness, a, b]: readonly number[]): [number, number, number] {
+  const epsilon = 216 / 24389;
+  const kappa = 24389 / 27;
+  const fy = (lightness! + 16) / 116;
+  const fx = a! / 500 + fy;
+  const fz = fy - b! / 200;
+  const x = (fx ** 3 > epsilon ? fx ** 3 : (116 * fx - 16) / kappa) * d50White[0];
+  const y = lightness! > kappa * epsilon ? fy ** 3 : lightness! / kappa;
+  const z = (fz ** 3 > epsilon ? fz ** 3 : (116 * fz - 16) / kappa) * d50White[2];
+  const adaptedX = 0.9554734527042182 * x - 0.023098536874261423 * y + 0.0632593086610217 * z;
+  const adaptedY = -0.028369706963208136 * x + 1.0099954580058226 * y + 0.021041398966943008 * z;
+  const adaptedZ = 0.012314001688319899 * x - 0.020507696433477912 * y + 1.3303659366080753 * z;
+  return [
+    3.2409699419045226 * adaptedX - 1.537383177570094 * adaptedY - 0.4986107602930034 * adaptedZ,
+    -0.9692436362808796 * adaptedX + 1.8759675015077202 * adaptedY + 0.04155505740717559 * adaptedZ,
+    0.05563007969699366 * adaptedX - 0.20397695888897652 * adaptedY + 1.0569715142428786 * adaptedZ,
+  ];
+}
+
 /** The same colour in another space; missing components stay missing where they carry over. */
 function convert(colour: Colour, space: Space): Colour {
   if (colour.space === space) return colour;
@@ -371,6 +424,14 @@ function convert(colour: Colour, space: Space): Colour {
     case 'oklab':
       linear = oklabToLinear(fixed);
       break;
+    case 'lab':
+      linear = labToLinear(fixed);
+      break;
+    case 'lch': {
+      const radians = (fixed[2] * Math.PI) / 180;
+      linear = labToLinear([fixed[0], fixed[1] * Math.cos(radians), fixed[1] * Math.sin(radians)]);
+      break;
+    }
     default: {
       const radians = (fixed[2] * Math.PI) / 180;
       linear = oklabToLinear([

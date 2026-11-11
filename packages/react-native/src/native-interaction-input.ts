@@ -32,6 +32,7 @@ const messages: Record<TileflowInteractionDiagnosticCode, string> = {
   SEMANTIC_MANIFEST_MISMATCH: 'The current style cannot provide verified semantic POI queries.',
   STALE_TARGET: 'The interaction target is no longer available.',
   UNSTABLE_FEATURE_IDENTITY: 'A stable feature ID is unavailable.',
+  UNUSED_RENDERER: 'A renderer has no interaction surface to draw.',
   UNSUPPORTED_MODE: 'This interaction input modality is unavailable.',
   UNSUPPORTED_TARGET: 'This interaction target is unavailable.',
 };
@@ -41,7 +42,10 @@ export function nativeInteractionDiagnostic(
 ): TileflowInteractionDiagnostic {
   return Object.freeze({
     code,
-    level: code === 'STALE_TARGET' || code === 'UNSUPPORTED_TARGET' ? 'warning' : 'error',
+    level:
+      code === 'STALE_TARGET' || code === 'UNSUPPORTED_TARGET' || code === 'UNUSED_RENDERER'
+        ? 'warning'
+        : 'error',
     message: messages[code],
   });
 }

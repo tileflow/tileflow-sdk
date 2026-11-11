@@ -7,6 +7,7 @@ import type {
   TileflowInteractionTargetRef,
 } from './contracts';
 import {createTileflowAnnotationRegistry, type TileflowAnnotationRegistry} from './maplibre';
+import {configurePopupCloseButton, roleVariable} from './surface-style';
 import type {TileflowInteractionDiagnostic} from './validation';
 
 /** A minimal structural contract shared by MapLibre Marker and Popup instances. */
@@ -349,7 +350,7 @@ export function createTileflowMapLibreDomRuntime<
     shell.setAttribute('data-tileflow-target-kind', 'annotation');
     shell.setAttribute('role', 'tooltip');
     shell.style.pointerEvents = 'none';
-    configureSurfaceStyles(shell);
+    configureSurfaceStyles(shell, 'tooltip');
     shell.append(container);
 
     let overlay: TOverlay | undefined;
@@ -410,7 +411,6 @@ export function createTileflowMapLibreDomRuntime<
     container.className = 'tileflow-interaction-popup-content';
     closeButton.className = 'tileflow-interaction-popup-close';
     closeButton.type = 'button';
-    closeButton.textContent = 'Close';
     shell.id = domId(idPrefix, 'popup', ++overlaySequence);
     shell.setAttribute('data-tileflow-interaction', 'popup');
     shell.setAttribute('data-tileflow-target-kind', 'annotation');
@@ -418,11 +418,10 @@ export function createTileflowMapLibreDomRuntime<
     shell.setAttribute('aria-modal', 'false');
     shell.setAttribute('role', 'dialog');
     closeButton.setAttribute('aria-label', `Close ${entry.definition.ariaLabel}`);
-    configureSurfaceStyles(shell);
-    closeButton.style.background = 'transparent';
-    closeButton.style.border = '0';
-    closeButton.style.color = 'inherit';
-    closeButton.style.cursor = 'pointer';
+    configureSurfaceStyles(shell, 'popup');
+    configurePopupCloseButton(closeButton, document);
+    shell.style.position = 'relative';
+    container.style.paddingRight = '1.5rem';
     shell.append(container, closeButton);
 
     const closeListener = () => requestPopupState(null, 'pointer');
@@ -1154,27 +1153,31 @@ function configureViewAttribute(
   }
 }
 
-function configureSurfaceStyles(element: HTMLElement): void {
-  element.style.background = 'var(--tileflow-interaction-surface, #ffffff)';
-  element.style.borderColor = 'var(--tileflow-interaction-border-color, #d1d5db)';
-  element.style.borderRadius = 'var(--tileflow-interaction-border-radius, 0.375rem)';
+function configureSurfaceStyles(element: HTMLElement, role: 'popup' | 'tooltip'): void {
+  element.style.background = roleVariable(role, 'surface', '#ffffff');
+  element.style.borderColor = roleVariable(role, 'border-color', '#d1d5db');
+  element.style.borderRadius = roleVariable(role, 'border-radius', '0.375rem');
   element.style.borderStyle = 'solid';
   element.style.borderWidth = '1px';
-  element.style.boxShadow = 'var(--tileflow-interaction-shadow, 0 2px 8px rgb(0 0 0 / 0.18))';
-  element.style.color = 'var(--tileflow-interaction-foreground, #111827)';
-  element.style.maxWidth = 'var(--tileflow-interaction-max-width, 20rem)';
+  element.style.boxShadow = roleVariable(role, 'shadow', '0 2px 8px rgb(0 0 0 / 0.18)');
+  element.style.color = roleVariable(role, 'foreground', '#111827');
+  element.style.maxWidth = roleVariable(role, 'max-width', '20rem');
   element.style.padding = '0.5rem';
 }
 
 function configureDefaultMarkerStyles(element: HTMLElement): void {
   element.style.alignItems = 'center';
   element.style.background = 'var(--tileflow-interaction-marker-color, #2563eb)';
-  element.style.borderColor = 'var(--tileflow-interaction-border-color, #ffffff)';
-  element.style.borderRadius = 'var(--tileflow-interaction-border-radius, 9999px)';
+  element.style.borderColor = roleVariable(
+    'marker',
+    'ring',
+    roleVariable('marker', 'border-color', '#ffffff'),
+  );
+  element.style.borderRadius = roleVariable('marker', 'border-radius', '9999px');
   element.style.borderStyle = 'solid';
   element.style.borderWidth = '1px';
-  element.style.boxShadow = 'var(--tileflow-interaction-shadow, 0 1px 4px rgb(0 0 0 / 0.25))';
-  element.style.color = 'var(--tileflow-interaction-foreground, #ffffff)';
+  element.style.boxShadow = roleVariable('marker', 'shadow', '0 1px 4px rgb(0 0 0 / 0.25)');
+  element.style.color = roleVariable('marker', 'foreground', '#ffffff');
   element.style.display = 'inline-flex';
   element.style.justifyContent = 'center';
   element.style.minHeight = '1.5rem';

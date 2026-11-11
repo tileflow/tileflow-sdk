@@ -136,6 +136,16 @@ They do not change camera pitch and do not apply in image mode. See
 [the map's 3D scene](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md)
 and [vegetation controls](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md).
 
+Interactive maps show no zoom or compass buttons unless you ask for them. `navigationControl` shows
+them at the top right, and `navigationControl={{position: 'bottom-left', showCompass: false}}` moves
+them or limits their buttons.
+
+`bounds={[west, south, east, north]}` starts the map on those bounds and moves it when they change;
+`fitBoundsOptions={{padding: 24, maxZoom: 14, duration: 600}}` shapes the fit. `fitAnnotations` fits
+the map to all `annotations`, with 48 pixels of padding and at most zoom 15, and again when their
+positions change. `bounds` takes precedence over it, and `center` and `zoom` set the first view only
+until one of them is given.
+
 `mapOptions` accepts native MapLibre options except `container` and `style`. Direct camera props
 take priority over `mapOptions`, then the manifest view, then shared defaults. `Map` always selects
 a Tileflow map through its manifest; it has no renderer discriminator or direct-style mode.
@@ -252,6 +262,13 @@ compatible interaction metadata. With semantic bindings, narrow `context.target.
 `renderTooltip` or `renderPopup` before accessing annotation or feature data. `renderMarker` remains
 annotation-only. See the
 [interaction guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/interactions/README.md).
+
+`renderMarker` receives `state`, `{hovered, focused, selected}`, where `selected` means the marker's
+popup is open. Each marker's view updates on its own when its state changes. A `renderPopup` or
+`renderTooltip` with no annotation or interaction that sets `popup` or `tooltip` has nothing to draw,
+so the map reports an `UNUSED_RENDERER` diagnostic. A wrapper component that forwards its props to
+`Map` can type them as `MapAnnotationProps<TAnnotation>`, or `MapInteractionProps<TAnnotation>` when
+it takes `interactions`, so an inline `renderPopup` keeps its parameter types.
 
 Text/field content uses safe text defaults. A `view` is an application renderer name, not HTML.
 Keep tooltips non-interactive; put buttons, links, and forms in popups.

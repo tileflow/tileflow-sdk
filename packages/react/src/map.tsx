@@ -3,6 +3,7 @@
 import {
   type CSSProperties,
   type ImgHTMLAttributes,
+  type ReactElement,
   type ReactNode,
   useCallback,
   useEffect,
@@ -34,6 +35,7 @@ import {
   createTileflowAppearanceBinding,
   createTileflowSessionStarter,
   createTileflowThemeController,
+  createTileflowNavigationControlBinding,
   createTileflowContourRequestScope,
   createTileflowTransformRequest,
   getTileflowSystemColorScheme,
@@ -43,6 +45,7 @@ import {
   registerTileflowPathGroundProtocol,
   registerTileflowPmtilesProtocol,
   registerTileflowWorldRequestBridge,
+  resolveTileflowCameraFit,
   subscribeTileflowSystemColorScheme,
   tileflowCanvasContextAttributes,
   type TileflowMap3DAttachment,
@@ -50,6 +53,11 @@ import {
   type TileflowColorOverrides,
   type TileflowEmphasis,
   tileflowMaxPitch,
+  type TileflowBounds,
+  type TileflowCameraFit,
+  type TileflowFitBoundsOptions,
+  type TileflowNavigationControlBinding,
+  type TileflowNavigationControlInput,
   type TileflowThemeController,
   type TileflowThemeTransition,
   type TileflowViewMode,
@@ -77,9 +85,10 @@ import {
   type TileflowRuntimeStyle,
 } from '@tileflow/core/runtime';
 import type {TileflowGeoJsonSource, TileflowMapLibreOverlay} from '@tileflow/core';
-import type {
-  TileflowAnnotation,
-  TileflowAnnotationViewContext,
+import {
+  unusedTileflowRendererDiagnostics,
+  type TileflowAnnotation,
+  type TileflowAnnotationViewContext,
   TileflowInteractionBinding,
   TileflowInteractionDiagnostic,
   TileflowInteractionEvent,
@@ -193,7 +202,28 @@ type MapInteractiveProps<TAnnotation extends TileflowAnnotation> = MapSharedProp
     onInteractionEvent?: (event: TileflowInteractionEvent<TAnnotation>) => void;
     onInteractionStateChange?: (state: TileflowInteractionState) => void;
     renderMarker?: TileflowAnnotationRenderer<TAnnotation>;
-  };
+  } & MapViewProps;
+
+type MapViewProps = {
+  /**
+   * Shows these bounds, `[west, south, east, north]` or `[[west, south], [east, north]]`. The map
+   * starts there, and moves to new bounds when this prop changes. `center` and `zoom` set the
+   * view only until bounds are given.
+   */
+  bounds?: TileflowBounds;
+  /**
+   * Fits the map to all `annotations`, with 48 pixels of padding and at most zoom 15 unless
+   * options say otherwise, and again whenever their positions change. `bounds` takes precedence.
+   */
+  fitAnnotations?: boolean | TileflowFitBoundsOptions;
+  /** How `bounds` is fitted: `padding`, `maxZoom` and `duration`. */
+  fitBoundsOptions?: TileflowFitBoundsOptions;
+  /**
+   * The zoom and compass buttons of an interactive map. A map shows none unless asked: `true` shows
+   * them at `top-right`, and an object moves them or limits their buttons.
+   */
+  navigationControl?: TileflowNavigationControlInput;
+};
 
 type MapImageProps = MapSharedProps & {
   annotationClusters?: never;
@@ -212,6 +242,10 @@ type MapImageProps = MapSharedProps & {
   renderMarker?: never;
   renderPopup?: never;
   renderTooltip?: never;
+  bounds?: never;
+  fitAnnotations?: never;
+  fitBoundsOptions?: never;
+  navigationControl?: never;
 };
 
 export type MapProps<TAnnotation extends TileflowAnnotation = TileflowAnnotation> = (
@@ -221,9 +255,44 @@ export type MapProps<TAnnotation extends TileflowAnnotation = TileflowAnnotation
 
 const defaultInteractions: readonly TileflowInteractionBinding[] = [];
 
+/** Moves the camera to bounds. `duration` overrides the request's, so the first view can be set at once. */
+function fitCameraTo(map: MapLibreMap, fit: TileflowCameraFit, duration?: number): void {
+  map.fitBounds(fit.bounds, {
+    ...(fit.options.maxZoom === undefined ? {} : {maxZoom: fit.options.maxZoom}),
+    ...(fit.options.padding === undefined ? {} : {padding: fit.options.padding}),
+    ...(duration !== undefined
+      ? {duration}
+      : fit.options.duration === undefined
+        ? {}
+        : {duration: fit.options.duration}),
+  });
+}
+
+/**
+ * Props without `interactions`, where a popup or tooltip view receives the annotation it belongs
+ * to. A view written inline gets its parameter types from this overload.
+ */
+export type MapAnnotationProps<TAnnotation extends TileflowAnnotation> = (
+  Extract<MapInteractiveProps<TAnnotation>, {interactions?: never}> | MapImageProps
+) &
+  TileflowMapStyleSourceProps;
+
+/** Props with `interactions`, where a view may belong to an annotation or to a map feature. */
+export type MapInteractionProps<TAnnotation extends TileflowAnnotation> = Exclude<
+  MapInteractiveProps<TAnnotation>,
+  {interactions?: never}
+> &
+  TileflowMapStyleSourceProps;
+
+export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>(
+  props: MapAnnotationProps<TAnnotation>,
+): ReactElement;
+export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>(
+  props: MapInteractionProps<TAnnotation>,
+): ReactElement;
 export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>(
   props: MapProps<TAnnotation>,
-) {
+): ReactElement {
   assertTileflowMapStyleInputs(props);
 
   const {
@@ -263,6 +332,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
     renderPopup,
     renderTooltip,
   } = props;
+  const {bounds, fitAnnotations, fitBoundsOptions, navigationControl} = props;
   const generalRenderPopup = renderPopup as TileflowInteractionRenderer<TAnnotation> | undefined;
   const generalRenderTooltip = renderTooltip as
     TileflowInteractionRenderer<TAnnotation> | undefined;
@@ -303,6 +373,22 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
     sceneRef.current?.setViewMode(viewMode);
   }, [vegetation, viewMode]);
   const themeControllerRef = useRef<TileflowThemeController | undefined>(undefined);
+  const navigationControlRef = useRef(navigationControl);
+  navigationControlRef.current = navigationControl;
+  const navigationBindingRef = useRef<TileflowNavigationControlBinding | undefined>(undefined);
+  const cameraFit = useMemo(
+    () =>
+      resolveTileflowCameraFit({
+        annotations: annotations ?? [],
+        bounds,
+        fitAnnotations,
+        fitBoundsOptions,
+      }),
+    [annotations, bounds, fitAnnotations, fitBoundsOptions],
+  );
+  const cameraFitRef = useRef(cameraFit);
+  cameraFitRef.current = cameraFit;
+  const appliedCameraFitKeyRef = useRef<string | undefined>(undefined);
   const runtimeStyleRef = useRef<ReturnType<typeof resolveTileflowRuntimeStyle>>(null);
   const interactionRuntimeRef = useRef<TileflowMapLibreDomRuntime<TAnnotation> | undefined>(
     undefined,
@@ -460,6 +546,20 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
       preparedAnnotations.annotations.length,
     ],
   );
+  const hasPopupRenderer = renderPopup !== undefined;
+  const hasTooltipRenderer = renderTooltip !== undefined;
+  const rendererDiagnostics = useMemo(
+    () =>
+      isImageMode
+        ? []
+        : unusedTileflowRendererDiagnostics({
+            annotations: preparedAnnotations.annotations,
+            bindings: interactions,
+            hasPopupRenderer,
+            hasTooltipRenderer,
+          }),
+    [hasPopupRenderer, hasTooltipRenderer, interactions, isImageMode, preparedAnnotations],
+  );
   const declarativeInteractionDiagnostics = useMemo(
     () =>
       [
@@ -467,6 +567,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
         ...preparedAnnotations.diagnostics,
         ...preparedInteractions.diagnostics,
         ...preparedInteractionState.diagnostics,
+        ...rendererDiagnostics,
       ].filter(
         (diagnostic): diagnostic is TileflowInteractionDiagnostic => diagnostic !== undefined,
       ),
@@ -475,6 +576,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
       preparedAnnotations.diagnostics,
       preparedInteractions.diagnostics,
       preparedInteractionState.diagnostics,
+      rendererDiagnostics,
     ],
   );
   const interactionDiagnostics = [
@@ -491,6 +593,16 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
     interactionDiagnostics[0];
   const hasInteractionError = interactionDiagnostics.some(
     (diagnostic) => diagnostic.level === 'error',
+  );
+  // A marker is selected while its popup is open: the popup has a render target of its own.
+  const openPopupAnnotationIds = useMemo(
+    () =>
+      new Set(
+        annotationRenderTargets
+          .filter((target) => target.kind === 'popup')
+          .map((target) => target.annotation.id),
+      ),
+    [annotationRenderTargets],
   );
   const portalKeys = useMemo(
     () => [
@@ -627,6 +739,18 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
       zoom: resolvedZoom,
     });
   }, [resolvedBearing, resolvedCenter, resolvedPitch, resolvedZoom]);
+
+  useEffect(() => {
+    navigationBindingRef.current?.update(resolvedInteractive ? navigationControl : false);
+  }, [navigationControl, resolvedInteractive]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || appliedCameraFitKeyRef.current === cameraFit.key) return;
+    appliedCameraFitKeyRef.current = cameraFit.key;
+    if (cameraFit.error) console.error(`Invalid Tileflow map ${cameraFit.error}`);
+    if (cameraFit.fit) fitCameraTo(map, cameraFit.fit);
+  }, [cameraFit]);
 
   useEffect(() => {
     onLoadRef.current = onLoad;
@@ -1199,11 +1323,21 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
             onInteractionDiagnosticRef.current?.(diagnostic);
           }
         }
-        const controls = resolvedInteractive ? new maplibregl.NavigationControl() : null;
-
-        if (controls) {
-          map.addControl(controls, 'top-right');
-        }
+        const navigation = createTileflowNavigationControlBinding({
+          createControl: (controlOptions) => new maplibregl.NavigationControl(controlOptions),
+          map,
+        });
+        navigationBindingRef.current = navigation;
+        registerCleanup(() => {
+          navigation.dispose();
+          if (navigationBindingRef.current === navigation) navigationBindingRef.current = undefined;
+        });
+        navigation.update(resolvedInteractive ? navigationControlRef.current : false);
+        // The first view is set without moving; later changes to the request move the camera.
+        const initialFit = cameraFitRef.current;
+        appliedCameraFitKeyRef.current = initialFit.key;
+        if (initialFit.error) console.error(`Invalid Tileflow map ${initialFit.error}`);
+        if (initialFit.fit) fitCameraTo(map, initialFit.fit, 0);
 
         const resizeObserver = new ResizeObserver(() => {
           map.resize();
@@ -1423,6 +1557,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
             renderPopup={generalRenderPopup}
             renderTarget={target}
             renderTooltip={generalRenderTooltip}
+            selected={openPopupAnnotationIds.has(target.annotation.id)}
           />,
           target.container,
           portalKey,
@@ -1475,7 +1610,34 @@ type TileflowAnnotationPortalProps<TAnnotation extends TileflowAnnotation> = Rea
   renderPopup?: TileflowInteractionRenderer<TAnnotation>;
   renderTarget: TileflowMapLibreDomRenderTarget<TAnnotation>;
   renderTooltip?: TileflowInteractionRenderer<TAnnotation>;
+  selected: boolean;
 }>;
+
+/** Hover and focus of a marker, read from its element so only this marker's view renders again. */
+function useMarkerPointerState(container: HTMLElement, enabled: boolean) {
+  const [state, setState] = useState({focused: false, hovered: false});
+  useEffect(() => {
+    if (!enabled) return;
+    const element = container.closest<HTMLElement>('[data-tileflow-interaction="marker"]');
+    if (!element) return;
+    const set = (patch: Partial<typeof state>) => setState((previous) => ({...previous, ...patch}));
+    const enter = () => set({hovered: true});
+    const leave = () => set({hovered: false});
+    const focus = () => set({focused: true});
+    const blur = () => set({focused: false});
+    element.addEventListener('pointerenter', enter);
+    element.addEventListener('pointerleave', leave);
+    element.addEventListener('focusin', focus);
+    element.addEventListener('focusout', blur);
+    return () => {
+      element.removeEventListener('pointerenter', enter);
+      element.removeEventListener('pointerleave', leave);
+      element.removeEventListener('focusin', focus);
+      element.removeEventListener('focusout', blur);
+    };
+  }, [container, enabled]);
+  return state;
+}
 
 function TileflowAnnotationPortal<TAnnotation extends TileflowAnnotation>({
   onCommit,
@@ -1485,10 +1647,12 @@ function TileflowAnnotationPortal<TAnnotation extends TileflowAnnotation>({
   renderPopup,
   renderTarget,
   renderTooltip,
+  selected,
 }: TileflowAnnotationPortalProps<TAnnotation>) {
   useLayoutEffect(() => {
     onCommit(readinessToken, portalKey);
   }, [onCommit, portalKey, readinessToken]);
+  const pointer = useMarkerPointerState(renderTarget.container, renderTarget.kind === 'marker');
 
   const {annotation} = renderTarget;
   const content =
@@ -1507,6 +1671,7 @@ function TileflowAnnotationPortal<TAnnotation extends TileflowAnnotation>({
       kind: 'annotation',
     },
     ...(content?.kind === 'view' ? {viewName: content.name} : {}),
+    ...(renderTarget.kind === 'marker' ? {state: {...pointer, selected}} : {}),
   };
   if (renderTarget.kind === 'marker') return renderMarker?.(context) ?? null;
   const renderer = renderTarget.kind === 'tooltip' ? renderTooltip : renderPopup;

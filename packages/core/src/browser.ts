@@ -340,6 +340,8 @@ export {
   registerTileflowPathGroundProtocol,
   type TileflowPathGroundRegistry,
 } from './path-ground-browser';
+export * from './navigation-control-browser';
+export * from './camera-fit-browser';
 export {
   createTileflowContourRequestScope,
   registerTileflowContourProtocol,

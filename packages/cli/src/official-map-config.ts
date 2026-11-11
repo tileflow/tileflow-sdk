@@ -4,7 +4,11 @@ import {dirname, join, resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 
 /** The official maps that preview and capture can open without a project config. */
-export const tileflowOfficialMapNames = Object.freeze(['outdoors', 'soundings', 'streets'] as const);
+export const tileflowOfficialMapNames = Object.freeze([
+  'outdoors',
+  'soundings',
+  'streets',
+] as const);
 export type TileflowOfficialMapName = (typeof tileflowOfficialMapNames)[number];
 
 export function isTileflowOfficialMapName(value: string): value is TileflowOfficialMapName {

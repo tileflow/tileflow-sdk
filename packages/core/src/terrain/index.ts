@@ -9,7 +9,11 @@ import type {
   TileflowTerrainHillshadeStyle,
   TileflowTerrainLayerRange,
 } from '../types';
-import {createTileflowContourProtocolUrl, tileflowContourSourceLayer} from './contour-protocol';
+import {
+  createTileflowContourProtocolUrl,
+  type TileflowContourDemSource,
+  tileflowContourSourceLayer,
+} from './contour-protocol';
 
 export type ResolvedTerrainRaster = {
   hillshade: TileflowTerrainHillshadeStyle;
@@ -44,7 +48,7 @@ export function resolveTerrain(
   const encoding = terrainConfig.encoding ?? 'terrarium';
   const raster = mode === 'none' ? undefined : resolveRaster(terrainConfig, apiBaseUrl, encoding);
   const contours = terrainConfig.contours
-    ? resolveContours(terrainConfig.contours, encoding, terrainConfig.attribution, apiBaseUrl)
+    ? resolveContours(terrainConfig, terrainConfig.contours, encoding, apiBaseUrl)
     : undefined;
 
   if (!raster && !contours) return undefined;
@@ -183,7 +187,7 @@ function resolveRaster(
   encoding: TileflowTerrainEncoding,
 ): ResolvedTerrainRaster {
   const sourceId = terrain.sourceId ?? 'tileflow-terrain';
-  const url = terrain.url ?? `${apiBaseUrl}/tiles/terrain/tiles.json`;
+  const url = terrain.url ?? hostedTerrainTileJsonUrl(apiBaseUrl);
   return {
     hillshade: terrain.hillshade ?? {},
     sourceId,
@@ -199,20 +203,40 @@ function resolveRaster(
   };
 }
 
+function hostedTerrainTileJsonUrl(apiBaseUrl: string): string {
+  return `${apiBaseUrl}/tiles/terrain/tiles.json`;
+}
+
+/**
+ * Contours read the terrain's own DEM unless they name a template: the explicit terrain tiles, or
+ * the terrain TileJSON (hosted Terrain by default), so a hosted style binds both the same way.
+ */
+function resolveContourDem(
+  terrain: TileflowTerrainConfig,
+  contours: NonNullable<TileflowTerrainConfig['contours']>,
+  apiBaseUrl: string,
+): TileflowContourDemSource {
+  if (contours.demUrl !== undefined) return {demUrl: contours.demUrl};
+  const [template] = terrain.tiles ?? [];
+  if (template !== undefined) return {demUrl: template};
+  return {demTileJson: terrain.url ?? hostedTerrainTileJsonUrl(apiBaseUrl)};
+}
+
 function resolveContours(
+  terrain: TileflowTerrainConfig,
   contours: NonNullable<TileflowTerrainConfig['contours']>,
   encoding: TileflowTerrainEncoding,
-  attribution: string | undefined,
   apiBaseUrl: string,
 ): ResolvedTerrainContours {
+  const {attribution} = terrain;
   const thresholdZooms = Object.keys(contours.thresholds).map(Number);
   const minimumZoom = contours.minZoom ?? Math.min(...thresholdZooms);
   const maximumZoom = contours.maxZoom ?? Math.max(...thresholdZooms);
   const sourceId = contours.sourceId ?? 'tileflow-contours';
   const tiles = [
     createTileflowContourProtocolUrl({
+      ...resolveContourDem(terrain, contours, apiBaseUrl),
       demMaxzoom: contours.demMaxZoom,
-      demUrl: contours.demUrl ?? `${apiBaseUrl}/tiles/terrain/{z}/{x}/{y}.webp`,
       encoding,
       maxzoom: maximumZoom,
       multiplier: contours.multiplier ?? 1,

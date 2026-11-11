@@ -20,7 +20,7 @@ Prepared styles may retain relative asset URLs. The component loads them through
 resource loader before creating the map and before changing or blending themes. Sprites, fonts,
 data and model resources resolve against their declaring documents. Pending document loads are
 cancelled when the map is replaced or unmounted; `mapOptions.transformRequest` also applies to
-style and HTTP TileJSON requests.
+style and HTTP TileJSON requests, and to the DEM TileJSON and DEM tiles that contours read.
 
 ## Prepare a map
 
@@ -114,6 +114,7 @@ theme, and `emphasis={{recede: {roads: 0.3}, labels: 0.6}}` makes modules recede
 your own content reads first. Both ease in over `themeTransition`, stay through theme changes, and
 follow the props: an empty `colors` or no `emphasis` restores the map as designed. An unknown token or an
 invalid value is reported as an error and leaves the colours unchanged.
+A map that declares colour knobs, as Streets does, also takes them by name, such as `colors={{water: '#2563eb', roads: '#9aa5b1'}}`; see [Streets' knobs](https://github.com/tileflow/tileflow-sdk/blob/main/packages/maps/REFERENCE.md#streets-colour-knobs).
 
 `onError` receives `{code, error}` when the map cannot do what you asked, where `error` is an `Error` and
 `code` is one of:

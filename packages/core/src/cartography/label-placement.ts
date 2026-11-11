@@ -12,6 +12,14 @@ export const labelOrder = {
 
 export const roadLabelPlacementKey = 'tileflow:road-label-placement';
 export const groundRoadLabelMetadata = {[roadLabelPlacementKey]: {version: 1, mode: 'ground'}};
+export const readableRoadLabelMetadata = {[roadLabelPlacementKey]: {version: 1, mode: 'readable'}};
+
+export function isReadableRoadLabel(layer: {metadata?: unknown}): boolean {
+  const policy = (layer.metadata as Record<string, unknown> | undefined)?.[
+    roadLabelPlacementKey
+  ] as {version?: unknown; mode?: unknown} | undefined;
+  return policy?.version === 1 && policy.mode === 'readable';
+}
 
 export function isGroundRoadLabel(layer: {metadata?: unknown}): boolean {
   const policy = (layer.metadata as Record<string, unknown> | undefined)?.[

@@ -70,6 +70,8 @@ struct OfflineCredit: Sendable, Hashable {
 /// region's resources, and the regional credits of each Hosted Map's releases.
 struct OfflineServingSnapshot: Sendable {
   var paths: Set<String> = []
+  /// One receipt per installed pack; nil means its older response has no decision.
+  var branding: [String: [Bool?]] = [:]
   /// Credits by the cache scope of the Map they belong to.
   var credits: [String: [OfflineCredit]] = [:]
 }
@@ -102,6 +104,9 @@ final class OfflineServingIndex: Sendable {
       var merged = OfflineServingSnapshot()
       for snapshot in current.stores.values {
         merged.paths.formUnion(snapshot.paths)
+        for (scope, receipts) in snapshot.branding {
+          merged.branding[scope, default: []] += receipts
+        }
         for (scope, credits) in snapshot.credits {
           var list = merged.credits[scope] ?? []
           for credit in credits where !list.contains(where: { $0.id == credit.id }) {
@@ -124,6 +129,12 @@ final class OfflineServingIndex: Sendable {
 
   func serves(_ key: ResourceCacheKey) async -> Bool {
     await snapshot().paths.contains(key.relativePath)
+  }
+
+  func catalogLogoRequired(for scope: ResourceCacheScope) async -> Bool? {
+    let receipts = await snapshot().branding[scope.directory] ?? []
+    guard !receipts.isEmpty, receipts.allSatisfy({ $0 != nil }) else { return nil }
+    return receipts.contains(true)
   }
 
   func credits(for scope: ResourceCacheScope) async -> [OfflineCredit] {

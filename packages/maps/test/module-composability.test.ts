@@ -25,7 +25,7 @@ import {
   water,
 } from '@tileflow/core';
 import {createStyleWithInspection} from '@tileflow/core/build';
-import {baedeker, blueprint, civica, map1777, siegfried, soundings, streets} from '../src';
+import {soundings, streets, terrain} from '../src';
 import {streetsPreparedModels, streetsTreeIconIds} from './streets-assets';
 import {streetsPoiImageIds} from './streets-poi-fixture';
 
@@ -49,13 +49,7 @@ type Domain = keyof typeof moduleFactories;
 
 const officialMaps = {
   streets,
-
-  baedeker,
-  civica,
-
-  'map-1777': map1777,
-  blueprint: blueprint,
-  siegfried,
+  terrain,
   soundings,
 };
 
@@ -64,31 +58,9 @@ const preparedOfficialAssets = {
     models: streetsPreparedModels,
     icons: {
       ids: [
+        'terrain-peak',
+        'terrain-peak-dark',
         ...streetsTreeIconIds,
-        'baedeker-hachures',
-        'baedeker-orchard',
-        'baedeker-paper-grain',
-        'baedeker-park-stipple',
-        'baedeker-residential',
-        'baedeker-sand',
-        'baedeker-water-lines',
-        'baedeker-wetland',
-        'civica-industrial-hatch',
-        'civica-orchard',
-        'civica-paper-grain',
-        'civica-park-groves',
-        'civica-poi-airport',
-        'civica-poi-civic-star',
-        'civica-poi-dot',
-        'civica-poi-food',
-        'civica-poi-garden',
-        'civica-poi-hospital',
-        'civica-poi-lodging',
-        'civica-poi-monument',
-        'civica-poi-museum',
-        'civica-poi-shopping',
-        'civica-poi-transit',
-        'civica-water-lines',
         'coffee',
         'nature',
         'sport',
@@ -110,17 +82,6 @@ const preparedOfficialAssets = {
         'culture',
 
         'education',
-        'map-1777-crop-cross',
-        'map-1777-crop-hatch',
-        'map-1777-crop-lines',
-        'map-1777-heath',
-        'map-1777-orchard',
-        'map-1777-paper-grain',
-        'map-1777-residential',
-        'map-1777-sand',
-        'map-1777-water-ripples',
-        'map-1777-wetland',
-        'map-1777-woodland',
         'food',
         'health',
         'lodging',
@@ -135,32 +96,9 @@ const preparedOfficialAssets = {
         'road-shield-rectangle-orange',
         'road-shield-rectangle-red',
         'road-shield-rectangle-yellow',
-        'blueprint-grid',
-        'blueprint-building-hatch',
-        'blueprint-landscape-hatch',
-        'blueprint-poi-node',
-        'blueprint-water-hatch',
         'services',
         'shopping',
         'sidewalk-dot',
-        'siegfried-dark-forest',
-        'siegfried-dark-glacier',
-        'siegfried-dark-gravel',
-        'siegfried-dark-orchard',
-        'siegfried-dark-paper-grain',
-        'siegfried-dark-rock',
-        'siegfried-dark-scree',
-        'siegfried-dark-water-lines',
-        'siegfried-dark-wetland',
-        'siegfried-forest',
-        'siegfried-glacier',
-        'siegfried-gravel',
-        'siegfried-orchard',
-        'siegfried-paper-grain',
-        'siegfried-rock',
-        'siegfried-scree',
-        'siegfried-water-lines',
-        'siegfried-wetland',
         'soundings-boat-hoist',
         'soundings-boatyard',
         'soundings-buoy-cardinal',

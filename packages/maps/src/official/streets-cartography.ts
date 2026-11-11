@@ -16,6 +16,7 @@ import {
   zoom,
 } from '@tileflow/core';
 import {streetsClimateImage} from './streets-climate';
+import {streetsCreditsAttribution} from './streets-credits';
 import {
   streetsAccessOverview,
   streetsAgriculturalColor,
@@ -102,8 +103,7 @@ export function withStreetsCartography(base: TileflowMap) {
               [180, -85.0511287798066],
               [-180, -85.0511287798066],
             ],
-            attribution:
-              'Climate context: <a href="https://doi.org/10.1038/s41597-023-02549-6">Beck et al. (2023)</a>, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>; colours and smoothing adapted by Tileflow',
+            attribution: streetsCreditsAttribution,
             maxZoom: 11,
             opacity: zoom.linear<TileflowThemeNumberValue>([
               [0, token.number('land.climate.opacity')],
@@ -228,10 +228,10 @@ export function withStreetsCartography(base: TileflowMap) {
   });
 }
 
-function stackOf(module: object): TileflowNamedRenderStack {
+export function stackOf(module: object): TileflowNamedRenderStack {
   return 'renderStack' in module ? (module.renderStack as TileflowNamedRenderStack) : {};
 }
-function withoutStack<T extends object>(module: T): T & {readonly renderStack?: undefined} {
+export function withoutStack<T extends object>(module: T): T & {readonly renderStack?: undefined} {
   const result = {...module};
   if ('renderStack' in result) delete result.renderStack;
   return result as T & {readonly renderStack?: undefined};

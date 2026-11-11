@@ -1,3 +1,4 @@
+import type {TileflowMapError} from '@tileflow/core/browser';
 import type {TileflowAnnotation} from '@tileflow/interactions';
 import {Map, type MapAnnotationProps} from '../src/index';
 
@@ -98,4 +99,29 @@ const fitted = (
   <Map annotations={properties} fitAnnotations navigationControl={false} source={{map: 'main'}} />
 );
 
-void [inferredPopup, bindingPopup, wrappedPopup, camera, fitted];
+// `onError` receives a stable code and an `Error`, in interactive and image mode.
+const reported = (
+  <Map
+    onError={({code, error}) => {
+      const stable: TileflowMapError['code'] = code;
+      return [stable, error.message];
+    }}
+    source={{map: 'main'}}
+  />
+);
+const reportedImage = (
+  <Map mode="image" onError={(event) => event.error.name} source={{map: 'main'}} />
+);
+// @ts-expect-error a code outside the stable set is not an error code.
+const unknownCode: TileflowMapError['code'] = 'other';
+
+void [
+  inferredPopup,
+  bindingPopup,
+  wrappedPopup,
+  camera,
+  fitted,
+  reported,
+  reportedImage,
+  unknownCode,
+];

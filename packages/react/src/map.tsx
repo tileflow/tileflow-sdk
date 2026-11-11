@@ -45,6 +45,7 @@ import {
   registerTileflowPathGroundProtocol,
   registerTileflowPmtilesProtocol,
   registerTileflowWorldRequestBridge,
+  reportTileflowMapError,
   resolveTileflowCameraFit,
   subscribeTileflowSystemColorScheme,
   tileflowCanvasContextAttributes,
@@ -56,6 +57,8 @@ import {
   type TileflowBounds,
   type TileflowCameraFit,
   type TileflowFitBoundsOptions,
+  type TileflowMapError,
+  type TileflowMapErrorCode,
   type TileflowNavigationControlBinding,
   type TileflowNavigationControlInput,
   type TileflowThemeController,
@@ -147,6 +150,12 @@ type MapSharedProps = {
   interactive?: boolean;
   mapOptions?: TileflowMapOptions;
   analytics?: TileflowAnalytics;
+  /**
+   * Called with `{code, error}` when the map cannot load its manifest, apply a theme, blend,
+   * `colors` or `emphasis`, start its runtime or load its 3D scene. Without it, those failures go to
+   * `console.error`.
+   */
+  onError?: (event: TileflowMapError) => void;
   onLoad?: (map: MapLibreMap) => void;
   onThemeChange?: (transition: TileflowThemeTransition) => void;
 };
@@ -327,6 +336,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
     onInteractionDiagnostic,
     onInteractionEvent,
     onInteractionStateChange,
+    onError,
     onLoad,
     renderMarker,
     renderPopup,
@@ -486,8 +496,8 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
           themeBlendKey ? undefined : timeOfDay,
         ).name,
       } as const;
-    } catch {
-      return {error: true, name: undefined} as const;
+    } catch (cause) {
+      return {cause, error: true, name: undefined} as const;
     }
   }, [blendThemeName, manifestMap, systemColorScheme, theme, themeBlendKey, timeOfDay]);
   const resolvedThemeName = themeResolution.name;
@@ -513,6 +523,13 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
   const bearingRef = useRef(resolvedBearing);
   const pitchRef = useRef(resolvedPitch);
   const onLoadRef = useRef(onLoad);
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
+  const reportError = useCallback(
+    (code: TileflowMapErrorCode, cause: unknown) =>
+      reportTileflowMapError(onErrorRef.current, code, cause),
+    [],
+  );
   const mapNameRef = useRef(mapName);
   const resolvedAnalyticsRef = useRef<TileflowAnalytics | undefined>(undefined);
   const readinessRunRef = useRef(0);
@@ -660,6 +677,16 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
 
         const resolvedMap =
           manifest && mapName ? resolveTileflowManifestMap(manifest, mapName) : null;
+        if (!resolvedMap) {
+          reportError(
+            'manifest',
+            new Error(
+              manifest
+                ? `The Tileflow manifest at ${manifestUrl} has no map named "${mapName}".`
+                : `No Tileflow manifest was found at ${manifestUrl}.`,
+            ),
+          );
+        }
         setManifestResolution({
           key: manifestRequestKey,
           map: resolvedMap,
@@ -668,7 +695,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
       })
       .catch((error) => {
         if (!cancelled) {
-          console.error('Failed to load Tileflow manifest', error);
+          reportError('manifest', error);
           setManifestResolution({key: manifestRequestKey, map: null, state: 'error'});
         }
       });
@@ -676,7 +703,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
     return () => {
       cancelled = true;
     };
-  }, [manifestRequestKey, manifestUrl, mapName]);
+  }, [manifestRequestKey, manifestUrl, mapName, reportError]);
 
   const runtimeStyle = useMemo(() => {
     if (isImageMode || themeResolution.error) {
@@ -691,18 +718,24 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
     });
   }, [isImageMode, manifestMap, runtimeSource, systemColorScheme, themeResolution]);
   runtimeStyleRef.current = runtimeStyle;
-  const blendStyles = useMemo<TileflowRuntimeStyle[] | null>(() => {
-    if (isImageMode || !manifestMap || !themeBlendKey) return null;
+  const blendResolution = useMemo<{
+    cause?: unknown;
+    styles: TileflowRuntimeStyle[] | null;
+  }>(() => {
+    if (isImageMode || !manifestMap || !themeBlendKey) return {styles: null};
     try {
-      return resolveTileflowRuntimeThemeBlend({
-        blend: {position: 0, themes: JSON.parse(themeBlendKey) as string[]},
-        manifestMap,
-        source: runtimeSource,
-      });
-    } catch {
-      return null;
+      return {
+        styles: resolveTileflowRuntimeThemeBlend({
+          blend: {position: 0, themes: JSON.parse(themeBlendKey) as string[]},
+          manifestMap,
+          source: runtimeSource,
+        }),
+      };
+    } catch (cause) {
+      return {cause, styles: null};
     }
   }, [isImageMode, manifestMap, runtimeSource, themeBlendKey]);
+  const blendStyles = blendResolution.styles;
   const blendRequestRef = useRef<{
     hold: boolean;
     position: number;
@@ -748,9 +781,9 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
     const map = mapRef.current;
     if (!map || appliedCameraFitKeyRef.current === cameraFit.key) return;
     appliedCameraFitKeyRef.current = cameraFit.key;
-    if (cameraFit.error) console.error(`Invalid Tileflow map ${cameraFit.error}`);
+    if (cameraFit.error) reportError('camera', new Error(cameraFit.error));
     if (cameraFit.fit) fitCameraTo(map, cameraFit.fit);
-  }, [cameraFit]);
+  }, [cameraFit, reportError]);
 
   useEffect(() => {
     onLoadRef.current = onLoad;
@@ -1108,8 +1141,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
           const appearance = createTileflowAppearanceBinding({
             controller: themeController,
             map,
-            onError: (error, part) =>
-              console.error(`Failed to apply the Tileflow map ${part}`, error),
+            onError: (error, part) => reportError(part, error),
           });
           appearanceBindingRef.current = appearance;
           registerCleanup(() => {
@@ -1127,7 +1159,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
           vegetation: sceneInputsRef.current.vegetation,
           viewMode: sceneInputsRef.current.viewMode,
           load: () => import('@tileflow/core/3d'),
-          onError: (error) => console.error('Failed to load the Tileflow 3D scene', error),
+          onError: (error) => reportError('scene', error),
           // Direct tile readers use HTTP, not MapLibre's custom World protocol.
           transformRequest: createTileflowTransformRequest({
             getAnalytics: () => resolvedAnalyticsRef.current,
@@ -1336,7 +1368,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
         // The first view is set without moving; later changes to the request move the camera.
         const initialFit = cameraFitRef.current;
         appliedCameraFitKeyRef.current = initialFit.key;
-        if (initialFit.error) console.error(`Invalid Tileflow map ${initialFit.error}`);
+        if (initialFit.error) reportError('camera', new Error(initialFit.error));
         if (initialFit.fit) fitCameraTo(map, initialFit.fit, 0);
 
         const resizeObserver = new ResizeObserver(() => {
@@ -1396,10 +1428,10 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
         try {
           disposeMap?.();
         } catch (cleanupError) {
-          console.error('Failed to clean up the Tileflow map runtime', cleanupError);
+          reportError('runtime', cleanupError);
         }
         if (!cancelled) {
-          console.error('Failed to load the Tileflow map runtime', error);
+          reportError('runtime', error);
           setCaptureState('error');
         }
       });
@@ -1410,7 +1442,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
       readinessRunRef.current += 1;
       disposeMap?.();
     };
-  }, [resolvedInteractive, runtimeMapIdentity, runtimeStyleReady, stableMapOptions]);
+  }, [reportError, resolvedInteractive, runtimeMapIdentity, runtimeStyleReady, stableMapOptions]);
 
   useEffect(() => {
     const controller = themeControllerRef.current;
@@ -1427,10 +1459,20 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
       .setTheme(runtimeStyle, {transition: themeTransitionRef.current})
       .then((result) => {
         if (result.status === 'failed') {
-          console.error('Failed to change the Tileflow map theme', result.error);
+          reportError('theme', result.error ?? new Error('The map theme could not be changed.'));
         }
       });
-  }, [runtimeStyle, themeBlendKey, themeResolution.error]);
+  }, [reportError, runtimeStyle, themeBlendKey, themeResolution.error]);
+
+  const themeResolutionCause = themeResolution.error ? themeResolution.cause : undefined;
+  useEffect(() => {
+    if (themeResolution.error) reportError('theme', themeResolutionCause);
+  }, [reportError, themeResolution.error, themeResolutionCause]);
+
+  const blendResolutionCause = blendResolution.cause;
+  useEffect(() => {
+    if (blendResolutionCause !== undefined) reportError('blend', blendResolutionCause);
+  }, [blendResolutionCause, reportError]);
 
   useEffect(() => {
     appearanceBindingRef.current?.update(
@@ -1450,10 +1492,10 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
       )
       .then((result) => {
         if (result.status === 'failed') {
-          console.error('Failed to blend the Tileflow map themes', result.error);
+          reportError('blend', result.error ?? new Error('The map themes could not be blended.'));
         }
       });
-  }, [blendStyles, runtimeStyle, themeBlendHold, themeBlendPosition]);
+  }, [blendStyles, reportError, runtimeStyle, themeBlendHold, themeBlendPosition]);
 
   useLayoutEffect(() => {
     if (!isImageMode) return;

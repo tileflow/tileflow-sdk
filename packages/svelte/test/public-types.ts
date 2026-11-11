@@ -1,3 +1,4 @@
+import type {TileflowMapError} from '@tileflow/core/browser';
 import type {TileflowAnnotation} from '@tileflow/interactions';
 import TileflowMap, {
   configureTileflowMapLibre,
@@ -125,6 +126,18 @@ const imageCallback: TileflowMapProps = {
   onInteractionDiagnostic: (_diagnostic: unknown) => undefined,
   source,
 };
+
+// `onError` receives a stable code and an `Error`, in interactive and image mode.
+const errorProps = [
+  {onError: ({code, error}: TileflowMapError) => [code, error.message], source},
+  {mode: 'image', onError: (event: TileflowMapError) => event.error.name, source},
+] satisfies TileflowMapProps[];
+const wrongCode: TileflowMapProps = {
+  // @ts-expect-error a code outside the stable set is not an error code.
+  onError: (event: {code: 'other'; error: Error}) => event.code,
+  source,
+};
+void [errorProps, wrongCode];
 
 const namedComponent: typeof TileflowMap = NamedTileflowMap;
 

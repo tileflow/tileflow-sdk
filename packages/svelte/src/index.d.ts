@@ -9,6 +9,7 @@ import type {
   TileflowColorOverrides,
   TileflowEmphasis,
   TileflowFitBoundsOptions,
+  TileflowMapError,
   TileflowThemeTransition,
   TileflowViewMode,
   TileflowThemeTransitionOptions,
@@ -58,6 +59,12 @@ type TileflowMapBaseProps = {
   imageUrl?: string;
   interactive?: boolean;
   mapOptions?: TileflowMapOptions;
+  /**
+   * Called with `{code, error}` when the map cannot load its manifest, apply a theme, blend,
+   * `colors` or `emphasis`, start its runtime or load its 3D scene. Without it, those failures go to
+   * `console.error`.
+   */
+  onError?: (event: TileflowMapError) => void;
   onThemeChange?: (transition: TileflowThemeTransition) => void;
   theme?: TileflowThemeSelection;
   timeOfDay?: TileflowTimeOfDay;

@@ -161,7 +161,9 @@ export {
   type TileflowBuildings3DMap,
   type TileflowBuildings3DOptions,
   type TileflowBuildings3DThemes,
+  type TileflowBuildingStandIns,
 } from './buildings-3d-browser';
+export type {TileflowStandInArea} from './building-stand-ins';
 export {
   meshTileflowBuildings,
   tileflowBuildingExtent,

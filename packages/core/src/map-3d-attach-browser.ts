@@ -1,6 +1,6 @@
+import {createBuildingNativeLayers} from './building-native-layers-browser';
 import type {TileflowBuildings3DChange} from './buildings-3d-browser';
 import {tileflowBuildingsMetadataKey} from './buildings-3d-design';
-import {createBuildingNativeLayers} from './building-native-layers-browser';
 import type {TileflowMap3D, TileflowMap3DOptions} from './map-3d-browser';
 import {tileflowStreetLightsMetadataKey} from './street-lights';
 import {tileflowVegetationMetadataKey} from './trees-3d';
@@ -40,6 +40,25 @@ export function tileflowMap3DDeclarations(source: TileflowMap3DSource): Readonly
           declared((metadata as Record<string, unknown>)[key]),
     ),
   );
+}
+
+/**
+ * Whether the style on screen places building models or shows Tileflow's landmarks, which stand
+ * in for the buildings under them; during a theme blend, whether any blended theme does.
+ */
+export function tileflowMapDeclaresStandIns(source: TileflowMap3DSource): boolean {
+  const read = source.controller?.getThemeMetadata;
+  const values = read
+    ? read.call(source.controller, tileflowBuildingsMetadataKey).values
+    : [
+        ((source.map.getStyle() as {metadata?: Record<string, unknown>} | undefined)?.metadata ??
+          {})[tileflowBuildingsMetadataKey],
+      ];
+  return values.some((value) => {
+    if (typeof value !== 'object' || value === null) return false;
+    const {models, landmarks} = value as {models?: unknown; landmarks?: unknown};
+    return (Array.isArray(models) && models.length > 0) || Boolean(landmarks);
+  });
 }
 
 /** Whether the style on screen declares any part of a 3D scene: buildings, trees or lights. */
@@ -86,8 +105,14 @@ export function attachTileflowMap3D(options: AttachTileflowMap3DOptions): Tilefl
   let adaptivePerspective = options.camera?.adaptivePerspective;
   let scene: TileflowMap3D | undefined;
   let loading = false;
+  let failed = false;
   let disposed = false;
   const pendingNativeBuildings = createBuildingNativeLayers(map);
+  // While the renderers load, the native extrusion draws the buildings, unless models may stand in
+  // for some: it must not draw those, and cannot tell which they are until the scene knows.
+  let standsIn = false;
+  const showPending = () =>
+    pendingNativeBuildings.setVisible(viewMode === '3d' && (failed || !standsIn));
 
   // Whether the style declares 3D changes with the style, not each time a 2D map settles.
   let declares: boolean | undefined;
@@ -101,7 +126,11 @@ export function attachTileflowMap3D(options: AttachTileflowMap3DOptions): Tilefl
       pendingNativeBuildings.restore();
       return;
     }
-    pendingNativeBuildings.setVisible(viewMode === '3d');
+    standsIn = tileflowMapDeclaresStandIns({
+      map,
+      ...(options.controller ? {controller: options.controller} : {}),
+    });
+    showPending();
     loading = true;
     stopWatching();
     load()
@@ -118,7 +147,11 @@ export function attachTileflowMap3D(options: AttachTileflowMap3DOptions): Tilefl
         });
       })
       .catch((error: unknown) => {
-        if (!disposed) onError?.(error);
+        if (disposed) return;
+        // Without the scene, the native extrusion draws every building.
+        failed = true;
+        showPending();
+        onError?.(error);
       });
   };
   const restyle = () => {
@@ -159,7 +192,10 @@ export function attachTileflowMap3D(options: AttachTileflowMap3DOptions): Tilefl
     setViewMode(mode, change) {
       if (mode === viewMode) return;
       viewMode = mode;
-      if (!scene) pendingNativeBuildings.setVisible(declares ? mode === '3d' : undefined);
+      if (!scene) {
+        if (declares) showPending();
+        else pendingNativeBuildings.restore();
+      }
       if (scene) void (mode === '3d' ? scene.show(change) : scene.hide(change));
     },
     setVegetation(visible) {

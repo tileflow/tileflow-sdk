@@ -12,7 +12,7 @@ import {readTileflowCamera, tileflowCameraMetadataKey, type TileflowCameraOption
 import {
   createTileflowAdaptiveCamera,
   createTileflowPitchLimit,
-  type TileflowAdaptiveCameraMap,
+  type TileflowPitchLimitMap,
 } from './camera-browser';
 import {tileflowMap3DDeclarations} from './map-3d-attach-browser';
 import {tileflowStreetLightsMetadataKey} from './street-lights';
@@ -33,7 +33,7 @@ import {tileflowVegetationDisplayMetadataKey, type TileflowViewMode} from './veg
 /** The MapLibre GL JS map capabilities the 3D scene uses. */
 export type TileflowMap3DMap = TileflowBuildings3DMap &
   TileflowStreetLightsMap &
-  TileflowAdaptiveCameraMap &
+  TileflowPitchLimitMap &
   TileflowVegetationOptions['map'];
 
 export type TileflowMap3DOptions = Readonly<{

@@ -47,7 +47,29 @@ function referenceRole(role: string): string {
   return role;
 }
 
-/** Apply the reference's time-of-day exposure to Streets' own approved daylight materials. */
+// Warm stone and paving catch the sun; roads, water and greens keep their daylight hue.
+// At dusk, a little warmth remains in the stone against cooler ambient light.
+const timeGrades = {
+  day: {exposure: 1, ambient: [1, 1, 1], stone: [1, 1, 1]},
+  dawn: {exposure: 0.35, ambient: [1.008, 1, 0.995], stone: [1.025, 1, 0.95]},
+  dusk: {exposure: 1, ambient: [0.975, 1, 1.06], stone: [1.025, 1, 1.02]},
+  night: {exposure: 1, ambient: [0.94, 0.99, 1.05], stone: [0.98, 1, 1.08]},
+} as const;
+
+function isStone(role: string, anchor: string): boolean {
+  if (role === 'buildings.modelGlass') return false;
+  return (
+    anchor.startsWith('buildings.') ||
+    /^surface\.(?:background|land|building)(?:\.|$)/.test(anchor) ||
+    /^landuse\.(?!cemetery|recreation)/.test(anchor) ||
+    /^landcover\.(?:barren|rock|sand|global\.(?:barren|urban))$/.test(anchor) ||
+    /^land\.(?:fence|wall)$/.test(anchor) ||
+    /^roads\.(?:path|parkPath|pedestrian)(?:\.|$)/.test(anchor) ||
+    role === 'roads.accessOverview'
+  );
+}
+
+/** Grade Streets' daylight materials using the reference's relative exposure. */
 export function streetsTimeColors(
   day: Colors,
   referenceDay: Colors,
@@ -55,14 +77,7 @@ export function streetsTimeColors(
   monochrome: boolean,
   preset: StreetsLightPreset,
 ): Record<string, string> {
-  // Use the reference's exposure, not its material hues. Warm limestone, blue water and
-  // green vegetation keep Streets' daylight identity under a gentle shared white balance.
-  const temperature = {
-    day: [1, 1, 1],
-    dawn: [1.035, 1, 0.93],
-    dusk: [1.045, 1, 0.97],
-    night: [0.92, 0.97, 1.06],
-  }[preset];
+  const grade = timeGrades[preset];
   return Object.fromEntries(
     Object.entries(day).map(([role, value]) => {
       // Road lettering is emitted ink: preserve its neutral contrast pair instead of
@@ -83,11 +98,15 @@ export function streetsTimeColors(
       if (role === 'labels.waterHalo') color.alpha = parse(to).alpha;
       const source = parse(from).rgb;
       const target = parse(to).rgb;
+      const sourceLight = gray(source);
+      const targetLight = gray(target);
+      // Dawn stays close to midday's brightness. Monochrome retains its independently
+      // authored exposure; only the colored appearances receive this material grade.
+      const exposure = sourceLight + (targetLight - sourceLight) * grade.exposure;
+      const temperature = isStone(role, anchor) ? grade.stone : grade.ambient;
       const rgb = monochrome
-        ? Array<number>(3).fill(transfer(gray(color.rgb), gray(source), gray(target)))
-        : color.rgb.map(
-            (channel, i) => transfer(channel, gray(source), gray(target)) * temperature[i]!,
-          );
+        ? Array<number>(3).fill(transfer(gray(color.rgb), sourceLight, targetLight))
+        : color.rgb.map((channel, i) => transfer(channel, sourceLight, exposure) * temperature[i]!);
       const channels = rgb.map((channel) => Math.round(Math.max(0, Math.min(255, channel))));
       return [
         role,

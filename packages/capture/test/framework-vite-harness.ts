@@ -187,7 +187,7 @@ export default defineMap({
       theme: 'light',
       camera: {type: 'center', center: [0, 0], zoom: 1},
       viewport: {width: 320, height: 480},
-      target: {kind: 'application', path: '/', captureId: 'missing-map'}
+      target: {kind: 'application', path: '/?missing-map', captureId: 'missing-map'}
     },
     interactive: {
       theme: 'light',

@@ -1444,7 +1444,8 @@
         element?.removeEventListener('pointerleave', leave);
         element?.removeEventListener('focusin', focus);
         element?.removeEventListener('focusout', blur);
-        const {[renderTarget.key]: _removed, ...rest} = markerPointer;
+        const rest = {...markerPointer};
+        delete rest[renderTarget.key];
         markerPointer = rest;
       },
     };

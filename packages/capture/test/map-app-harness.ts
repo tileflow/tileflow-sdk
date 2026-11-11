@@ -93,6 +93,23 @@ export async function withMapApp(
       const page = await browser!.newPage({viewport: {height: 480, width: 640}});
       const consoleErrors: string[] = [];
       const pageErrors: string[] = [];
+      // A test never reaches a host beyond its own server. A map built from the World source asks
+      // for its tile description first, so that one gets an empty answer and the tiles are refused.
+      await page.route(
+        (url) => url.hostname !== '127.0.0.1',
+        (route) =>
+          route.request().url().endsWith('/tiles.json')
+            ? route.fulfill({
+                body: JSON.stringify({
+                  maxzoom: 14,
+                  minzoom: 0,
+                  tilejson: '3.0.0',
+                  tiles: ['https://tiles.example.invalid/{z}/{x}/{y}.pbf'],
+                }),
+                contentType: 'application/json',
+              })
+            : route.abort(),
+      );
       page.on('console', (message) => {
         if (message.type() === 'error') consoleErrors.push(message.text());
       });

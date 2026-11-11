@@ -224,7 +224,13 @@ export function createTileflowMapLibreDataRuntime<
         continue;
       }
       if (!map.getSource(overlay.source)) {
-        report(`Overlay "${id}" references unknown source "${overlay.source}".`, `${path}/source`);
+        // A compiled source arrives with the style; the style event that follows runs this again.
+        if (map.isStyleLoaded() === true) {
+          report(
+            `Overlay "${id}" references unknown source "${overlay.source}".`,
+            `${path}/source`,
+          );
+        }
         continue;
       }
       const signature = JSON.stringify(overlay);

@@ -343,6 +343,43 @@ test('a daily limit releases the row for the next run without a wait', async (t)
   assert.deepEqual(calls, ['First', 'Second', 'Second']);
 });
 
+test('the persistent daily ceiling stops cleanly with a resume time and keeps completed rows', async (t) => {
+  const {input, output, options} = await workspace(t, 'address\nFirst\nSecond\nThird\n');
+  const calls: string[] = [];
+  let capped = true;
+  const fetch = provider((address) => {
+    calls.push(address);
+    return capped && address === 'Second'
+      ? refusal('GEOCODING_PERSISTENCE_LIMIT_REACHED', 429, 7200)
+      : Response.json(stored());
+  });
+  const io = {...confirmed, fetch, wait: async () => assert.fail('unexpected wait')};
+  await assert.rejects(geocodeCsv(input, options, io), (error: Error) => {
+    assert.match(error.message, /daily persistent Search limit/u);
+    assert.match(error.message, /after \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC/u);
+    assert.equal((error.cause as {code: string}).code, 'GEOCODING_PERSISTENCE_LIMIT_REACHED');
+    return true;
+  });
+  capped = false;
+  await geocodeCsv(input, options, io);
+  assert.deepEqual(calls, ['First', 'Second', 'Second', 'Third']);
+  assert.equal(JSON.parse(await readFile(output, 'utf8')).features.length, 3);
+});
+
+test('the estimate announces how many days a list longer than the daily ceiling needs', async (t) => {
+  const {input, options} = await workspace(t, 'address\nA\nB\nC\nD\nE\n');
+  const logs: string[] = [];
+  const fetch = (async (resource, init) => {
+    if (String(resource).endsWith('/storage'))
+      return Response.json({unitsPerRequest: units, dailyRequestLimit: 2});
+    return provider(() => Response.json(stored()))(resource, init);
+  }) satisfies typeof fetch;
+  await geocodeCsv(input, options, {...confirmed, fetch, log: (line) => logs.push(line)});
+  assert.ok(
+    logs.some((line) => line.includes('about 2 results per UTC day') && line.includes('3 days')),
+  );
+});
+
 test('five shared burst waits without progress stop cleanly and leave every row resumable', async (t) => {
   t.mock.method(performance, 'now', () => 0);
   const {input, options} = await workspace(t, 'address\nA\nB\n');

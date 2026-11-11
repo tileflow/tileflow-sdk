@@ -101,7 +101,7 @@ export async function csvColumnsNameCoordinates(
 
 export async function csvColumnNames(path: string): Promise<string[]> {
   let names: string[] = [];
-  await forEachRow(path, detectDelimiter(path), (row) => {
+  await forEachCsvRow(path, detectCsvDelimiter(path), (row) => {
     names = row;
     return 'stop';
   });

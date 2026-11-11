@@ -89,7 +89,9 @@ Display every attribution entry and URL. Results are temporary by default. Do no
 results or use them to build a permanent place catalog. Do not persist provider references.
 Persistent Search is disabled. In a compatible, enabled service, `geocode` and `geocodeReverse` accept
 `retention: 'persistent'`. Check `getGeocodingStorageEstimate(options)` before sending a request.
-Pass its `unitsPerRequest` as `expectedUnits` to reject a changed estimate. Store only results
+Pass its `unitsPerRequest` as `expectedUnits` to reject a changed estimate. Its optional
+`dailyRequestLimit` is how many persistent requests a Team can make per UTC day; beyond it the service
+answers `GEOCODING_PERSISTENCE_LIMIT_REACHED` with `retryAfterSeconds` until the next day. Store only results
 acknowledged with `retention: 'persistent'`. Publishable credentials cannot request persistent results or retrieve the storage estimate. Autocomplete and opaque references stay temporary.
 
 ## Request another page or resolve a selection

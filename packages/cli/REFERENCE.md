@@ -20,7 +20,10 @@ defaults to two requests and accepts one to eight.
 
 At the per-minute Search limit, all workers pause for the indicated wait of up to 120 seconds.
 These pauses do not use a row’s retry allowance. After five pauses without a completed lookup,
-or a requested wait above 120 seconds, rerun the command to resume. Other transient failures
+or a requested wait above 120 seconds, rerun the command to resume. Persistent Search also has a daily
+per-Team limit; the estimate states it when the list is longer. When it is reached
+(`GEOCODING_PERSISTENCE_LIMIT_REACHED`), the command stops, keeps completed rows and prints the UTC
+time after which a rerun resumes. Other transient failures
 and rate limits without a retry delay allow two retries with waits of at most 30 seconds.
 
 The GeoJSON preserves source columns and attribution. Pass the printed attribution to

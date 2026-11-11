@@ -665,13 +665,16 @@ test('storage estimates are unmetered GETs and only an acknowledged persistent r
       if (String(url).endsWith('/storage')) {
         assert.equal(init?.method, 'GET');
         assert.equal(init?.body, undefined);
-        return Response.json({unitsPerRequest: 93});
+        return Response.json({unitsPerRequest: 93, dailyRequestLimit: 5000});
       }
       assert.equal(JSON.parse(String(init?.body)).expectedUnits, 93);
       return Response.json({...success, retention: 'persistent', usage: {units: 93}});
     },
   };
-  assert.deepEqual(await getGeocodingStorageEstimate(options), {unitsPerRequest: 93});
+  assert.deepEqual(await getGeocodingStorageEstimate(options), {
+    unitsPerRequest: 93,
+    dailyRequestLimit: 5000,
+  });
   const request = {query: 'Fixture', retention: 'persistent', expectedUnits: 93} as const;
   assert.equal((await geocode(request, options)).usage.units, 93);
   assert.equal(

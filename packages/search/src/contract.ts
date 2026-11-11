@@ -43,7 +43,11 @@ export type GeocodingRetention = (typeof geocodingRetentionModes)[number];
 
 const storedUnitsSchema = z.number().int().positive().max(2_147_483_647);
 export const geocodingStorageEstimateSchema = z
-  .object({unitsPerRequest: storedUnitsSchema})
+  .object({
+    unitsPerRequest: storedUnitsSchema,
+    /** Persistent requests one Team can make per UTC day before its daily ceiling. */
+    dailyRequestLimit: storedUnitsSchema.optional(),
+  })
   .strict();
 export type GeocodingStorageEstimate = z.infer<typeof geocodingStorageEstimateSchema>;
 

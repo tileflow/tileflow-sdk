@@ -60,6 +60,10 @@ export async function geocodeCsv(
       io.log(
         `Estimated usage: ${remaining} distinct request(s) × ${unitsPerRequest} = ${total} shared API units. Empty results count.`,
       );
+      if (estimate.dailyRequestLimit !== undefined && remaining > estimate.dailyRequestLimit)
+        io.log(
+          `A Team can store about ${estimate.dailyRequestLimit} results per UTC day. This list needs ${Math.ceil(remaining / estimate.dailyRequestLimit)} days; rerun the command each day to resume.`,
+        );
       if (unconfirmed)
         io.log(`${unconfirmed} unconfirmed request(s) may already have consumed units.`);
       if (!options.yes && !(await io.confirm()))
@@ -139,6 +143,18 @@ async function dispatchRows(
 
           if (
             error instanceof GeocodingError &&
+            error.code === 'GEOCODING_PERSISTENCE_LIMIT_REACHED'
+          ) {
+            stopped = true;
+            jobs.release(address);
+            throw new Error(
+              `The daily persistent Search limit is reached. Completed rows are saved; rerun the command${resumeTime(error.retryAfterSeconds)} to resume.`,
+              {cause: error},
+            );
+          }
+
+          if (
+            error instanceof GeocodingError &&
             error.code === 'GEOCODING_PICK_LIMIT_EXCEEDED' &&
             error.retryAfterSeconds !== null &&
             error.retryAfterSeconds <= 120
@@ -184,6 +200,12 @@ async function dispatchRows(
       throw burst.error;
     }
   }
+}
+
+function resumeTime(retryAfterSeconds: number | null) {
+  if (retryAfterSeconds === null) return '';
+  const at = new Date(Date.now() + retryAfterSeconds * 1000);
+  return ` after ${at.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
 }
 
 function confirmedFailure(error: unknown): boolean {

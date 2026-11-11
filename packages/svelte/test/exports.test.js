@@ -96,6 +96,14 @@ test('initial renderer loading converges on a theme selected while it is in flig
   assert.match(source, /themeController\.setTheme\(runtimeStyle[,)]/u);
 });
 
+test('applies colors and emphasis through one binding that the map disposes', async () => {
+  const source = await readFile(new URL('../src/TileflowMap.svelte', import.meta.url), 'utf8');
+
+  assert.match(source, /createTileflowAppearanceBinding\(\{\s*controller: themeController/u);
+  assert.match(source, /appearanceBinding\?\.update\(\{colors, emphasis\}/u);
+  assert.match(source, /currentAppearanceBinding\?\.dispose\(\)/u);
+});
+
 test('keeps component exports aligned with the public props declaration', async () => {
   const implementation = await readFile(
     new URL('../src/TileflowMap.svelte', import.meta.url),
@@ -110,9 +118,11 @@ test('keeps component exports aligned with the public props declaration', async 
     ...extractPropertyNames(declaration, 'TileflowMapStyleSourceProps'),
     'annotationClusters',
     'annotations',
+    'colors',
     'dataOverlays',
     'dataSources',
     'defaultInteractionState',
+    'emphasis',
     'interactions',
     'interactionState',
     'marker',

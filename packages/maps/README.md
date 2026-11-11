@@ -139,7 +139,7 @@ Ferry routes fade in from z8, use fine blue dashes from z13, and show uppercase 
 along the line from z15 when the data includes them. Their labels use a water-colored halo.
 
 Regional hillshade uses [Mapzen Terrain Tiles on AWS](https://registry.opendata.aws/terrain-tiles/)
-from z5 through z13, with source attribution. The 256-pixel Terrarium source is capped at native z12;
+from z5 through z13; its source credits are listed on the [Tileflow map data credits page](https://tileflow.dev/copyright#streets-terrain). The 256-pixel Terrarium source is capped at native z12;
 closer views reuse that resolution, avoiding requests for coverage-dependent high-resolution DEM tiles. This is an additional remote data request. To omit
 it, set `terrain: 'none'` in a map extending `streets`. Hillshade does not change road geometry or
 raise the terrain. Buildings appear automatically from zoom 15 with an opacity fade through 15.25;

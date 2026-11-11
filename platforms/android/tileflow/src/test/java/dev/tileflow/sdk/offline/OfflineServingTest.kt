@@ -54,6 +54,16 @@ class OfflineServingTest {
     private val scope = ResourceCacheScope.grant(api, mapId)
     private val closeables = mutableListOf<AutoCloseable>()
 
+    @Test
+    fun brandingRequiresEveryInstalledPackReceiptAndCombinesFreeRegions() {
+        val index = OfflineServingIndex()
+        val store = Any()
+        for ((receipts, expected) in listOf(listOf(false) to false, listOf(false, true) to true, listOf(false, null) to null)) {
+            index.publish(OfflineServingSnapshot(branding = mapOf(scope.directory to receipts)), store)
+            assertEquals(expected, index.catalogLogoRequired(scope))
+        }
+    }
+
     @After
     fun tearDown() {
         closeables.forEach { it.close() }

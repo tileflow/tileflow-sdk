@@ -1304,6 +1304,10 @@ constructor(
                                             OfflineReachability.isReachable(context),
                                         )
                                     ) {
+                                        val branding = withContext(Dispatchers.IO) {
+                                            OfflineServingIndex.shared(context).catalogLogoRequired(grantScope)
+                                        }
+                                        branding?.let { configuration.put("offlineCatalogLogoRequired", it) }
                                         val credits =
                                             withContext(Dispatchers.IO) {
                                                 OfflineServingIndex.shared(context)

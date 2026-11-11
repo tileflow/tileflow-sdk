@@ -150,6 +150,8 @@ const initializeSchema = z.strictObject({
   options: mapOptionsSchema.prefault({}),
   insets: insetsSchema.optional(),
   /** Regional credits of the downloaded regions a Hosted map opened from. */
+  /** Private host receipt from installed packs, never an application presentation option. */
+  offlineCatalogLogoRequired: z.boolean().optional(),
   credits: z.array(creditSchema).max(64).default([]),
   renderer: rendererOptionsSchema.prefault({}),
   events: subscriptionsSchema.default(essentialSubscriptions),

@@ -91,6 +91,8 @@ struct OfflinePackManifest: Sendable {
   let revalidationInterval: TimeInterval
   /// The end of the download window.
   let downloadExpiresAt: Date
+  /// Presentation receipt persisted with the service response; older packs need a refresh.
+  var catalogLogoRequired: Bool? = nil
 }
 
 struct OfflinePack: Sendable {
@@ -278,7 +280,8 @@ enum OfflinePackContract {
       createdAt: createdAt, documents: documents, tiles: tiles, excluded: excluded,
       resourceCount: resourceCount, billableResourceCount: billableCount, bytes: bytes,
       attribution: attribution, maximumPackResources: maximum, dailyDownloads: daily,
-      revalidationInterval: TimeInterval(interval), downloadExpiresAt: expiresAt)
+      revalidationInterval: TimeInterval(interval), downloadExpiresAt: expiresAt,
+      catalogLogoRequired: value["catalogLogoRequired"]?.bool)
   }
 
   static func revalidation(_ data: Data) throws -> OfflinePackRevalidation {

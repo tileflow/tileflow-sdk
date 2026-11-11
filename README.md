@@ -1,8 +1,8 @@
 <p align="center">
   <a href="https://tileflow.dev">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset=".github/assets/tileflow-wordmark-dark.svg">
-      <img alt="Tileflow" src=".github/assets/tileflow-wordmark-light.svg" width="200">
+      <source media="(prefers-color-scheme: dark)" srcset=".github/assets/tileflow-logo-dark.svg">
+      <img alt="Tileflow" src=".github/assets/tileflow-logo-light.svg" width="240">
     </picture>
   </a>
 </p>

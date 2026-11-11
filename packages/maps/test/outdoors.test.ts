@@ -26,9 +26,13 @@ test('Outdoors compiles every appearance with one elevation source for relief an
     const style = createStyle(outdoors, {theme, preparedAssets: assets});
     assert.deepEqual(validateStyleMin(style as never), [], theme);
     for (const kind of ['peak', 'volcano']) {
-      const summit = style.layers.find((layer) => layer.id === `tileflow-landform-${kind}`);
+      const index = style.layers.findIndex((layer) => layer.id === `tileflow-landform-${kind}`);
+      const summit = style.layers[index];
       assert.ok(summit?.type === 'symbol');
-      const label = createExpression(summit.layout?.['text-field'] as never);
+      const label = createExpression(
+        summit.layout?.['text-field'],
+        `layers[${index}].layout.text-field`,
+      );
       assert.equal(label.result, 'success');
       if (label.result !== 'success') throw new Error('Invalid summit label expression');
       assert.equal(

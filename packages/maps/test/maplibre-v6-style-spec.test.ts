@@ -4,10 +4,10 @@ import {readdir} from 'node:fs/promises';
 import {basename} from 'node:path';
 import test from 'node:test';
 import {createStyle} from '@tileflow/core';
-import {soundings, streets, terrain} from '../src';
+import {outdoors, soundings, streets} from '../src';
 import {streetsPreparedModels} from './streets-assets';
 
-const officialMaps = [soundings, streets, terrain] as const;
+const officialMaps = [soundings, streets, outdoors] as const;
 
 test('official styles remain valid for MapLibre GL JS 6 style-spec', async () => {
   const iconIds = await readIconIds(new URL('../assets/', import.meta.url));

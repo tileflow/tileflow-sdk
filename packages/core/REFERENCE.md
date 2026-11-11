@@ -373,8 +373,8 @@ their lighting. Model corners belong to the asset; ordinary buildings use `edgeR
 entrance zooms, without zoom/arrival growth or fading. Equal endpoints such as
 `entrance: {buildings: [14.25, 14.25], models: [14.25, 14.25]}` switch immediately at that zoom.
 
-Text requires exactly one provider. Soundings and Blueprint use URL glyphs; Streets packages DINish
-and Noto Sans; Baedeker, 1777 and Siegfried package Cormorant; Cívica packages its lettering. Hosted
+Text requires exactly one provider. Soundings and Blueprint use URL glyphs; Streets and Terrain package DINish
+and Noto Sans; the community Baedeker, 1777 and Siegfried maps package Cormorant. Hosted
 rejects packaged/local fonts: self-host or replace them with compatible public glyphs. Tile and font
 URLs do not grant redistribution rights.
 

@@ -1,7 +1,6 @@
 # Third-party notices
 
-Except for the Streets POI pictograms documented below, the official themed Streets, Baedeker,
-1777, Siegfried, Soundings, Blueprint, and Cívica icon and pattern
+Except for the Streets POI pictograms documented below, the official Streets, Soundings, and Terrain icon and pattern
 artwork published under `assets/` is original Tileflow artwork.
 
 This file is shipped with `@tileflow/maps` so future third-party assets have a stable place for
@@ -60,19 +59,6 @@ The transport identities remain the marks of their respective owners. Their incl
 the mapped services and does not imply affiliation or endorsement. These asset-specific terms
 are separate from the package's source-code license.
 
-## 1777 cabinet atlas reference
-
-The `map1777` map and its eleven SVG material patterns (each in four palettes) are
-original Tileflow code and artwork. Their visual reference is the eighteenth-century cabinet
-atlas held by KBR, particularly its watercolor washes, field strokes, tree marks, red
-footprints and serif lettering:
-
-- [Cabinet atlas detail published by KBR](https://www.kbr.be/wp-content/uploads/2026/05/detail-van-de-kabinetskaart.png)
-
-No historical scan, source pixel or atlas geospatial data is included. The map uses current
-Tileflow World data and the separately licensed Cormorant Garamond fonts documented below.
-This package does not redistribute third-party atlas assets, code, style files or textures.
-
 ## Streets relief
 
 Streets requests Mapzen Terrain Tiles from the AWS Open Data elevation tiles bucket at runtime.
@@ -89,48 +75,6 @@ European Union; ETOPO1 from U.S. NOAA; INEGI Continental relief data; New Zealan
 data; © Kartverket; © Environment Agency; and USGS 3DEP, GMTED2010 and SRTM data.
 Consult the linked catalog for each source's complete required attribution and license terms.
 
-## Baedeker map references and terrain data
-
-The `baedeker` map and its eight SVG patterns are original Tileflow code and artwork. Their visual
-grammar was informed by late-nineteenth- and early-twentieth-century Baedeker travel maps and town
-plans engraved by Wagner & Debes.
-
-- Baedeker / Karl Wagner & Debes collection:
-  <https://www.antiquemapsandprints.com/collections/baedeker-karl-wagner-debes?srsltid=AfmBOoqG_2Q_Zje0wPPVYjShDjDZe5aIgH_h08XcPkpu7zFaPvF6n5hq>
-- Maps by Karl Baedeker of Italy:
-  <https://commons.wikimedia.org/wiki/Category:Maps_by_Karl_Baedeker_of_Italy>
-- Moscow I, Wagner & Debes, 1914:
-  <https://imperiia.omeka.fas.harvard.edu/document/2461>
-- Amiens, Baedeker, 1908:
-  <https://commons.wikimedia.org/wiki/File:Amiens_%E2%80%94_Plan_extrait_du_guide_B%C3%A6deker_%E2%80%9CNord-Ouest_de_la_France%E2%80%9E_1908.jpg>
-- Berlin-Westend, Baedeker, 1914:
-  <https://commons.wikimedia.org/wiki/File:Baedeker,_Plan_von_Westend,_1914.jpg>
-
-This package does not include or redistribute a historical scan, raster pixel, historical
-typeface, legend artwork, geospatial data, or source map from either reference. The package
-contains Tileflow-authored style code and original patterns plus the separately licensed Cormorant
-Garamond files documented below. `baedeker` is an official Tileflow map; it is not affiliated with
-or endorsed by Baedeker or Wagner & Debes.
-
-At runtime, Baedeker derives contour vectors in the browser from Tileflow Terrain tiles, which
-carry Mapterhorn terrain data. No terrain tile is packaged or redistributed by `@tileflow/maps`. Mapterhorn publishes the full
-catalog of its constituent open terrain sources and their individual attribution and license terms
-at <https://mapterhorn.com/attribution/>. The compiled Style carries that link as source
-attribution.
-
-## Blueprint artwork and terrain data
-
-The Blueprint map (ID `blueprint`) and its four SVG patterns and one SVG technical symbol are original Tileflow
-code and artwork. Its architectural-blueprint direction uses general drafting conventions; this
-package does not include or redistribute an architectural drawing, CAD file, municipal plan,
-survey sheet, font, source image, or third-party symbol artwork.
-
-At runtime, Blueprint derives contour vectors in the browser from Tileflow Terrain tiles, which
-carry Mapterhorn terrain data. No terrain tile is packaged or redistributed by `@tileflow/maps`. Mapterhorn publishes the full
-catalog of its constituent open terrain sources and their individual attribution and license terms
-at <https://mapterhorn.com/attribution/>. The compiled Style carries that link as source
-attribution.
-
 ## Nautical-chart references
 
 The `soundings` map and its twenty-seven SVG symbols and patterns are original Tileflow code and artwork.
@@ -145,25 +89,6 @@ exposed by the selected data sources. Neither is packaged here; the bands are no
 soundings, and the marks keep the attribution of their own source. Soundings is a general-purpose
 visual map, not a nautical chart for navigation.
 
-## Siegfried Map reference and terrain data
-
-The `siegfried` map and its nine light/dark SVG motif pairs are original Tileflow code and artwork informed by
-swisstopo's history, published examples, and 1873 conventional signs for the Siegfried Map. This
-package does not include or redistribute swisstopo scans, raster pixels, legend artwork, fonts,
-historical geospatial data, or map data. swisstopo is the source of the historical visual reference,
-not of any packaged asset bytes. `siegfried` is an official Tileflow map; it is not affiliated with
-or endorsed by swisstopo. Its dark theme is an original nocturnal engraver's-proof interpretation,
-not a reproduced or historically documented swisstopo colourway.
-
-- Historical reference: <https://www.swisstopo.admin.ch/en/siegfried-map>
-- 1873 conventional signs: <https://www.swisstopo.admin.ch/dam/en/sd-web/4OmbRYHBFpcd/Zeichenerklaerung-Siegfriedkarte-EN.pdf>
-
-At runtime, Siegfried derives contour vectors in the browser from Tileflow Terrain tiles, which
-carry Mapterhorn terrain data. No terrain tile is packaged or redistributed by `@tileflow/maps`. Mapterhorn publishes the full
-catalog of its constituent open terrain sources and their individual attribution and license terms
-at <https://mapterhorn.com/attribution/>. The compiled Style carries that link as source
-attribution.
-
 ## Streets lettering
 
 Streets includes unmodified DINish Medium and Bold TTF files from
@@ -174,43 +99,6 @@ Both families use the SIL Open Font License 1.1. Complete copyright and license 
 included in `assets/streets/fonts/LICENSE-DINish.txt`, `LICENSE-NotoSans.txt`, and the combined
 `LICENSE.txt`. DINish is an independent DIN-inspired font; DIN Pro is not redistributed.
 
-## Cormorant Garamond
-
-Baedeker, 1777 and Siegfried each include their own unmodified Cormorant Garamond Regular,
-SemiBold and Italic font files under `assets/baedeker/fonts/`, `assets/map-1777/fonts/` and
-`assets/siegfried/fonts/`, respectively. These copies are pinned to upstream revision `cc1bfb51ce6568cb3abf9199ab718d543f6fa189`. Cormorant is
-copyright 2015 the Cormorant Project Authors and is distributed under the SIL Open Font License
-1.1 included beside each map's font files as `LICENSE.txt`.
-
-## Cívica artwork and fonts
-
-The `civica` map, its five SVG patterns, and its eleven SVG POI pictograms are original Tileflow
-code and artwork. Its civic print-atlas vocabulary takes broad visual inspiration from the user's
-[Inside the Belt Way — Washington DC reference](https://www.etsy.com/listing/990932175/inside-the-belt-way-washington-dc).
-This package does not include or redistribute the reference map, geography, composition,
-lettering, symbols, images, or other artwork. Cívica declares its own assets and does not import
-another official map's artwork or font directories.
-
-Cívica includes five unmodified upstream font files under `assets/civica/fonts/`:
-
-- `DMSerifText-Regular.ttf` and `DMSerifText-Italic.ttf` are from the official Google Fonts
-  [DM Serif Text directory](https://github.com/google/fonts/tree/2536d8f1f906c7bb1f4b1d09ac073109dc6a7cd9/ofl/dmseriftext),
-  pinned to revision `2536d8f1f906c7bb1f4b1d09ac073109dc6a7cd9`. Their complete upstream
-  SIL Open Font License 1.1 notice is preserved at `assets/civica/fonts/OFL.txt`.
-- `BarlowSemiCondensed-Regular.ttf` and `BarlowSemiCondensed-SemiBold.ttf` are from the official
-  Google Fonts [Barlow Semi Condensed directory](https://github.com/google/fonts/tree/3218ae2acc5bce7ccd97c477965b5b4094241fb0/ofl/barlowsemicondensed),
-  pinned to revision `3218ae2acc5bce7ccd97c477965b5b4094241fb0`. Their complete upstream
-  SIL Open Font License 1.1 notice is preserved at `assets/civica/fonts/LICENSE-BarlowSemiCondensed.txt`.
-- `NotoSans-Regular.ttf` is from the official Noto
-  [static hinted Noto Sans directory](https://github.com/notofonts/noto-fonts/tree/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSans),
-  pinned to revision `c971829a87e7920f960e7277c3dafd9bedd3c601`. Its complete upstream
-  SIL Open Font License 1.1 notice is preserved at `assets/civica/fonts/LICENSE-NotoSans.txt`.
-
-`assets/civica/fonts/LICENSE.txt` combines all three complete upstream notices and licenses with
-component filenames and source revisions for Tileflow's generic font preparation pipeline.
-`assets/civica/fonts/README.md` records individual pinned source links and verified OpenType full
-names. No font file has been subsetted, renamed internally, or modified.
-
 ## Historical climate context
 
 Streets uses a smoothed colour proxy derived from Beck et al. (2023),
@@ -218,3 +106,10 @@ https://doi.org/10.1038/s41597-023-02549-6, under CC BY 4.0.
 Source, attribution and adaptation details: assets/streets/climate/NOTICE.txt. The compiled source
 credit links to <https://tileflow.dev/copyright#streets-climate>, which carries the same notice.
 The image is historical context, not live vegetation.
+
+## Terrain elevation and shared artwork
+
+Terrain uses Mapterhorn elevation at runtime for its 3D surface, hillshade and contours. No DEM
+tile is packaged here. Its source links to <https://mapterhorn.com/attribution/>. Terrain shares
+Streets lettering, POI pictograms, transport symbols and climate context, with the notices above.
+The two summit symbols in `assets/terrain/icons/` are original Tileflow artwork.

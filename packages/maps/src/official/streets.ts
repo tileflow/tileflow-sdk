@@ -1,3 +1,4 @@
+import {streetsColorKnobs} from './streets-color-knobs';
 import {
   addresses,
   boundaries,
@@ -1509,6 +1510,7 @@ const streetsBase = bindOfficialMapTheme(
     name: 'Streets',
     fonts: [streetsFonts],
     themes: streetsThemes,
+    colorKnobs: streetsColorKnobs,
     timeOfDay: {
       light: {day: 'light', dawn: 'dawn', dusk: 'dusk', night: 'dark'},
       faded: {day: 'faded', dawn: 'dawn-faded', dusk: 'dusk-faded', night: 'dark-faded'},

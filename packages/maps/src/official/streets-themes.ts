@@ -1,4 +1,5 @@
 import {defineTheme, token} from '@tileflow/core';
+import {streetsRouteColors, streetsRouteNumbers} from './streets-route-colors';
 import {streetsBuildingColors} from './streets-building-colors';
 import {streetsCartographyColors} from './streets-cartography-colors';
 import {streetsCartographyThemes} from './streets-cartography-themes';
@@ -557,12 +558,16 @@ function streetsPaletteColors(preset: StreetsLightPreset, colorTheme: StreetsCol
       colorTheme === 'monochrome',
     ),
     ...streetsSkyTokens(preset, colorTheme).colors,
+    // The inks of a route an application draws. They are the inks a theme without route tokens
+    // gets, named so that the accent knob can recolour them.
+    ...streetsRouteColors(isDarkStreetsPreset(preset) ? 'dark' : 'light'),
   };
 }
 
 function streetsLightingNumbers(preset: StreetsLightPreset, colorTheme: StreetsColorTheme) {
   const dark = isDarkStreetsPreset(preset);
   return {
+    ...streetsRouteNumbers(dark ? 'dark' : 'light'),
     'buildings.floodLight.intensity': dark && colorTheme !== 'monochrome' ? 0.3 : 0,
     // Light colours already include the Faded lookup table; lamp activation uses the
     // corresponding untransformed brightness, independently of that appearance change.

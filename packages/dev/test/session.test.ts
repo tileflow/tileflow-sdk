@@ -1181,11 +1181,19 @@ test('recovers from an initially invalid local font through fallback watch paths
   await writeFile(join(cwd, 'fonts', 'LICENSE.txt'), 'Fixture font license\n');
   await writeFile(join(cwd, 'fonts', 'medium.ttf'), 'invalid font');
   await writeFile(join(cwd, 'fonts', 'semibold.ttf'), 'invalid font');
+  // Keep font recovery within its watch deadline without preparing the Streets sprite atlas.
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
-    `import {defineMap} from '@tileflow/core';
+    `import {defineMap, disable} from '@tileflow/core';
 import {streets} from '@tileflow/maps';
-export default defineMap({id:'main',version:1,extends:streets,fonts:['./fonts']});\n`,
+export default defineMap({
+  id: 'main',
+  version: 1,
+  extends: streets,
+  fonts: ['./fonts'],
+  icons: [],
+  modules: {poi: {type: 'poi', icons: false}, roads: disable(), vegetation: disable()}
+});\n`,
   );
 
   const session = await createTileflowArtifactSession({cwd, debounceMs: 10, watch: true});

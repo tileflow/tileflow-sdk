@@ -12,7 +12,7 @@ const runtimeDependencySections = ['dependencies', 'optionalDependencies', 'peer
 
 const allowedTileflowDependencies = {
   capture: new Set(['core', 'dev']),
-  cli: new Set(['capture', 'coordinates', 'coordinates-runtime', 'core', 'dev', 'maps']),
+  cli: new Set(['capture', 'coordinates', 'coordinates-runtime', 'core', 'dev', 'maps', 'search']),
   coordinates: new Set(),
   'coordinates-runtime': new Set(['coordinates']),
   core: new Set(),

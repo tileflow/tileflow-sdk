@@ -216,7 +216,7 @@ test('tree height floors never resize hedges in color, outline or shadow passes'
     for (const draw of samples) {
       if (draw.height === 1.3) {
         assert.equal(draw.minimum, 0, `${pass}: hedge keeps its measured height`);
-        assert.equal(draw.width, 1.5, `${pass}: hedge keeps its segment length`);
+        assert.equal(draw.width, 1, `${pass}: hedge surface retains its baked width`);
         assert.deepEqual(draw.size, [1, 1]);
       } else assert.equal(draw.minimum, 8, `${pass}: next tile's trees regain their height floor`);
     }

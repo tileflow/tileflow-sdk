@@ -42,6 +42,7 @@ export async function inspectPublicMapRuntime(): Promise<unknown> {
 			export const AppState = {currentState: 'active', addEventListener() { throw new Error('Lifecycle subscription during import.'); }};
 			export function View() { throw new Error('A native view was instantiated during import.'); }
 			export const Pressable = View, Text = View;
+			export const Linking = {openURL() { throw new Error('Navigation during import.'); }};
 			export function processColor() { throw new Error('Marker color evaluated during import.'); }
 			export function findNodeHandle() { throw new Error('A native ref was resolved during import.'); }
 			export const StyleSheet = {create: (value) => value};

@@ -36,6 +36,7 @@
     attachTileflowMap3D,
     attachTileflowMapLifecycle,
     attachTileflowNauticalLights,
+    attachTileflowBranding,
     attachTileflowNotices,
     createTileflowSessionStarter,
     createTileflowThemeController,
@@ -677,6 +678,7 @@
 
     mapInstance = maplibreMap;
     attachTileflowAtmosphere(maplibreMap);
+    attachTileflowBranding(maplibreMap);
     attachTileflowNotices(maplibreMap);
     attachTileflowNauticalLights(maplibreMap);
     attachTileflowLabelPlacement(maplibreMap);

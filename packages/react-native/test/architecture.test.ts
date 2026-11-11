@@ -134,6 +134,7 @@ test('public runtime is limited to Map while portable types and platform respons
         assert.equal(statement.importClause?.isTypeOnly, true, file);
       const privatePlatformEntry =
         rendererEntries.has(file) ||
+        file === join(root, 'catalog-branding.tsx') ||
         file === join(root, 'native-appearance.ts') ||
         file === join(root, 'native-admission-bridge.ts') ||
         file === join(root, 'native-document-bridge.ts') ||

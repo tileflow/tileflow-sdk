@@ -28,9 +28,9 @@ const allowedTileflowDependencies = {
   routing: new Set(),
   search: new Set(),
   static: new Set(),
-  svelte: new Set(['core', 'interactions']),
+  svelte: new Set(['core', 'dom', 'interactions']),
   vite: new Set(['dev']),
-  vue: new Set(['core', 'interactions']),
+  vue: new Set(['core', 'dom', 'interactions']),
   webpack: new Set(['dev']),
 };
 

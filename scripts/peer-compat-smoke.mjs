@@ -59,8 +59,8 @@ const suites = {
     verify: verifyReact,
   },
   vue: {
-    build: ['core', 'interactions', 'vue'],
-    packages: ['core', 'interactions', 'vue'],
+    build: ['core', 'interactions', 'dom', 'vue'],
+    packages: ['core', 'interactions', 'dom', 'vue'],
     scenarios: ['6.4.1', '6.16.0'].map((maplibreVersion) => ({
       dependencies: {
         '@types/geojson': geoJsonTypesVersion,
@@ -74,8 +74,8 @@ const suites = {
     verify: verifyVue,
   },
   svelte: {
-    build: ['core', 'interactions', 'svelte'],
-    packages: ['core', 'interactions', 'svelte'],
+    build: ['core', 'interactions', 'dom', 'svelte'],
+    packages: ['core', 'interactions', 'dom', 'svelte'],
     scenarios: ['6.4.1', '6.16.0'].map((maplibreVersion) => ({
       dependencies: {
         '@types/geojson': geoJsonTypesVersion,

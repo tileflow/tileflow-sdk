@@ -171,3 +171,41 @@ export function tileflowInteractionDiagnosticKey(
     diagnostic.message,
   ].join('\u0000');
 }
+
+export function imageModeAnnotationDiagnostic(
+  annotationCount: number,
+): TileflowInteractionDiagnostic | undefined {
+  return annotationCount > 0
+    ? {
+        code: 'UNSUPPORTED_MODE',
+        level: 'error',
+        message:
+          'Tileflow annotations require mode="interactive"; image mode cannot render interactive overlays.',
+        path: '',
+      }
+    : undefined;
+}
+
+export function imageModeMapInteractionDiagnostic(
+  annotationCount: number,
+  bindingCount: number,
+  hasAdditionalInteractionConfiguration = false,
+): TileflowInteractionDiagnostic | undefined {
+  if (bindingCount === 0 && !hasAdditionalInteractionConfiguration) {
+    return imageModeAnnotationDiagnostic(annotationCount);
+  }
+
+  return {
+    code: 'UNSUPPORTED_MODE',
+    level: 'error',
+    message:
+      annotationCount > 0 && bindingCount > 0
+        ? 'Tileflow annotations and interactions require mode="interactive"; image mode cannot render interactive overlays.'
+        : annotationCount > 0
+          ? 'Tileflow annotations require mode="interactive"; image mode cannot render interactive overlays.'
+          : bindingCount > 0
+            ? 'Tileflow interactions require mode="interactive"; image mode cannot render interactive overlays.'
+            : 'Tileflow interaction state, callbacks, and renderers require mode="interactive"; image mode cannot render interactive overlays.',
+    path: '',
+  };
+}

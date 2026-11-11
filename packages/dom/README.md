@@ -82,6 +82,9 @@ A view renderer fills the element it receives. It runs again on an emptied eleme
 changes, unless it returns `update`; `destroy` runs when the view leaves the map. A marker view
 receives hover, focus and whether its popup is open in `state`.
 
+`mode: "image"` shows a static image of the map instead, without loading MapLibre; `ready` then
+settles with `null` once the image has loaded.
+
 See [REFERENCE.md](REFERENCE.md) for every option and controller method.
 
 ## Next steps

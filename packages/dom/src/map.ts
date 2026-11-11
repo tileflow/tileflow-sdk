@@ -62,11 +62,13 @@ import {
   mergeTileflowAnalytics,
   nearestTileflowBlendTheme,
   normalizeTileflowRuntimeCenter,
+  normalizeTileflowStaticImageSize,
   resolveTileflowManifestMap,
   resolveTileflowRuntimeStyle,
   resolveTileflowRuntimeTheme,
   resolveTileflowRuntimeThemeBlend,
   resolveTileflowRuntimeView,
+  resolveTileflowStaticImageUrl,
   type TileflowAnalytics,
   type TileflowRuntimeManifestMap,
   type TileflowRuntimeSource,
@@ -101,10 +103,14 @@ import {
 import {
   assertTileflowMapStyleOptions,
   createOverlayFailureDiagnostic,
+  imageModeMapInteractionDiagnostic,
   prepareTileflowAnnotations,
   prepareTileflowInteractionBindings,
   prepareTileflowInteractionState,
   tileflowInteractionDiagnosticKey,
+  type TileflowPreparedAnnotations,
+  type TileflowPreparedInteractionBindings,
+  type TileflowPreparedInteractionState,
 } from './inputs';
 import {loadTileflowMapLibre} from './maplibre';
 import {createTileflowReconciler, runTileflowCleanups} from './reconcile';
@@ -131,6 +137,8 @@ export type TileflowMapStatus = Readonly<{
   readiness: TileflowMapReadiness;
   /** The concrete theme shown, once it is known. */
   theme: string | undefined;
+  /** In image mode, the image to show, once it is known. */
+  imageUrl: string | undefined;
 }>;
 
 /**
@@ -153,6 +161,21 @@ export type TileflowMapControllerOptions<
 > = TileflowMapInteractionStateOptions & {
   /** The map to show, by name, from the manifest at `manifestUrl` or the default one. */
   source: TileflowRuntimeSource;
+  /**
+   * `image` shows a static image of the map instead of MapLibre: `imageUrl`, or one the map's
+   * static renderer makes for the container's size, `center`, `zoom` and theme.
+   */
+  mode?: 'image' | 'interactive';
+  imageUrl?: string;
+  /** The image's alternative text; empty unless given. */
+  alt?: string;
+  /** How the browser loads the image; `eager` unless given. */
+  imageLoading?: 'eager' | 'lazy';
+  /**
+   * The `<img>` a framework renders itself (with `imageUrl` from the status), so the image can be
+   * rendered on the server. Without it, the map adds its own image to the container.
+   */
+  image?: HTMLImageElement | null;
   theme?: TileflowThemeSelection;
   /** Optional artistic preset; ignored by maps without this capability. */
   timeOfDay?: TileflowTimeOfDay;
@@ -214,10 +237,10 @@ export type TileflowMapController<TAnnotation extends TileflowAnnotation = Tilef
   Readonly<{
     container: HTMLElement;
     /**
-     * Settles with the MapLibre map when it first loads; rejects when it cannot start or when the
-     * controller is destroyed first.
+     * Settles with the MapLibre map when it first loads, or with `null` once an image-mode map has
+     * shown its image; rejects when it cannot start or when the controller is destroyed first.
      */
-    ready: Promise<MapLibreMap>;
+    ready: Promise<MapLibreMap | null>;
     /** Takes the map down, empties what it added to the container, and stops every listener. */
     destroy(): void;
     getInteractionState(): TileflowInteractionState;
@@ -310,6 +333,9 @@ export function createTileflowMap<TAnnotation extends TileflowAnnotation = Tilef
   let annotationDiagnostics: readonly TileflowInteractionDiagnostic[] = [];
   let semanticDiagnostics: readonly TileflowInteractionDiagnostic[] = [];
   let reportedDeclarativeDiagnosticKeys: ReadonlySet<string> = new Set();
+  let imageSize: {height: number; width: number} | null = null;
+  let managedImage: HTMLImageElement | null = null;
+  let imageReadinessRun = 0;
 
   // Objects behind the map while it is mounted.
   let map: MapLibreMap | null = null;
@@ -334,16 +360,16 @@ export function createTileflowMap<TAnnotation extends TileflowAnnotation = Tilef
   ).state;
   let dataInput: TileflowMapLibreDataInput<TAnnotation> = {};
 
-  let resolveReady!: (map: MapLibreMap) => void;
+  let resolveReady!: (map: MapLibreMap | null) => void;
   let rejectReady!: (error: unknown) => void;
   let readySettled = false;
-  const ready = new Promise<MapLibreMap>((resolve, reject) => {
+  const ready = new Promise<MapLibreMap | null>((resolve, reject) => {
     resolveReady = resolve;
     rejectReady = reject;
   });
   // An application that never awaits `ready` should not see an unhandled rejection.
   ready.catch(() => undefined);
-  const settleReady = (outcome: {error: unknown} | {map: MapLibreMap}) => {
+  const settleReady = (outcome: {error: unknown} | {map: MapLibreMap | null}) => {
     if (readySettled) return;
     readySettled = true;
     if ('map' in outcome) resolveReady(outcome.map);
@@ -493,47 +519,39 @@ export function createTileflowMap<TAnnotation extends TileflowAnnotation = Tilef
     const resolvedBearing = mapOptions?.bearing ?? manifestView.bearing;
     const resolvedPitch = mapOptions?.pitch ?? manifestView.pitch;
     const resolvedInteractive = options.interactive ?? mapOptions?.interactive ?? true;
-    const external = options.renderTargets;
-    const hasMarkerRenderer = external
-      ? external.marker === true
-      : options.views?.marker !== undefined;
-    const hasPopupRenderer = external
-      ? external.popup === true
-      : options.views?.popup !== undefined;
-    const hasTooltipRenderer = external
-      ? external.tooltip === true
-      : options.views?.tooltip !== undefined;
-    const rendererDiagnostics = memo(
-      'rendererDiagnostics',
-      [hasPopupRenderer, hasTooltipRenderer, interactions, preparedAnnotations],
-      () =>
-        unusedTileflowRendererDiagnostics({
-          annotations: preparedAnnotations.annotations,
-          bindings: interactions,
-          hasPopupRenderer,
-          hasTooltipRenderer,
-        }),
-    );
+    const isImageMode = options.mode === 'image';
+    const renderers = tileflowMapRenderers(options);
+    const {hasMarkerRenderer, hasPopupRenderer, hasTooltipRenderer} = renderers;
+    const hasInteractionConfiguration = hasTileflowMapInteractionConfiguration(options, renderers);
     const declarativeDiagnostics = memo(
       'declarativeDiagnostics',
       [
-        preparedAnnotations.diagnostics,
-        preparedInteractions.diagnostics,
-        preparedInteractionState.diagnostics,
-        rendererDiagnostics,
+        hasInteractionConfiguration,
+        hasPopupRenderer,
+        hasTooltipRenderer,
+        interactions,
+        isImageMode,
+        preparedAnnotations,
+        preparedInteractions,
+        preparedInteractionState,
       ],
-      () => [
-        ...preparedAnnotations.diagnostics,
-        ...preparedInteractions.diagnostics,
-        ...preparedInteractionState.diagnostics,
-        ...rendererDiagnostics,
-      ],
+      () =>
+        tileflowMapDeclarativeDiagnostics({
+          hasInteractionConfiguration,
+          hasPopupRenderer,
+          hasTooltipRenderer,
+          interactions,
+          isImageMode,
+          preparedAnnotations,
+          preparedInteractions,
+          preparedInteractionState,
+        }),
     );
     const runtimeStyle = memo(
       'runtimeStyle',
-      [manifestMap, runtimeSource, systemColorScheme, themeResolution],
+      [isImageMode, manifestMap, runtimeSource, systemColorScheme, themeResolution],
       () =>
-        themeResolution.error
+        isImageMode || themeResolution.error
           ? null
           : resolveTileflowRuntimeStyle({
               colorScheme: systemColorScheme,
@@ -544,9 +562,9 @@ export function createTileflowMap<TAnnotation extends TileflowAnnotation = Tilef
     );
     const blendResolution = memo(
       'blendResolution',
-      [manifestMap, runtimeSource, themeBlendKey],
+      [isImageMode, manifestMap, runtimeSource, themeBlendKey],
       (): {cause?: unknown; styles: TileflowRuntimeStyle[] | null} => {
-        if (!manifestMap || !themeBlendKey) return {styles: null};
+        if (isImageMode || !manifestMap || !themeBlendKey) return {styles: null};
         try {
           return {
             styles: resolveTileflowRuntimeThemeBlend({
@@ -563,18 +581,57 @@ export function createTileflowMap<TAnnotation extends TileflowAnnotation = Tilef
     const resolvedAnalytics = memo('analytics', [options.analytics, runtimeStyle], () =>
       mergeTileflowAnalytics(options.analytics, runtimeStyle?.analytics),
     );
+    const staticImageCenter = stable<[number, number]>(
+      'staticImageCenter',
+      normalizeTileflowRuntimeCenter(options.center ?? mapOptions?.center, manifestCenter),
+    );
+    const runtimeImageUrl = memo(
+      'runtimeImageUrl',
+      [
+        imageSize,
+        options.imageUrl,
+        isImageMode,
+        manifestMap,
+        staticImageCenter,
+        resolvedZoom,
+        systemColorScheme,
+        themeResolution,
+      ],
+      () =>
+        options.imageUrl ??
+        (isImageMode && !themeResolution.error
+          ? resolveTileflowStaticImageUrl({
+              center: staticImageCenter,
+              colorScheme: systemColorScheme,
+              imageSize,
+              manifestMap,
+              theme: themeResolution.name,
+              zoom: resolvedZoom,
+            })
+          : undefined),
+    );
     const runtimeResolutionState: TileflowMapReadiness =
       currentManifest.state !== 'ready'
         ? currentManifest.state === 'error'
           ? 'error'
           : 'loading'
-        : themeResolution.error || !runtimeStyle
+        : themeResolution.error
           ? 'error'
-          : 'idle';
+          : isImageMode
+            ? runtimeImageUrl
+              ? 'idle'
+              : options.imageUrl === undefined && imageSize === null
+                ? 'loading'
+                : 'error'
+            : runtimeStyle
+              ? 'idle'
+              : 'error';
 
     return {
       annotationClusters,
       blendResolution,
+      isImageMode,
+      runtimeImageUrl,
       cameraFit,
       dataOverlays,
       dataSources,
@@ -638,6 +695,99 @@ export function createTileflowMap<TAnnotation extends TileflowAnnotation = Tilef
     effect('scene', [options.vegetation, options.viewMode ?? '3d'], () => {
       scene?.setVegetation(options.vegetation);
       scene?.setViewMode(options.viewMode ?? '3d');
+    });
+
+    effect('imageSize', [d.isImageMode, options.imageUrl], () => {
+      imageSize = null;
+      invalidate();
+      if (!d.isImageMode || options.imageUrl) return;
+      const updateImageSize = () => {
+        const next = normalizeTileflowStaticImageSize({
+          height: container.clientHeight,
+          width: container.clientWidth,
+        });
+        if (imageSize?.height === next.height && imageSize.width === next.width) return;
+        imageSize = next;
+        invalidate();
+      };
+      const resizeObserver = new ResizeObserver(updateImageSize);
+      resizeObserver.observe(container);
+      updateImageSize();
+      return () => resizeObserver.disconnect();
+    });
+
+    // Without a framework's own image, the map adds one while it shows an image.
+    const ownsImage = d.isImageMode && options.image === undefined;
+    effect('managedImage', [ownsImage], () => {
+      if (!ownsImage) return;
+      const image = container.ownerDocument.createElement('img');
+      image.decoding = 'async';
+      image.style.cssText = 'display: block; height: 100%; object-fit: cover; width: 100%;';
+      managedImage = image;
+      invalidate();
+      return () => {
+        image.remove();
+        if (managedImage === image) managedImage = null;
+      };
+    });
+    const imageElement = ownsImage ? managedImage : (options.image ?? null);
+    const alt = options.alt ?? '';
+    const imageLoading = options.imageLoading ?? 'eager';
+    effect('managedImageAttributes', [managedImage, d.runtimeImageUrl, alt, imageLoading], () => {
+      const image = managedImage;
+      if (!image) return;
+      image.alt = alt;
+      image.loading = imageLoading;
+      if (!d.runtimeImageUrl) {
+        image.remove();
+        image.removeAttribute('src');
+        return;
+      }
+      if (image.getAttribute('src') !== d.runtimeImageUrl) image.src = d.runtimeImageUrl;
+      if (!image.isConnected) container.append(image);
+    });
+
+    effect('imageReadiness', [d.isImageMode, d.runtimeImageUrl, imageElement], () => {
+      if (!d.isImageMode) return;
+      imageReadinessRun += 1;
+      activeRuntimeResource = d.runtimeImageUrl;
+      captureState = 'loading';
+      invalidate();
+      const image = imageElement;
+      if (!image) return;
+      const markReady = async () => {
+        const run = ++imageReadinessRun;
+        try {
+          if (typeof image.decode === 'function') await image.decode();
+        } catch {
+          if (!image.complete || image.naturalWidth === 0) {
+            if (imageReadinessRun === run) {
+              captureState = 'error';
+              invalidate();
+            }
+            return;
+          }
+        }
+        if (imageReadinessRun !== run) return;
+        captureState = 'idle';
+        invalidate();
+      };
+      const fail = () => {
+        imageReadinessRun += 1;
+        captureState = 'error';
+        invalidate();
+      };
+      const load = () => void markReady();
+      image.addEventListener('load', load);
+      image.addEventListener('error', fail);
+      if (image.complete && image.getAttribute('src')) {
+        if (image.naturalWidth === 0) fail();
+        else void markReady();
+      }
+      return () => {
+        image.removeEventListener('load', load);
+        image.removeEventListener('error', fail);
+      };
     });
 
     effect('systemColorScheme', [options.theme], () => {
@@ -784,12 +934,13 @@ export function createTileflowMap<TAnnotation extends TileflowAnnotation = Tilef
     effect(
       'mount',
       [
+        d.isImageMode,
         d.resolvedInteractive,
         d.runtimeMapIdentity,
         d.runtimeStyle !== null || (d.themeResolution.error && map !== null),
         d.mapOptions,
       ],
-      () => mountMap(),
+      () => (d.isImageMode ? undefined : mountMap()),
     );
 
     effect('theme', [d.runtimeStyle, d.themeBlendKey, d.themeResolution.error], () => {
@@ -1357,7 +1508,10 @@ export function createTileflowMap<TAnnotation extends TileflowAnnotation = Tilef
       : viewHost.isSettled()
         ? 'idle'
         : 'loading';
-    const currentCaptureState = activeRuntimeResource === d.runtimeStyle ? captureState : 'loading';
+    const currentCaptureState =
+      activeRuntimeResource === (d.isImageMode ? d.runtimeImageUrl : d.runtimeStyle)
+        ? captureState
+        : 'loading';
     const parts = [
       currentCaptureState,
       interactionReadiness,
@@ -1372,6 +1526,7 @@ export function createTileflowMap<TAnnotation extends TileflowAnnotation = Tilef
           ? 'idle'
           : 'loading',
       theme: d.themeResolution.name,
+      imageUrl: d.isImageMode ? d.runtimeImageUrl : undefined,
     };
   }
 
@@ -1382,12 +1537,15 @@ export function createTileflowMap<TAnnotation extends TileflowAnnotation = Tilef
       lastStatus &&
       lastStatus.readiness === status.readiness &&
       lastStatus.theme === status.theme &&
+      lastStatus.imageUrl === status.imageUrl &&
       lastStatus.diagnostics.length === status.diagnostics.length &&
       lastStatus.diagnostics.every((diagnostic, index) => diagnostic === status.diagnostics[index])
     ) {
       return;
     }
     lastStatus = status;
+    // An image-mode map is ready once its image shows.
+    if (current.isImageMode && status.readiness === 'idle') settleReady({map: null});
     if (statusElement) {
       setAttribute(statusElement, 'data-tileflow-capture-id', captureId);
       setAttribute(statusElement, 'data-tileflow-map', current.mapName);
@@ -1456,6 +1614,127 @@ export function createTileflowMap<TAnnotation extends TileflowAnnotation = Tilef
     setView: (view) => update(view),
     setViews: (views) => update({views}),
     update,
+  };
+}
+
+type TileflowMapRenderers = Readonly<{
+  hasMarkerRenderer: boolean;
+  hasPopupRenderer: boolean;
+  hasTooltipRenderer: boolean;
+}>;
+
+/** Any option set, read only for which keys hold a value. */
+type TileflowMapOptionPresence = {readonly [K in keyof TileflowMapControllerOptions]?: unknown};
+
+function tileflowMapRenderers(options: {
+  readonly renderTargets?: Readonly<{marker?: boolean; popup?: boolean; tooltip?: boolean}>;
+  readonly views?: Readonly<{marker?: unknown; popup?: unknown; tooltip?: unknown}>;
+}): TileflowMapRenderers {
+  const external = options.renderTargets;
+  return external
+    ? {
+        hasMarkerRenderer: external.marker === true,
+        hasPopupRenderer: external.popup === true,
+        hasTooltipRenderer: external.tooltip === true,
+      }
+    : {
+        hasMarkerRenderer: options.views?.marker !== undefined,
+        hasPopupRenderer: options.views?.popup !== undefined,
+        hasTooltipRenderer: options.views?.tooltip !== undefined,
+      };
+}
+
+/** Anything that only an interactive map can use, so image mode reports it. */
+function hasTileflowMapInteractionConfiguration(
+  options: TileflowMapOptionPresence,
+  renderers: TileflowMapRenderers,
+): boolean {
+  return (
+    options.annotationClusters !== undefined ||
+    options.annotations !== undefined ||
+    options.dataOverlays !== undefined ||
+    options.dataSources !== undefined ||
+    options.defaultInteractionState !== undefined ||
+    options.interactionState !== undefined ||
+    options.interactions !== undefined ||
+    options.onInteractionDiagnostic !== undefined ||
+    options.onInteractionEvent !== undefined ||
+    options.onInteractionStateChange !== undefined ||
+    renderers.hasMarkerRenderer ||
+    renderers.hasPopupRenderer ||
+    renderers.hasTooltipRenderer
+  );
+}
+
+function tileflowMapDeclarativeDiagnostics(input: {
+  hasInteractionConfiguration: boolean;
+  hasPopupRenderer: boolean;
+  hasTooltipRenderer: boolean;
+  interactions: readonly TileflowInteractionBinding[];
+  isImageMode: boolean;
+  preparedAnnotations: TileflowPreparedAnnotations<TileflowAnnotation>;
+  preparedInteractions: TileflowPreparedInteractionBindings;
+  preparedInteractionState: TileflowPreparedInteractionState;
+}): readonly TileflowInteractionDiagnostic[] {
+  const modeDiagnostic = input.isImageMode
+    ? imageModeMapInteractionDiagnostic(
+        input.preparedAnnotations.annotations.length,
+        input.interactions.length,
+        input.hasInteractionConfiguration,
+      )
+    : undefined;
+  return [
+    ...(modeDiagnostic ? [modeDiagnostic] : []),
+    ...input.preparedAnnotations.diagnostics,
+    ...input.preparedInteractions.diagnostics,
+    ...input.preparedInteractionState.diagnostics,
+    ...(input.isImageMode
+      ? []
+      : unusedTileflowRendererDiagnostics({
+          annotations: input.preparedAnnotations.annotations,
+          bindings: input.interactions,
+          hasPopupRenderer: input.hasPopupRenderer,
+          hasTooltipRenderer: input.hasTooltipRenderer,
+        })),
+  ];
+}
+
+/**
+ * The status a map with these options has before it mounts: for server rendering and a framework's
+ * first render, so the page shows the same theme, diagnostics and image before and after mount.
+ * `controlledInteractionOwnership` is whether the map started with `interactionState`.
+ */
+export function getTileflowMapInitialStatus<
+  TAnnotation extends TileflowAnnotation = TileflowAnnotation,
+>(
+  options: TileflowMapControllerOptions<TAnnotation>,
+  controlledInteractionOwnership = options.interactionState !== undefined,
+): TileflowMapStatus {
+  const interactions = options.interactions ?? noInteractions;
+  const renderers = tileflowMapRenderers(options);
+  const isImageMode = options.mode === 'image';
+  const diagnostics = tileflowMapDeclarativeDiagnostics({
+    hasInteractionConfiguration: hasTileflowMapInteractionConfiguration(options, renderers),
+    hasPopupRenderer: renderers.hasPopupRenderer,
+    hasTooltipRenderer: renderers.hasTooltipRenderer,
+    interactions,
+    isImageMode,
+    preparedAnnotations: prepareTileflowAnnotations(options.annotations),
+    preparedInteractions: prepareTileflowInteractionBindings(interactions),
+    preparedInteractionState: prepareTileflowInteractionState(
+      options.interactionState,
+      options.defaultInteractionState,
+      controlledInteractionOwnership,
+    ),
+  });
+  const selection = options.themeBlend
+    ? nearestTileflowBlendTheme(options.themeBlend)
+    : options.theme;
+  return {
+    diagnostics,
+    imageUrl: isImageMode ? options.imageUrl : undefined,
+    readiness: diagnostics.some((diagnostic) => diagnostic.level === 'error') ? 'error' : 'loading',
+    theme: selection && selection !== 'system' ? selection : undefined,
   };
 }
 

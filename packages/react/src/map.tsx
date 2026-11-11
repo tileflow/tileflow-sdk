@@ -19,73 +19,49 @@ import {
 import {createPortal} from 'react-dom';
 import type {Map as MapLibreMap, MapOptions as MapLibreMapOptions} from 'maplibre-gl';
 import type {TileflowGeoJsonSource, TileflowMapLibreOverlay} from '@tileflow/core';
-import {
-  getTileflowSystemColorScheme,
-  reportTileflowMapError,
-  subscribeTileflowSystemColorScheme,
-  type TileflowBounds,
-  type TileflowColorOverrides,
-  type TileflowEmphasis,
-  type TileflowFitBoundsOptions,
-  type TileflowMapError,
-  type TileflowMapErrorCode,
-  type TileflowNavigationControlInput,
-  type TileflowThemeController,
-  type TileflowThemeTransition,
-  type TileflowViewMode,
+import type {
+  TileflowBounds,
+  TileflowColorOverrides,
+  TileflowEmphasis,
+  TileflowFitBoundsOptions,
+  TileflowMapError,
+  TileflowNavigationControlInput,
+  TileflowThemeController,
+  TileflowThemeTransition,
+  TileflowViewMode,
 } from '@tileflow/core/browser';
 import {normalizeTileflowCaptureId} from '@tileflow/core/capture';
 import {
-  defaultTileflowManifestUrl,
-  defaultTileflowRuntimeView,
-  loadTileflowManifest,
-  nearestTileflowBlendTheme,
-  normalizeTileflowRuntimeCenter,
-  normalizeTileflowStaticImageSize,
-  resolveTileflowManifestMap,
   resolveTileflowMapMode,
-  resolveTileflowRuntimeTheme,
-  resolveTileflowRuntimeView,
-  resolveTileflowStaticImageUrl,
   type TileflowAnalytics,
-  type TileflowRuntimeManifestMap,
   type TileflowRuntimeSource,
 } from '@tileflow/core/runtime';
 import {
   createTileflowMap,
+  getTileflowMapInitialStatus,
   type TileflowMapController,
   type TileflowMapControllerOptions,
   type TileflowMapRenderTargetList,
   type TileflowMapStatus,
 } from '@tileflow/dom';
-import {
-  type TileflowAnnotation,
-  type TileflowAnnotationViewContext,
+import type {
+  TileflowAnnotation,
+  TileflowAnnotationViewContext,
   TileflowInteractionBinding,
   TileflowInteractionDiagnostic,
   TileflowInteractionEvent,
   TileflowInteractionState,
   TileflowInteractionViewContext,
-  unusedTileflowRendererDiagnostics,
 } from '@tileflow/interactions';
 import type {
   TileflowAnnotationClusterOptions,
   TileflowMapLibreDomRenderTarget,
   TileflowMapLibreSemanticDomRenderTarget,
 } from '@tileflow/interactions/maplibre';
-import {imageModeMapInteractionDiagnostic, prepareTileflowReactAnnotations} from './annotations';
-import {prepareTileflowReactInteractionBindings} from './interaction-bindings';
-import {prepareTileflowReactInteractionState} from './interaction-state-input';
 import {assertTileflowMapStyleInputs, type TileflowMapStyleSourceProps} from './map-style-inputs';
 
 export type TileflowMapSource = TileflowRuntimeSource;
 export type TileflowMapOptions = Omit<MapLibreMapOptions, 'container' | 'style'>;
-
-type TileflowManifestResolution = Readonly<{
-  key: string;
-  map: TileflowRuntimeManifestMap | null;
-  state: 'error' | 'loading' | 'ready';
-}>;
 
 export type TileflowAnnotationRenderer<
   TAnnotation extends TileflowAnnotation = TileflowAnnotation,
@@ -224,8 +200,6 @@ export type MapProps<TAnnotation extends TileflowAnnotation = TileflowAnnotation
 ) &
   TileflowMapStyleSourceProps;
 
-const defaultInteractions: readonly TileflowInteractionBinding[] = [];
-
 /**
  * Props without `interactions`, where a popup or tooltip view receives the annotation it belongs
  * to. A view written inline gets its parameter types from this overload.
@@ -264,8 +238,6 @@ type MapComponent = {
   displayName?: string;
 };
 
-// `forwardRef` serves React 18 and 19; React 19 would also accept `ref` as a plain prop.
-
 const noRenderTargets: TileflowMapRenderTargetList<never> = {annotations: [], semantic: []};
 
 // `forwardRef` serves React 18 and 19; React 19 would also accept `ref` as a plain prop.
@@ -302,7 +274,7 @@ export const Map = forwardRef(function Map<
     vegetation,
     viewMode = '3d',
     interactionState,
-    interactions = defaultInteractions,
+    interactions,
     onInteractionDiagnostic,
     onInteractionEvent,
     onInteractionStateChange,
@@ -322,29 +294,14 @@ export const Map = forwardRef(function Map<
     () => ({manifestUrl: sourceManifestUrl, map: sourceMap}),
     [sourceManifestUrl, sourceMap],
   );
-  const mapName = runtimeSource.map;
-  const manifestUrl = runtimeSource.manifestUrl ?? defaultTileflowManifestUrl;
-  const preparedAnnotations = useMemo(
-    () => prepareTileflowReactAnnotations(annotations),
-    [annotations],
-  );
-  const preparedInteractions = useMemo(
-    () => prepareTileflowReactInteractionBindings(interactions),
-    [interactions],
-  );
+  const resolvedMode = resolveTileflowMapMode({mode});
+  const isImageMode = resolvedMode === 'image';
   const controlledInteractionOwnershipRef = useRef(interactionState !== undefined);
-  const preparedInteractionState = useMemo(
-    () =>
-      prepareTileflowReactInteractionState(
-        interactionState,
-        defaultInteractionState,
-        controlledInteractionOwnershipRef.current,
-      ),
-    [defaultInteractionState, interactionState],
-  );
+  // The frame holds an image-mode map; an interactive map has its own element inside the frame.
+  const frameRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
-  // The interactive map lives in the framework-free controller; this component draws its views.
+  // The map lives in the framework-free controller; this component draws its views.
   const controllerRef = useRef<TileflowMapController<TAnnotation> | null>(null);
   useImperativeHandle(
     ref,
@@ -354,242 +311,13 @@ export const Map = forwardRef(function Map<
     }),
     [],
   );
-  const reportedDeclarativeDiagnosticKeysRef = useRef<ReadonlySet<string>>(new Set());
-  const [manifestResolution, setManifestResolution] = useState<TileflowManifestResolution>({
-    key: '',
-    map: null,
-    state: 'loading',
-  });
-  const [systemColorScheme, setSystemColorScheme] = useState<'dark' | 'light'>('light');
-  const [imageSize, setImageSize] = useState<{
-    height: number;
-    width: number;
-  } | null>(null);
-  const [captureState, setCaptureState] = useState<'error' | 'idle' | 'loading'>('loading');
-  const [activeImageUrl, setActiveImageUrl] = useState<string | undefined>(undefined);
   const [mapStatus, setMapStatus] = useState<TileflowMapStatus | null>(null);
   const [renderTargets, setRenderTargets] =
     useState<TileflowMapRenderTargetList<TAnnotation>>(noRenderTargets);
-  const stableMapOptions = useStableMapOptions(mapOptions);
   const resolvedCaptureId = normalizeTileflowCaptureId(captureId);
-  const resolvedMode = resolveTileflowMapMode({mode});
-  const isImageMode = resolvedMode === 'image';
-  const manifestRequestKey = JSON.stringify([manifestUrl, mapName]);
-  const currentManifestResolution: TileflowManifestResolution =
-    manifestResolution.key === manifestRequestKey
-      ? manifestResolution
-      : {key: manifestRequestKey, map: null, state: 'loading'};
-  const manifestMap =
-    currentManifestResolution.state === 'ready' ? currentManifestResolution.map : null;
-  // A blend shows its nearest theme until the blend style is ready, and names it while blending.
-  const themeBlendKey = themeBlend ? JSON.stringify(themeBlend.themes) : undefined;
-  const blendThemeName = themeBlend ? nearestTileflowBlendTheme(themeBlend) : undefined;
-  const themeResolution = useMemo(() => {
-    const selection = blendThemeName ?? theme;
-    if (!manifestMap) {
-      return {
-        error: false,
-        name: selection && selection !== 'system' ? selection : undefined,
-      } as const;
-    }
-
-    try {
-      if (themeBlendKey) {
-        for (const name of JSON.parse(themeBlendKey) as string[]) {
-          resolveTileflowRuntimeTheme(manifestMap, name);
-        }
-      }
-      return {
-        error: false,
-        name: resolveTileflowRuntimeTheme(
-          manifestMap,
-          selection,
-          systemColorScheme,
-          themeBlendKey ? undefined : timeOfDay,
-        ).name,
-      } as const;
-    } catch (cause) {
-      return {cause, error: true, name: undefined} as const;
-    }
-  }, [blendThemeName, manifestMap, systemColorScheme, theme, themeBlendKey, timeOfDay]);
-  const liveStatus = isImageMode ? null : mapStatus;
-  const resolvedThemeName = liveStatus ? liveStatus.theme : themeResolution.name;
-  const manifestView = resolveTileflowRuntimeView({manifestMap});
-  const manifestCenter = useStableMapOptionValue<[number, number]>(
-    normalizeTileflowRuntimeCenter(manifestView.center),
-  );
-  const staticImageCenter = useStableMapOptionValue<[number, number]>(
-    normalizeTileflowRuntimeCenter(center ?? stableMapOptions?.center, manifestCenter),
-  );
-  const staticImageZoom =
-    zoom ?? stableMapOptions?.zoom ?? manifestView.zoom ?? defaultTileflowRuntimeView.zoom;
-  const onErrorRef = useRef(onError);
-  onErrorRef.current = onError;
-  const reportError = useCallback(
-    (code: TileflowMapErrorCode, cause: unknown) =>
-      reportTileflowMapError(onErrorRef.current, code, cause),
-    [],
-  );
-  const onInteractionDiagnosticRef = useRef(onInteractionDiagnostic);
-  onInteractionDiagnosticRef.current = onInteractionDiagnostic;
-  const readinessRunRef = useRef(0);
-  const hasAdditionalInteractionConfiguration =
-    annotationClusters !== undefined ||
-    annotations !== undefined ||
-    dataOverlays !== undefined ||
-    dataSources !== undefined ||
-    defaultInteractionState !== undefined ||
-    interactionState !== undefined ||
-    onInteractionDiagnostic !== undefined ||
-    onInteractionEvent !== undefined ||
-    onInteractionStateChange !== undefined ||
-    renderMarker !== undefined ||
-    renderPopup !== undefined ||
-    renderTooltip !== undefined ||
-    props.interactions !== undefined;
-  const modeDiagnostic = useMemo(
-    () =>
-      isImageMode
-        ? imageModeMapInteractionDiagnostic(
-            preparedAnnotations.annotations.length,
-            interactions.length,
-            hasAdditionalInteractionConfiguration,
-          )
-        : undefined,
-    [
-      hasAdditionalInteractionConfiguration,
-      interactions.length,
-      isImageMode,
-      preparedAnnotations.annotations.length,
-    ],
-  );
-  const hasPopupRenderer = renderPopup !== undefined;
-  const hasTooltipRenderer = renderTooltip !== undefined;
-  const rendererDiagnostics = useMemo(
-    () =>
-      isImageMode
-        ? []
-        : unusedTileflowRendererDiagnostics({
-            annotations: preparedAnnotations.annotations,
-            bindings: interactions,
-            hasPopupRenderer,
-            hasTooltipRenderer,
-          }),
-    [hasPopupRenderer, hasTooltipRenderer, interactions, isImageMode, preparedAnnotations],
-  );
-  // What the map shows before it mounts, and in image mode; a mounted map reports its own.
-  const declarativeInteractionDiagnostics = useMemo(
-    () =>
-      [
-        modeDiagnostic,
-        ...preparedAnnotations.diagnostics,
-        ...preparedInteractions.diagnostics,
-        ...preparedInteractionState.diagnostics,
-        ...rendererDiagnostics,
-      ].filter(
-        (diagnostic): diagnostic is TileflowInteractionDiagnostic => diagnostic !== undefined,
-      ),
-    [
-      modeDiagnostic,
-      preparedAnnotations.diagnostics,
-      preparedInteractions.diagnostics,
-      preparedInteractionState.diagnostics,
-      rendererDiagnostics,
-    ],
-  );
-  const interactionDiagnostics = liveStatus?.diagnostics ?? declarativeInteractionDiagnostics;
-  const interactionDiagnostic =
-    interactionDiagnostics.find((diagnostic) => diagnostic.level === 'error') ??
-    interactionDiagnostics[0];
-  const hasInteractionError = interactionDiagnostics.some(
-    (diagnostic) => diagnostic.level === 'error',
-  );
-  const annotationRenderTargets = isImageMode
-    ? noRenderTargets.annotations
-    : renderTargets.annotations;
-  const semanticRenderTargets = isImageMode ? noRenderTargets.semantic : renderTargets.semantic;
-  // A marker is selected while its popup is open: the popup has a render target of its own.
-  const openPopupAnnotationIds = useMemo(
-    () =>
-      new Set(
-        annotationRenderTargets
-          .filter((target) => target.kind === 'popup')
-          .map((target) => target.annotation.id),
-      ),
-    [annotationRenderTargets],
-  );
-  const portalKeys = useMemo(
-    () => [
-      ...annotationRenderTargets.map((target) => `annotation:${target.key}`),
-      ...semanticRenderTargets.map((target) => `semantic:${target.key}`),
-    ],
-    [annotationRenderTargets, semanticRenderTargets],
-  );
-  const portalReadiness = useTileflowPortalReadiness(portalKeys);
-
-  useEffect(() => {
-    if (!isImageMode || theme !== 'system') return;
-    setSystemColorScheme(getTileflowSystemColorScheme());
-    return subscribeTileflowSystemColorScheme(setSystemColorScheme);
-  }, [isImageMode, theme]);
-
-  useEffect(() => {
-    // A mounted interactive map reports its diagnostics itself.
-    if (!isImageMode) return;
-    const previousKeys = reportedDeclarativeDiagnosticKeysRef.current;
-    const nextKeys = new Set<string>();
-
-    for (const diagnostic of declarativeInteractionDiagnostics) {
-      const key = tileflowInteractionDiagnosticKey(diagnostic);
-      nextKeys.add(key);
-      if (!previousKeys.has(key)) onInteractionDiagnosticRef.current?.(diagnostic);
-    }
-    reportedDeclarativeDiagnosticKeysRef.current = nextKeys;
-  }, [declarativeInteractionDiagnostics, isImageMode]);
-
-  useEffect(() => {
-    // An interactive map loads its manifest itself.
-    if (!isImageMode) return;
-    let cancelled = false;
-    setManifestResolution({key: manifestRequestKey, map: null, state: 'loading'});
-
-    loadTileflowManifest(manifestUrl)
-      .then((manifest) => {
-        if (cancelled) {
-          return;
-        }
-
-        const resolvedMap =
-          manifest && mapName ? resolveTileflowManifestMap(manifest, mapName) : null;
-        if (!resolvedMap) {
-          reportError(
-            'manifest',
-            new Error(
-              manifest
-                ? `The Tileflow manifest at ${manifestUrl} has no map named "${mapName}".`
-                : `No Tileflow manifest was found at ${manifestUrl}.`,
-            ),
-          );
-        }
-        setManifestResolution({
-          key: manifestRequestKey,
-          map: resolvedMap,
-          state: resolvedMap ? 'ready' : 'error',
-        });
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          reportError('manifest', error);
-          setManifestResolution({key: manifestRequestKey, map: null, state: 'error'});
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isImageMode, manifestRequestKey, manifestUrl, mapName, reportError]);
 
   const controllerOptions: TileflowMapControllerOptions<TAnnotation> = {
+    alt,
     analytics,
     annotationClusters,
     annotations,
@@ -601,9 +329,14 @@ export const Map = forwardRef(function Map<
     emphasis,
     fitAnnotations,
     fitBoundsOptions,
+    // The image this component renders, so it is there on the server too.
+    image: isImageMode ? imageRef.current : undefined,
+    imageLoading,
+    imageUrl,
     interactions,
     interactive,
     mapOptions,
+    mode: resolvedMode,
     navigationControl,
     onError,
     onInteractionDiagnostic,
@@ -634,10 +367,38 @@ export const Map = forwardRef(function Map<
   };
   const controllerOptionsRef = useRef(controllerOptions);
   controllerOptionsRef.current = controllerOptions;
+  // Before the map mounts, and on the server, the frame shows what the options already say.
+  const status =
+    mapStatus ??
+    getTileflowMapInitialStatus(controllerOptions, controlledInteractionOwnershipRef.current);
+  const interactionDiagnostic =
+    status.diagnostics.find((diagnostic) => diagnostic.level === 'error') ?? status.diagnostics[0];
+  const annotationRenderTargets = renderTargets.annotations;
+  const semanticRenderTargets = renderTargets.semantic;
+  // A marker is selected while its popup is open: the popup has a render target of its own.
+  const openPopupAnnotationIds = useMemo(
+    () =>
+      new Set(
+        annotationRenderTargets
+          .filter((target) => target.kind === 'popup')
+          .map((target) => target.annotation.id),
+      ),
+    [annotationRenderTargets],
+  );
+  const portalKeys = useMemo(
+    () => [
+      ...annotationRenderTargets.map((target) => `annotation:${target.key}`),
+      ...semanticRenderTargets.map((target) => `semantic:${target.key}`),
+    ],
+    [annotationRenderTargets, semanticRenderTargets],
+  );
+  const portalReadiness = useTileflowPortalReadiness(portalKeys);
+  const effectiveCaptureState =
+    status.readiness === 'idle' && !portalReadiness.idle ? 'loading' : status.readiness;
 
   useLayoutEffect(() => {
-    const container = containerRef.current;
-    if (isImageMode || !container) return;
+    const container = isImageMode ? frameRef.current : containerRef.current;
+    if (!container) return;
     const controller = createTileflowMap(container, controllerOptionsRef.current, {
       sessionSource: 'react',
       // The frame this component draws carries the capture attributes.
@@ -657,117 +418,6 @@ export const Map = forwardRef(function Map<
   useLayoutEffect(() => {
     controllerRef.current?.update(controllerOptions);
   });
-
-  const runtimeImageUrl = useMemo(
-    () =>
-      imageUrl ??
-      (isImageMode && !themeResolution.error
-        ? resolveTileflowStaticImageUrl({
-            center: staticImageCenter,
-            colorScheme: systemColorScheme,
-            imageSize,
-            manifestMap,
-            theme: themeResolution.name,
-            zoom: staticImageZoom,
-          })
-        : undefined),
-    [
-      imageSize,
-      imageUrl,
-      isImageMode,
-      manifestMap,
-      staticImageCenter,
-      staticImageZoom,
-      systemColorScheme,
-      themeResolution,
-    ],
-  );
-  const effectiveCaptureState = ((): 'error' | 'idle' | 'loading' => {
-    if (!isImageMode) {
-      if (!liveStatus) return hasInteractionError ? 'error' : 'loading';
-      if (liveStatus.readiness === 'error') return 'error';
-      return liveStatus.readiness === 'idle' && portalReadiness.idle ? 'idle' : 'loading';
-    }
-    const runtimeResolutionState: 'error' | 'idle' | 'loading' =
-      currentManifestResolution.state !== 'ready'
-        ? currentManifestResolution.state === 'error'
-          ? 'error'
-          : 'loading'
-        : themeResolution.error
-          ? 'error'
-          : runtimeImageUrl
-            ? 'idle'
-            : imageUrl === undefined && imageSize === null
-              ? 'loading'
-              : 'error';
-    const currentCaptureState = activeImageUrl === runtimeImageUrl ? captureState : 'loading';
-    const interactionReadiness = hasInteractionError ? 'error' : 'idle';
-    const parts = [currentCaptureState, interactionReadiness, runtimeResolutionState];
-    return parts.includes('error')
-      ? 'error'
-      : parts.every((part) => part === 'idle')
-        ? 'idle'
-        : 'loading';
-  })();
-  useEffect(() => {
-    if (!isImageMode || imageUrl || !containerRef.current) {
-      setImageSize(null);
-      return;
-    }
-
-    const element = containerRef.current;
-    const updateImageSize = () => {
-      const nextSize = normalizeTileflowStaticImageSize({
-        height: element.clientHeight,
-        width: element.clientWidth,
-      });
-
-      setImageSize((currentSize) =>
-        currentSize?.height === nextSize.height && currentSize.width === nextSize.width
-          ? currentSize
-          : nextSize,
-      );
-    };
-    const resizeObserver = new ResizeObserver(updateImageSize);
-
-    resizeObserver.observe(element);
-    updateImageSize();
-
-    return () => {
-      resizeObserver.disconnect();
-    };
-  }, [imageUrl, isImageMode]);
-
-  const themeResolutionCause = themeResolution.error ? themeResolution.cause : undefined;
-  useEffect(() => {
-    // An interactive map reports theme failures itself.
-    if (isImageMode && themeResolution.error) reportError('theme', themeResolutionCause);
-  }, [isImageMode, reportError, themeResolution.error, themeResolutionCause]);
-
-  useLayoutEffect(() => {
-    if (!isImageMode) return;
-    readinessRunRef.current += 1;
-    setActiveImageUrl(runtimeImageUrl);
-    setCaptureState('loading');
-    const image = imageRef.current;
-    if (image?.complete) {
-      if (image.naturalWidth === 0) setCaptureState('error');
-      else void markImageReady(image);
-    }
-  }, [isImageMode, runtimeImageUrl]);
-
-  async function markImageReady(image: HTMLImageElement) {
-    const run = ++readinessRunRef.current;
-    try {
-      if (typeof image.decode === 'function') await image.decode();
-    } catch {
-      if (!image.complete || image.naturalWidth === 0) {
-        if (readinessRunRef.current === run) setCaptureState('error');
-        return;
-      }
-    }
-    if (readinessRunRef.current === run) setCaptureState('idle');
-  }
 
   const frameStyle: CSSProperties = {
     height,
@@ -791,24 +441,20 @@ export const Map = forwardRef(function Map<
       <div
         className={className}
         data-tileflow-capture-id={resolvedCaptureId}
-        data-tileflow-map={mapName}
-        data-tileflow-theme={resolvedThemeName}
+        data-tileflow-map={sourceMap}
+        data-tileflow-theme={status.theme}
         data-tileflow-state={effectiveCaptureState}
-        ref={containerRef}
+        ref={frameRef}
         style={frameStyle}
       >
-        {runtimeImageUrl ? (
+        {status.imageUrl ? (
+          // The map tracks the image's load and decode for capture readiness.
           <img
             alt={alt}
             decoding="async"
             loading={imageLoading}
-            onError={() => {
-              readinessRunRef.current += 1;
-              setCaptureState('error');
-            }}
-            onLoad={(event) => void markImageReady(event.currentTarget)}
             ref={imageRef}
-            src={runtimeImageUrl}
+            src={status.imageUrl}
             style={{
               display: 'block',
               height: '100%',
@@ -827,8 +473,8 @@ export const Map = forwardRef(function Map<
       <div
         className={className}
         data-tileflow-capture-id={resolvedCaptureId}
-        data-tileflow-map={mapName}
-        data-tileflow-theme={resolvedThemeName}
+        data-tileflow-map={sourceMap}
+        data-tileflow-theme={status.theme}
         data-tileflow-state={effectiveCaptureState}
         style={frameStyle}
       >
@@ -1063,78 +709,4 @@ function useTileflowPortalReadiness(portalKeys: readonly string[]) {
   }, [committed, expectedKeys, readyToken, token]);
 
   return {idle: readyToken === token, markCommitted, token};
-}
-function tileflowInteractionDiagnosticKey(diagnostic: TileflowInteractionDiagnostic): string {
-  return [
-    diagnostic.code,
-    diagnostic.level,
-    diagnostic.path ?? '',
-    diagnostic.target ? JSON.stringify(diagnostic.target) : '',
-    diagnostic.message,
-  ].join('\u0000');
-}
-function useStableMapOptions(
-  options: TileflowMapOptions | undefined,
-): TileflowMapOptions | undefined {
-  return useStableMapOptionValue(options);
-}
-
-function useStableMapOptionValue<T>(value: T): T {
-  const valueRef = useRef(value);
-
-  if (!areEquivalentMapOptionValues(valueRef.current, value)) {
-    valueRef.current = value;
-  }
-
-  return valueRef.current;
-}
-
-function areEquivalentMapOptionValues(
-  left: unknown,
-  right: unknown,
-  seen = new WeakMap<object, object>(),
-): boolean {
-  if (Object.is(left, right)) {
-    return true;
-  }
-
-  if (!left || !right || typeof left !== 'object' || typeof right !== 'object') {
-    return false;
-  }
-
-  const seenRight = seen.get(left);
-
-  if (seenRight) {
-    return seenRight === right;
-  }
-
-  seen.set(left, right);
-
-  if (Array.isArray(left) || Array.isArray(right)) {
-    return (
-      Array.isArray(left) &&
-      Array.isArray(right) &&
-      left.length === right.length &&
-      left.every((value, index) => areEquivalentMapOptionValues(value, right[index], seen))
-    );
-  }
-
-  if (!isPlainObject(left) || !isPlainObject(right)) {
-    return false;
-  }
-  const leftKeys = Object.keys(left);
-  const rightKeys = Object.keys(right);
-
-  return (
-    leftKeys.length === rightKeys.length &&
-    leftKeys.every(
-      (key) =>
-        Object.hasOwn(right, key) && areEquivalentMapOptionValues(left[key], right[key], seen),
-    )
-  );
-}
-
-function isPlainObject(value: object): value is Record<string, unknown> {
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
 }

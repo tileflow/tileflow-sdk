@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
+import {stripTypeScriptTypes} from 'node:module';
 import test from 'node:test';
 import {configureTileflowMapLibre, loadTileflowMapLibre} from '../src/maplibre';
 
@@ -62,4 +63,27 @@ test('the MapLibre loader resolves the renderer once and keeps the configured wo
     () => configureTileflowMapLibre({workerUrl: '/other-worker.mjs'}),
     /already configured/u,
   );
+});
+
+test('worker configuration does not add an unhandled renderer-load rejection', async () => {
+  const source = stripTypeScriptTypes(
+    await readFile(new URL('../src/maplibre.ts', import.meta.url), 'utf8'),
+  );
+  // A fresh copy whose renderer import cannot resolve, so the load rejects.
+  const runtime = (await import(
+    `data:text/javascript,${encodeURIComponent(source)}`
+  )) as typeof import('../src/maplibre');
+  const unhandled: unknown[] = [];
+  const observe = (reason: unknown) => unhandled.push(reason);
+
+  process.on('unhandledRejection', observe);
+  try {
+    const loading = runtime.loadTileflowMapLibre();
+    runtime.configureTileflowMapLibre({workerUrl: '/assets/maplibre-gl-worker.mjs'});
+    await assert.rejects(loading);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.deepEqual(unhandled, []);
+  } finally {
+    process.off('unhandledRejection', observe);
+  }
 });

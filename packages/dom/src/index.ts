@@ -1,4 +1,4 @@
-export {createTileflowMap} from './map';
+export {createTileflowMap, getTileflowMapInitialStatus} from './map';
 export {configureTileflowMapLibre, loadTileflowMapLibre} from './maplibre';
 export type {
   TileflowMapController,

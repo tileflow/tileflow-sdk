@@ -33,6 +33,16 @@ Every option except `source` is optional and can change after mount through `upd
 | `onInteractionEvent`, `onInteractionStateChange` | Pointer and popup events; requested popup state.                                                          |
 | `onInteractionDiagnostic`                        | Each distinct interaction diagnostic, once.                                                               |
 | `onStatusChange`                                 | Every change to the status `getStatus` returns.                                                           |
+| `mode`, `imageUrl`, `alt`, `imageLoading`        | `"image"` shows a static image instead of a map: `imageUrl`, or one the map's style resolves.             |
+| `image`                                          | In image mode, an `<img>` your page renders (or `null` until it does); otherwise the map adds its own.    |
+
+### Image mode
+
+With `mode: "image"` no MapLibre loads. The map shows `imageUrl`, or an image of the style at the
+view and container size, and is `idle` once that image has loaded and decoded. Annotations,
+interactions, interaction state, interaction callbacks and views are unavailable there and report
+`UNSUPPORTED_MODE`. A framework that renders on the server passes its own `<img>` as `image` and
+sets its `src` from `status.imageUrl`.
 
 ### Create options
 
@@ -50,15 +60,21 @@ with no renderer keeps the default view.
 
 ## Controller
 
-| Member                                                   | Meaning                                                                                                        |
-| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `ready`                                                  | Settles with the MapLibre map on its first load; rejects when the map cannot start or is destroyed first.      |
-| `update(options)`                                        | Applies changed options; left-out keys keep their value, `undefined` clears one.                               |
-| `setTheme`, `setThemeBlend`, `setColors`, `setEmphasis`  | One option each.                                                                                               |
-| `setView({center, zoom})`, `setBounds(bounds, options?)` | Camera options.                                                                                                |
-| `setAnnotations`, `setInteractions`, `setViews`          | Content options.                                                                                               |
-| `setInteractionState(state)`                             | Opens or closes a popup; on a controlled map the same as passing `interactionState`.                           |
-| `getStatus()`                                            | `{readiness, theme, diagnostics}`: `loading`, `idle` or `error`, the theme shown, and interaction diagnostics. |
-| `getMap()`, `getThemeController()`                       | The MapLibre map and theme controller, `null` until the map exists and after it is taken down.                 |
-| `getInteractionState()`, `getRenderTargets()`            | The open popup; the view elements the map handed out.                                                          |
-| `destroy()`                                              | Takes the map down, removes the capture attributes and stops every listener. Later calls do nothing.           |
+| Member                                                   | Meaning                                                                                                                                            |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ready`                                                  | Settles with the MapLibre map on its first load (`null` once an image shows); rejects when it cannot start or is destroyed first.                  |
+| `update(options)`                                        | Applies changed options; left-out keys keep their value, `undefined` clears one.                                                                   |
+| `setTheme`, `setThemeBlend`, `setColors`, `setEmphasis`  | One option each.                                                                                                                                   |
+| `setView({center, zoom})`, `setBounds(bounds, options?)` | Camera options.                                                                                                                                    |
+| `setAnnotations`, `setInteractions`, `setViews`          | Content options.                                                                                                                                   |
+| `setInteractionState(state)`                             | Opens or closes a popup; on a controlled map the same as passing `interactionState`.                                                               |
+| `getStatus()`                                            | `{readiness, theme, diagnostics, imageUrl}`: `loading`, `idle` or `error`, the theme shown, interaction diagnostics and, in image mode, the image. |
+| `getMap()`, `getThemeController()`                       | The MapLibre map and theme controller, `null` until the map exists and after it is taken down.                                                     |
+| `getInteractionState()`, `getRenderTargets()`            | The open popup; the view elements the map handed out.                                                                                              |
+| `destroy()`                                              | Takes the map down, removes the capture attributes and stops every listener. Later calls do nothing.                                               |
+
+## `getTileflowMapInitialStatus(options, controlledInteractionState?)`
+
+The status a map with these options has before it mounts: its declarative diagnostics, `error` or
+`loading`, the theme it names and, in image mode, `imageUrl`. It touches no DOM, so a framework can
+render capture attributes on the server and before the controller exists.

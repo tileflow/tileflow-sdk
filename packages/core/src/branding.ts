@@ -22,6 +22,16 @@ const metadataKey = 'tileflow:brandingSources';
 
 type Style = {sources?: unknown; layers?: unknown; terrain?: unknown; metadata?: unknown};
 type RememberedSource = {binding: string; deliveries: TileflowBrandingSource[]};
+type UrlParser = (
+  value: string,
+  base?: string,
+) => {
+  origin: string;
+  protocol: string;
+  pathname: string;
+  search: string;
+};
+const browserUrl: UrlParser = (value, base) => new URL(value, base);
 
 function record(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -37,21 +47,28 @@ function resourceUrls(source: Record<string, unknown>): string[] {
 export function tileflowBrandingSource(
   value: string,
   options: {baseUrl?: string; apiUrl?: string} = {},
+  parseUrl: UrlParser = browserUrl,
 ): TileflowBrandingSource | undefined {
-  let url: URL;
+  let url: ReturnType<UrlParser>;
   try {
-    url = new URL(value, options.baseUrl);
+    url = parseUrl(value, options.baseUrl);
   } catch {
     return undefined;
   }
-  const apiOrigin = new URL(options.apiUrl ?? 'https://api.tileflow.dev').origin;
+  const apiOrigin = parseUrl(options.apiUrl ?? 'https://api.tileflow.dev').origin;
   const officialTiles =
     apiOrigin === 'https://api.tileflow.dev' && url.origin === 'https://tiles.tileflow.dev';
   if ((!officialTiles && url.origin !== apiOrigin) || !['http:', 'https:'].includes(url.protocol))
     return undefined;
   const match = /^\/(?:v1\/)?tiles\/([^/]+)(?:\/|$)/u.exec(url.pathname);
   if (!match || !catalog.has(match[1]!)) return undefined;
-  const mapId = url.searchParams.get('map');
+  // Native shares its private URL parser and does not need ambient URLSearchParams.
+  const decode = (part: string) => decodeURIComponent(part.replace(/\+/gu, ' '));
+  const mapEntry = url.search
+    .slice(1)
+    .split('&')
+    .find((part) => decode(part.split('=')[0]!) === 'map');
+  const mapId = mapEntry === undefined ? null : decode(mapEntry.slice(mapEntry.indexOf('=') + 1));
   if (mapId !== null && !mapPattern.test(mapId))
     throw new TypeError('Invalid Tileflow branding Map ID.');
   return {apiUrl: apiOrigin, ...(mapId ? {mapId} : {})};
@@ -61,13 +78,14 @@ export function tileflowBrandingSource(
 export function rememberTileflowBrandingSources(
   style: Style,
   options: {baseUrl?: string; apiUrl?: string; mapId?: string} = {},
+  parseUrl: UrlParser = browserUrl,
 ): Record<string, RememberedSource> {
   if (!record(style.sources)) return {};
   const remembered: Record<string, RememberedSource> = {};
   for (const [id, source] of Object.entries(style.sources)) {
     if (!record(source)) continue;
     const deliveries = resourceUrls(source)
-      .map((url) => tileflowBrandingSource(url, options))
+      .map((url) => tileflowBrandingSource(url, options, parseUrl))
       .filter((value): value is TileflowBrandingSource => !!value);
     if (options.mapId && mapPattern.test(options.mapId))
       deliveries.splice(
@@ -98,6 +116,7 @@ export function bindTileflowBrandingSources(
 export function readTileflowBrandingSources(
   style: Style,
   options: {baseUrl?: string; apiUrl?: string} = {},
+  parseUrl: UrlParser = browserUrl,
 ): readonly TileflowBrandingSource[] {
   if (!record(style.sources)) return [];
   const used = new Set<string>();
@@ -122,7 +141,7 @@ export function readTileflowBrandingSources(
     if (!record(source)) continue;
     const urls = resourceUrls(source);
     let found = urls
-      .map((url) => tileflowBrandingSource(url, options))
+      .map((url) => tileflowBrandingSource(url, options, parseUrl))
       .filter((value): value is TileflowBrandingSource => !!value);
     const previous = saved[id];
     if (
@@ -134,7 +153,7 @@ export function readTileflowBrandingSources(
         (value): value is TileflowBrandingSource =>
           record(value) &&
           typeof value.apiUrl === 'string' &&
-          value.apiUrl === new URL(options.apiUrl ?? 'https://api.tileflow.dev').origin &&
+          value.apiUrl === parseUrl(options.apiUrl ?? 'https://api.tileflow.dev').origin &&
           (value.mapId === undefined ||
             (typeof value.mapId === 'string' && mapPattern.test(value.mapId))),
       );

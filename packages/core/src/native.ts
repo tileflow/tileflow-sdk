@@ -1,10 +1,7 @@
 export {createTileflowBrandingController} from './branding-controller';
 export type {TileflowBrandingState} from './branding-controller';
-export {
-  readTileflowBrandingSources,
-  rememberTileflowBrandingSources,
-  bindTileflowBrandingSources,
-} from './branding';
+export {readTileflowBrandingSources, rememberTileflowBrandingSources} from './branding-native';
+export {bindTileflowBrandingSources} from './branding';
 export type {TileflowTimeOfDay, TileflowTimeOfDayVariants} from './time-of-day';
 export {
   resolveTileflowNativeManifestUrl,

@@ -378,6 +378,16 @@ and Noto Sans; Baedeker, 1777 and Siegfried package Cormorant; Cívica packages 
 rejects packaged/local fonts: self-host or replace them with compatible public glyphs. Tile and font
 URLs do not grant redistribution rights.
 
+`labels.roadPlacement: 'readable'` draws complete street names above the 3D scene, below foreground
+destinations. `attachTileflowLabelPlacement(map)` from `@tileflow/core/browser` adds per-instance
+visibility to supported MapLibre WebGL2 line-symbol buffers; frameworks, preview and capture
+attach it automatically. Asynchronous depth queries hide whole names whose ground anchors are
+occluded, without changing source filters or collision placement. Above 40° the distant view is
+reduced, at 55° names beyond the centre yield, and at 60° only the near foreground remains.
+Native renderers, terrain, globe and unsupported browser bucket layouts keep complete text above
+buildings.
+The adapter does not reproduce Mapbox's proprietary layout engine or its placement transitions.
+
 `glyphs.fontStacks` lists the stacks the provider serves, exactly as MapLibre joins a `text-font`
 array with commas. A Tileflow glyph set URL (`/base/<assetSetSha256>/glyphs/{fontstack}/{range}.pbf`)
 combines fallback stacks, the first font holding a glyph winning, so there it is enough to declare
@@ -406,6 +416,10 @@ Land may supply a georeferenced `globalLandcoverUnderlay` image with `url`, four
 and themed `opacity`. It is drawn below global cover and omitted when land is disabled.
 Tree forms may use `sizeAnchor` and `crownAnchor` (metres) with `sizeCompression`
 from 0 to 1 to reduce size variation while preserving each tree’s proportions.
+Decorative canopy clearance bounds the available space; it is not a measured crown diameter.
+When canopy height is available, inferred crowns also follow the selected tree form's proportions.
+Individually mapped trees retain their measured dimensions. Hedges use continuous, joined surfaces
+with a 0.5 m footprint, a flat top, and clipped tile boundaries; tree size controls do not resize them.
 
 ## Flat footprints under 3D buildings
 

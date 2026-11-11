@@ -1643,9 +1643,9 @@ const labelsModuleSchema = z
       )
       .optional(),
     roadPlacement: z
-      .enum(['ground', 'foreground'])
+      .enum(['ground', 'foreground', 'readable'])
       .describe(
-        'Street names draw in the foreground by default. Ground names draw below buildings, use map-aligned text by default, and yield collisions to foreground symbols. Shields and junction numbers stay in the foreground.',
+        'Street names draw in the foreground by default. Ground names draw below buildings and use map-aligned text by default. Readable names draw above the scene and the web runtime hides whole occluded or distant names. Ground and readable names yield collisions to foreground symbols. Shields and junction numbers stay in the foreground.',
       )
       .optional(),
     renderStack: renderStackSchema.optional(),

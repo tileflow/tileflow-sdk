@@ -1,4 +1,8 @@
-import {isGroundRoadLabel} from './cartography/label-placement';
+import {isGroundRoadLabel, isReadableRoadLabel} from './cartography/label-placement';
+import {
+  createRoadLabelVisibility,
+  roadLabelVisibilityLayerId,
+} from './road-label-visibility-browser';
 
 type Layer = {id: string; type?: string; renderingMode?: string; metadata?: unknown};
 
@@ -19,6 +23,7 @@ export type TileflowLabelPlacementMap = {
  * Explicit render-stack placement opts a road out of this automatic scene ordering.
  */
 export function attachTileflowLabelPlacement(map: TileflowLabelPlacementMap): () => void {
+  const readable = createRoadLabelVisibility(map);
   let disposed = false;
   let targets: string[] = [];
   let ordering = false;
@@ -53,6 +58,7 @@ export function attachTileflowLabelPlacement(map: TileflowLabelPlacementMap): ()
     // foreground labels must not pull road names above POIs or navigation shields.
     const scene = layers.filter(
       (layer, index) =>
+        layer.id !== roadLabelVisibilityLayerId &&
         (ceiling < 0 || index < ceiling) &&
         (layer.type === 'fill-extrusion' ||
           (layer.type === 'custom' && layer.renderingMode === '3d')),
@@ -100,6 +106,7 @@ export function attachTileflowLabelPlacement(map: TileflowLabelPlacementMap): ()
   function syncStyle() {
     if (disposed || ordering) return;
     targets = (map.getStyle()?.layers ?? []).filter(isGroundRoadLabel).map(({id}) => id);
+    readable.sync((map.getStyle()?.layers ?? []).filter(isReadableRoadLabel).map(({id}) => id));
     flatOrder = map.getPitch() < 30;
     orderRoads();
   }
@@ -121,6 +128,7 @@ export function attachTileflowLabelPlacement(map: TileflowLabelPlacementMap): ()
     map.off('styledata', syncStyle);
     map.off('remove', removed);
     if (restore) orderRoads(true);
+    readable.dispose(!restore);
     targets = [];
   }
   const removed = () => release(false);

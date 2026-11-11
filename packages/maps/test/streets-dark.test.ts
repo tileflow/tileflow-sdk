@@ -1499,8 +1499,8 @@ test('Streets street names yield to destinations and buildings without flattenin
         `${layer.id} must cover road markings`,
       );
       assert.ok(
-        style.layers.indexOf(layer) < buildingIndex,
-        `${layer.id} must be hidden by buildings`,
+        style.layers.indexOf(layer) > buildingIndex,
+        `${layer.id} must retain complete glyphs around buildings`,
       );
       assert.ok(
         style.layers.indexOf(layer) < ordinaryPoiIndex,
@@ -1512,7 +1512,7 @@ test('Streets street names yield to destinations and buildings without flattenin
       );
       assert.deepEqual(layer.metadata?.['tileflow:road-label-placement'], {
         version: 1,
-        mode: 'ground',
+        mode: 'readable',
       });
       assert.equal(layer.layout?.['symbol-placement'], 'line');
       assert.equal(layer.layout?.['text-pitch-alignment'], 'viewport');

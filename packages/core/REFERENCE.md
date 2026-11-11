@@ -378,6 +378,16 @@ and Noto Sans; Baedeker, 1777 and Siegfried package Cormorant; Cívica packages 
 rejects packaged/local fonts: self-host or replace them with compatible public glyphs. Tile and font
 URLs do not grant redistribution rights.
 
+`labels.roadPlacement: 'readable'` draws complete street names above the 3D scene, below foreground
+destinations. `attachTileflowLabelPlacement(map)` from `@tileflow/core/browser` adds per-instance
+visibility to supported MapLibre WebGL2 line-symbol buffers; frameworks, preview and capture
+attach it automatically. Asynchronous depth queries hide whole names whose ground anchors are
+occluded, without changing source filters or collision placement. Above 40° the distant view is
+reduced, at 55° names beyond the centre yield, and at 60° only the near foreground remains.
+Native renderers, terrain, globe and unsupported browser bucket layouts keep complete text above
+buildings.
+The adapter does not reproduce Mapbox's proprietary layout engine or its placement transitions.
+
 `glyphs.fontStacks` lists the stacks the provider serves, exactly as MapLibre joins a `text-font`
 array with commas. A Tileflow glyph set URL (`/base/<assetSetSha256>/glyphs/{fontstack}/{range}.pbf`)
 combines fallback stacks, the first font holding a glyph winning, so there it is enough to declare

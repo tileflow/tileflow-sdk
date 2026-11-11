@@ -71,7 +71,7 @@ export function describeTileflowDesignDecisions(input: {
       'labels',
       'roadPlacement',
       labels.roadPlacement,
-      'Ground names draw below buildings and yield in collisions to foreground symbols; foreground names draw above buildings.',
+      'Ground names draw below buildings. Readable names draw above the scene and hide whole occluded or distant names in the web runtime. Both yield collisions to foreground symbols; foreground names draw above buildings.',
     );
     policy(
       'labels',

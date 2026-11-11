@@ -1184,8 +1184,8 @@ test('recovers from an initially invalid local font through fallback watch paths
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
     `import {defineMap} from '@tileflow/core';
-import {baedeker} from '@tileflow/maps';
-export default defineMap({id:'main',version:1,extends:baedeker,fonts:['./fonts']});\n`,
+import {streets} from '@tileflow/maps';
+export default defineMap({id:'main',version:1,extends:streets,fonts:['./fonts']});\n`,
   );
 
   const session = await createTileflowArtifactSession({cwd, debounceMs: 10, watch: true});
@@ -1197,18 +1197,15 @@ export default defineMap({id:'main',version:1,extends:baedeker,fonts:['./fonts']
   const invalidGeneration = session.getState().generation;
 
   for (const [file, source] of [
-    ['medium.ttf', 'Regular'],
-    ['semibold.ttf', 'SemiBold'],
-    ['italic.ttf', 'Italic'],
+    ['medium.ttf', 'DINish-Medium'],
+    ['semibold.ttf', 'DINish-Bold'],
+    ['regular.ttf', 'NotoSans-Regular'],
+    ['bold.ttf', 'NotoSans-Bold'],
+    ['italic.ttf', 'NotoSans-Italic'],
   ]) {
     await writeFile(
       join(cwd, 'fonts', file),
-      await readFile(
-        new URL(
-          `../../maps/assets/baedeker/fonts/CormorantGaramond-${source}.ttf`,
-          import.meta.url,
-        ),
-      ),
+      await readFile(new URL(`../../maps/assets/streets/fonts/${source}.ttf`, import.meta.url)),
     );
   }
 
@@ -1220,7 +1217,7 @@ export default defineMap({id:'main',version:1,extends:baedeker,fonts:['./fonts']
   assert.ok(
     session
       .getLastGoodArtifacts()
-      ?.assets.some((asset) => asset.fileName.startsWith('fonts/cormorant-garamond-regular-')),
+      ?.assets.some((asset) => asset.fileName.startsWith('fonts/noto-sans-regular-')),
   );
 
   await writeFile(join(cwd, 'tileflow.config.ts'), invalidConfig, 'utf8');
@@ -1232,7 +1229,7 @@ export default defineMap({id:'main',version:1,extends:baedeker,fonts:['./fonts']
     await createTileflowDevRequestHandler({session})(new Request('http://localhost/'))
   ).text();
   assert.match(lastGoodPreview, /const previewFontFaces = \[\{/);
-  assert.match(lastGoodPreview, /fonts\/cormorant-garamond-regular-/);
+  assert.match(lastGoodPreview, /fonts\/noto-sans-regular-/);
 });
 
 test('rejects and never watches icon directories outside the working tree', async (t) => {

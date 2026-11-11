@@ -11,7 +11,7 @@ import {
   type TileflowMap,
 } from '@tileflow/core';
 import {createStyleFromCatalog, type TileflowBuildCatalog} from '@tileflow/core/build';
-import {baedeker, blueprint, map1777, siegfried, soundings, streets} from '@tileflow/maps';
+import {soundings, streets, terrain} from '@tileflow/maps';
 import {
   compileTileflowIconPackages,
   prepareTileflowCatalogIcons,
@@ -105,14 +105,9 @@ test('prepares every independent official root from its package-owned directorie
   await withFixture(async (cwd) => {
     const project: TileflowBuildCatalog = {
       maps: {
-        baedeker: resolveFixtureMap(baedeker),
-
-        'map-1777': resolveFixtureMap(map1777),
-
-        blueprint: resolveFixtureMap(blueprint),
-        siegfried: resolveFixtureMap(siegfried),
         soundings: resolveFixtureMap(soundings),
         streets: resolveFixtureMap(streets),
+        terrain: resolveFixtureMap(terrain),
       },
     };
     const compiled = await compileTileflowIconPackages(project, {cwd, target: 'hosted'});
@@ -120,62 +115,6 @@ test('prepares every independent official root from its package-owned directorie
       compiled.packages.map((iconPackage) => [iconPackage.contentHash, iconPackage]),
     );
     const expectedNames = {
-      baedeker: [
-        'baedeker-hachures',
-        'baedeker-orchard',
-        'baedeker-paper-grain',
-        'baedeker-park-stipple',
-        'baedeker-residential',
-        'baedeker-sand',
-        'baedeker-water-lines',
-        'baedeker-wetland',
-      ],
-
-      'map-1777': ['', 'dawn-', 'dusk-', 'night-']
-        .flatMap((moment) =>
-          [
-            'crop-cross',
-            'crop-hatch',
-            'crop-lines',
-            'heath',
-            'orchard',
-            'paper-grain',
-            'residential',
-            'sand',
-            'water-ripples',
-            'wetland',
-            'woodland',
-          ].map((plate) => `map-1777-${moment}${plate}`),
-        )
-        .sort(),
-
-      blueprint: [
-        'blueprint-building-hatch',
-        'blueprint-grid',
-        'blueprint-landscape-hatch',
-        'blueprint-poi-node',
-        'blueprint-water-hatch',
-      ],
-      siegfried: [
-        'siegfried-dark-forest',
-        'siegfried-dark-glacier',
-        'siegfried-dark-gravel',
-        'siegfried-dark-orchard',
-        'siegfried-dark-paper-grain',
-        'siegfried-dark-rock',
-        'siegfried-dark-scree',
-        'siegfried-dark-water-lines',
-        'siegfried-dark-wetland',
-        'siegfried-forest',
-        'siegfried-glacier',
-        'siegfried-gravel',
-        'siegfried-orchard',
-        'siegfried-paper-grain',
-        'siegfried-rock',
-        'siegfried-scree',
-        'siegfried-water-lines',
-        'siegfried-wetland',
-      ],
       soundings: [
         'soundings-boat-hoist',
         'soundings-boatyard',
@@ -206,10 +145,11 @@ test('prepares every independent official root from its package-owned directorie
         'soundings-wreck',
       ],
       streets: streetsIconIds,
+      terrain: [...streetsIconIds, 'terrain-peak', 'terrain-peak-dark'].sort(),
     } as const;
 
     assert.deepEqual(compiled.watchPaths, []);
-    assert.equal(compiled.packages.length, 6);
+    assert.equal(compiled.packages.length, 3);
     for (const binding of compiled.bindings) {
       assert.deepEqual(
         packagesByHash.get(binding.packageHash)?.manifest.iconNames,
@@ -218,8 +158,8 @@ test('prepares every independent official root from its package-owned directorie
     }
 
     const prepared = await prepareTileflowCatalogIcons(project, {assetBaseUrl: '/tileflow', cwd});
-    // Six sprites of four files each, plus Streets' two required transit-symbol credits.
-    assert.equal(prepared.assets.length, 26);
+    // Three sprites of four files each; Streets and Terrain each retain their transit credits.
+    assert.equal(prepared.assets.length, 16);
     for (const binding of compiled.bindings) {
       assert.deepEqual(prepared.mapAssets[binding.mapName]?.icons?.ids, binding.iconIds);
     }

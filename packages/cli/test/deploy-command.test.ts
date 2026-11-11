@@ -710,7 +710,7 @@ test('deploy rejects package-owned fonts before authentication while Hosted font
   const fixture = await createFixture(t);
   await writeFile(
     fixture.configPath,
-    "import {defineMap} from '@tileflow/core'; import {baedeker} from '@tileflow/maps'; export default defineMap({id:'night',name:'Night',version:1,extends:baedeker});\n",
+    "import {defineMap} from '@tileflow/core'; import {streets} from '@tileflow/maps'; export default defineMap({id:'night',name:'Night',version:1,extends:streets});\n",
   );
   let requests = 0;
   const api = await createFakeApi(t, async () => {

@@ -196,13 +196,13 @@ test('rejects traversal in the Vite output and route base', () => {
   }
 });
 
-test('emits Baedeker web fonts from Maps with immutable runtime URLs', async (t) => {
+test('emits Streets web fonts from Maps with immutable runtime URLs', async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), 'tileflow-vite-fonts-'));
   await linkWorkspacePackages(cwd);
   t.after(() => rm(cwd, {force: true, recursive: true}));
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
-    "import {defineMap} from '@tileflow/core'; import {baedeker} from '@tileflow/maps'; export default defineMap({id:'night',version:1,extends:baedeker});\n",
+    "import {defineMap} from '@tileflow/core'; import {streets} from '@tileflow/maps'; export default defineMap({id:'night',version:1,extends:streets});\n",
   );
   const plugin = tileflow({base: '/maps'});
   (plugin.configResolved as (config: unknown) => void)({
@@ -220,12 +220,14 @@ test('emits Baedeker web fonts from Maps with immutable runtime URLs', async (t)
 
   const names = emitted.map((asset) => asset.fileName ?? '');
   const stableFontAssets = names.filter((name) => name.startsWith('maps/fonts/'));
-  assert.equal(stableFontAssets.length, 4);
+  assert.equal(stableFontAssets.length, 6);
   assert.equal(
     stableFontAssets.filter((name) =>
-      /^maps\/fonts\/cormorant-garamond-(?:italic|regular|semibold)-[a-f0-9]{64}\.ttf$/u.test(name),
+      /^maps\/fonts\/(?:dinish|noto-sans)-(?:italic|regular|medium|bold)-[a-f0-9]{64}\.ttf$/u.test(
+        name,
+      ),
     ).length,
-    3,
+    5,
   );
   assert.equal(
     stableFontAssets.filter((name) =>
@@ -235,16 +237,16 @@ test('emits Baedeker web fonts from Maps with immutable runtime URLs', async (t)
   );
   assert.equal(
     names.filter((name) => /\/generations\/[a-f0-9]{64}\/fonts\//u.test(name)).length,
-    4,
+    6,
   );
   const manifest = JSON.parse(
     String(emitted.find((asset) => asset.fileName === 'maps/manifest.json')?.source),
   ) as RuntimeManifest;
   const fontFaces = manifest.maps.night?.themes.light?.fontFaces;
-  assert.equal(fontFaces?.length, 3);
+  assert.equal(fontFaces?.length, 5);
   assert.ok(
     fontFaces?.every((face) =>
-      /^\/app\/maps\/generations\/[a-f0-9]{64}\/fonts\/cormorant-garamond-(?:italic|regular|semibold)-[a-f0-9]{64}\.ttf$/u.test(
+      /^\/app\/maps\/generations\/[a-f0-9]{64}\/fonts\/(?:dinish|noto-sans)-(?:italic|regular|medium|bold)-[a-f0-9]{64}\.ttf$/u.test(
         face.source,
       ),
     ),

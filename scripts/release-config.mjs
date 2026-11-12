@@ -37,6 +37,7 @@ export const publicPackageCatalog = Object.freeze(
     {directory: 'vite', initialVersion: '0.1.0-alpha.0', name: '@tileflow/vite'},
     {directory: 'next', initialVersion: '0.1.0-alpha.0', name: '@tileflow/next'},
     {directory: 'webpack', initialVersion: '0.1.0-alpha.0', name: '@tileflow/webpack'},
+    {directory: 'dom', initialVersion: '0.1.0-alpha.0', name: '@tileflow/dom'},
     {directory: 'react', initialVersion: '0.1.0-alpha.0', name: '@tileflow/react'},
     {directory: 'vue', initialVersion: '0.1.0-alpha.0', name: '@tileflow/vue'},
     {directory: 'svelte', initialVersion: '0.1.0-alpha.0', name: '@tileflow/svelte'},

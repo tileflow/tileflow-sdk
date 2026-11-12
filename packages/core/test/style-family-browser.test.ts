@@ -194,3 +194,45 @@ test('failed blend preparation and renderer writes retain the last valid appeara
   assert.equal((await animator.setTheme('theme-5', 0)).status, 'applied');
   animator.dispose();
 });
+
+test('a theme change before the style has loaded waits for it instead of failing', async () => {
+  const family = createTileflowStyleFamily(styles);
+  const paints = new Map();
+  const listeners = new Map<string, Set<() => void>>();
+  const map = {
+    style: {_loaded: false},
+    on(name: string, listener: () => void) {
+      if (!listeners.has(name)) listeners.set(name, new Set());
+      listeners.get(name)!.add(listener);
+    },
+    off(name: string, listener: () => void) {
+      listeners.get(name)?.delete(listener);
+    },
+    setStyle() {
+      assert.fail('appearance changes must not call setStyle');
+    },
+    setPaintProperty(id: string, name: string, value: unknown) {
+      // MapLibre's own check while the style document is still loading.
+      if (!map.style._loaded) throw new Error('Style is not done loading.');
+      paints.set(`${id}/${name}`, value);
+    },
+  };
+  const runtime = (theme: string) => ({
+    theme,
+    family,
+    style: materializeTileflowStyleFamily(family, theme),
+  });
+  const controller = createTileflowThemeController({initial: runtime('theme-0'), map});
+  const change = controller.setTheme(runtime('theme-3'), {transition: {duration: 0}});
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(paints.size, 0);
+
+  map.style._loaded = true;
+  for (const listener of [...(listeners.get('style.load') ?? [])]) listener();
+  assert.equal((await change).status, 'applied');
+  assert.equal(
+    paints.get('water/background-color'),
+    (styles['theme-3']!.layers[0]!.paint as Record<string, unknown>)['background-color'],
+  );
+  controller.dispose();
+});

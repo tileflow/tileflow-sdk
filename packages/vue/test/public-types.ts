@@ -1,11 +1,11 @@
+import type {Map as MapLibreMap} from 'maplibre-gl';
+import type {TileflowMapError, TileflowThemeController} from '@tileflow/core/browser';
 import type {
   TileflowAnnotation,
   TileflowInteractionBinding,
   TileflowInteractionEvent,
   TileflowInteractionState,
 } from '@tileflow/interactions';
-import type {TileflowMapError, TileflowThemeController} from '@tileflow/core/browser';
-import type {Map as MapLibreMap} from 'maplibre-gl';
 import {
   configureTileflowMapLibre,
   TileflowMap,

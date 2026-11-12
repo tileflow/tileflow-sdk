@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import {access, readFile} from 'node:fs/promises';
 import test from 'node:test';
 import {configureTileflowMapLibre, loadTileflowMapLibre} from '../src/maplibre.js';
+import {
+  configureTileflowMapLibre as configureSharedMapLibre,
+  loadTileflowMapLibre as loadSharedMapLibre,
+} from '@tileflow/core/maplibre';
 
 test('publishes resolvable Svelte and declaration entry points', async () => {
   const packageJson = JSON.parse(
@@ -23,21 +27,9 @@ test('publishes resolvable Svelte and declaration entry points', async () => {
   }
 });
 
-test('keeps MapLibre behind the interactive runtime boundary', async () => {
-  const component = await readFile(new URL('../src/TileflowMap.svelte', import.meta.url), 'utf8');
-  const loader = await readFile(new URL('../src/maplibre.js', import.meta.url), 'utf8');
-
-  assert.match(component, /loadTileflowMapLibre\(\)/u);
-  assert.match(component, /loadTileflowStyleFonts/u);
-  assert.match(component, /registerTileflowContourProtocol/u);
-  assert.ok(component.indexOf('loadTileflowStyleFonts') < component.indexOf('new maplibregl.Map'));
-  assert.ok(
-    component.indexOf('registerTileflowContourProtocol') < component.indexOf('new maplibregl.Map'),
-  );
-  assert.match(component, /new maplibregl\.Map/u);
-  assert.doesNotMatch(component, /import \* as maplibreglModule/u);
-  assert.match(loader, /import\(["']maplibre-gl["']\)/u);
-  assert.doesNotMatch(loader, /^import .*?["']maplibre-gl["'];?$/mu);
+test('shares the browser renderer and worker configuration with Core', () => {
+  assert.equal(loadTileflowMapLibre, loadSharedMapLibre);
+  assert.equal(configureTileflowMapLibre, configureSharedMapLibre);
 });
 
 test('imports delivery helpers from responsibility-specific subpaths', async () => {
@@ -70,38 +62,12 @@ test('configures the MapLibre worker before an interactive map uses it', async (
   assert.equal(maplibregl.getWorkerUrl(), '/assets/maplibre-gl-worker.mjs');
 });
 
-test('worker configuration does not add an unhandled renderer-load rejection', async () => {
-  const source = await readFile(new URL('../src/maplibre.js', import.meta.url), 'utf8');
-  const runtime = await import(`data:text/javascript,${encodeURIComponent(source)}`);
-  const unhandled = [];
-  const observe = (reason) => unhandled.push(reason);
-
-  process.on('unhandledRejection', observe);
-  try {
-    const loading = runtime.loadTileflowMapLibre();
-    runtime.configureTileflowMapLibre({workerUrl: '/assets/maplibre-gl-worker.mjs'});
-    await assert.rejects(loading);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    assert.deepEqual(unhandled, []);
-  } finally {
-    process.off('unhandledRejection', observe);
-  }
-});
-
 test('initial renderer loading converges on a theme selected while it is in flight', async () => {
   const source = await readFile(new URL('../src/TileflowMap.svelte', import.meta.url), 'utf8');
 
   assert.doesNotMatch(source, /runtimeStyle\s*!==\s*runtime\s*\|\|/u);
   assert.match(source, /runtimeStyle\s*&&\s*runtimeStyle\s*!==\s*runtime/u);
   assert.match(source, /themeController\.setTheme\(runtimeStyle[,)]/u);
-});
-
-test('applies colors and emphasis through one binding that the map disposes', async () => {
-  const source = await readFile(new URL('../src/TileflowMap.svelte', import.meta.url), 'utf8');
-
-  assert.match(source, /createTileflowAppearanceBinding\(\{\s*controller: themeController/u);
-  assert.match(source, /appearanceBinding\?\.update\(\{colors, emphasis\}/u);
-  assert.match(source, /currentAppearanceBinding\?\.dispose\(\)/u);
 });
 
 test('keeps component exports aligned with the public props declaration', async () => {

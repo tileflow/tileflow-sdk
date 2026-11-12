@@ -15,15 +15,12 @@ import {
   getTileflowMapNames,
   loadTileflowConfigWithInputs,
 } from '@tileflow/dev/config';
-import {
-  type CompiledTileflowIconPackage,
-  compileTileflowIconPackages,
-  type TileflowIconResolutionOptions,
-} from '@tileflow/dev/icons';
+import {type CompiledTileflowIconPackage, compileTileflowIconPackages} from '@tileflow/dev/icons';
 import {withTileflowConfigSecretsHidden} from './config-execution';
 import {requestHostedJson} from './hosted-client';
 import {hostedApiKeyOption, hostedApiUrlOption} from './hosted-options';
 import {writeIconDiffReport} from './icon-diff-report';
+import {resolveIconOptions} from './icon-options';
 
 const environmentSchema = tileflowMapIdSchema;
 const publicHttpUrlSchema = z
@@ -217,14 +214,11 @@ async function runIconDiff(
   }
 
   const selectedProject = {...project, maps: {[environment]: project.maps[environment]}};
-  const icons: TileflowIconResolutionOptions = {
-    ...(options.cacheDir ? {cacheRoot: options.cacheDir} : {}),
-    ...(options.offline ? {offline: true} : {}),
-  };
+  const icons = resolveIconOptions({...options, apiUrl: api.apiUrl});
   const compiled = await compileTileflowIconPackages(selectedProject, {
     baseDirectory: dirname(loaded.configFile),
     cwd: process.cwd(),
-    ...(Object.keys(icons).length > 0 ? {icons} : {}),
+    ...(icons ? {icons} : {}),
     target: 'hosted',
   });
   const binding = compiled.bindings.find((candidate) => candidate.mapName === environment);

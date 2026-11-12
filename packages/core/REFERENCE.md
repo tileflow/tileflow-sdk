@@ -9,14 +9,15 @@ This reference ships with the package. Use the copy included in your installed r
 version-specific behavior; the GitHub `main` branch can contain unreleased changes.
 
 Core defines, validates, and compiles the map language. The CLI and build integrations prepare
-assets; browser adapters render prepared maps. Loading a config executes its imports, so treat
-it as trusted code.
+assets; the JavaScript API and browser adapters render prepared maps. Loading a config executes
+its imports, so treat it as trusted code.
 
 - [Inheritance](#understand-inheritance)
 - [Team Icon Sets](#team-icon-sets-foundations)
 - [Themes and semantic modules](#style-with-themes-and-semantic-modules)
 - [Compilation and inspection](#compile-and-inspect)
 - [Prepared map sources](#select-a-prepared-map)
+- [JavaScript maps](#display-a-map-with-javascript)
 - [Data, terrain, and browser resources](#data-terrain-and-browser-resources)
 - [Generated reference](#reference)
 - [Native icon capabilities](#native-icon-capabilities)
@@ -51,6 +52,10 @@ later-wins icon precedence apply to all contributors.
 `tileflow.icons.lock.json` pins immutable set revisions and artifacts. Its parser rejects duplicate
 keys, stale references, mixed Teams, invalid IDs, floating versions, unsafe URLs and manifest/hash
 mismatches. Serialization is canonical; hashes are internal integrity details.
+
+Delivery URLs require HTTPS, except canonical HTTP URLs on `localhost`, `127.0.0.1` or `[::1]`
+for a local registry. A lock does not authorize downloads: the caller must explicitly trust that
+exact origin through the development tooling's `deliveryOrigins` setting.
 
 Shared identity follows published artwork, not source-only SVG edits yielding identical artifacts.
 Git retains original artwork history. Shared packages contain no original-source hash, format or
@@ -211,7 +216,7 @@ application targets.
 
 ## Select a prepared map
 
-React, Vue and Svelte accept a required `source` object, `{map, manifestUrl?}`. `map` is the portable
+The JavaScript API, React, Vue and Svelte accept a required `source` object, `{map, manifestUrl?}`. `map` is the portable
 name in the manifest, not a Hosted `map_...` identifier. An omitted web `manifestUrl` means exactly
 `/tileflow/manifest.json`; custom paths and external hosts must be explicit. The native Core and
 React Native type contracts use `{map, manifestUrl}` with an explicit absolute URL. They do not
@@ -237,6 +242,130 @@ MapLibre directly. Omitted themes use the manifest default, concrete themes sele
 and `system` requires the manifest's explicit light/dark mapping and a supplied runtime color scheme.
 The pre-release React Native
 package uses this contract for its mounted Map; it is not yet published.
+
+## Display a map with JavaScript
+
+`createTileflowMap` from `@tileflow/core/maplibre` renders a prepared Tileflow map without a UI
+framework. It uses the same browser mounting code as the React, Vue and Svelte components;
+applications using those components keep their existing API and lifecycle.
+
+**Availability:** this entry is unreleased in the current source change. Check the exports,
+TypeScript declarations and reference shipped in your exact installed Core package before using
+it. The presence of this section on GitHub does not establish support in an existing `@alpha`
+installation.
+
+### Prepare the browser entry
+
+Serve the map's complete prepared output, including its manifest and assets, using the CLI build
+or a build integration. Install MapLibre GL JS `>=6.4.1 <7` alongside Core for this browser entry.
+MapLibre is optional for Core's authoring and compilation APIs. The map container must be an
+existing `HTMLElement` with a nonzero width and height.
+
+Importing `@tileflow/core/maplibre` is safe during SSR: it does not import the MapLibre engine or
+create a map until requested. Call `createTileflowMap` in the browser after mounting the container.
+The 3D renderer is loaded when the map declares a 3D scene.
+
+Configure the worker once before creating a map and include MapLibre's stylesheet. In Vite's
+client entry:
+
+```ts
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+import 'maplibre-gl/dist/maplibre-gl.css';
+import {configureTileflowMapLibre} from '@tileflow/core/maplibre';
+
+configureTileflowMapLibre({workerUrl});
+```
+
+The worker import is Vite-specific. Other bundlers must provide the URL of the worker from the
+same installed MapLibre version. `configureTileflowMapLibre` shares configuration with the
+framework adapters: repeating the same URL is allowed; an empty URL or a different URL after
+configuration is rejected. It does not fetch or start a worker by itself.
+
+After worker setup, create the map and retain its handle for cleanup:
+
+<!-- docs:check -->
+
+```ts
+import {createTileflowMap} from '@tileflow/core/maplibre';
+
+export async function mountMap(container: HTMLElement, signal?: AbortSignal) {
+  return createTileflowMap({
+    container,
+    source: {map: 'madrid', manifestUrl: '/tileflow/manifest.json'},
+    center: [-3.7038, 40.4168],
+    zoom: 12,
+    navigationControl: true,
+    signal,
+    onError: ({code, error}) => console.error(code, error),
+  });
+}
+```
+
+The promise resolves after setup, before the map necessarily finishes rendering. `onLoad(map)`
+follows MapLibre's load event. `onState(state)` reports `loading`, `idle` or `error` for map readiness;
+it does not wait for application-owned UI or arbitrary external work.
+
+### Creation options
+
+| Option                               | Meaning                                                                                                                                                                               |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `container`                          | Required existing browser element. The caller owns the element and its layout.                                                                                                        |
+| `source`                             | Required `{map, manifestUrl?}` selecting a prepared named map. The default manifest is `/tileflow/manifest.json`.                                                                     |
+| `theme`                              | A concrete theme name, or `system` when the manifest declares its light/dark mapping. Omission uses the map's default theme.                                                          |
+| `timeOfDay`                          | Optional `day`, `dawn`, `dusk` or `night` selection for maps declaring those appearances. It does not start a clock.                                                                  |
+| `center`, `zoom`                     | Initial camera overrides. These take precedence over `mapOptions`; otherwise the prepared map's view supplies defaults.                                                               |
+| `mapOptions`                         | MapLibre constructor options except `container` and `style`. Includes `bearing`, `pitch`, `interactive` and the application's `transformRequest`, composed with Tileflow's transport. |
+| `colors`, `emphasis`                 | Appearance overrides. CSS color variables are resolved at the map's element.                                                                                                          |
+| `viewMode`, `vegetation`             | Initial `2d`/`3d` mode and optional vegetation visibility. These use the capabilities declared by the map.                                                                            |
+| `navigationControl`                  | `true` shows zoom/compass controls at the top right; an options object configures them. Omission or `false` shows none. Noninteractive maps omit these controls.                      |
+| `analytics`                          | Optional reporting configuration, merged with the map's configuration. Disabling optional reporting does not remove required Hosted authorization.                                    |
+| `signal`                             | An `AbortSignal` that cancels preparation or disposes the completed map.                                                                                                              |
+| `onError`                            | Receives `{code, error}` for reported map failures. Without a handler, those failures are logged to the console. It does not replace handling a rejected creation promise.            |
+| `onLoad`, `onState`, `onThemeChange` | Map load, readiness and theme-transition callbacks.                                                                                                                                   |
+
+Options are creation inputs, not reactive props. Use the handle's methods for changes. This API
+owns browser resources, protocol registration, request/session composition, fonts, common scene
+attachments and resize observation. A failed setup releases the resources already acquired.
+
+### The map handle
+
+`createTileflowMap` returns `Promise<TileflowMap>`. The handle has these methods:
+
+| Method                                        | Behavior                                                                                                                                                                                                                                              |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getMap()`                                    | Returns the MapLibre instance, or `null` after disposing the handle.                                                                                                                                                                                  |
+| `getThemeController()`                        | Returns the shared theme controller when present, or `null` after disposal. Prefer `setTheme` for selecting a theme by name.                                                                                                                          |
+| `setTheme(name, options?)`                    | Resolves a theme from the same prepared map and returns an `applied`, `failed` or `superseded` result. `system` follows browser color-scheme changes while selected. `options.transition.duration` controls the transition; zero changes immediately. |
+| `setAppearance({colors, emphasis}, options?)` | Updates the desired appearance. Omitted previously configured fields restore the map's defaults. Errors are reported through `onError`.                                                                                                               |
+| `setViewMode(mode)`                           | Changes between `2d` and `3d` using the map's declared scene.                                                                                                                                                                                         |
+| `setVegetation(visible)`                      | Updates vegetation visibility; `undefined` restores the map's declared policy.                                                                                                                                                                        |
+| `dispose()`                                   | Releases the map and its resources. Repeated calls are safe.                                                                                                                                                                                          |
+
+The source and `timeOfDay` selection belong to this handle's creation. For another source or a
+different creation-only option, dispose the handle and create another. Theme and appearance
+changes reuse the existing MapLibre instance. Treat `setAppearance` as the complete desired
+appearance, not a partial merge with an earlier call.
+
+### Cancellation and extensions
+
+Pass an `AbortController`'s signal when creation might outlive the view. Aborting before or during
+setup rejects creation and prevents a late result from mounting a map. Aborting after creation
+disposes the handle. Intentional cancellation is not reported as a map error. Call `dispose()` when
+removing the map's view even if no signal was provided; do not leave a mounted map after removing
+its container.
+
+Use `getMap()` to add application-owned sources, layers, controls or event subscriptions through
+MapLibre. Wait for `onLoad` before adding resources that need a loaded style. Tileflow owns its
+style: select themes through the handle rather than replacing the style directly. Prefer
+`dispose()` for closing the map; calling the MapLibre instance's `remove()` also releases Tileflow
+resources and closes the handle. A structural style change can remove application layers; the
+application owns reinstalling them and cleaning up its own external subscriptions, timers and UI.
+
+This JavaScript API intentionally does not create the framework adapters' annotation views,
+popups, tooltips or interaction UI. Applications can implement those against MapLibre or explicitly
+use the [Interactions package](https://github.com/tileflow/tileflow-sdk/blob/main/packages/interactions/REFERENCE.md).
+It also does not compile map configuration in the browser. The lower-level browser helpers remain
+available for applications that deliberately own the full integration lifecycle.
 
 ## Data, terrain, and browser resources
 

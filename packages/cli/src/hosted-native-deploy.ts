@@ -37,10 +37,12 @@ import {
   requestHostedJson,
   uploadHostedIconPackage,
 } from './hosted-client';
+import {HostedRequestError, readHostedFailure} from './hosted-error';
 import {
   inspectTileflowHostedCompatibility,
   prepareTileflowHostedThemeFamily,
 } from './hosted-preflight';
+import {resolveIconOptions} from './icon-options';
 import {prepareModelAssets} from './model-assets';
 
 type IconCompilation = Awaited<ReturnType<typeof compileTileflowIconPackages>>;
@@ -111,10 +113,7 @@ export async function prepareNativeHostedDeploy(
     baseDirectory,
     cwd: process.cwd(),
     target: 'hosted',
-    icons: {
-      ...(options.cacheDir ? {cacheRoot: options.cacheDir} : {}),
-      ...(options.offline ? {offline: true} : {}),
-    },
+    icons: resolveIconOptions(options),
   });
   const binding = compiledIcons.bindings.find((entry) => entry.mapName === mapName);
   const iconPackage = binding
@@ -296,8 +295,7 @@ export async function runHostedNativeDeploy(options: NativeHostedDeployOptions, 
       } catch {
         throw failure('Native deployment icon upload failed. The local manifest was preserved.');
       }
-      if (!uploaded.ok)
-        throw failure('Native deployment icon upload failed. Retry the same artifact.');
+      if (!uploaded.ok) throw new HostedRequestError('Native deployment icon upload', uploaded);
       const expected = `${apiOrigin}/sprites/${uploaded.value.id}/sprite`;
       if (uploaded.value.contentHash !== icon.contentHash || uploaded.value.spriteUrl !== expected)
         throw failure('Icon publication did not confirm the owned resource and origin.');
@@ -343,8 +341,10 @@ export async function runHostedNativeDeploy(options: NativeHostedDeployOptions, 
         'Renderer deployment response was unavailable. Retry the same artifact; the local manifest was preserved.',
       );
     }
-    if (!response.ok || !response.json)
-      throw failure('Renderer deployment failed. The local manifest was preserved.');
+    if (!response.ok)
+      throw new HostedRequestError('Web and native deployment', readHostedFailure(response));
+    if (!response.json)
+      throw failure('Renderer deployment returned invalid JSON. The local manifest was preserved.');
     const parsed = tileflowRendererDeploymentResponseSchema.safeParse(response.body);
     if (!parsed.success)
       throw failure('Invalid renderer deployment response. The local manifest was preserved.');

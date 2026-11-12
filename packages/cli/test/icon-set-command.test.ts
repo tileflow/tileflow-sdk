@@ -665,7 +665,16 @@ test('a rejected credential emits a sanitized bounded failure document', async (
   const command = program(
     () =>
       Response.json(
-        {schemaVersion: 1, code: 'ICON_SET_FORBIDDEN', error: 'secret internal detail'},
+        {
+          schemaVersion: 1,
+          code: 'ICON_SET_FORBIDDEN',
+          error: `Permission denied for ${apiKey}.`,
+          requestId: 'request-test',
+          retryable: false,
+          messages: [
+            {code: 'MISSING_SCOPE', path: 'scopes', message: 'The icons:read scope is required.'},
+          ],
+        },
         {status: 403},
       ),
     captured,
@@ -685,8 +694,58 @@ test('a rejected credential emits a sanitized bounded failure document', async (
   );
 
   const failure = JSON.parse(output.stderr) as {error: {code: string; message: string}};
-  assert.equal(failure.error.code, 'http_403');
+  assert.equal(failure.error.code, 'ICON_SET_FORBIDDEN');
+  assert.match(failure.error.message, /icons:read/u);
+  assert.match(failure.error.message, /request-test/u);
   assert.equal(failure.error.message.includes('secret internal detail'), false);
   assert.equal(output.stderr.includes(apiKey), false);
   assert.equal(process.exitCode, 1);
 });
+
+for (const json of [false, true]) {
+  test(`Icon Set pagination preserves actionable failures in ${json ? 'JSON' : 'human'} output`, async (t) => {
+    const output = captureOutput(t);
+    const command = program(
+      () =>
+        Response.json(
+          {
+            code: 'ICON_SET_NOT_FOUND',
+            error: 'This Icon Set does not exist.',
+            messages: [
+              {
+                code: 'UNKNOWN_SET',
+                message: 'Check the Icon Set slug.',
+                path: 'slug',
+                actual: 'brand',
+              },
+            ],
+          },
+          {status: 404, headers: {'X-Request-ID': 'lookup-ref'}},
+        ),
+      [],
+    );
+    await output.run(() =>
+      command.parseAsync([
+        'node',
+        'tileflow',
+        'icon-set',
+        'versions',
+        'brand',
+        '--api-key',
+        apiKey,
+        ...(json ? ['--json'] : []),
+      ]),
+    );
+    assert.equal(output.stdout, '');
+    assert.equal(process.exitCode, 1);
+    for (const value of ['ICON_SET_NOT_FOUND', 'Check the Icon Set slug.', 'lookup-ref'])
+      assert.ok(output.stderr.includes(value));
+    if (json) {
+      const failure = JSON.parse(output.stderr);
+      assert.equal(failure.schemaVersion, 1);
+      assert.equal(failure.error.status, 404);
+      assert.equal(failure.error.messages[0].path, 'slug');
+      assert.equal(failure.error.retryable, undefined);
+    }
+  });
+}

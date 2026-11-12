@@ -20,21 +20,10 @@ for (const entry of ['index.js', 'static.js']) {
   });
 }
 
-test('interactive React build installs the World notice bridge', async () => {
-  const output = await readFile(new URL('../dist/index.js', import.meta.url), 'utf8');
-  assert.match(output, /registerTileflowWorldRequestBridge/);
-  assert.match(output, /attachTileflowFairUseNotice/);
-  assert.match(output, /worldRequestBridge/);
-  assert.match(output, /loadTileflowStyleFonts/);
-  assert.match(output, /registerTileflowContourProtocol/);
-  assert.match(output, /registerTileflowPmtilesProtocol/);
-  assert.ok(output.indexOf('loadTileflowStyleFonts') < output.indexOf('new maplibregl.Map'));
-  assert.ok(
-    output.indexOf('registerTileflowContourProtocol') < output.indexOf('new maplibregl.Map'),
-  );
-  assert.ok(
-    output.indexOf('registerTileflowPmtilesProtocol') < output.indexOf('new maplibregl.Map'),
-  );
+test('shares renderer configuration with the managed browser runtime', async () => {
+  const shared = await import('@tileflow/core/maplibre');
+  assert.equal(configureTileflowMapLibre, shared.configureTileflowMapLibre);
+  assert.equal(loadTileflowMapLibre, shared.loadTileflowMapLibre);
 });
 
 test('interactive React build uses the shared MapLibre DOM runtime and React portals', async () => {
@@ -57,8 +46,14 @@ test('keeps MapLibre behind the interactive runtime boundary', async () => {
   const interactiveOutput = await readFile(new URL('../dist/index.js', import.meta.url), 'utf8');
   const imageOutput = await readFile(new URL('../dist/static.js', import.meta.url), 'utf8');
 
-  assert.match(interactiveOutput, /import\(["']maplibre-gl["']\)/u);
-  assert.match(interactiveOutput, /new maplibregl\.Map/u);
+  assert.match(interactiveOutput, /@tileflow\/core\/maplibre/u);
+  const sharedOutput = await readFile(
+    new URL('../../core/dist/maplibre.js', import.meta.url),
+    'utf8',
+  );
+  assert.match(sharedOutput, /import\(["']maplibre-gl["']\)/u);
+  assert.match(sharedOutput, /import\(["']\.\/3d\.js["']\)/u);
+  assert.doesNotMatch(sharedOutput, /^import .*?["']maplibre-gl["'];?$/mu);
   assert.doesNotMatch(interactiveOutput, /^import .*?["']maplibre-gl["'];?$/mu);
   assert.doesNotMatch(imageOutput, /maplibre-gl/u);
 });

@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
+import {
+  configureTileflowMapLibre as configureSharedMapLibre,
+  loadTileflowMapLibre as loadSharedMapLibre,
+} from '@tileflow/core/maplibre';
 import {configureTileflowMapLibre, loadTileflowMapLibre} from '../src/maplibre.js';
 
 test('publishes one ESM entry with matching default and named components', async () => {
@@ -27,19 +31,14 @@ test('publishes one ESM entry with matching default and named components', async
 test('keeps MapLibre behind the interactive runtime boundary', async () => {
   const output = await readFile(new URL('../dist/index.js', import.meta.url), 'utf8');
 
-  assert.match(output, /import\(["']maplibre-gl["']\)/u);
-  assert.match(output, /loadTileflowStyleFonts/u);
-  assert.match(output, /registerTileflowContourProtocol/u);
-  assert.match(output, /registerTileflowPmtilesProtocol/u);
-  assert.ok(output.indexOf('loadTileflowStyleFonts') < output.indexOf('new maplibregl.Map'));
-  assert.ok(
-    output.indexOf('registerTileflowContourProtocol') < output.indexOf('new maplibregl.Map'),
-  );
-  assert.ok(
-    output.indexOf('registerTileflowPmtilesProtocol') < output.indexOf('new maplibregl.Map'),
-  );
-  assert.match(output, /new maplibregl\.Map/u);
+  assert.match(output, /from ["']@tileflow\/core\/maplibre["']/u);
+  assert.match(output, /mountTileflowMap/u);
   assert.doesNotMatch(output, /^import .*?["']maplibre-gl["'];?$/mu);
+});
+
+test('shares the renderer and worker configuration with every Tileflow adapter', () => {
+  assert.equal(configureTileflowMapLibre, configureSharedMapLibre);
+  assert.equal(loadTileflowMapLibre, loadSharedMapLibre);
 });
 
 test('imports delivery helpers from responsibility-specific subpaths', async () => {

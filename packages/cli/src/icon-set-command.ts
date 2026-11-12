@@ -10,10 +10,12 @@ import {
 } from '@tileflow/core';
 import {type CompiledTileflowIconPackage, composeTileflowIconSources} from '@tileflow/dev/icons';
 import type {AuthConfig} from './account-session';
+import {HostedRequestError, readHostedFailure} from './hosted-error';
 import {hostedApiKeyOption, hostedApiUrlOption} from './hosted-options';
 import {
   authorizedTeamRequest,
   emitFailure,
+  emitHostedFailure,
   emitJson,
   type HostedTeamAuthority,
   type HostedTeamOptions,
@@ -107,7 +109,7 @@ export function registerIconSetCommands(
           'PUT',
           {body, headers: {'Idempotency-Key': options.idempotencyKey}},
         );
-        if (!response.ok) return emitHttpFailure(options.json, response.status, 'publish');
+        if (!response.ok) return emitHttpFailure(options.json, response, 'publish');
         const parsed = publishResponseSchema.parse(response.body);
         if (parsed.revision.pin && parsed.revision.pin.contentHash !== iconPackage.contentHash) {
           return emitFailure(
@@ -131,10 +133,18 @@ export function registerIconSetCommands(
                 headers: {'Content-Type': 'application/json'},
               },
             );
-            if (
-              !metadataResponse.ok ||
-              !catalogDetailResponseSchema.safeParse(metadataResponse.body).success
-            ) {
+            if (!metadataResponse.ok) {
+              const warning =
+                'Icon Set publication succeeded, but display metadata could not be updated.';
+              if (!options.json) console.error(warning);
+              return emitHostedFailure(
+                options.json,
+                'Icon Set metadata update',
+                readHostedFailure(metadataResponse),
+                {warnings: [warning]},
+              );
+            }
+            if (!catalogDetailResponseSchema.safeParse(metadataResponse.body).success) {
               return emitFailure(
                 options.json,
                 'icon_set_metadata_update_failed',
@@ -174,6 +184,13 @@ export function registerIconSetCommands(
           `${pc.green('✓')} ${parsed.changed ? 'Published' : 'Unchanged'} ${pc.bold(parsed.revision.reference)} revision ${parsed.revision.version}.`,
         );
       } catch (error) {
+        if (error instanceof HostedRequestError)
+          return emitHostedFailure(
+            options.json,
+            error.operation,
+            error.failure,
+            error.nextSteps.length ? {nextSteps: error.nextSteps} : {},
+          );
         emitFailure(options.json, 'icon_set_publish_failed', boundedMessage(error, 'publish'));
       }
     },
@@ -195,6 +212,7 @@ export function registerIconSetCommands(
         catalogListResponseSchema,
         (page) => page.sets,
         (set) => set.id,
+        'Icon Set list',
       );
       const document = {
         command: 'icon-set list',
@@ -210,6 +228,13 @@ export function registerIconSetCommands(
         );
       }
     } catch (error) {
+      if (error instanceof HostedRequestError)
+        return emitHostedFailure(
+          options.json,
+          error.operation,
+          error.failure,
+          error.nextSteps.length ? {nextSteps: error.nextSteps} : {},
+        );
       emitFailure(options.json, 'icon_set_list_failed', boundedMessage(error, 'list'));
     }
   });
@@ -226,7 +251,8 @@ export function registerIconSetCommands(
         `/v1/icon-sets/${encodeURIComponent(slug)}`,
         'GET',
       );
-      if (!response.ok) return {status: response.status};
+      if (!response.ok)
+        throw new HostedRequestError('Icon Set status', readHostedFailure(response));
       const parsed = catalogDetailResponseSchema.parse(response.body);
       return {value: {set: parsed.set}};
     });
@@ -246,6 +272,7 @@ export function registerIconSetCommands(
         versionsResponseSchema,
         (page) => page.versions,
         (revision) => revision.id,
+        'Icon Set versions',
       );
       return {value: {versions: versions.map(describeRevision)}};
     });
@@ -265,6 +292,7 @@ export function registerIconSetCommands(
         usesResponseSchema,
         (page) => page.uses,
         (use) => `${use.deploymentId}\0${use.versionId}\0${String(use.ordinal)}`,
+        'Icon Set uses',
       );
       return {
         value: {
@@ -306,7 +334,7 @@ export function registerIconSetCommands(
             headers: {'Content-Type': 'application/json'},
           },
         );
-        if (!response.ok) return emitHttpFailure(options.json, response.status, name);
+        if (!response.ok) return emitHttpFailure(options.json, response, name);
         const parsed = catalogDetailResponseSchema.parse(response.body);
         const document = {
           command: `icon-set ${name}`,
@@ -319,6 +347,13 @@ export function registerIconSetCommands(
           `${pc.green('✓')} ${archived ? 'Archived' : 'Restored'} ${pc.bold(parsed.set.reference)}.`,
         );
       } catch (error) {
+        if (error instanceof HostedRequestError)
+          return emitHostedFailure(
+            options.json,
+            error.operation,
+            error.failure,
+            error.nextSteps.length ? {nextSteps: error.nextSteps} : {},
+          );
         emitFailure(options.json, `icon_set_${name}_failed`, boundedMessage(error, name));
       }
     });
@@ -407,7 +442,7 @@ export function registerIconSetCommands(
             },
           },
         );
-        if (!response.ok) return emitHttpFailure(options.json, response.status, 'purge');
+        if (!response.ok) return emitHttpFailure(options.json, response, 'purge');
         const parsed = purgeResponseSchema.parse(response.body);
         const document = {
           command: 'icon-set purge',
@@ -419,6 +454,13 @@ export function registerIconSetCommands(
         console.log(`${pc.green('✓')} Purged ${pc.bold(options.confirm)}.`);
         console.log(pc.yellow(`! ${parsed.result.warning}`));
       } catch (error) {
+        if (error instanceof HostedRequestError)
+          return emitHostedFailure(
+            options.json,
+            error.operation,
+            error.failure,
+            error.nextSteps.length ? {nextSteps: error.nextSteps} : {},
+          );
         emitFailure(options.json, 'icon_set_purge_failed', boundedMessage(error, 'purge'));
       }
     },
@@ -428,9 +470,7 @@ export function registerIconSetCommands(
     slug: string,
     options: HostedTeamOptions,
     command: string,
-    run: (
-      authority: HostedTeamAuthority,
-    ) => Promise<{status: number} | {value: Record<string, unknown>}>,
+    run: (authority: HostedTeamAuthority) => Promise<{value: Record<string, unknown>}>,
   ) {
     try {
       if (!isIconSetSlug(slug)) {
@@ -439,7 +479,6 @@ export function registerIconSetCommands(
       const authority = await resolveTeamAuthority(options, ['icons:read'], dependencies);
       if (!authority) return;
       const result = await run(authority);
-      if ('status' in result) return emitHttpFailure(options.json, result.status, command);
       const document = {
         command,
         schemaVersion: 1,
@@ -449,6 +488,13 @@ export function registerIconSetCommands(
       if (options.json) return emitJson(document);
       process.stdout.write(`${JSON.stringify(document, null, 2)}\n`);
     } catch (error) {
+      if (error instanceof HostedRequestError)
+        return emitHostedFailure(
+          options.json,
+          error.operation,
+          error.failure,
+          error.nextSteps.length ? {nextSteps: error.nextSteps} : {},
+        );
       emitFailure(
         options.json,
         `${command.replaceAll(/[^a-z]+/gu, '_')}_failed`,
@@ -474,6 +520,7 @@ async function readAllPages<Page, Item>(
   schema: z.ZodType<Page>,
   select: (page: Page) => readonly Item[],
   identify: (item: Item) => string,
+  operation: string,
 ): Promise<Item[]> {
   const items: Item[] = [];
   const seenCursors = new Set<string>();
@@ -488,7 +535,7 @@ async function readAllPages<Page, Item>(
       `${path}?${parameters.toString()}`,
       'GET',
     );
-    if (!response.ok) throw new IconSetTransportError(response.status);
+    if (!response.ok) throw new HostedRequestError(operation, readHostedFailure(response));
     const parsed = schema.parse(response.body);
     for (const item of select(parsed)) {
       const id = identify(item);
@@ -504,19 +551,15 @@ async function readAllPages<Page, Item>(
   throw new Error('Icon Set list exceeded its safe page limit.');
 }
 
-class IconSetTransportError extends Error {
-  constructor(readonly status: number) {
-    super(`Icon Set request failed (${status}).`);
-    this.name = 'IconSetTransportError';
-  }
-}
-
-function emitHttpFailure(json: boolean | undefined, status: number, command: string) {
-  emitFailure(json, `http_${status}`, `Icon Set ${command} failed (${status}).`);
+function emitHttpFailure(
+  json: boolean | undefined,
+  response: Parameters<typeof readHostedFailure>[0],
+  command: string,
+) {
+  emitHostedFailure(json, `Icon Set ${command}`, readHostedFailure(response));
 }
 
 function boundedMessage(error: unknown, command: string): string {
-  if (error instanceof IconSetTransportError) return error.message;
   if (error instanceof Error && /limit|cursor|duplicate row/u.test(error.message)) {
     return error.message;
   }

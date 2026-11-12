@@ -1,6 +1,6 @@
 import {z} from 'zod';
 import {roundNumber} from './canonical';
-import {StaticMapError} from './errors';
+import {StaticMapError, type StaticMapErrorMetadata, type StaticMapErrorResponse} from './errors';
 import {
   isSupportedStaticSymbolCodePoint,
   MAX_OVERLAY_LATITUDE,
@@ -187,15 +187,21 @@ export class StaticMapRequestError extends StaticMapError {
   readonly code: StaticMapRequestErrorResponse['code'];
   readonly details?: StaticMapRequestErrorDetails;
   readonly reason: StaticMapRequestErrorResponse['reason'];
+  declare readonly response: StaticMapRequestErrorResponse & StaticMapErrorResponse;
   readonly retryable = false;
   readonly status: number;
 
-  constructor(response: StaticMapRequestErrorResponse, status = 422) {
-    super(response, status);
+  constructor(
+    response: StaticMapRequestErrorResponse,
+    status = 422,
+    metadata: StaticMapErrorMetadata = {},
+  ) {
+    super(response, status, metadata);
     this.name = 'StaticMapRequestError';
     this.code = response.code;
     this.details = 'details' in response ? response.details : undefined;
     this.reason = response.reason;
+    this.response = Object.freeze({...response, ...this.response});
     this.status = status;
   }
 }

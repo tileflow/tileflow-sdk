@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test, {type TestContext} from 'node:test';
+import {HostedRequestError} from '../src/hosted-error';
 import {authorizedTeamRequest, resolveTeamAuthority} from '../src/hosted-team';
 
 test('concurrent Team requests share one renewal with unchanged authority', async (t) => {
@@ -38,7 +39,15 @@ test('revoked account authorization stops before another Team request', async (t
 
   await assert.rejects(
     authorizedTeamRequest(fixture.authority, '/v1/tilesets', 'GET'),
-    /Team authorization could not be renewed/u,
+    (error: unknown) => {
+      assert.ok(error instanceof HostedRequestError);
+      assert.equal(error.failure.status, 401);
+      assert.equal(error.failure.code, 'ACCOUNT_SESSION_REVOKED');
+      assert.equal(error.failure.requestId, 'renewal-ref');
+      assert.match(error.message, /tileflow login/u);
+      assert.ok(error.nextSteps.some((step) => step.includes('tileflow login')));
+      return true;
+    },
   );
   assert.equal(fixture.grants(), 2);
   assert.equal(fixture.requests(), 0);
@@ -94,7 +103,14 @@ async function authorityFixture(
       assert.deepEqual(JSON.parse(String(init?.body)), {scopes: ['tilesets:write'], team: '@acme'});
       grants += 1;
       if (options.denyRenewal && grants > 1)
-        return Response.json({error: 'private response'}, {status: 401});
+        return Response.json(
+          {
+            code: 'ACCOUNT_SESSION_REVOKED',
+            error: 'This account session was revoked.',
+            requestId: 'renewal-ref',
+          },
+          {status: 401},
+        );
       return Response.json({
         capability: `tf_cap_${String(grants).repeat(80)}`,
         expiresAt: new Date(now + 300_000).toISOString(),

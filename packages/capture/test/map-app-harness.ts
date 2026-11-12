@@ -10,6 +10,7 @@ import {launchTileflowCaptureBrowser} from '../src/browser';
 import {writeDataLayerFixture} from './tileflow-source-fixture';
 
 export type MapAppFramework = 'react' | 'svelte' | 'vue';
+type MapAppKind = MapAppFramework | 'javascript';
 
 export type MapAppPage = {
   consoleErrors: string[];
@@ -19,7 +20,8 @@ export type MapAppPage = {
 
 const reactSource = fileURLToPath(new URL('../../react/src/index.ts', import.meta.url));
 
-const appFile: Record<MapAppFramework, string> = {
+const appFile: Record<MapAppKind, string> = {
+  javascript: 'main.ts',
   react: 'main.tsx',
   svelte: 'App.svelte',
   vue: 'App.vue',
@@ -43,12 +45,12 @@ mount(App, {target: document.getElementById('root')});
 `;
 
 /**
- * Serves a small application of one framework from a throwaway Vite server, with the test fixture's
+ * Serves a small application from a throwaway Vite server, with the test fixture's
  * manifest at `/tileflow-fixture/manifest.json`, and runs `body` with a way to open its pages in
- * Chromium. React runs from the workspace sources; Vue and Svelte from their built packages.
+ * Chromium. React runs from workspace sources; JavaScript, Vue and Svelte use built packages.
  */
 export async function withMapApp(
-  framework: MapAppFramework,
+  framework: MapAppKind,
   source: string,
   body: (open: (query?: string) => Promise<MapAppPage>) => Promise<void>,
   options: {writeFixture?: (cwd: string, origin: string) => Promise<void>} = {},
@@ -58,6 +60,7 @@ export async function withMapApp(
   const cwd = await mkdtemp(join(root, `.tileflow-test-${framework}-map-app-`));
   const plugins: PluginOption[] =
     framework === 'vue' ? [vue()] : framework === 'svelte' ? [svelte()] : [];
+  const standaloneEntry = framework === 'react' || framework === 'javascript';
   let browser: Awaited<ReturnType<typeof launchTileflowCaptureBrowser>> | undefined;
   let vite: Awaited<ReturnType<typeof createViteServer>> | undefined;
   try {
@@ -65,9 +68,9 @@ export async function withMapApp(
     await Promise.all([
       writeFile(
         join(cwd, 'index.html'),
-        `<!doctype html><html><body><div id="root" style="width:640px"></div><script type="module" src="/${framework === 'react' ? 'main.tsx' : 'main.js'}"></script></body></html>`,
+        `<!doctype html><html><body><div id="root" style="width:640px"></div><script type="module" src="/${standaloneEntry ? appFile[framework] : 'main.js'}"></script></body></html>`,
       ),
-      ...(framework === 'react'
+      ...(standaloneEntry
         ? []
         : [writeFile(join(cwd, 'main.js'), entry(framework as Exclude<MapAppFramework, 'react'>))]),
       writeFile(join(cwd, appFile[framework]), source),

@@ -11,6 +11,7 @@ import {parseTileflowIconJson} from '../src/icon-json';
 import {
   parseTileflowIconsLockfile,
   serializeTileflowIconsLockfile,
+  tileflowIconSetPinSchema,
   type TileflowIconsLockfileV1,
 } from '../src/icon-lock';
 import {
@@ -220,6 +221,50 @@ test('lock rejects unsafe delivery URLs, version numbers, identity aliasing and 
       },
     }),
   );
+});
+
+test('loopback HTTP pins round-trip without admitting other insecure or noncanonical URLs', async () => {
+  const lock = await fixtureLock();
+  const pin = lock.sets['@acme/brand']!;
+  const path = `/sprites/${pin.packageId}/sprite`;
+  for (const origin of ['http://localhost:8787', 'http://127.0.0.1:8787', 'http://[::1]:8787']) {
+    const local = {...lock, sets: {'@acme/brand': {...pin, spriteUrl: `${origin}${path}`}}};
+    const encoded = await serializeTileflowIconsLockfile(local);
+    assert.deepEqual(await parseTileflowIconsLockfile(encoded), local);
+    assert.equal(
+      tileflowIconSetPinSchema.shape.spriteUrl.parse(`${origin}${path}`),
+      `${origin}${path}`,
+    );
+  }
+  for (const origin of [
+    'http://api.tileflow.dev',
+    'http://192.168.1.2:8787',
+    'http://0.0.0.0:8787',
+    'http://localhost.example:8787',
+    'http://other.localhost:8787',
+    'http://127.0.0.2:8787',
+    'http://127.1:8787',
+    'http://2130706433:8787',
+    'http://user@localhost:8787',
+    'http://localhost.:8787',
+    'file://localhost',
+  ]) {
+    const spriteUrl = `${origin}${path}`;
+    assert.equal(tileflowIconSetPinSchema.shape.spriteUrl.safeParse(spriteUrl).success, false);
+    await assert.rejects(
+      parseTileflowIconsLockfile({...lock, sets: {'@acme/brand': {...pin, spriteUrl}}}),
+    );
+  }
+  for (const spriteUrl of [
+    `http://localhost:8787${path}?token=x`,
+    `http://localhost:8787${path}#fragment`,
+    `http://localhost:8787${path.replace(pin.packageId, `icp_${'b'.repeat(16)}`)}`,
+    `http://localhost:8787/unused/../${path.slice(1)}`,
+  ]) {
+    await assert.rejects(
+      parseTileflowIconsLockfile({...lock, sets: {'@acme/brand': {...pin, spriteUrl}}}),
+    );
+  }
 });
 
 test('receipts validate the complete ordered winner closure without source metadata', async () => {

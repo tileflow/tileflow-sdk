@@ -5,12 +5,10 @@
     Marker as MapLibreMarker,
     PointLike,
     Popup as MapLibrePopup,
-    StyleSpecification,
   } from 'maplibre-gl';
   import {createEventDispatcher, onMount, tick} from 'svelte';
   import {normalizeTileflowCaptureId} from '@tileflow/core/capture';
   import {
-    createTileflowSessionController,
     defaultTileflowManifestUrl,
     defaultTileflowRuntimeView,
     loadTileflowManifest,
@@ -29,43 +27,16 @@
     type TileflowRuntimeStyle,
   } from '@tileflow/core/runtime';
   import {
-    attachTileflowAtmosphere,
-    attachTileflowLabelPlacement,
-    attachTileflowHorizonQueries,
-    attachTileflowFairUseNotice,
-    attachTileflowMap3D,
-    attachTileflowMapLifecycle,
-    attachTileflowNauticalLights,
-    attachTileflowBranding,
-    attachTileflowNotices,
-    createTileflowAppearanceBinding,
-    createTileflowSessionStarter,
-    createTileflowThemeController,
     type TileflowMap3DAttachment,
-    createTileflowNavigationControlBinding,
-    createTileflowContourRequestScope,
-    createTileflowTransformRequest,
     getTileflowSystemColorScheme,
-    loadTileflowRuntimeStyle,
-    loadTileflowStyleFonts,
-    registerTileflowContourProtocol,
-    registerTileflowPathGroundProtocol,
-    registerTileflowPmtilesProtocol,
-    registerTileflowWorldRequestBridge,
     subscribeTileflowSystemColorScheme,
-    tileflowMaxPitch,
-    tileflowCanvasContextAttributes,
     type TileflowAppearanceBinding,
-    type TileflowFairUseNoticeController,
-    type TileflowMapLifecycleAttachment,
     reportTileflowMapError,
     resolveTileflowCameraFit,
     type TileflowCameraFit,
     type TileflowMapErrorCode,
     type TileflowNavigationControlBinding,
     type TileflowThemeController,
-    type TileflowContourRequestScope,
-    type TileflowWorldRequestBridge,
   } from '@tileflow/core/browser';
   import {
     initialTileflowInteractionState,
@@ -95,7 +66,8 @@
     type TileflowMapLibreSemanticDomRenderTarget,
     type TileflowMapLibreSemanticDomRuntime,
   } from '@tileflow/interactions/maplibre';
-  import type {TileflowMapOptions, TileflowMapProps} from './index.js';
+  import {mountTileflowMap, type TileflowMountedMap} from '@tileflow/core/maplibre';
+  import type {TileflowMapProps} from './index.js';
   import {loadTileflowMapLibre} from './maplibre.js';
   import {assertTileflowMapStyleInputs} from './style-source.js';
 
@@ -147,8 +119,6 @@
   let imageResizeObserver: ResizeObserver | null = null;
   let mapInstance: MapLibreMap | null = null;
   let activeRuntimeResource: unknown = undefined;
-  let mapFairUseNotice: TileflowFairUseNoticeController | null = null;
-  let mapLifecycleAttachment: TileflowMapLifecycleAttachment | null = null;
   let annotationRuntime: TileflowMapLibreDomRuntime<TileflowAnnotation> | null = null;
   let dataRuntime: TileflowMapLibreDataRuntime<TileflowAnnotation> | null = null;
   let annotationRuntimeDiagnosticsUnsubscribe: (() => void) | null = null;
@@ -178,11 +148,8 @@
   let interactionReadinessTargetKeys: readonly string[] = [];
   let hadInteractionErrors = false;
   let interactionRuntimesDisposing = false;
-  let mapResizeObserver: ResizeObserver | null = null;
-  let mapWorldRequestBridge: TileflowWorldRequestBridge | null = null;
   let navigationBinding: TileflowNavigationControlBinding | null = null;
   let appliedCameraFitKey: string | undefined;
-  let mapContourRequestScope: TileflowContourRequestScope | null = null;
   let sceneAttachment: TileflowMap3DAttachment | null = null;
   $: sceneAttachment?.setVegetation(vegetation);
   $: sceneAttachment?.setViewMode(viewMode);
@@ -197,6 +164,7 @@
   let manifestResolutionState: 'error' | 'loading' | 'ready' = 'loading';
   let mapLoadId = 0;
   let resourceLifetime: AbortController | undefined;
+  let mountedMap: TileflowMountedMap | null = null;
   let mounted = false;
   let refreshRunId = 0;
   let readinessRunId = 0;
@@ -568,88 +536,52 @@
     updateImageSize();
   }
 
-  function destroyMap() {
-    mapLoadId += 1;
-    resourceLifetime?.abort();
-    resourceLifetime = undefined;
-    readinessRunId += 1;
-    const lifecycleAttachment = mapLifecycleAttachment;
-    const fairUseNotice = mapFairUseNotice;
-    dataRuntime?.dispose();
+  function takeAnnotationRuntimeCleanups() {
+    const runtime = annotationRuntime;
+    const data = dataRuntime;
+    const cleanups = [
+      annotationRuntimeTargetsUnsubscribe,
+      annotationRuntimeDiagnosticsUnsubscribe,
+      annotationRuntimeEventsUnsubscribe,
+      annotationRuntimeCoordinatorDetach,
+      () => data?.dispose(),
+      () => runtime?.dispose(),
+    ];
     dataRuntime = null;
-    const annotationInteractionsForMap = annotationRuntime;
-    const semanticInteractionsForMap = semanticRuntime;
-    const detachAnnotationCoordinator = annotationRuntimeCoordinatorDetach;
-    const detachSemanticCoordinator = semanticRuntimeCoordinatorDetach;
-    const unsubscribeAnnotationDiagnostics = annotationRuntimeDiagnosticsUnsubscribe;
-    const unsubscribeAnnotationEvents = annotationRuntimeEventsUnsubscribe;
-    const unsubscribeAnnotationTargets = annotationRuntimeTargetsUnsubscribe;
-    const unsubscribeSemanticDiagnostics = semanticRuntimeDiagnosticsUnsubscribe;
-    const unsubscribeSemanticEvents = semanticRuntimeEventsUnsubscribe;
-    const unsubscribeSemanticTargets = semanticRuntimeTargetsUnsubscribe;
-    const currentMap = mapInstance;
-    const currentThemeController = themeController;
-    const currentAppearanceBinding = appearanceBinding;
-    appearanceBinding = null;
-    const currentSceneAttachment = sceneAttachment;
-    sceneAttachment = null;
-    const worldRequestBridge = mapWorldRequestBridge;
-    const currentNavigationBinding = navigationBinding;
-    navigationBinding = null;
-    const contourRequestScope = mapContourRequestScope;
-    interactionRuntimesDisposing = true;
-    mapFairUseNotice = null;
-    mapLifecycleAttachment = null;
-    mapInstance = null;
     annotationRuntime = null;
     annotationRuntimeCoordinatorDetach = null;
     annotationRuntimeDiagnosticsUnsubscribe = null;
     annotationRuntimeEventsUnsubscribe = null;
     annotationRuntimeTargetsUnsubscribe = null;
+    annotationRenderTargets = [];
+    annotationRuntimeDiagnostics = [];
+    return cleanups;
+  }
+
+  function takeSemanticRuntimeCleanups() {
+    const runtime = semanticRuntime;
+    const cleanups = [
+      semanticRuntimeTargetsUnsubscribe,
+      semanticRuntimeDiagnosticsUnsubscribe,
+      semanticRuntimeEventsUnsubscribe,
+      semanticRuntimeCoordinatorDetach,
+      () => runtime?.dispose(),
+    ];
     semanticRuntime = null;
     semanticRuntimeCoordinatorDetach = null;
     semanticRuntimeDiagnosticsUnsubscribe = null;
     semanticRuntimeEventsUnsubscribe = null;
     semanticRuntimeTargetsUnsubscribe = null;
-    initializeSemanticRuntime = null;
-    annotationRenderTargets = [];
     semanticRenderTargets = [];
-    interactionReadinessTargetKeys = [];
-    interactionReadinessRunId += 1;
-    interactionCaptureState = 'idle';
-    annotationRuntimeDiagnostics = [];
     semanticRuntimeDiagnostics = [];
-    bridgeInteractionDiagnostics = {};
-    mapWorldRequestBridge = null;
-    mapContourRequestScope = null;
-    themeController = null;
-    mapResizeObserver?.disconnect();
-    mapResizeObserver = null;
+    return cleanups;
+  }
 
+  function runCleanups(cleanups: readonly ((() => void) | null)[]) {
     const errors: unknown[] = [];
-    const cleanupSteps = [
-      unsubscribeAnnotationTargets,
-      unsubscribeAnnotationDiagnostics,
-      unsubscribeAnnotationEvents,
-      unsubscribeSemanticTargets,
-      unsubscribeSemanticDiagnostics,
-      unsubscribeSemanticEvents,
-      detachAnnotationCoordinator,
-      detachSemanticCoordinator,
-      () => semanticInteractionsForMap?.dispose(),
-      () => annotationInteractionsForMap?.dispose(),
-      () => lifecycleAttachment?.dispose(),
-      () => currentSceneAttachment?.dispose(),
-      () => currentAppearanceBinding?.dispose(),
-      () => currentThemeController?.dispose(),
-      () => currentNavigationBinding?.dispose(),
-      () => worldRequestBridge?.dispose(),
-      () => contourRequestScope?.dispose(),
-      () => fairUseNotice?.dispose(),
-      () => currentMap?.remove(),
-    ];
-
-    for (const cleanup of cleanupSteps) {
+    const wasDisposing = interactionRuntimesDisposing;
+    interactionRuntimesDisposing = true;
+    for (const cleanup of cleanups) {
       if (!cleanup) continue;
       try {
         cleanup();
@@ -657,10 +589,36 @@
         errors.push(error);
       }
     }
-    interactionRuntimesDisposing = false;
+    interactionRuntimesDisposing = wasDisposing;
     if (errors.length > 0) {
       reportError('runtime', errors.length === 1 ? errors[0] : new AggregateError(errors));
     }
+  }
+
+  function destroyMap() {
+    mapLoadId += 1;
+    const lifetime = resourceLifetime;
+    resourceLifetime = undefined;
+    const currentMountedMap = mountedMap;
+    mountedMap = null;
+    readinessRunId += 1;
+    mapInstance = null;
+    appearanceBinding = null;
+    sceneAttachment = null;
+    navigationBinding = null;
+    themeController = null;
+    initializeSemanticRuntime = null;
+    interactionReadinessTargetKeys = [];
+    interactionReadinessRunId += 1;
+    interactionCaptureState = 'idle';
+    bridgeInteractionDiagnostics = {};
+    runCleanups([
+      ...takeAnnotationRuntimeCleanups(),
+      ...takeSemanticRuntimeCleanups(),
+      // Interactions release their map resources before the shared runtime removes the map.
+      () => currentMountedMap?.dispose(),
+      () => lifetime?.abort(),
+    ]);
   }
 
   async function recreateMap(runId: number) {
@@ -681,256 +639,84 @@
     const loadId = mapLoadId;
     const targetContainer = container;
     const runtime = runtimeStyle;
-    const session = createTileflowSessionController({source: 'svelte'});
     const lifetime = new AbortController();
     resourceLifetime = lifetime;
-    const resourceTransform = createTileflowTransformRequest({
-      getAnalytics: () => resolvedAnalytics,
-      sessionController: session,
-      sessionId: session.sessionId,
-      transformRequest: mapOptions?.transformRequest ?? undefined,
-    });
-    const styleLoadOptions = {
-      signal: lifetime.signal,
-      transformRequest: (url: string, type: 'Style' | 'Source') =>
-        resourceTransform(
-          url,
-          type as Parameters<NonNullable<TileflowMapOptions['transformRequest']>>[1],
-        ),
-    };
-    let maplibregl: Awaited<ReturnType<typeof loadTileflowMapLibre>>;
-    let prepared: Awaited<ReturnType<typeof loadTileflowRuntimeStyle>>;
+    const isCurrent = () =>
+      mounted &&
+      runId === refreshRunId &&
+      loadId === mapLoadId &&
+      container === targetContainer &&
+      !isImageMode &&
+      !lifetime.signal.aborted;
+    let runtimeForMap: TileflowMountedMap | undefined;
     try {
-      [maplibregl, prepared] = await Promise.all([
-        loadTileflowMapLibre(),
-        loadTileflowRuntimeStyle(runtime, styleLoadOptions).then(async (loaded) => {
-          await loadTileflowStyleFonts(loaded.style, {fontFaces: loaded.fontFaces});
-          return loaded;
-        }),
-      ]);
-    } catch (error) {
-      if (mounted && runId === refreshRunId && loadId === mapLoadId) {
-        lifetime.abort();
-        reportError('runtime', error);
-        mapCaptureState = 'error';
-      }
-      return;
-    }
-
-    if (
-      !mounted ||
-      runId !== refreshRunId ||
-      loadId !== mapLoadId ||
-      container !== targetContainer ||
-      isImageMode
-    ) {
-      return;
-    }
-
-    const sessionStarter = createTileflowSessionStarter({
-      getSessionId: () => session.sessionId,
-      sessionId: session.sessionId,
-      source: 'svelte',
-    });
-    mapFairUseNotice = attachTileflowFairUseNotice(targetContainer);
-    registerTileflowContourProtocol({addProtocol: maplibregl.addProtocol});
-    registerTileflowPathGroundProtocol({addProtocol: maplibregl.addProtocol});
-    registerTileflowPmtilesProtocol({addProtocol: maplibregl.addProtocol});
-    mapWorldRequestBridge = registerTileflowWorldRequestBridge({
-      addProtocol: maplibregl.addProtocol,
-      onNotice: mapFairUseNotice.update,
-    });
-    // Contour DEM requests leave through the shared protocol and come back to this map's
-    // transform, so they carry this map's session like its hillshade tiles.
-    const contourRequestScope = createTileflowContourRequestScope({
-      transformRequest: (url, resourceType) =>
-        mapTransformRequest(
-          url,
-          resourceType as Parameters<NonNullable<TileflowMapOptions['transformRequest']>>[1],
-        ),
-    });
-    mapContourRequestScope = contourRequestScope;
-    const mapTransformRequest = createTileflowTransformRequest({
-      contourRequestScope,
-      getAnalytics: () => resolvedAnalytics,
-      sessionController: session,
-      sessionId: session.sessionId,
-      transformRequest: mapOptions?.transformRequest ?? undefined,
-      worldRequestBridge: mapWorldRequestBridge,
-    });
-    const maplibreMap = new maplibregl.Map({
-      ...mapOptions,
-      canvasContextAttributes: tileflowCanvasContextAttributes(mapOptions?.canvasContextAttributes),
-      attributionControl: mapOptions?.attributionControl ?? {compact: true},
-      // Tileflow's compiled styles are validated when they are built.
-      validateStyle: mapOptions?.validateStyle ?? false,
-      maxPitch: mapOptions?.maxPitch ?? tileflowMaxPitch,
-      bearing: resolvedBearing,
-      center: resolvedCenter as LngLatLike,
-      container: targetContainer,
-      interactive: resolvedInteractive,
-      pitch: resolvedPitch,
-      style: prepared.style as StyleSpecification,
-      transformRequest: mapTransformRequest,
-      zoom: resolvedZoom,
-    });
-
-    mapInstance = maplibreMap;
-    attachTileflowAtmosphere(maplibreMap);
-    attachTileflowBranding(maplibreMap);
-    attachTileflowNotices(maplibreMap);
-    attachTileflowNauticalLights(maplibreMap);
-    attachTileflowLabelPlacement(maplibreMap);
-    // Feature queries and taps keep working once a steep pitch shows the horizon.
-    attachTileflowHorizonQueries(maplibreMap);
-    themeController =
-      runtime.theme === undefined
-        ? null
-        : createTileflowThemeController({
-            initial: prepared.family ? prepared : runtime,
-            initialStyle: prepared.style,
-            styleLoadOptions,
-            map: maplibreMap,
-            onTransition(transition) {
-              onThemeChange?.(transition);
-              if (transition.phase === 'preloading' || transition.phase === 'applying') {
-                themeTransitionState = 'loading';
-              } else if (transition.phase === 'error') {
-                themeTransitionState = 'error';
-              } else {
-                themeTransitionState = 'idle';
-              }
-            },
-          });
-
-    if (themeController) {
-      // Colours and emphasis the application declared show from the first frame the style
-      // allows, without easing in from the theme's own look.
-      appearanceBinding = createTileflowAppearanceBinding({
-        controller: themeController,
-        // CSS variables in `colors` are read where the map sits.
-        element: targetContainer,
-        map: maplibreMap,
-        onError: (error, part) => reportError(part, error),
-      });
-      appearanceBinding.update({colors, emphasis}, {transition: {duration: 0}});
-    }
-
-    // The map's 3D scene loads only once its style declares one, so 2D maps do not pay for it.
-    sceneAttachment = attachTileflowMap3D({
-      map: maplibreMap,
-      ...(themeController ? {controller: themeController} : {}),
-      vegetation,
-      viewMode,
-      load: () => import('@tileflow/core/3d'),
-      onError: (error) => reportError('scene', error),
-      transformRequest: createTileflowTransformRequest({
+      runtimeForMap = await mountTileflowMap({
+        container: targetContainer,
+        runtimeStyle: runtime,
+        mapName,
+        source: 'svelte',
+        loadMapLibre: loadTileflowMapLibre,
+        loadScene: () => import('@tileflow/core/3d'),
+        signal: lifetime.signal,
         getAnalytics: () => resolvedAnalytics,
-        sessionController: session,
-        sessionId: session.sessionId,
-        transformRequest: (url) =>
-          mapOptions?.transformRequest?.(
-            url,
-            'Tile' as Parameters<NonNullable<TileflowMapOptions['transformRequest']>>[1],
-          ),
-      }),
-    });
-
-    setBridgeInteractionDiagnostic('annotation-runtime', null);
-    try {
-      const annotationInteractionsForMap = createTileflowMapLibreDomRuntime<
-        MapLibreMap,
-        MapLibreMarker,
-        MapLibrePopup,
-        TileflowAnnotation
-      >({
-        createMarker({annotation, element}) {
-          element.title = annotation.ariaLabel;
-          return new maplibregl.Marker({element});
+        settings: () => ({
+          mapOptions: {
+            ...mapOptions,
+            bearing: resolvedBearing,
+            center: resolvedCenter as LngLatLike,
+            interactive: resolvedInteractive,
+            pitch: resolvedPitch,
+            zoom: resolvedZoom,
+          },
+          appearance: {colors, emphasis},
+          vegetation,
+          viewMode,
+          navigationControl: resolvedInteractive ? navigationControl : false,
+        }),
+        onThemeChange(transition) {
+          if (!isCurrent()) return;
+          onThemeChange?.(transition);
+          if (transition.phase === 'preloading' || transition.phase === 'applying') {
+            themeTransitionState = 'loading';
+          } else if (transition.phase === 'error') {
+            themeTransitionState = 'error';
+          } else {
+            themeTransitionState = 'idle';
+          }
         },
-        createOverlay({container: overlayContainer, kind}) {
-          return new maplibregl.Popup({
-            closeButton: false,
-            closeOnClick: false,
-            closeOnMove: false,
-            focusAfterOpen: false,
-            offset: kind === 'popup' ? 24 : 18,
-          }).setDOMContent(overlayContainer);
+        onError: (event) => reportError(event.code, event.error),
+        onLoad: (map) => {
+          if (isCurrent()) dispatch('load', map);
         },
-        customMarker: marker !== undefined,
-        customPopup: popup !== undefined,
-        customTooltip: tooltip !== undefined,
-        document: targetContainer.ownerDocument,
-        interactionState: interactionCoordinator.getInteractionState(),
-        map: maplibreMap,
-        onInteractionStateChange: interactionCoordinator.requestInteractionState,
-        updateMarker(_markerInstance, {annotation, element}) {
-          element.title = annotation.ariaLabel;
+        onState: (state) => {
+          if (isCurrent()) mapCaptureState = state;
         },
       });
-      annotationRuntime = annotationInteractionsForMap;
-      annotationRuntimeCoordinatorDetach = interactionCoordinator.attach(
-        'annotation',
-        annotationInteractionsForMap,
-      );
-      annotationRuntimeDiagnosticsUnsubscribe = annotationInteractionsForMap.subscribeDiagnostics(
-        (diagnostics) => {
-          annotationRuntimeDiagnostics = diagnostics;
-        },
-      );
-      annotationRuntimeEventsUnsubscribe = annotationInteractionsForMap.subscribeEvents((event) => {
-        if (!interactionRuntimesDisposing) onInteractionEvent?.(event);
-      });
-      annotationRuntimeTargetsUnsubscribe = annotationInteractionsForMap.subscribeRenderTargets(
-        (targets) => {
-          syncAnnotationRenderTargets(targets);
-        },
-      );
-      annotationRuntimeDiagnostics = annotationInteractionsForMap.getDiagnostics();
-      syncAnnotationRenderTargets(annotationInteractionsForMap.getRenderTargets());
-      syncAnnotations();
-      // Created ahead of semantic POIs: a click on a cluster belongs to the cluster.
-      dataRuntime = createTileflowMapLibreDataRuntime<
-        MapLibreMap,
-        MapLibreMarker,
-        TileflowAnnotation
-      >({
-        createMarker: ({element}) => new maplibregl.Marker({element}),
-        document: targetContainer.ownerDocument,
-        map: maplibreMap,
-        onDiagnostic: (diagnostic) => onInteractionDiagnostic?.(diagnostic),
-        onInteractionEvent(event) {
-          if (!interactionRuntimesDisposing) onInteractionEvent?.(event);
-        },
-        setHiddenAnnotations: annotationInteractionsForMap.setHiddenAnnotations,
-      });
-      syncDataLayers();
-    } catch (error) {
-      console.error('Failed to initialize Tileflow annotations', error);
-      setBridgeInteractionDiagnostic(
-        'annotation-runtime',
-        'Unable to initialize the Tileflow annotation runtime.',
-      );
-    }
-
-    initializeSemanticRuntime = () => {
-      if (semanticRuntime || interactionRuntimesDisposing || mapInstance !== maplibreMap) return;
-      const browserWindow = targetContainer.ownerDocument.defaultView;
-      if (!browserWindow) {
-        setBridgeInteractionDiagnostic(
-          'semantic-runtime',
-          'Semantic interactions require a browser document.',
-        );
+      if (!isCurrent()) {
+        runtimeForMap.dispose();
+        lifetime.abort();
         return;
       }
+      mountedMap = runtimeForMap;
+      const {map: maplibreMap, maplibre: maplibregl} = runtimeForMap;
+      mapInstance = maplibreMap;
+      themeController = runtimeForMap.themeController ?? null;
+      appearanceBinding = runtimeForMap.appearance ?? null;
+      sceneAttachment = runtimeForMap.scene;
+      navigationBinding = runtimeForMap.navigation;
 
-      setBridgeInteractionDiagnostic('semantic-runtime', null);
+      setBridgeInteractionDiagnostic('annotation-runtime', null);
       try {
-        const semanticInteractionsForMap = createTileflowMapLibreSemanticDomRuntime<
+        const annotationInteractionsForMap = createTileflowMapLibreDomRuntime<
           MapLibreMap,
-          MapLibrePopup
+          MapLibreMarker,
+          MapLibrePopup,
+          TileflowAnnotation
         >({
-          cancelFrame: (frame) => browserWindow.cancelAnimationFrame(frame),
+          createMarker({annotation, element}) {
+            element.title = annotation.ariaLabel;
+            return new maplibregl.Marker({element});
+          },
           createOverlay({container: overlayContainer, kind}) {
             return new maplibregl.Popup({
               closeButton: false,
@@ -940,90 +726,153 @@
               offset: kind === 'popup' ? 24 : 18,
             }).setDOMContent(overlayContainer);
           },
+          customMarker: marker !== undefined,
           customPopup: popup !== undefined,
           customTooltip: tooltip !== undefined,
           document: targetContainer.ownerDocument,
           interactionState: interactionCoordinator.getInteractionState(),
           map: maplibreMap,
           onInteractionStateChange: interactionCoordinator.requestInteractionState,
-          poiMap: createTileflowMapLibrePoiMap(maplibreMap),
-          requestFrame: (callback) => browserWindow.requestAnimationFrame(() => callback()),
+          updateMarker(_markerInstance, {annotation, element}) {
+            element.title = annotation.ariaLabel;
+          },
         });
-        semanticRuntime = semanticInteractionsForMap;
-        semanticRuntimeCoordinatorDetach = interactionCoordinator.attach(
-          'semantic',
-          semanticInteractionsForMap,
+        annotationRuntime = annotationInteractionsForMap;
+        annotationRuntimeCoordinatorDetach = interactionCoordinator.attach(
+          'annotation',
+          annotationInteractionsForMap,
         );
-        semanticRuntimeDiagnosticsUnsubscribe = semanticInteractionsForMap.subscribeDiagnostics(
+        annotationRuntimeDiagnosticsUnsubscribe = annotationInteractionsForMap.subscribeDiagnostics(
           (diagnostics) => {
-            semanticRuntimeDiagnostics = diagnostics;
+            annotationRuntimeDiagnostics = diagnostics;
           },
         );
-        semanticRuntimeEventsUnsubscribe = semanticInteractionsForMap.subscribeEvents((event) => {
-          if (!interactionRuntimesDisposing) onInteractionEvent?.(event);
-        });
-        semanticRuntimeTargetsUnsubscribe = semanticInteractionsForMap.subscribeRenderTargets(
+        annotationRuntimeEventsUnsubscribe = annotationInteractionsForMap.subscribeEvents(
+          (event) => {
+            if (!interactionRuntimesDisposing) onInteractionEvent?.(event);
+          },
+        );
+        annotationRuntimeTargetsUnsubscribe = annotationInteractionsForMap.subscribeRenderTargets(
           (targets) => {
-            syncSemanticRenderTargets(targets);
+            syncAnnotationRenderTargets(targets);
           },
         );
-        semanticRuntimeDiagnostics = semanticInteractionsForMap.getDiagnostics();
-        syncSemanticRenderTargets(semanticInteractionsForMap.getRenderTargets());
+        annotationRuntimeDiagnostics = annotationInteractionsForMap.getDiagnostics();
+        syncAnnotationRenderTargets(annotationInteractionsForMap.getRenderTargets());
+        syncAnnotations();
+        // Created ahead of semantic POIs: a click on a cluster belongs to the cluster.
+        dataRuntime = createTileflowMapLibreDataRuntime<
+          MapLibreMap,
+          MapLibreMarker,
+          TileflowAnnotation
+        >({
+          createMarker: ({element}) => new maplibregl.Marker({element}),
+          document: targetContainer.ownerDocument,
+          map: maplibreMap,
+          onDiagnostic: (diagnostic) => onInteractionDiagnostic?.(diagnostic),
+          onInteractionEvent(event) {
+            if (!interactionRuntimesDisposing) onInteractionEvent?.(event);
+          },
+          setHiddenAnnotations: annotationInteractionsForMap.setHiddenAnnotations,
+        });
+        syncDataLayers();
       } catch (error) {
-        console.error('Failed to initialize Tileflow semantic interactions', error);
+        runCleanups(takeAnnotationRuntimeCleanups());
+        console.error('Failed to initialize Tileflow annotations', error);
         setBridgeInteractionDiagnostic(
-          'semantic-runtime',
-          'Unable to initialize the Tileflow semantic interaction runtime.',
+          'annotation-runtime',
+          'Unable to initialize the Tileflow annotation runtime.',
         );
       }
-    };
-    syncSemanticInteractions();
 
-    navigationBinding = createTileflowNavigationControlBinding({
-      createControl: (controlOptions) => new maplibregl.NavigationControl(controlOptions),
-      map: maplibreMap,
-    });
-    navigationBinding.update(resolvedInteractive ? navigationControl : false);
-    // The first view is set without moving; later changes to the request move the camera.
-    appliedCameraFitKey = cameraFit.key;
-    if (cameraFit.error) reportError('camera', new Error(cameraFit.error));
-    if (cameraFit.fit) fitCamera(maplibreMap, cameraFit.fit, 0);
+      initializeSemanticRuntime = () => {
+        if (semanticRuntime || interactionRuntimesDisposing || mapInstance !== maplibreMap) return;
+        const browserWindow = targetContainer.ownerDocument.defaultView;
+        if (!browserWindow) {
+          setBridgeInteractionDiagnostic(
+            'semantic-runtime',
+            'Semantic interactions require a browser document.',
+          );
+          return;
+        }
 
-    mapResizeObserver = new ResizeObserver(() => {
-      maplibreMap.resize();
-    });
-    mapResizeObserver.observe(targetContainer);
+        setBridgeInteractionDiagnostic('semantic-runtime', null);
+        try {
+          const semanticInteractionsForMap = createTileflowMapLibreSemanticDomRuntime<
+            MapLibreMap,
+            MapLibrePopup
+          >({
+            cancelFrame: (frame) => browserWindow.cancelAnimationFrame(frame),
+            createOverlay({container: overlayContainer, kind}) {
+              return new maplibregl.Popup({
+                closeButton: false,
+                closeOnClick: false,
+                closeOnMove: false,
+                focusAfterOpen: false,
+                offset: kind === 'popup' ? 24 : 18,
+              }).setDOMContent(overlayContainer);
+            },
+            customPopup: popup !== undefined,
+            customTooltip: tooltip !== undefined,
+            document: targetContainer.ownerDocument,
+            interactionState: interactionCoordinator.getInteractionState(),
+            map: maplibreMap,
+            onInteractionStateChange: interactionCoordinator.requestInteractionState,
+            poiMap: createTileflowMapLibrePoiMap(maplibreMap),
+            requestFrame: (callback) => browserWindow.requestAnimationFrame(() => callback()),
+          });
+          semanticRuntime = semanticInteractionsForMap;
+          semanticRuntimeCoordinatorDetach = interactionCoordinator.attach(
+            'semantic',
+            semanticInteractionsForMap,
+          );
+          semanticRuntimeDiagnosticsUnsubscribe = semanticInteractionsForMap.subscribeDiagnostics(
+            (diagnostics) => {
+              semanticRuntimeDiagnostics = diagnostics;
+            },
+          );
+          semanticRuntimeEventsUnsubscribe = semanticInteractionsForMap.subscribeEvents((event) => {
+            if (!interactionRuntimesDisposing) onInteractionEvent?.(event);
+          });
+          semanticRuntimeTargetsUnsubscribe = semanticInteractionsForMap.subscribeRenderTargets(
+            (targets) => {
+              syncSemanticRenderTargets(targets);
+            },
+          );
+          semanticRuntimeDiagnostics = semanticInteractionsForMap.getDiagnostics();
+          syncSemanticRenderTargets(semanticInteractionsForMap.getRenderTargets());
+        } catch (error) {
+          runCleanups(takeSemanticRuntimeCleanups());
+          console.error('Failed to initialize Tileflow semantic interactions', error);
+          setBridgeInteractionDiagnostic(
+            'semantic-runtime',
+            'Unable to initialize the Tileflow semantic interaction runtime.',
+          );
+        }
+      };
+      syncSemanticInteractions();
 
-    mapLifecycleAttachment = attachTileflowMapLifecycle<MapLibreMap, number>({
-      getSession: () => {
-        const analyticsForLoad = resolvedAnalytics;
-        return {
-          analytics: analyticsForLoad,
-          styleId:
-            analyticsForLoad?.styleId ??
-            (typeof runtime.style === 'string' ? runtime.style : mapName),
-        };
-      },
-      map: maplibreMap,
-      onLoad: () => dispatch('load', maplibreMap),
-      scheduler: {
-        cancelFrame: (frame) => cancelAnimationFrame(frame),
-        requestFrame: (callback) => requestAnimationFrame(callback),
-      },
-      sessionStarter,
-      setState: (state) => {
-        mapCaptureState = state;
-      },
-      subscribe: (targetMap, event, listener) => {
-        const subscription = targetMap.on(event, listener);
-        return () => subscription.unsubscribe();
-      },
-    });
-    if (themeController && blendStyles && themeBlend) {
-      void switchBlend();
-    } else if (themeController && runtimeStyle && runtimeStyle !== runtime) {
-      activeRuntimeResource = runtimeStyle;
-      void themeController.setTheme(runtimeStyle, {transition: themeTransition});
+      // The first view is set without moving; later changes to the request move the camera.
+      appliedCameraFitKey = cameraFit.key;
+      if (cameraFit.error) reportError('camera', new Error(cameraFit.error));
+      if (cameraFit.fit) fitCamera(maplibreMap, cameraFit.fit, 0);
+
+      if (themeController && blendStyles && themeBlend) {
+        void switchBlend();
+      } else if (themeController && runtimeStyle && runtimeStyle !== runtime) {
+        activeRuntimeResource = runtimeStyle;
+        void themeController.setTheme(runtimeStyle, {transition: themeTransition});
+      }
+    } catch (error) {
+      if (isCurrent()) {
+        // Any failure after mounting also releases partially installed Svelte interactions.
+        destroyMap();
+        mapCaptureState = 'error';
+        reportError('runtime', error);
+      } else {
+        runtimeForMap?.dispose();
+        lifetime.abort();
+      }
     }
   }
 

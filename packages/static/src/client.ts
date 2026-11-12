@@ -5,7 +5,14 @@ import {
   type StaticMapRequestFailure,
 } from './auto-fit';
 import {isSafeHttpUrl, jsonByteLength, stableStringify} from './canonical';
-import {StaticMapError, type StaticMapErrorResponse, staticMapErrorResponseSchema} from './errors';
+import {
+  readStaticMapErrorMetadata,
+  readStaticMapErrorResponse,
+  sanitizeStaticMapErrorDetails,
+  StaticMapError,
+  type StaticMapErrorResponse,
+  staticMapErrorResponseSchema,
+} from './errors';
 import {type StaticAttributionPosition, type StaticSceneInput, validateStaticScene} from './scene';
 
 const maxStaticMapResponseBytes = 64 * 1024;
@@ -281,17 +288,26 @@ export async function requestStaticMapUntilReady(
       if (!response.ok) {
         const errorBody = await readStaticMapErrorBody(response, 8 * 1024);
         throwIfAborted(signal);
-
-        if (response.status === 422) {
-          const requestError = staticMapRequestErrorResponseSchema.safeParse(errorBody);
-          if (requestError.success) {
-            throw new StaticMapRequestError(requestError.data, response.status);
+        const secrets = options.apiKey ? [options.apiKey] : [];
+        const structured = readStaticMapErrorResponse(errorBody, secrets);
+        if (structured) {
+          const metadata = readStaticMapErrorMetadata(structured, response.headers, secrets);
+          if (response.status === 422) {
+            const document = errorBody as Record<string, unknown>;
+            const requestError = staticMapRequestErrorResponseSchema.safeParse({
+              code: structured.code,
+              error: structured.error,
+              reason: document.reason,
+              retryable: structured.retryable,
+              ...('details' in document
+                ? {details: sanitizeStaticMapErrorDetails(document.details, secrets)}
+                : {}),
+            });
+            if (requestError.success) {
+              throw new StaticMapRequestError(requestError.data, response.status, metadata);
+            }
           }
-        }
-
-        const structured = staticMapErrorResponseSchema.safeParse(errorBody);
-        if (structured.success) {
-          throw new StaticMapError(structured.data, response.status);
+          throw new StaticMapError(structured, response.status, metadata);
         }
 
         throw new Error(`Tileflow static map failed (${response.status}).`);

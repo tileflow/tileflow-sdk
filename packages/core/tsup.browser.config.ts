@@ -12,7 +12,8 @@ export default defineConfig(async () => {
     dts: false,
   });
   return {
-    entry: ['src/browser.ts', 'src/3d.ts'],
+    entry: ['src/browser.ts', 'src/3d.ts', 'src/maplibre.ts'],
+    external: ['maplibre-gl', './browser.js', './runtime.js', './3d.js'],
     format: ['esm'],
     platform: 'browser',
     dts: true,

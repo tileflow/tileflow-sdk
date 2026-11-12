@@ -238,9 +238,14 @@ attribution grammar or glyphs, excessive attribution, and a block that cannot fi
 non-retryable `422` boundary.
 
 Other bounded Hosted JSON failures throw `StaticMapError`. It preserves HTTP `status` and any safe
-`code`, `requiredPlan`, `retryable`, `requestId`, or `remainingUnits` fields the server supplied;
-absent fields are `null`. `StaticMapRequestError` extends the same class. Malformed, oversized, or
-unsafe remote documents remain generic errors and are never reflected to the caller.
+`code`, `requiredPlan`, `retryable`, `requestId`, or `remainingUnits` fields the server supplied.
+`requestId` also uses the `X-Request-ID` response header when the body has no valid reference.
+`retryAfterMs` preserves a valid retry delay from the body or `Retry-After` header, up to 24 hours;
+absent fields are `null`. A retry delay does not imply `retryable: true`, and failed HTTP requests
+are not retried automatically. `StaticMapRequestError` extends the same class and retains its
+`reason` and typed `details` in `response` as well as on the error itself. Diagnostic strings redact
+credentials and URLs; SQL, stack diagnostics, malformed and oversized documents use a generic
+error instead of reflecting their contents.
 
 `STATIC_MAPS_PLAN_UNAVAILABLE` is a non-retryable Pro requirement. Its `requiredPlan` is
 `starter-v1`; select a Pro Team or use a non-static fallback. It occurs before a Static Maps

@@ -473,7 +473,7 @@ test('a failed singular deploy preserves the previous manifest and a retry conve
   );
   assert.equal(first.code, 1);
   assert.deepEqual(attempts, ['beta'], `${first.stdout}\n${first.stderr}`);
-  assert.match(first.stdout, /Deploy failed for beta: 503/u);
+  assert.match(first.stderr, /Deploy for beta failed: temporary beta failure/u);
   assert.equal(await readFile(fixture.manifestPath, 'utf8'), originalManifest);
 
   failBeta = false;
@@ -1083,7 +1083,7 @@ test('a failed icon upload makes no style request and does not rewrite the manif
 
   assert.equal(result.code, 1);
   assert.equal(requests, 1);
-  assert.match(result.stdout, /Icon package upload failed: 503/);
+  assert.match(result.stderr, /Icon package upload failed: storage unavailable/u);
   assert.equal(await readFile(fixture.manifestPath, 'utf8'), originalManifest);
 });
 
@@ -1108,7 +1108,7 @@ test('a style failure after icon upload also preserves the previous manifest', a
   );
 
   assert.equal(result.code, 1);
-  assert.match(result.stdout, /Deploy failed for madrid: 503/);
+  assert.match(result.stderr, /Deploy for madrid failed: style storage unavailable/u);
   assert.deepEqual(methods, ['PUT', 'POST']);
   assert.equal(await readFile(fixture.manifestPath, 'utf8'), originalManifest);
 });
@@ -1325,7 +1325,7 @@ test('a Map-scoped key rejection preserves the explicit target after local prefl
 
   assert.equal(result.code, 1);
   assert.equal(requests, 1);
-  assert.match(result.stdout, /Deploy failed for madrid: 403/u);
+  assert.match(result.stderr, /Deploy for madrid failed: rejected/u);
   assert.equal(await readFile(configMarkerPath, 'utf8'), 'imported');
 });
 
@@ -1673,12 +1673,14 @@ async function createRejectingApi(
   t: TestContext,
   status: number,
   inspectRequest: (request: import('node:http').IncomingMessage) => Promise<void>,
+  failure: Record<string, unknown> = {error: 'rejected'},
+  headers: Record<string, string> = {},
 ) {
   const server = createServer(async (request, response) => {
     if (respondWithApiProfile(request, response)) return;
     await inspectRequest(request);
-    response.writeHead(status, {'Content-Type': 'application/json'});
-    response.end(JSON.stringify({error: 'rejected'}));
+    response.writeHead(status, {'Content-Type': 'application/json', ...headers});
+    response.end(JSON.stringify(failure));
   });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
@@ -1940,3 +1942,135 @@ function fontBundleManifestFromMultipart(body: string): {
     format: string;
   };
 }
+
+test('deploy JSON emits one safe actionable failure and preserves the manifest', async (t) => {
+  const fixture = await createFixture(t);
+  const api = await createRejectingApi(
+    t,
+    422,
+    async (request) => {
+      await readRequestBody(request);
+    },
+    {
+      code: 'TF_STYLE_INVALID',
+      error: `The style is invalid for ${fakeApiKey}.`,
+      retryable: false,
+      messages: [
+        {
+          code: 'SOURCE_NOT_FOUND',
+          path: 'layers[0].source',
+          message: 'Choose a source defined by this map.',
+          actual: 'missing',
+          available: ['world'],
+        },
+      ],
+    },
+    {'X-Request-ID': 'deploy-ref', 'Retry-After': '3'},
+  );
+  const result = await runCli(
+    fixture.directory,
+    [
+      'deploy',
+      '--json',
+      '--config',
+      fixture.configPath,
+      '--manifest',
+      fixture.manifestPath,
+      '--api-url',
+      api.url,
+      '--map-id',
+      managedMapId,
+    ],
+    {TILEFLOW_API_KEY: fakeApiKey},
+  );
+  assert.equal(result.code, 1);
+  assert.equal(result.stdout, '');
+  const failure = JSON.parse(result.stderr);
+  assert.equal(failure.schemaVersion, 1);
+  assert.equal(failure.ok, false);
+  assert.equal(failure.error.code, 'TF_STYLE_INVALID');
+  assert.equal(failure.error.operation, 'Deploy for madrid');
+  assert.equal(failure.error.requestId, 'deploy-ref');
+  assert.equal(failure.error.retryable, false);
+  assert.equal(failure.error.retryAfterMs, 3000);
+  assert.equal(failure.error.messages[0].path, 'layers[0].source');
+  assert.doesNotMatch(result.stderr, new RegExp(fakeApiKey));
+  await assert.rejects(() => readFile(fixture.manifestPath, 'utf8'), {code: 'ENOENT'});
+});
+
+test('deploy JSON success contains the written manifest without progress output', async (t) => {
+  const fixture = await createFixture(t);
+  const api = await createFakeApi(t, async (request) => {
+    await readRequestBody(request);
+    return {
+      ...hostedDeploymentResponse(managedMapId),
+      teamModels: [{model: 'tower', version: 2, sources: 'differ'}],
+    };
+  });
+  const result = await runCli(
+    fixture.directory,
+    [
+      'deploy',
+      '--json',
+      '--config',
+      fixture.configPath,
+      '--manifest',
+      fixture.manifestPath,
+      '--api-url',
+      api.url,
+      '--map-id',
+      managedMapId,
+    ],
+    {TILEFLOW_API_KEY: fakeApiKey},
+  );
+  assert.equal(result.code, 0, result.stderr);
+  const document = JSON.parse(result.stdout);
+  assert.equal(document.ok, true);
+  assert.equal(document.command, 'deploy');
+  assert.ok(
+    document.warnings.some(
+      (warning: string) => warning.includes('tower') && warning.includes('version 2'),
+    ),
+  );
+  assert.equal(document.maps.madrid.mapId, managedMapId);
+  assert.equal(document.manifestPath, fixture.manifestPath);
+  assert.equal(result.stderr, '');
+});
+
+test('deploy JSON local preflight failure remains a single failure document', async (t) => {
+  const fixture = await createFixture(t);
+  const result = await runCli(
+    fixture.directory,
+    ['deploy', '--json', '--config', fixture.configPath, '--map-id', 'invalid-map'],
+    {TILEFLOW_API_KEY: fakeApiKey},
+  );
+  assert.equal(result.code, 1);
+  assert.equal(result.stdout, '');
+  const failure = JSON.parse(result.stderr);
+  assert.equal(failure.ok, false);
+  assert.match(failure.error.message, /Map ID|map-id/u);
+});
+
+test('deploy JSON retains CI credential recovery steps', async (t) => {
+  const fixture = await createFixture(t);
+  const result = await runCli(
+    fixture.directory,
+    [
+      'deploy',
+      '--json',
+      '--config',
+      fixture.configPath,
+      '--api-url',
+      'http://127.0.0.1:9',
+      '--map-id',
+      managedMapId,
+    ],
+    {CI: 'true', HOME: fixture.directory, USERPROFILE: fixture.directory},
+  );
+  assert.equal(result.code, 1);
+  assert.equal(result.stdout, '');
+  const document = JSON.parse(result.stderr);
+  assert.equal(document.error.code, 'api_key_required');
+  assert.ok(document.error.nextSteps.some((step: string) => step.includes('TILEFLOW_API_KEY')));
+  assert.doesNotMatch(result.stderr, /tileflow login/u);
+});

@@ -45,6 +45,7 @@ import {
 } from './capture-output';
 import {saveCaptureRecord} from './capture-record';
 import {withTileflowConfigSecretsHidden} from './config-execution';
+import {resolveIconOptions} from './icon-options';
 
 export type CaptureCommandOptions = {
   all?: boolean;
@@ -319,6 +320,7 @@ async function runCaptureShotCommand(options: CaptureCommandOptions): Promise<vo
     allowBrowserInstall: options.browserInstall,
     config: options.config,
     cwd,
+    icons: resolveIconOptions(),
     onBrowserInstallProgress: options.json ? undefined : printInstallProgress,
     signal: controller.signal,
   });
@@ -578,6 +580,7 @@ async function runCaptureCommand(
       appUrl: options.url,
       config: options.config,
       cwd,
+      icons: resolveIconOptions(),
       onBrowserInstallProgress: options.json ? undefined : printInstallProgress,
       frame: options.frame,
       selector: options.selector,
@@ -660,6 +663,7 @@ async function runCaptureWatchCommand(
     assetBaseUrl: tileflowSyntheticAssetOrigin,
     config: options.config,
     cwd,
+    icons: resolveIconOptions(),
     ignoredPaths,
     watch: true,
   });
@@ -669,6 +673,7 @@ async function runCaptureWatchCommand(
     appUrl: options.url,
     config: options.config,
     cwd,
+    icons: resolveIconOptions(),
     onBrowserInstallProgress: options.json ? undefined : printInstallProgress,
     frame: options.frame,
     selector: options.selector,

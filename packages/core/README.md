@@ -4,8 +4,8 @@ Define and customize maps in TypeScript, then compile them to MapLibre Style JSO
 official Tileflow map or create your own, with typed settings for themes, roads, buildings,
 labels, and other map features.
 
-Use Core to author and validate the map, the Tileflow CLI to preview it, and a framework adapter
-to display it in your application.
+Use Core to author and validate the map and the Tileflow CLI to preview it. Display it with a
+framework adapter, or the JavaScript API described below.
 
 ## Install
 
@@ -56,6 +56,18 @@ to see the result. Stop the server with Ctrl+C.
 
 Local authoring and preview need no Tileflow account or API key. Remote map tiles and assets
 still need a network connection.
+
+## Display a map without a framework
+
+`createTileflowMap` from `@tileflow/core/maplibre` loads a prepared named map with the same browser
+runtime as the React, Vue and Svelte adapters. It manages map resources and cleanup, and exposes
+the MapLibre instance for application-owned layers, controls and events. See the
+[JavaScript map reference](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/REFERENCE.md#display-a-map-with-javascript)
+for worker setup, an example and lifecycle ownership.
+
+This entry is unreleased in the current source change. An existing `@alpha` installation does not
+establish its availability; check the exports, TypeScript declarations and `REFERENCE.md` in the
+exact Core package you use. Existing framework applications keep their component APIs.
 
 ## Learn more
 

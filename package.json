@@ -69,7 +69,7 @@
     "semver": "7.8.5",
     "tsup": "^8.5.1",
     "tsx": "^4.23.15",
-    "turbo": "^2.11.7",
+    "turbo": "^2.11.10",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.67.0"
   }

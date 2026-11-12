@@ -307,3 +307,56 @@ test('GPU upload budget never leaves a previously drawn tile empty during detail
     camera.dispose();
   }
 });
+
+test('pending counts wanted tiles until they can draw, and none while the layer wants none', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => new Response(new Uint8Array(0)));
+  const builds: {resolve: (value: {uploaded: boolean}) => void}[] = [];
+  let active = true;
+  const map = {
+    getBearing: () => 0,
+    getCenter: () => ({lat: 0.01, lng: 0.01}),
+    getPitch: () => 0,
+    getZoom: () => 18,
+    getSource: () => ({tiles: ['https://camera-test.invalid/{z}/{x}/{y}.pbf'], maxzoom: 15}),
+    on() {},
+    off() {},
+    triggerRepaint() {},
+  };
+  const camera = createCameraTiles<{uploaded: boolean}>({
+    map,
+    source: 'world',
+    zoom: 15,
+    minzoom: 14,
+    maxTiles: 1,
+    active: () => active,
+    empty: {uploaded: true},
+    build: () => new Promise((resolve) => builds.push({resolve})),
+    isReady: (value) => value.uploaded,
+    release() {},
+    changed() {},
+  });
+  const until = async (ready: () => boolean) => {
+    for (let n = 0; n < 100 && !ready(); n++) await delay(5);
+    assert.ok(ready());
+  };
+  try {
+    // Before the tiles round the camera are chosen, the whole view is still to read.
+    assert.equal(camera.pending(), 1);
+    camera.update();
+    assert.equal(camera.pending(), 1);
+    await until(() => builds.length === 1);
+    const value = {uploaded: false};
+    builds[0]!.resolve(value);
+    // Built but not yet on the GPU still keeps the frame from being complete.
+    await until(() => [...camera.all()].some((tile) => tile.pending === value));
+    assert.equal(camera.pending(), 1);
+    value.uploaded = true;
+    assert.equal(camera.ready().length, 1);
+    assert.equal(camera.pending(), 0);
+    active = false;
+    camera.refresh(() => true);
+    assert.equal(camera.pending(), 0);
+  } finally {
+    camera.dispose();
+  }
+});

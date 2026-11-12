@@ -158,6 +158,13 @@ export type TileflowBuildings3D = {
   /** True after a frame has drawn with its visible building tiles prepared. */
   readonly ready: boolean;
   /**
+   * What the next frames still wait for: building tiles round the camera being read, built or
+   * uploaded, models (landmarks and the map's own) downloading, uploading or fading in, and whether
+   * the buildings are still rising or sinking, or waiting to learn what the models stand in for.
+   * All zero and false once the view is complete, or while the buildings are hidden.
+   */
+  pending(): Readonly<{tiles: number; models: number; transition: boolean}>;
+  /**
    * The buildings placed models and landmarks stand in for round the camera, for the compiled
    * extrusion drawn while the layer is not `ready`: `known` once the landmark indexes and models
    * round the view have arrived, failed or been waited for long enough, and `area`, the ground
@@ -2240,6 +2247,17 @@ export function createTileflowBuildings3D(
     },
     get ready() {
       return ready;
+    },
+    pending() {
+      if (disposed || (target <= 0 && scale <= 0)) return {tiles: 0, models: 0, transition: false};
+      const now = performance.now();
+      let fading = 0;
+      for (const model of models.shown()) if (model.gl && appearanceOf(model, now) < 1) fading += 1;
+      return {
+        tiles: camera.pending(),
+        models: models.pending() + fading,
+        transition: motion !== undefined || scale !== target || !standIns.known,
+      };
     },
     get standIns() {
       return standIns;

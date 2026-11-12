@@ -62,9 +62,12 @@ test('offers a theme switch in standalone previews, not the Inspector iframe', (
   assert.match(several, /const previewThemes = \["light","night"\];/u);
   assert.match(
     several,
-    /if \(previewThemes\.length > 1 && window\.parent === window\) map\.addControl\(new ThemeControl\(\)/u,
+    /if \(previewThemes\.length > 1 && window\.parent === window && !chromeHidden\) map\.addControl\(new ThemeControl\(\)/u,
   );
-  assert.match(single, /if \(previewThemes\.length > 1 && window\.parent === window\)/u);
+  assert.match(
+    single,
+    /if \(previewThemes\.length > 1 && window\.parent === window && !chromeHidden\)/u,
+  );
 });
 
 test('preview delegates atmosphere to the shared runtime without overriding its rendering', async () => {

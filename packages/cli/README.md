@@ -150,10 +150,11 @@ belong to their map and do not inherit. `system` and an omitted scene theme are 
 Coordinates are `[longitude, latitude]`; viewport dimensions are CSS pixels and `dpr` determines
 physical image size.
 
-One-off capture accepts camera, size, and theme flags and returns a normalized scene definition.
-Commit that definition deliberately; the CLI does not rewrite executable config. Capture receipts
-record runtime and data identity. Remote dependencies can change, so a successful render is not a
-promise of identical pixels on every platform or future run.
+One-off `--map` or `--batch` capture (official maps need no config) returns normalized scene
+definitions; see the
+[reference](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/REFERENCE.md#capture).
+Commit one deliberately; the CLI never rewrites config. Receipts record runtime and data identity;
+remote data can change pixels between runs.
 
 For application capture, define an application target with its route and optional `captureId` in
 the scene. Start the application's normal server in one terminal. In another terminal, run:

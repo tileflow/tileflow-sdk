@@ -256,6 +256,16 @@ retained `definition`; when present, that definition must match the explicit rev
 `analyzeTileflowCaptureReference` analyzes
 an external PNG without claiming receipt compatibility. Neither operation approves a baseline.
 
+## Complete images and warnings
+
+A map whose style declares a 3D scene is captured with it mounted, and each image waits until the
+scene has nothing pending, within `timeoutMs` (30 seconds by default). An image whose scene had not
+settled, a dataset the capture is not entitled to read (HTTP 401 or 403, named in the warning) and a
+missing 3D model leave a drawable map: the capture succeeds and `capture.warnings` says what is
+missing. Set `graphics: 'gpu'` on the session to render with the machine's graphics hardware, much
+faster for dense 3D views but with hardware-dependent pixels; keep the default `software` for
+baselines. `session.contactSheet(images)` lays captured PNGs out in one labelled grid.
+
 ## Errors, receipts, and reproducibility
 
 `TileflowCaptureError` reports a stable code, phase, and bounded details. Phases distinguish style

@@ -28,6 +28,8 @@ export type TileflowVegetationController = {
   refresh(): void;
   readonly representation: TileflowVegetationRepresentation;
   readonly stats: TileflowTrees3D['stats'] | undefined;
+  /** What the 3D trees still wait for; zero while vegetation draws flat or not at all. */
+  pending(): ReturnType<TileflowTrees3D['pending']>;
   dispose(): void;
 };
 
@@ -139,6 +141,7 @@ export function createTileflowVegetation(
     get stats() {
       return trees?.stats;
     },
+    pending: () => trees?.pending() ?? {tiles: 0, transition: false},
     dispose,
   };
 }

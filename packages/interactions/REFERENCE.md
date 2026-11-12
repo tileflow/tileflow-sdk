@@ -204,5 +204,5 @@ through `onInteractionEvent`. It differs in four ways:
 
 Terra Draw is a GL JS library and has no native equivalent here.
 
-Direct MapLibre consumers use `createTileflowMapLibreDataRuntime` from
+Tileflow's web maps draw these layers with `createTileflowMapLibreDataRuntime` from
 `@tileflow/interactions/maplibre`.

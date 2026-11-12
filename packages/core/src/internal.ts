@@ -2,8 +2,10 @@
  * The building blocks Tileflow's own map packages use to create and run a map: `@tileflow/dom`,
  * capture, the development preview and the mobile runtime. Not a public API: names and behaviour
  * change in any release. Applications create maps with `@tileflow/dom` or the framework components
- * and extend them through `getMap()`.
+ * and extend them through `getMap()`. It also carries everything `@tileflow/core/browser` exports, so
+ * a Tileflow package can load the browser bundle from one place.
  */
+export * from './browser';
 export {attachTileflowAtmosphere} from './atmosphere-browser';
 export {
   attachTileflowFairUseNotice,

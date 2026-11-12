@@ -1,4 +1,17 @@
-// Pinned package-owned faces used by artifact, font and build-manifest integration tests.
+import {cp} from 'node:fs/promises';
+import {join} from 'node:path';
+
+/** The five faces Streets letters with, kept as TTF fixtures for the local font pipeline. */
+export const streetsFontFixtureDirectory = new URL('./fixtures/fonts/streets/', import.meta.url);
+
+/** Copies the Streets faces and their licenses into `<cwd>/<directory>` as a map's own fonts. */
+export async function copyStreetsFontFixture(cwd: string, directory = 'fonts'): Promise<string> {
+  const target = join(cwd, directory);
+  await cp(streetsFontFixtureDirectory, target, {recursive: true});
+  return target;
+}
+
+// Pinned faces used by artifact, font and build-manifest integration tests.
 export const streetsFontFixtures = [
   {
     family: 'DINish Bold',

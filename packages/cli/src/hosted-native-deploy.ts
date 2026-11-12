@@ -163,10 +163,10 @@ export async function prepareNativeHostedDeploy(
     });
     if (inspectTileflowHostedCompatibility(project, fonts.styles).length)
       throw failure('Hosted renderer deployment requires compatible Tileflow World sources.');
-    // Preserve the existing Hosted web-font limitation; --with-native cannot bypass it.
+    // MapLibre Native letters only from glyph ranges; a renderer collection carries no font bundle.
     if (Object.keys(fonts.bundles).length)
       throw failure(
-        'Hosted deploy does not yet support package-owned web fonts. Use an explicit public glyph provider.',
+        "A deployment with --with-native does not take a map's own fonts yet. Deploy without --with-native, or declare glyphs instead of fonts.",
       );
     const assets = (iconPackage?.files ?? []).map((file) => ({
       contentType: file.contentType,

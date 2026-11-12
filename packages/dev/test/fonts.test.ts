@@ -12,7 +12,7 @@ import {
   type TileflowFontDirectory,
 } from '@tileflow/core';
 import type {TileflowBuildCatalog} from '@tileflow/core/build';
-import {streetsFonts} from '@tileflow/maps';
+import {streetsIcons} from '@tileflow/maps';
 import {
   bindTileflowStyleFontBundle,
   getTileflowFontWatchPaths,
@@ -21,7 +21,7 @@ import {
 } from '../src/fonts';
 import {getTileflowPreviewRuntimeResponse} from '../src/preview-assets';
 import {renderTileflowPreviewHtml} from '../src/preview-html';
-import {streetsFontFixtures} from './streets-font-fixture';
+import {copyStreetsFontFixture, streetsFontFixtures} from './streets-font-fixture';
 import {fixtureThemeFields} from './theme-fixture';
 
 const oxaniumMedium = new URL('./fixtures/fonts/oxanium/Oxanium-Medium.ttf', import.meta.url);
@@ -119,9 +119,10 @@ test('later directories replace exact canonical faces', async (t) => {
   );
 });
 
-test('prepares the packaged Streets faces once across two themes with their combined OFL notice', async (t) => {
+test('prepares the Streets faces once across two themes with their combined OFL notice', async (t) => {
   const cwd = await fixture(t);
-  const project = fontProject([streetsFonts]);
+  const directory = await realpath(await copyStreetsFontFixture(cwd, 'streets'));
+  const project = fontProject(['./streets']);
   project.maps.main!.themes.dark = project.maps.main!.themes.light!;
   const style = {
     ...fontStyle([]),
@@ -134,7 +135,7 @@ test('prepares the packaged Streets faces once across two themes with their comb
     {main: {light: style, dark: style}},
     {assetBaseUrl: '/assets', cwd, target: 'local'},
   );
-  assert.deepEqual(prepared.watchPaths, []);
+  assert.deepEqual(prepared.watchPaths, [directory]);
   assert.equal(prepared.assets.filter((asset) => asset.contentType === 'font/ttf').length, 5);
   assert.equal(prepared.assets.filter((asset) => asset.fileName.includes('/licenses/')).length, 1);
   for (const theme of ['light', 'dark']) {
@@ -147,7 +148,7 @@ test('prepares the packaged Streets faces once across two themes with their comb
       streetsFontFixtures.map(({family, style, weight}) => ({family, style, weight})),
     );
   }
-  assert.deepEqual(await getTileflowFontWatchPaths(project, cwd), []);
+  assert.deepEqual(await getTileflowFontWatchPaths(project, cwd), [directory]);
 });
 
 test('font extension, MIME, and OpenType signature must agree', async (t) => {
@@ -381,7 +382,8 @@ test('discovers mutable font directories before compilation and excludes package
   assert.deepEqual(await getTileflowFontWatchPaths(fontProject(['./fonts']), cwd), [
     await realpath(join(cwd, 'fonts')),
   ]);
-  assert.deepEqual(await getTileflowFontWatchPaths(fontProject([streetsFonts]), cwd), []);
+  // An installed package directory is immutable, so it is never watched.
+  assert.deepEqual(await getTileflowFontWatchPaths(fontProject([streetsIcons]), cwd), []);
 });
 
 test('preview loads generic style metadata through the shared browser runtime', async () => {

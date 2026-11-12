@@ -4,7 +4,7 @@ import {soundings as soundingsDefinition} from './official/soundings';
 import {streets as streetsDefinition} from './official/streets';
 import {streetsThemes} from './official/streets-themes';
 
-export {soundingsIcons, streetsIcons, streetsFonts, streetsModels} from './assets';
+export {soundingsIcons, streetsGlyphs, streetsIcons, streetsModels} from './assets';
 
 /** Immutable official map singletons. `defineMap` itself remains a mutable authoring identity. */
 export const streets = freezeOfficialMap(streetsDefinition);

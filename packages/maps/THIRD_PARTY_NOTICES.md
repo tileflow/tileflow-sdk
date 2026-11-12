@@ -89,15 +89,14 @@ exposed by the selected data sources. Neither is packaged here; the bands are no
 soundings, and the marks keep the attribution of their own source. Soundings is a general-purpose
 visual map, not a nautical chart for navigation.
 
-## Streets lettering
+## Official map lettering
 
-Streets includes unmodified DINish Medium and Bold TTF files from
+Official maps draw DINish Medium and Bold, from
 [playbeing/dinish](https://github.com/playbeing/dinish/tree/a5f3b2a3b932336225815bf9005e3b72cc3de71c),
-and unmodified Noto Sans Regular, Bold and Italic TTF files from
-[notofonts/noto-fonts](https://github.com/notofonts/noto-fonts/tree/c971829a87e7920f960e7277c3dafd9bedd3c601).
-Both families use the SIL Open Font License 1.1. Complete copyright and license notices are
-included in `assets/streets/fonts/LICENSE-DINish.txt`, `LICENSE-NotoSans.txt`, and the combined
-`LICENSE.txt`. DINish is an independent DIN-inspired font; DIN Pro is not redistributed.
+and Noto Sans Regular, Bold and Italic as glyph ranges served by Tileflow. This package contains no
+font files. Both families use the SIL Open Font License 1.1; each font's complete license is served
+beside its glyphs as `glyphs/<font>/LICENSE.md`. DINish is an independent DIN-inspired font; DIN Pro
+is not used.
 
 ## Historical climate context
 

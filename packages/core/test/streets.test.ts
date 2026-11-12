@@ -332,7 +332,8 @@ test('terrain cannot overwrite the stable primary vector source', () => {
 });
 
 test('a Tileflow glyph set composites fallback stacks of the fonts it is declared to publish', () => {
-  const officialSet = '33d4de5e8086d9d629d67d3f39fedb87e23686c4c1ac653c27e2a52aee9d00b3';
+  const officialSet = 'fe873949787f8f1e2ff72853d13c1e6e3c1de83474e4c1de60dae6ac33fe3081';
+  const notoOnlySet = '33d4de5e8086d9d629d67d3f39fedb87e23686c4c1ac653c27e2a52aee9d00b3';
   const withFallback = defineTheme(testLightTheme, {
     id: 'with-fallback',
     version: 1,
@@ -385,6 +386,16 @@ test('a Tileflow glyph set composites fallback stacks of the fonts it is declare
       fontStacks.join('|'),
     );
   }
+  // Each reviewed set publishes only its own fonts: DINish is in the official set alone.
+  assert.doesNotThrow(() => compile(tileflow, ['DINish Bold,Noto Sans Regular', 'Noto Sans Bold']));
+  assert.throws(
+    () =>
+      compile(tileflow.replace(officialSet, notoOnlySet), [
+        'Noto Sans Bold,Noto Sans Regular',
+        'DINish Bold',
+      ]),
+    /glyph font stacks its glyph set cannot serve/u,
+  );
   // A set the SDK has not reviewed is trusted for its fonts, never past ten of them.
   const unreviewed = `https://api.tileflow.dev/base/${'a'.repeat(64)}/glyphs/{fontstack}/{range}.pbf`;
   assert.doesNotThrow(() =>

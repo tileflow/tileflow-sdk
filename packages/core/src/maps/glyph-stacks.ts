@@ -15,6 +15,10 @@ const reviewedGlyphSetFonts: ReadonlyMap<string, readonly string[]> = new Map([
     '33d4de5e8086d9d629d67d3f39fedb87e23686c4c1ac653c27e2a52aee9d00b3',
     ['Noto Sans Bold', 'Noto Sans Italic', 'Noto Sans Regular'],
   ],
+  [
+    'fe873949787f8f1e2ff72853d13c1e6e3c1de83474e4c1de60dae6ac33fe3081',
+    ['DINish Bold', 'DINish Medium', 'Noto Sans Bold', 'Noto Sans Italic', 'Noto Sans Regular'],
+  ],
 ]);
 
 export type TileflowGlyphSet = Readonly<{

@@ -132,6 +132,45 @@ final class NativeMapEngineTests: XCTestCase {
     XCTAssertTrue(map.warnings().isEmpty, "\(map.warnings())")
   }
 
+  func testHostedFontFilesRenderFromPacksWithAnEmptyCache() async throws {
+    try await requireHostedFixture()
+    await TileflowMapCache.clear()
+    let configuration = try fixtureConfiguration()
+    let store = offlineMapStore(
+      profile: .native, client: { try OfflinePackClient(configuration: configuration) })
+    try await downloadRegion(
+      store, id: "fonts",
+      options: TileflowOfflineRegionLoadOptions(
+        geometry: .boundingBox(
+          TileflowBoundingBox(west: -3.705, south: 40.416, east: -3.695, north: 40.424)),
+        content: .hosted(mapID: Self.hostedFixtureMapID, themes: ["fonts"]), minZoom: 13,
+        maxZoom: 15))
+    await TileflowMapCache.clear()
+    _ = try await fixtureCounters(reset: true)
+    answers.withLock { $0 = [] }
+    TileflowOfflineSwitch.shared.isNetworkEnabled = false
+
+    let map = try await mountMap(
+      .hosted(mapID: Self.hostedFixtureMapID, configuration: configuration), theme: "fonts")
+    defer { map.close() }
+    try await Task.sleep(nanoseconds: 500_000_000)
+    let features = try await map.view.query(
+      at: CGPoint(x: map.view.bounds.midX, y: map.view.bounds.midY))
+    XCTAssertTrue(features.contains { $0.layer == "brand-label" }, "\(features)")
+    let fonts = answers.withLock { $0.filter { $0.remote.contains("/font-bundles/") } }
+    XCTAssertEqual(Set(fonts.map(\.remote)).count, 2, "Latin and Greek files: \(fonts)")
+    XCTAssertTrue(fonts.allSatisfy { $0.status == 200 }, "\(fonts)")
+    XCTAssertEqual(foreign.withLock { $0 }, [])
+    let counters = try await fixtureCounters()
+    XCTAssertEqual(counters["sessions"], 0)
+    XCTAssertEqual(counters["downloads"], 0)
+    XCTAssertEqual(counters["sessionResources"], 0)
+    let usage = await TileflowMapCache.usage()
+    XCTAssertEqual(usage.entries, 0)
+    XCTAssertEqual(Self.mapLibreRows(), 0)
+    XCTAssertTrue(map.warnings().isEmpty, "\(map.warnings())")
+  }
+
   /// MapLibre's network session is global to the process. When something else replaces it, so
   /// that the SDK no longer answers its requests, a native map fails rather than load without its
   /// credentials.

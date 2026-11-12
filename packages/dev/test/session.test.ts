@@ -1209,7 +1209,7 @@ export default defineMap({
   ]) {
     await writeFile(
       join(cwd, 'fonts', file),
-      await readFile(new URL(`../../maps/assets/streets/fonts/${source}.ttf`, import.meta.url)),
+      await readFile(new URL(`./fixtures/fonts/streets/${source}.ttf`, import.meta.url)),
     );
   }
 

@@ -13,7 +13,11 @@ import {
   TileflowHostedManifestOverwriteError,
   writeTileflowBuildArtifacts,
 } from '../src/artifacts';
-import {streetsFontFixtures} from './streets-font-fixture';
+import {
+  copyStreetsFontFixture,
+  streetsFontFixtureDirectory,
+  streetsFontFixtures,
+} from './streets-font-fixture';
 
 test('models source, prepared and artifact-plan boundaries with a complete input graph', async (t) => {
   const cwd = await fixture(t, 'tileflow-artifact-plan-');
@@ -117,11 +121,12 @@ test('resolves and watches local assets from a nested config directory within cw
   assert.ok(plan.files.some((file) => file.fileName.endsWith('/icons/nested/sprite.png')));
 });
 
-test('materializes package-owned Streets fonts and retargets immutable runtime metadata', async (t) => {
+test("materializes a map's own fonts and retargets immutable runtime metadata", async (t) => {
   const cwd = await fixture(t, 'tileflow-artifact-fonts-');
+  await copyStreetsFontFixture(cwd);
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
-    "import {defineMap} from '@tileflow/core'; import {streets} from '@tileflow/maps'; export default defineMap({id:'night',name:'Night',version:1,extends:streets});\n",
+    "import {defineMap} from '@tileflow/core'; import {streets} from '@tileflow/maps'; export default defineMap({id:'night',name:'Night',version:1,extends:streets,fonts:['./fonts']});\n",
   );
 
   const plan = await createTileflowBuildArtifacts({
@@ -152,7 +157,7 @@ test('materializes package-owned Streets fonts and retargets immutable runtime m
   );
   assert.ok(stableFaces.every((face) => face.source.startsWith('/tileflow/fonts/')));
   assert.equal(
-    await readFile(new URL('../../maps/assets/streets/fonts/LICENSE.txt', import.meta.url), 'utf8'),
+    await readFile(new URL('LICENSE.txt', streetsFontFixtureDirectory), 'utf8'),
     new TextDecoder().decode(
       stableFontAssets.find((asset) => asset.fileName.includes('/licenses/'))?.source as Uint8Array,
     ),

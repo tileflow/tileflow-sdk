@@ -1,9 +1,10 @@
 # Official map assets
 
 These directories contain the package-owned sources for Streets, Soundings and Outdoors.
-Streets' icons, fonts and models are shared by Outdoors; Outdoors adds its own summit symbols.
-Use the exported `streetsIcons`, `streetsFonts`, `streetsModels`, `soundingsIcons` and `outdoorsIcons`
-descriptors to compose resources. Streets includes a pinned CC0 subset of Maki pictograms inside
+Streets' icons and models are shared by Outdoors; Outdoors adds its own summit symbols.
+Use the exported `streetsIcons`, `streetsModels`, `soundingsIcons` and `outdoorsIcons`
+descriptors to compose resources. Official maps carry no font files: their text draws from
+Tileflow's official glyph set (`streetsGlyphs`). Streets includes a pinned CC0 subset of Maki pictograms inside
 Tileflow-authored circular POI markers; provenance is in `../THIRD_PARTY_NOTICES.md` and the
 upstream license is kept at `streets/LICENSE-MAKI.txt`.
 
@@ -58,7 +59,7 @@ deliberately not relabelled as a harbour. Soundings uses GEBCO-derived depth ban
 cartographic context, and neither it nor its Nautical marks is a navigation product.
 
 Outdoors adds two original circular summit badges, one for light ground and one for dark ground.
-It shares Streets’ packaged lettering and POI resources. No elevation tiles are bundled.
+It shares Streets’ glyphs and POI resources. No elevation tiles are bundled.
 
 `@tileflow/dev` resolves each package descriptor, verifies that its real path remains inside the
 installed package, and compiles the complete ordered directory composition into deterministic
@@ -68,20 +69,18 @@ lower-kebab, and a later directory wins on an exact duplicate ID.
 
 Font preparation is generic: it reads any map's declared `fonts` directories, derives IDs from
 OpenType full names, includes only used faces, and publishes content-addressed font and license
-assets. Streets and Outdoors materialize their selected DINish and Noto Sans faces and licenses.
-Their manifest and Style carry the strict `tileflow:fontFaces` public-asset contract;
-Style font values are exact OpenType full names. Soundings declares the canonical Tileflow
-glyph URL with exact `Noto Sans Regular` and `Noto Sans Bold` stacks. The compiler never
-manufactures a face ID by adding a weight. The compatibility URL
-is canonical but not content-addressed; responses
-revalidate and do not provide an exact-byte receipt. Reproducible official PBF delivery will use the
-separate `/base/<assetSetSha256>/glyphs/...` contract once Hosted has verified and published that
-immutable global base-asset set. In that URL, the name belongs to the global base-asset manifest;
-its hash does not use the per-map
-`tileflow-map-asset-set-v1` output domain recorded as `assetSetSha256` in `build-manifest.json`. It
-is independent of managed font-bundle IDs and World descriptors. No compiler fallback invents
-either provider.
+assets. Their manifest and Style carry the strict `tileflow:fontFaces` public-asset contract;
+Style font values are exact OpenType full names. The compiler never manufactures a face ID by
+adding a weight.
+
+Official maps declare glyphs instead. Streets and Outdoors use `streetsGlyphs`; Soundings uses the
+same set with exact `Noto Sans Regular` and `Noto Sans Bold` stacks. The set's URL is
+`/base/<assetSetSha256>/glyphs/{fontstack}/{range}.pbf`, where `assetSetSha256` is the SHA-256 of
+the set's canonical manifest: its ranges are immutable, and each font's license is served beside
+them as `LICENSE.md`. That name belongs to the global base-asset manifest; it does not use the
+per-map `tileflow-map-asset-set-v1` output domain recorded as `assetSetSha256` in
+`build-manifest.json`, and it is independent of managed font-bundle IDs and World descriptors. No
+compiler fallback invents either provider.
 
 The sources are shipped so local preview, capture, and self-hosted framework builds compile the same
-pixels. Hosted deploy currently rejects these package-owned fonts before authentication. See the
-package-level `THIRD_PARTY_NOTICES.md` for provenance and licensing notices.
+pixels. See the package-level `THIRD_PARTY_NOTICES.md` for provenance and licensing notices.

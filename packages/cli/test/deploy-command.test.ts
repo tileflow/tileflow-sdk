@@ -9,6 +9,7 @@ import {tileflowRendererDeploymentRequestArtifactSchema} from '@tileflow/core/bu
 import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {createTileflowIconSetProject} from '../../../test-support/icon-set-project';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
+import {copyStreetsFontFixture} from '../../dev/test/streets-font-fixture';
 import {writeGlb} from '../../dev/test/tree-model-fixtures';
 import {
   failure,
@@ -559,9 +560,10 @@ test('deploy rejects external vector data before any remote write', async (t) =>
 
 test("deploy uploads a map's own fonts as a font bundle that both renderer families use", async (t) => {
   const fixture = await createFixture(t);
+  await copyStreetsFontFixture(fixture.directory);
   await writeFile(
     fixture.configPath,
-    "import {defineMap} from '@tileflow/core'; import {outdoors} from '@tileflow/maps'; export default defineMap({id:'night',name:'Night',version:1,platforms:['web','native'],extends:outdoors});\n",
+    "import {defineMap} from '@tileflow/core'; import {outdoors} from '@tileflow/maps'; export default defineMap({id:'night',name:'Night',version:1,platforms:['web','native'],extends:outdoors,fonts:['./fonts']});\n",
   );
   const api = await startFakePlatform(t, {mapId: managedMapId});
   const result = await runCli(fixture.directory, deployArguments(fixture, api.url), {
@@ -599,6 +601,37 @@ test("deploy uploads a map's own fonts as a font bundle that both renderer famil
   // Browser contours are a web feature; native apps are told, and the deploy still publishes.
   assert.match(result.stdout, /Native apps draw night without some web features/u);
   assert.match(result.stdout, /Contour lines and labels: not drawn/u);
+});
+
+test('official maps publish shared glyphs for both renderers without uploading fonts', async (t) => {
+  const fixture = await createFixture(t);
+  await writeFile(
+    fixture.configPath,
+    "import {defineMap} from '@tileflow/core'; import {outdoors} from '@tileflow/maps'; export default defineMap({id:'night',version:1,platforms:['web','native'],extends:outdoors});\n",
+  );
+  const api = await startFakePlatform(t, {mapId: managedMapId});
+  const result = await runCli(fixture.directory, deployArguments(fixture, api.url), {
+    TILEFLOW_API_KEY: fakeApiKey,
+  });
+
+  assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
+  assert.equal(
+    api.requests.some(({path}) => path.startsWith('/v1/font-bundles/')),
+    false,
+  );
+  const body = deployBody(api);
+  assert.equal(body.fontBundle, undefined);
+  const webStyles = Object.values(body.artifact.renderers.web.styles);
+  const nativeStyle = requestJson(
+    api.requests.find(({path}) => path.endsWith('/native/styles/light.json'))!,
+  );
+  for (const style of [...webStyles, nativeStyle]) {
+    assert.match(
+      style.glyphs,
+      /\/base\/fe873949787f8f1e2ff72853d13c1e6e3c1de83474e4c1de60dae6ac33fe3081\/glyphs\/\{fontstack\}\/\{range\}\.pbf$/u,
+    );
+    assert.equal(style['font-faces'], undefined);
+  }
 });
 
 test('deploy uploads generated icon files before posting sanitized style JSON', async (t) => {

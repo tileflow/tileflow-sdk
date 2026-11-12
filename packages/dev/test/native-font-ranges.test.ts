@@ -38,7 +38,7 @@ test('a Latin font claims Latin and leaves Greek and other scripts to the next f
 
 test('a broad font claims the scripts it draws', async () => {
   const ranges = tileflowNativeFontUnicodeRanges(
-    await font('../../maps/assets/streets/fonts/NotoSans-Bold.ttf'),
+    await font('./fixtures/fonts/streets/NotoSans-Bold.ttf'),
   );
   assert.ok(covers(ranges, 'Madrid Ωμέγα Москва'));
   assert.equal(covers(ranges, '中'), false);

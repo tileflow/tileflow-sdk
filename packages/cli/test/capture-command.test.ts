@@ -4,7 +4,7 @@ import {mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile} from 'node:fs
 import {createServer} from 'node:http';
 import {connect} from 'node:net';
 import {tmpdir} from 'node:os';
-import {basename, join, win32} from 'node:path';
+import {join, win32} from 'node:path';
 import test, {type TestContext} from 'node:test';
 import {
   createTileflowCaptureReceipt,
@@ -759,20 +759,13 @@ test('init creates a singular map and only creates a missing ignore file', async
   const style = JSON.parse(
     await readFile(join(fresh, 'dist/tileflow/styles/madrid/light.json'), 'utf8'),
   ) as MapLibreStyle;
-  assert.equal(style.glyphs, undefined);
-  const faces = getTileflowStyleFontFaces(style);
-  // The starter replaces road/POI labels but retains Streets' DINish house numbers.
-  assert.deepEqual(faces.map(({family}) => family).sort(), [
-    'DINish Medium',
-    'Noto Sans Bold',
-    'Noto Sans Regular',
-  ]);
-  for (const face of faces) {
-    assert.match(face.source, /\.ttf$/);
-    assert.ok(
-      (await readFile(join(fresh, 'dist/tileflow/fonts', basename(face.source)))).length > 1000,
-    );
-  }
+  // The starter inherits Streets' official glyph set and ships no font files.
+  assert.match(
+    String(style.glyphs),
+    /^https:\/\/api\.tileflow\.dev\/base\/[a-f0-9]{64}\/glyphs\/\{fontstack\}\/\{range\}\.pbf$/u,
+  );
+  assert.deepEqual(getTileflowStyleFontFaces(style), []);
+  await assert.rejects(readdir(join(fresh, 'dist/tileflow/fonts')), {code: 'ENOENT'});
 
   const existing = await createDirectoryFixture(t, 'tileflow-capture-init-existing-ignore-');
   await writeFile(join(existing, '.gitignore'), 'owned-by-user\n');

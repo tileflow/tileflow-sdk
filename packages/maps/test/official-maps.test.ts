@@ -30,7 +30,7 @@ import {
   soundings,
   soundingsIcons,
   streets,
-  streetsFonts,
+  streetsGlyphs,
   streetsIcons,
   streetsThemes,
 } from '../src';
@@ -141,7 +141,7 @@ const soundingsIconIds = [
   'soundings-wreck',
 ] as const;
 const officialGlyphsUrl =
-  'https://api.tileflow.dev/base/33d4de5e8086d9d629d67d3f39fedb87e23686c4c1ac653c27e2a52aee9d00b3/glyphs/{fontstack}/{range}.pbf';
+  'https://api.tileflow.dev/base/fe873949787f8f1e2ff72853d13c1e6e3c1de83474e4c1de60dae6ac33fe3081/glyphs/{fontstack}/{range}.pbf';
 
 function preparedAssets(id: string) {
   return {
@@ -289,8 +289,9 @@ test('deep-freezes only the exported official map singletons', () => {
 test('official maps declare their expected icon and typography providers', () => {
   for (const map of [streets, outdoors]) {
     const resolved = resolveMap(map);
-    assert.deepEqual(resolved.fonts, [streetsFonts]);
-    assert.equal(resolved.glyphs, undefined);
+    assert.deepEqual(resolved.glyphs, streetsGlyphs);
+    assert.equal(resolved.glyphs?.url, officialGlyphsUrl);
+    assert.equal(resolved.fonts, undefined);
     assert.deepEqual(
       resolved.icons,
       map.id === 'outdoors' ? [streetsIcons, outdoorsIcons] : [streetsIcons],
@@ -373,10 +374,7 @@ test('all official maps compile directly after their packaged sprite is prepared
     assert.equal(style.metadata?.['tileflow:map'], id);
     assert.equal(style.metadata?.['tileflow:compiler'], 'tileflow-semantic');
     assert.equal(style.sprite, `/tileflow/icons/${id}/sprite`);
-    assert.equal(
-      style.glyphs,
-      ['streets', 'outdoors'].includes(id) ? undefined : officialGlyphsUrl,
-    );
+    assert.equal(style.glyphs, officialGlyphsUrl);
     assert.ok(
       style.layers.length > (id === 'soundings' ? 50 : 100),
       `${id} compiled an unexpectedly incomplete layer stack`,
@@ -711,7 +709,7 @@ test('official maps emit only exact declared font-face stacks', () => {
         return Array.isArray(font) ? [JSON.stringify(font)] : [];
       }),
     );
-    // Numeric contour labels use the packaged DIN face without a text fallback stack.
+    // Numeric contour labels use DINish alone, which the official glyph set publishes.
     const declared =
       id === 'outdoors'
         ? new Set([...expected.streets, JSON.stringify(['DINish Medium'])])

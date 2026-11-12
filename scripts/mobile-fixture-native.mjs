@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto';
-import {mkdir, readdir, readFile, rename, rm, stat, symlink, writeFile} from 'node:fs/promises';
+import {cp, mkdir, readdir, readFile, rename, rm, stat, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
@@ -18,6 +18,7 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
  * Build `@tileflow/core`, `@tileflow/dev` and `@tileflow/maps` first (`pnpm build`).
  */
 const root = fileURLToPath(new URL('../', import.meta.url));
+const fonts = resolve(root, 'packages/dev/test/fixtures/fonts/streets');
 
 /** The map: Streets, with only the modules the city tiles hold and four themes. */
 const config = (
@@ -29,6 +30,7 @@ const city = defineMap({
   id: 'city',
   version: 1,
   extends: streets,
+  fonts: ['./fonts'],
   projection: 'mercator',
   themes: {
     light: streetsThemes.light,
@@ -102,6 +104,7 @@ export default {maps: {
     id: 'streets',
     version: 1,
     extends: streets,
+    fonts: ['./fonts'],
     view: {center: [-3.7, 40.42], zoom: 16},
     data: vectorTiles({
       attribution: 'Fixture City',
@@ -116,6 +119,10 @@ export default {maps: {
 /** Names, sizes and times of the built packages the map depends on. */
 async function inputs() {
   const lines = [];
+  for (const name of (await readdir(fonts)).sort()) {
+    const bytes = await readFile(join(fonts, name));
+    lines.push(`fonts/${name} ${createHash('sha256').update(bytes).digest('hex')}`);
+  }
   for (const name of ['core', 'dev', 'maps']) {
     const directory = resolve(root, 'packages', name, 'dist');
     for (const entry of (await readdir(directory, {recursive: true})).sort()) {
@@ -131,6 +138,7 @@ async function build(base, underlay, directory) {
   await rm(work, {recursive: true, force: true});
   const project = join(work, 'project');
   await mkdir(join(project, 'node_modules', '@tileflow'), {recursive: true});
+  await cp(fonts, join(project, 'fonts'), {recursive: true});
   for (const name of ['core', 'maps'])
     await symlink(
       resolve(root, 'packages', name),

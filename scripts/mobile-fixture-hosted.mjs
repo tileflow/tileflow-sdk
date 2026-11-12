@@ -47,6 +47,11 @@ export const hostedMapId = 'map_offlinefixture01';
 
 export function createHostedFixture({base, tile, center}) {
   const mapPath = `/maps/${hostedMapId}/mobile`;
+  const fontFiles = ['DINish-Medium.ttf', 'NotoSans-Regular.ttf'].map((name) => {
+    const bytes = readFileSync(resolve(root, 'packages/dev/test/fixtures/fonts/streets', name));
+    const hash = createHash('sha256').update(bytes).digest('hex');
+    return {url: `${base}/font-bundles/fnb_fixturefixture01/fonts/${hash}.ttf`, bytes};
+  });
   const urls = {
     discovery: `${base}${mapPath}/manifest.json`,
     profile: `${base}${mapPath}/webview-v1/manifest.json`,
@@ -259,6 +264,39 @@ export function createHostedFixture({base, tile, center}) {
       ...documents[urls.labelsStyle],
       metadata: {'tileflow:colorScheme': 'light', 'tileflow:nativeDegradations': []},
     },
+    fonts: {
+      ...nativeDay(false),
+      metadata: {'tileflow:colorScheme': 'light', 'tileflow:nativeDegradations': []},
+      'font-faces': {
+        'DINish Medium': [{url: fontFiles[0].url, 'unicode-range': ['U+0020-007E']}],
+        'Noto Sans Regular': [{url: fontFiles[1].url, 'unicode-range': ['U+0370-03FF']}],
+      },
+      sources: {
+        world: {type: 'vector', url: urls.tilejson},
+        label: {
+          type: 'geojson',
+          data: {
+            type: 'Feature',
+            properties: {},
+            geometry: {type: 'Point', coordinates: center},
+          },
+        },
+      },
+      layers: [
+        ...nativeDay(false).layers.slice(0, 2),
+        {
+          id: 'brand-label',
+          type: 'symbol',
+          source: 'label',
+          layout: {
+            'text-field': 'Madrid Ωμέγα',
+            'text-font': ['DINish Medium', 'Noto Sans Regular'],
+            'text-size': 24,
+            'text-allow-overlap': true,
+          },
+        },
+      ],
+    },
     marine: marineStyle({'tileflow:colorScheme': 'light', 'tileflow:nativeDegradations': []}),
     terrain: {
       version: 8,
@@ -419,6 +457,8 @@ export function createHostedFixture({base, tile, center}) {
     return Buffer.from(field(1, [...field(1, bytes(stack)), ...field(2, bytes(range))]));
   };
   const body = (url) => {
+    const font = fontFiles.find((file) => file.url === url);
+    if (font) return font.bytes;
     if (url === urls.discovery) return Buffer.from(JSON.stringify(discovery()));
     if (url === urls.nativeManifest) return Buffer.from(JSON.stringify(nativeManifest()));
     if (documents[url]) return Buffer.from(JSON.stringify(documents[url]));
@@ -634,6 +674,7 @@ export function createHostedFixture({base, tile, center}) {
     // The style pack holds the requested themes' styles and the TileJSONs they use.
     const terrainTheme = request.themes.includes('terrain');
     const labelsTheme = request.themes.includes('labels');
+    const fontsTheme = request.themes.includes('fonts');
     const marineTheme = request.themes.includes('marine');
     const webStyles = [
       ...(request.themes.includes('day') ? [urls.style] : []),
@@ -659,17 +700,25 @@ export function createHostedFixture({base, tile, center}) {
       ...styles,
       ...tileJson.map((url) => jsonEntry(url, body(url))),
     ]);
+    if (labelsTheme || fontsTheme) {
+      add('assets', 'documents', '/v1/offline/documents/assets.tfpack', [
+        ...(labelsTheme
+          ? Object.keys(spriteBodies).map((url) => ({
+              name: url,
+              contentType: url.endsWith('.png') ? 'image/png' : 'application/json',
+              body: body(url),
+            }))
+          : []),
+        ...(fontsTheme
+          ? fontFiles.map(({url, bytes}) => ({
+              name: url,
+              contentType: 'font/ttf',
+              body: bytes,
+            }))
+          : []),
+      ]);
+    }
     if (labelsTheme) {
-      add(
-        'assets',
-        'documents',
-        '/v1/offline/documents/assets.tfpack',
-        Object.keys(spriteBodies).map((url) => ({
-          name: url,
-          contentType: url.endsWith('.png') ? 'image/png' : 'application/json',
-          body: body(url),
-        })),
-      );
       const stack = 'Noto Sans Regular';
       const glyphUrl = (range) =>
         urls.glyphs.replace('{fontstack}', encodeURIComponent(stack)).replace('{range}', range);
@@ -883,7 +932,7 @@ export function createHostedFixture({base, tile, center}) {
           meterMode: 'disabled',
           disposition: 'unmetered',
           resourceOrigins: [base],
-          resourceScopes: ['style', 'tilejson', 'tile', 'sprite', 'glyph'],
+          resourceScopes: ['style', 'tilejson', 'tile', 'sprite', 'glyph', 'font'],
           tilesetIds: ['world', 'terrain', 'nautical', 'bathymetry'],
         });
       });
@@ -975,13 +1024,15 @@ export function createHostedFixture({base, tile, center}) {
     const gzip = tile && /\bgzip\b/u.test(request.headers['accept-encoding'] ?? '');
     const outcome = serve(request, response, tile && !gzip ? gunzipSync(bytes) : bytes, {
       'Cache-Control': 'private, no-cache',
-      'Content-Type': tile
-        ? 'application/vnd.mapbox-vector-tile'
-        : url.includes('.pbf')
-          ? 'application/x-protobuf'
-          : url.includes('.png')
-            ? 'image/png'
-            : 'application/json',
+      'Content-Type': url.endsWith('.ttf')
+        ? 'font/ttf'
+        : tile
+          ? 'application/vnd.mapbox-vector-tile'
+          : url.includes('.pbf')
+            ? 'application/x-protobuf'
+            : url.includes('.png')
+              ? 'image/png'
+              : 'application/json',
       ...(gzip ? {'Content-Encoding': 'gzip'} : {}),
     });
     if (outcome === 'not-modified') count.notModified += 1;

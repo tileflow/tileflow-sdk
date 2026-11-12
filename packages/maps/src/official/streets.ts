@@ -30,7 +30,7 @@ import {
   withRenderStack,
   zoom,
 } from '@tileflow/core';
-import {streetsFonts, streetsIcons, streetsModels} from '../assets';
+import {streetsGlyphs, streetsIcons, streetsModels} from '../assets';
 import {mapboxRailTransitStyle} from './mapbox-rail';
 import {withStreetsCartography} from './streets-cartography';
 import {streetsColorKnobs} from './streets-color-knobs';
@@ -1508,7 +1508,7 @@ const streetsBase = bindOfficialMapTheme(
     id: 'streets',
     version: 1,
     name: 'Streets',
-    fonts: [streetsFonts],
+    glyphs: streetsGlyphs,
     themes: streetsThemes,
     colorKnobs: streetsColorKnobs,
     timeOfDay: {

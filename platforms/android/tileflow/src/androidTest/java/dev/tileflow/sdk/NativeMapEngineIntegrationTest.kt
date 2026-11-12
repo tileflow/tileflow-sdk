@@ -280,6 +280,64 @@ public class NativeMapEngineIntegrationTest {
     }
 
     @Test
+    public fun hostedFontFilesRenderFromPacksWithAnEmptyCache() {
+        Fixture.require()
+        val cache = TileflowMapCache.get(context)
+        runBlocking { cache.clear() }
+        val store = store { OfflinePackClient(configuration) }
+        download(
+            store,
+            "fonts",
+            TileflowOfflineRegionLoadOptions(
+                TileflowOfflineGeometry.BoundingBox(
+                    TileflowBoundingBox(-3.705, 40.416, -3.695, 40.424)
+                ),
+                TileflowOfflineContent.Hosted(Fixture.HOSTED_MAP_ID, listOf("fonts")),
+                minZoom = 13,
+                maxZoom = 15,
+            ),
+        )
+        runBlocking { cache.clear() }
+        Fixture.counters(reset = true)
+        NativeMapHostActivity.requested = hosted()
+        NativeMapHostActivity.theme = "fonts"
+        NativeMapHostActivity.camera = madrid
+        TileflowOfflineSwitch.isNetworkEnabled = false
+        airplaneMode(true)
+        val (requests, activity) =
+            EngineRequests().use { requests ->
+                val activity = show()
+                try {
+                    assertTrue("The pack did not render", rendered(activity, "brand-label"))
+                    waitFor(10_000) {
+                        requests.matching("/font-bundles/").map { it.first }.toSet().size == 2
+                    }
+                } finally {
+                    finish(activity)
+                    airplaneMode(false)
+                    TileflowOfflineSwitch.isNetworkEnabled = true
+                }
+                requests to activity
+            }
+        assertEquals("MapLibre reached the network itself", listOf<String>(), requests.delegated)
+        assertTrue("MapLibre asked in airplane mode", requests.answered.isNotEmpty())
+        assertTrue(
+            "Everything came from the packs: ${requests.answered}",
+            requests.answered.all { it.second == 200 },
+        )
+        assertEquals("Latin and Greek files", 2, requests.matching("/font-bundles/").map { it.first }.toSet().size)
+        val counters = Fixture.counters()
+        assertEquals("No session starts without a network", 0, counters.getInt("sessions"))
+        assertEquals(0, counters.getInt("downloads"))
+        assertEquals(0, counters.getInt("sessionResources"))
+        assertEquals(0, counters.getInt("notModified"))
+        assertEquals("Nothing came from the network", 0, runBlocking { cache.usage() }.entries)
+        assertEquals("MapLibre stores nothing", 0, mapLibreDatabaseRows(context).values.sum())
+        assertTrue("Map errors: ${activity.failures}", activity.failures.isEmpty())
+        assertTrue("Warnings: ${activity.warnings}", activity.warnings.isEmpty())
+    }
+
+    @Test
     public fun inconsistentFamilyOpensAndSwitchesThemesDirectly() {
         val url = "${Fixture.ORIGIN}/native-inconsistent/manifest.json"
         Fixture.require(url)

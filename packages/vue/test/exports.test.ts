@@ -24,22 +24,15 @@ test('publishes one ESM entry with matching default and named components', async
   assert.match(source, /export default TileflowMap/u);
 });
 
-test('keeps MapLibre behind the interactive runtime boundary', async () => {
+test('mounts the map through the framework-free core and keeps MapLibre out of its bundle', async () => {
   const output = await readFile(new URL('../dist/index.js', import.meta.url), 'utf8');
 
-  assert.match(output, /import\(["']maplibre-gl["']\)/u);
-  assert.match(output, /loadTileflowStyleFonts/u);
-  assert.match(output, /registerTileflowContourProtocol/u);
-  assert.match(output, /registerTileflowPmtilesProtocol/u);
-  assert.ok(output.indexOf('loadTileflowStyleFonts') < output.indexOf('new maplibregl.Map'));
-  assert.ok(
-    output.indexOf('registerTileflowContourProtocol') < output.indexOf('new maplibregl.Map'),
+  assert.match(output, /from ["']@tileflow\/dom["']/u);
+  assert.match(output, /createTileflowMap/u);
+  assert.doesNotMatch(
+    output,
+    /maplibre-gl|new maplibregl\.Map|registerTileflowWorldRequestBridge/u,
   );
-  assert.ok(
-    output.indexOf('registerTileflowPmtilesProtocol') < output.indexOf('new maplibregl.Map'),
-  );
-  assert.match(output, /new maplibregl\.Map/u);
-  assert.doesNotMatch(output, /^import .*?["']maplibre-gl["'];?$/mu);
 });
 
 test('imports delivery helpers from responsibility-specific subpaths', async () => {
@@ -68,12 +61,4 @@ test('configures the MapLibre worker before an interactive map uses it', async (
 
   const maplibregl = await loadTileflowMapLibre();
   assert.equal(maplibregl.getWorkerUrl(), '/assets/maplibre-gl-worker.mjs');
-});
-
-test('initial renderer loading converges on a theme selected while it is in flight', async () => {
-  const source = await readFile(new URL('../src/index.ts', import.meta.url), 'utf8');
-
-  assert.doesNotMatch(source, /runtimeStyle\.value\s*!==\s*runtime\s*\|\|/u);
-  assert.match(source, /runtimeStyle\.value\s*&&\s*runtimeStyle\.value\s*!==\s*runtime/u);
-  assert.match(source, /themeController\.setTheme\(runtimeStyle\.value[,)]/u);
 });

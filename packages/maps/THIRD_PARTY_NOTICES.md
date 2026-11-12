@@ -59,21 +59,14 @@ The transport identities remain the marks of their respective owners. Their incl
 the mapped services and does not imply affiliation or endorsement. These asset-specific terms
 are separate from the package's source-code license.
 
-## Streets relief
+## Relief
 
-Streets requests Mapzen Terrain Tiles from the AWS Open Data elevation tiles bucket at runtime.
-No DEM tile is packaged here. The compiled source credit links to the Tileflow map data credits
-page, <https://tileflow.dev/copyright#streets-terrain>, which lists the credits required by the
-upstream data attribution: <https://github.com/tilezen/joerd/blob/master/docs/attribution.md>.
-The dataset is described at <https://registry.opendata.aws/terrain-tiles/>.
-
-The upstream attribution catalog includes ArcticDEM (DigitalGlobe imagery, NSF awards 1043681,
-1559691 and 1542736); © Commonwealth of Australia (Geoscience Australia) 2017;
-© offene Daten Österreichs — Digitales Geländemodell (DGM) Österreich; Canadian information
-licensed under the Open Government Licence – Canada; Copernicus EU-DEM data funded by the
-European Union; ETOPO1 from U.S. NOAA; INEGI Continental relief data; New Zealand Crown/LINZ
-data; © Kartverket; © Environment Agency; and USGS 3DEP, GMTED2010 and SRTM data.
-Consult the linked catalog for each source's complete required attribution and license terms.
+Streets hillshade and the Outdoors 3D surface, hillshade and contours request hosted Tileflow
+Terrain at runtime. No DEM tile is packaged here. Terrain is derived from
+[Mapterhorn](https://mapterhorn.com/attribution/), which combines public elevation data from many
+producers. Each Terrain release declares its credit in its TileJSON, which the map shows as the
+source attribution. The Tileflow map data credits page, <https://tileflow.dev/copyright#terrain>,
+lists the producers and the licence statements their terms require.
 
 ## Nautical-chart references
 
@@ -109,7 +102,6 @@ The image is historical context, not live vegetation.
 
 ## Outdoors elevation and shared artwork
 
-Outdoors uses Mapterhorn elevation at runtime for its 3D surface, hillshade and contours. No DEM
-tile is packaged here. Its source links to <https://mapterhorn.com/attribution/>. Outdoors shares
-Streets lettering, POI pictograms, transport symbols and climate context, with the notices above.
+Outdoors reads its elevation from hosted Tileflow Terrain, with the notice under Relief above.
+Outdoors shares Streets lettering, POI pictograms, transport symbols and climate context, with the notices above.
 The two summit symbols in `assets/outdoors/icons/` are original Tileflow artwork.

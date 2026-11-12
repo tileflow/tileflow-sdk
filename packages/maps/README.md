@@ -133,9 +133,10 @@ Hedges (from z15, shaded from z17), fences and walls (from z16) come from `traff
 Ferry routes fade in from z8, use fine blue dashes from z13, and show uppercase route names
 along the line from z15 when the data includes them. Their labels use a water-colored halo.
 
-Regional hillshade uses [Mapzen Terrain Tiles on AWS](https://registry.opendata.aws/terrain-tiles/)
-from z5 through z13; its source credits are listed on the [Tileflow map data credits page](https://tileflow.dev/copyright#streets-terrain). The 256-pixel Terrarium source is capped at native z12;
-closer views reuse that resolution, avoiding requests for coverage-dependent high-resolution DEM tiles. This is an additional remote data request. To omit
+Regional hillshade reads hosted Tileflow Terrain from z5 through z13; its producers and licences
+are listed on the [Tileflow map data credits page](https://tileflow.dev/copyright#terrain). The
+Terrain TileJSON declares the tile size, deepest native zoom and credit, and closer views reuse its
+deepest tiles. This is an additional remote data request. To omit
 it, set `terrain: 'none'` in a map extending `streets`. Hillshade does not change road geometry or
 raise the terrain. Buildings appear automatically from zoom 15 with an opacity fade through 15.25;
 the preview's **3D** control can hide them, and its **Trees** control enables vegetation.
@@ -221,9 +222,10 @@ system light/dark selection. Summit labels include their elevation in metres whe
 `packages/maps/outdoors.config.ts` in an SDK checkout to preview or capture the regional, mountain,
 trail, city and mobile scenes through the same CLI as Streets.
 
-The default elevation source is public Mapterhorn Terrarium tiles (512 px, maximum source zoom 12).
-Relief, hillshade and generated contours share that TileJSON. To change providers, retain the
-elevation settings with `resolveMap(outdoors).terrain` and replace its `url`, `encoding`, `tileSize`
+The elevation source is hosted Tileflow Terrain, the same source as Streets hillshade. Relief,
+hillshade and generated contours share its TileJSON, which declares the tile size, deepest native
+zoom and credit; contours read DEM tiles up to that zoom (at most z14). To change providers, retain
+the elevation settings with `resolveMap(outdoors).terrain` and set its `url`, `encoding`, `tileSize`
 and `maxZoom` as appropriate; `terrain` is an atomic configuration field when extending a map.
 A custom `contours.demUrl` overrides the contour provider explicitly. Geographic tiles are requested
 at runtime and are not bundled. Local map detail depends on the available World and elevation data.

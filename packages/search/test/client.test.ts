@@ -6,6 +6,7 @@ import {
   geocodeReverse,
   GEOCODING_ERROR_CODES,
   GeocodingError,
+  getGeocodingStorageEstimate,
   resolveSuggestion,
 } from '../src/client';
 
@@ -653,4 +654,43 @@ test('preserves caller cancellation while reading a suggestion resolution', asyn
   await assert.rejects(pending, (error) => error === reason);
   assert.equal(canceled, true);
   assert.equal(response.body?.locked, false);
+});
+
+test('storage estimates are unmetered GETs and only an acknowledged persistent response can be stored', async () => {
+  let calls = 0;
+  const options = {
+    apiKey: 'fixture',
+    fetch: async (url: RequestInfo | URL, init?: RequestInit) => {
+      calls++;
+      if (String(url).endsWith('/storage')) {
+        assert.equal(init?.method, 'GET');
+        assert.equal(init?.body, undefined);
+        return Response.json({unitsPerRequest: 93, dailyRequestLimit: 5000});
+      }
+      assert.equal(JSON.parse(String(init?.body)).expectedUnits, 93);
+      return Response.json({...success, retention: 'persistent', usage: {units: 93}});
+    },
+  };
+  assert.deepEqual(await getGeocodingStorageEstimate(options), {
+    unitsPerRequest: 93,
+    dailyRequestLimit: 5000,
+  });
+  const request = {query: 'Fixture', retention: 'persistent', expectedUnits: 93} as const;
+  assert.equal((await geocode(request, options)).usage.units, 93);
+  assert.equal(
+    (await geocodeReverse({position: [0, 0], retention: 'persistent', expectedUnits: 93}, options))
+      .retention,
+    'persistent',
+  );
+  await assert.rejects(autocomplete(request as never, options), {
+    code: 'GEOCODING_PERSISTENCE_UNSUPPORTED',
+  });
+  assert.equal(calls, 3);
+
+  for (const body of [success, {...success, retention: 'persistent', usage: {units: 92}}]) {
+    await assert.rejects(
+      geocode(request, {...options, fetch: async () => Response.json(body)}),
+      GeocodingError,
+    );
+  }
 });

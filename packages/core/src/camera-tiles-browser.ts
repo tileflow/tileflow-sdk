@@ -81,6 +81,11 @@ export type CameraTiles<T> = {
   coverage(): readonly Readonly<{x: number; y: number}>[];
   /** Every tile held, wanted or not. */
   all(): Iterable<CameraTile<T>>;
+  /**
+   * The wanted tiles still on their way: being read or built, or built and awaiting the renderer.
+   * A tile that failed and waits to be read again is not counted. Zero while the layer wants none.
+   */
+  pending(): number;
   /** The zoom tiles are read at. */
   readonly zoom: number;
   /** The camera's centre as fractional tile coordinates at that zoom. */
@@ -123,6 +128,8 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
   let metres = 1;
   let building = false;
   let disposed = false;
+  // Whether the tiles round the camera have been chosen yet.
+  let chosenOnce = false;
 
   function ensureReader(): Loader | undefined {
     if (reader) return reader;
@@ -157,6 +164,7 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
       cameraViewport(map, zoom),
     );
     ring = chosen;
+    chosenOnce = true;
     wanted = chosen.tiles.map(({x, y}) => `${x}/${y}`);
     covered = chosen.tiles.map(({x, y}) => ({x, y}));
     origin = cameraTileAt(centre.lng, centre.lat, zoom);
@@ -349,6 +357,21 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
       });
     },
     coverage: () => covered,
+    pending() {
+      if (disposed || map.getZoom() < options.minzoom - 1 || !options.active()) return 0;
+      // Without a source there is nothing to read; a source still loading counts every tile.
+      if (!reader && !ensureReader()) return 0;
+      // A layer that wants tiles but has not chosen them yet still has the whole view to read.
+      if (!chosenOnce) return 1;
+      let count = 0;
+      for (const key of wanted) {
+        const entry = tiles.get(key);
+        if (!entry) count += 1;
+        else if (entry.loading || entry.pending !== undefined) count += 1;
+        else if (!entry.value && entry.retryAt === undefined) count += 1;
+      }
+      return count;
+    },
     ring: () => ring,
     all: () => tiles.values(),
     get zoom() {

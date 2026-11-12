@@ -25,6 +25,7 @@ import {
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {
   createExploratoryScene,
+  createExploratoryScenes,
   createTileflowCaptureFailureJson,
   createTileflowCaptureJson,
   createTileflowShotCaptureJson,
@@ -204,6 +205,63 @@ test('projects deterministic relative-only shot JSON', () => {
   assert.equal(serialized.includes(cwd), false);
   assert.equal(shotReceiptPath('/out/fly-in.webm'), '/out/fly-in.receipt.json');
   assert.equal(shotReceiptPath('/out/fly-in'), '/out/fly-in.receipt.json');
+});
+
+test('expands themes and batch entries into named exploratory captures', async (t) => {
+  const directory = await createDirectoryFixture(t, 'tileflow-capture-batch-');
+  const options = {browserInstall: true, config: 'tileflow.config.ts', map: 'streets'};
+  const themes = await createExploratoryScenes(
+    {...options, theme: 'dawn,dusk', center: '2.295,48.8565', zoom: '16.4', pitch: '64'},
+    directory,
+  );
+  assert.deepEqual(Object.keys(themes), ['streets-dawn', 'streets-dusk']);
+  assert.equal(themes['streets-dusk']?.theme, 'dusk');
+  assert.equal(themes['streets-dusk']?.camera.pitch, 64);
+
+  // The shot list format agents already write: a nested camera, flags as defaults.
+  await writeFile(
+    join(directory, 'shots.json'),
+    JSON.stringify({
+      captures: [
+        {name: 'eiffel', theme: 'dusk', camera: {center: [2.295, 48.8565], zoom: 16.4, pitch: 64}},
+        {name: 'madrid', bounds: [-3.8, 40.3, -3.6, 40.5], width: 640, map: 'outdoors'},
+      ],
+    }),
+  );
+  const batch = await createExploratoryScenes(
+    {...options, batch: 'shots.json', theme: 'light', width: '900', bearing: '20'},
+    directory,
+  );
+  assert.deepEqual(Object.keys(batch), ['eiffel', 'madrid']);
+  assert.deepEqual(batch.eiffel?.camera, {
+    type: 'center',
+    center: [2.295, 48.8565],
+    zoom: 16.4,
+    bearing: 20,
+    pitch: 64,
+  });
+  assert.deepEqual(batch.eiffel?.viewport, {width: 900, height: 800, dpr: 1});
+  assert.equal(batch.madrid?.map, 'outdoors');
+  assert.equal(batch.madrid?.theme, 'light');
+  assert.equal(batch.madrid?.camera.type, 'bounds');
+  assert.equal(batch.madrid?.viewport.width, 640);
+
+  await writeFile(
+    join(directory, 'twice.json'),
+    JSON.stringify([
+      {zoom: 3, center: [0, 0]},
+      {zoom: 4, center: [0, 0]},
+    ]),
+  );
+  await assert.rejects(
+    createExploratoryScenes({...options, batch: 'twice.json', theme: 'light'}, directory),
+    /share the output name "streets"/u,
+  );
+  await writeFile(join(directory, 'camera.json'), JSON.stringify([{name: 'a', zoom: 3}]));
+  await assert.rejects(
+    createExploratoryScenes({...options, batch: 'camera.json', theme: 'light'}, directory),
+    /exactly one of center or bounds/u,
+  );
 });
 
 test('normalizes promotable exploratory center and bounds definitions', () => {
@@ -625,6 +683,11 @@ test('validates shot selection before loading config', async (t) => {
       'capture.shot',
     ],
     [['proof', '--format', 'frames'], /--format applies to --shot/u, 'capture'],
+    [['--shot', 'fly-in', '--gpu'], /drop --gpu/u, 'capture.shot'],
+    [['--shot', 'fly-in', '--contact-sheet', 'sheet.png'], /not shots/u, 'capture.shot'],
+    [['proof', '--gpu'], /--gpu applies to exploratory/u, 'capture'],
+    [['proof', '--contact-sheet', 'sheet.jpg'], /must name a \.png file/u, 'capture'],
+    [['proof', '--timeout', '2'], /--timeout expects seconds/u, 'capture'],
   ];
 
   for (const [arguments_, message, command] of cases) {

@@ -416,14 +416,15 @@ if (!component.js?.code || !consumer.js?.code) throw new Error('Svelte consumer 
 
 async function verifyVite(directory) {
   // Vite 5's FSWatcher declaration predates members in current @types/node. The source-level
-  // Plugin assignment plus the real build still verify Tileflow without auditing Vite internals.
+  // Plugin assignments plus the real build still verify Tileflow without auditing Vite internals.
   await writeTypeScriptConfig(directory, ['consumer.ts'], ['node'], {skipLibCheck: true});
   await writeFile(
     join(directory, 'consumer.ts'),
     `import type {Plugin} from 'vite';
-import {tileflow} from '@tileflow/vite';
+import {tileflow, tileflowMapLibreWorker} from '@tileflow/vite';
 
-export const plugin: Plugin = tileflow({emitBuildArtifacts: false});
+export const plugins: Plugin[] = tileflow({emitBuildArtifacts: false});
+export const workerPlugin: Plugin = tileflowMapLibreWorker();
 `,
   );
   await runTypeScript(directory);

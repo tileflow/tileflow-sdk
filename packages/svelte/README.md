@@ -55,20 +55,35 @@ still fetch configured remote resources.
 
 ## Configure the worker
 
-In a Vite client entry, add the following before mounting the application:
+With Vite, the plugin from `@tileflow/vite` gives every map MapLibre's worker, in development and
+in production builds, so the application configures nothing. `tileflow()` prepares maps and adds
+the worker. When the CLI build or a hosted manifest provides the maps, add only the worker
+(`npm install --save-dev @tileflow/vite@alpha`):
 
 ```ts
-import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
-import {configureTileflowMapLibre} from '@tileflow/svelte';
+import {defineConfig} from 'vite';
+import {tileflowMapLibreWorker} from '@tileflow/vite';
 
-configureTileflowMapLibre({workerUrl});
+export default defineConfig({plugins: [tileflowMapLibreWorker()]});
 ```
 
-Configure once before an interactive map mounts. In SvelteKit, place client-only setup in the
-application's client initialization path rather than running browser setup in a server load
-function. The `?worker&url` syntax is Vite-specific. Webpack users need the
+The worker comes from the same installed MapLibre as the map's main module. SvelteKit uses the same Vite plugin; server rendering never loads the
+worker.
+
+Webpack users need the
 [Webpack worker recipe](https://github.com/tileflow/tileflow-sdk/blob/main/packages/webpack/README.md).
-The worker and shared module must match the application's installed MapLibre version.
+With another bundler, configure the worker once before an interactive map mounts, in the
+application's client initialization path rather than a server load function, with the URL at which
+the application serves `maplibre-gl/dist/maplibre-gl-worker.mjs`:
+
+```ts
+import {configureTileflowMapLibre} from '@tileflow/svelte';
+
+configureTileflowMapLibre({workerUrl: '/assets/maplibre-gl-worker.mjs'});
+```
+
+An explicit configuration wins over the Vite plugin's. The worker and shared module must match the
+application's installed MapLibre version.
 
 ## Render a map
 

@@ -52,21 +52,29 @@ component can use `source={{map: 'madrid'}}`; it reads `/tileflow/manifest.json`
 a Tileflow map, not a renderer or direct style. Do not also run a CLI build that overwrites the same
 delivery manifest. Config loading executes trusted imports and is not a sandbox.
 
-## Configure the worker
+## MapLibre's worker
 
-In a React application's client entry, before mounting an interactive map:
+`tileflow()` also gives interactive maps MapLibre's worker, in development and production builds.
+Each client module that imports `@tileflow/dom`, `@tileflow/react`, `@tileflow/vue`,
+`@tileflow/svelte` or `@tileflow/elements` imports the worker of the MapLibre that package renders
+with, the way Vite delivers workers, so the application needs no worker setup. Import
+`maplibre-gl/dist/maplibre-gl.css` in the client.
+
+An application that renders maps without `tileflow()`, for example from a CLI build or a hosted
+manifest, adds only the worker:
+
+<!-- docs:check -->
 
 ```ts
-import {configureTileflowMapLibre} from '@tileflow/react';
-import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+import {defineConfig} from 'vite';
+import {tileflowMapLibreWorker} from '@tileflow/vite';
 
-configureTileflowMapLibre({workerUrl});
+export default defineConfig({plugins: [tileflowMapLibreWorker()]});
 ```
 
-Vue and Svelte import the configuration function from their own adapter. This URL import is
-Vite-specific. Keep the worker and main module from the same installed MapLibre version, and import
-`maplibre-gl/dist/maplibre-gl.css` in the client. The browser needs the emitted worker closure, not
-a CDN worker from another version.
+An explicit `configureTileflowMapLibre({workerUrl})` call still decides, and MapLibre's worker is
+set once. Once a map has started with the plugin's worker, configuring a different one throws. To
+deliver the worker yourself, turn the plugin's off with `tileflow({mapLibreWorker: false})`.
 
 ## Serve under a subpath
 

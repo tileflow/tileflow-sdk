@@ -1067,15 +1067,6 @@ addMapSetupOptions(
       ) {
         return;
       }
-      const mapsWithHostedFontBundles = Object.keys(preflightFonts.bundles).sort();
-      if (mapsWithHostedFontBundles.length > 0) {
-        logError('Hosted deploy does not yet support package-owned web fonts.');
-        printKeyValue('Maps', mapsWithHostedFontBundles.join(', '));
-        printNextSteps(['Use self-hosted delivery or an explicit public glyph provider.']);
-        process.exitCode = 1;
-        return;
-      }
-
       // Count the complete compact web envelope before creating a Map or uploading resources.
       // Preflight resource URLs are conservative; final confirmed URLs are checked again.
       for (const mapName of mapNames) {

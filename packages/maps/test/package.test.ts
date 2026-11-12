@@ -193,7 +193,7 @@ test('imports and compiles the three packaged official maps against public Core 
     for (const name of ['streets','outdoors']) {
       assert.equal(maps[name].defaultTheme,'light');
       assert.equal(maps[name].systemThemes.dark,'dark');
-      assert.equal(core.resolveMap(maps[name]).fonts[0].package,'@tileflow/maps');
+      assert.deepEqual(core.resolveMap(maps[name]).glyphs, maps.streetsGlyphs);
     }
   `;
   const {stdout, stderr} = await execFileAsync(

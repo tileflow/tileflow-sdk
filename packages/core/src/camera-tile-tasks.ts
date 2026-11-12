@@ -95,8 +95,8 @@ export function cameraTileResultTransfer(
   if (!result) return [];
   if (kind === 'buildings') return preparedBuildingTileTransfer(result as PreparedBuildingTile);
   if (kind === 'trees') {
-    const {trees, hedges} = result as TileflowTreePlacement;
-    return [trees.buffer, hedges.buffer].filter(
+    const {trees, hedges, hedgeGeometry} = result as TileflowTreePlacement;
+    return [trees.buffer, hedges.buffer, ...(hedgeGeometry ? [hedgeGeometry.buffer] : [])].filter(
       (buffer, index, all) => all.indexOf(buffer) === index,
     ) as ArrayBuffer[];
   }

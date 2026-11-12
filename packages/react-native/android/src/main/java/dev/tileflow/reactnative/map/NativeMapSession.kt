@@ -148,6 +148,7 @@ internal class NativeMapSession(
                 return SceneValues.boundaryJoin(map.joinBoundaryRows(rows, options))
             }
             "setBoundaryValues" -> map.setBoundaryValues(SceneValues.boundaries(MapValues.objectValue(payload, "values")))
+            "setDataLayers" -> map.setDataLayers(payload.getJSONObject("dataSources"), payload.getJSONObject("dataOverlays"))
             "setStyleState" -> MapValues.styleState(payload.getJSONObject("state")).forEach { (name, value) -> map.setStyleState(name, value) }
             "setEmphasis" -> map.setEmphasis(SceneValues.emphasis(MapValues.objectValue(payload, "emphasis")), SceneValues.duration(payload))
             "setSun" -> map.setSun(SceneValues.sun(MapValues.objectValue(payload, "sun")), SceneValues.duration(payload))

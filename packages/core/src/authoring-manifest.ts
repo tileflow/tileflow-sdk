@@ -26,7 +26,11 @@ import {
 } from './cartography/semantic-bindings';
 import {tileflowSemanticCompilerIdentity} from './cartography/semantic-compiler';
 import {tileflowMapDefaultMaxDepth} from './maps/resolve';
-import {tileflowHostedSourceLimit, tileflowOverlayPlacements} from './overlays';
+import {
+  tileflowHostedSourceLimit,
+  tileflowInlineGeoJsonByteLimit,
+  tileflowOverlayPlacements,
+} from './overlays';
 import {tileflowRequiredThemeColorRoles} from './themes';
 
 export const tileflowAuthoringManifestSchemaVersion = 2 as const;
@@ -64,6 +68,9 @@ export type TileflowAuthoringOperation = Readonly<{
     | 'data-expression'
     | 'disable-domain'
     | 'hosted-source'
+    | 'cluster-overlay'
+    | 'geojson-source'
+    | 'heatmap-overlay'
     | 'maplibre-overlay'
     | 'remove-resource'
     | 'extend-map'
@@ -195,8 +202,18 @@ export type TileflowAuthoringManifest = Readonly<{
       maxPerMap: typeof tileflowHostedSourceLimit;
       identity: 'keyed-source-id-and-team-local-tileset';
     }>;
+    geojsonSources: Readonly<{
+      api: 'geojsonSource({ data?, attribution?, cluster?, clusterRadius?, clusterMaxZoom?, clusterMinPoints?, clusterProperties? })';
+      data: 'inline-feature-collection-or-https-url';
+      maxInlineBytes: typeof tileflowInlineGeoJsonByteLimit;
+      maxPerMap: typeof tileflowHostedSourceLimit;
+    }>;
     overlays: Readonly<{
       api: 'maplibreOverlay({ source, placement, layers })';
+      helpers: readonly [
+        'clusterOverlay({ id, source, placement })',
+        'heatmapOverlay({ id, source, placement })',
+      ];
       layers: 'ordered-maplibre-style-layers-without-source';
       placement: typeof tileflowOverlayPlacements;
       replacement: 'atomic-by-overlay-id';
@@ -246,6 +263,24 @@ const operations: readonly TileflowAuthoringOperation[] = [
     api: 'sources.<id> = hostedTileset(options)',
     description: 'Bind one Team-local logical tileset to an explicit local PMTiles archive.',
     name: 'hosted-source',
+    scope: 'resource',
+  },
+  {
+    api: 'sources.<id> = geojsonSource({ data?, cluster?, clusterRadius?, ... })',
+    description: 'Declare GeoJSON that clusters, or a source the application fills at runtime.',
+    name: 'geojson-source',
+    scope: 'resource',
+  },
+  {
+    api: 'overlays.<id> = clusterOverlay({ id, source, placement })',
+    description: 'Draw a clustering GeoJSON source: bubbles, counts, and separate points.',
+    name: 'cluster-overlay',
+    scope: 'resource',
+  },
+  {
+    api: 'overlays.<id> = heatmapOverlay({ id, source, placement, weight? })',
+    description: 'Draw point density from a GeoJSON source or a hosted vector tileset.',
+    name: 'heatmap-overlay',
     scope: 'resource',
   },
   {
@@ -699,8 +734,18 @@ export const tileflowAuthoringManifest: TileflowAuthoringManifest = deepFreeze({
       localResolution: 'explicit-relative-pmtiles',
       maxPerMap: tileflowHostedSourceLimit,
     },
+    geojsonSources: {
+      api: 'geojsonSource({ data?, attribution?, cluster?, clusterRadius?, clusterMaxZoom?, clusterMinPoints?, clusterProperties? })',
+      data: 'inline-feature-collection-or-https-url',
+      maxInlineBytes: tileflowInlineGeoJsonByteLimit,
+      maxPerMap: tileflowHostedSourceLimit,
+    },
     overlays: {
       api: 'maplibreOverlay({ source, placement, layers })',
+      helpers: [
+        'clusterOverlay({ id, source, placement })',
+        'heatmapOverlay({ id, source, placement })',
+      ],
       layers: 'ordered-maplibre-style-layers-without-source',
       placement: tileflowOverlayPlacements,
       replacement: 'atomic-by-overlay-id',

@@ -1,6 +1,11 @@
 import Foundation
 
 extension TileflowMapController {
+  /// See ``TileflowMapView/setDataLayers(dataSources:dataOverlays:)``.
+  public func setDataLayers(dataSources: [String: Any], dataOverlays: [String: Any]) async throws {
+    try await attached().setDataLayers(dataSources: dataSources, dataOverlays: dataOverlays)
+  }
+
   /// See ``TileflowMapView/setViewMode(_:duration:)``.
   public func setViewMode(_ mode: TileflowViewMode, duration: TimeInterval = 0) async throws {
     try await attached().setViewMode(mode, duration: duration)

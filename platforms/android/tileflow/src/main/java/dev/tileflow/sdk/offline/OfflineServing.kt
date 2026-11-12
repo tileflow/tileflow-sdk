@@ -295,6 +295,7 @@ internal data class OfflineServingSnapshot(
     val packs: Map<String, OfflineServedPacks> = emptyMap(),
     val credits: Map<String, List<OfflineCredit>> = emptyMap(),
     val obligations: Map<String, List<OfflineObligation>> = emptyMap(),
+    val branding: Map<String, List<Boolean?>> = emptyMap(),
 )
 
 /**
@@ -314,12 +315,14 @@ internal class OfflineServingIndex {
     fun publish(snapshot: OfflineServingSnapshot, store: Any) {
         synchronized(stores) {
             stores[store] = snapshot
+            val branding = HashMap<String, MutableList<Boolean?>>()
             val paths = HashSet<String>()
             val packs = HashMap<String, OfflineServedPacks>()
             val credits = HashMap<String, List<OfflineCredit>>()
             val obligations = HashMap<String, List<OfflineObligation>>()
             for (each in stores.values) {
                 paths.addAll(each.paths)
+                for ((scope, receipts) in each.branding) branding.getOrPut(scope) { mutableListOf() }.addAll(receipts)
                 for ((scope, served) in each.packs)
                     packs[scope] = packs[scope]?.merging(served) ?: served
                 for ((scope, list) in each.credits)
@@ -327,7 +330,7 @@ internal class OfflineServingIndex {
                 for ((scope, list) in each.obligations)
                     obligations[scope] = OfflineObligation.merging(obligations[scope].orEmpty(), list)
             }
-            merged = OfflineServingSnapshot(paths, packs, credits, obligations)
+            merged = OfflineServingSnapshot(paths, packs, credits, obligations, branding)
         }
         published.countDown()
     }
@@ -426,6 +429,12 @@ internal class OfflineServingIndex {
             ),
             body,
         )
+    }
+
+    fun catalogLogoRequired(scope: ResourceCacheScope): Boolean? {
+        val receipts = snapshot().branding[scope.directory].orEmpty()
+        if (receipts.isEmpty() || receipts.any { it == null }) return null
+        return receipts.any { it == true }
     }
 
     fun credits(scope: ResourceCacheScope): List<OfflineCredit> =

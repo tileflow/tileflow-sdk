@@ -1,6 +1,7 @@
 import {readBoundedTileflowBrowserResource} from './browser-resource';
 import {syncTileflowClearLayers, type TileflowClearLayersMap} from './clear-layers-browser';
 import type {TileflowColorOverrides} from './color-program-runtime';
+import type {TileflowContourRequestScope} from './contour-browser';
 import {
   createTileflowDynamicImageRegistry,
   type TileflowDynamicImage,
@@ -86,7 +87,7 @@ import type {MapLibreStyle} from './types';
 export {
   createTileflowMapControllerBinding,
   createTileflowMapController,
-  TileflowMapError,
+  TileflowRuntimeStyleError,
 } from './map-controller-browser';
 export type {
   TileflowMapController,
@@ -95,12 +96,17 @@ export type {
   TileflowLayerPosition,
   TileflowRuntimeSourceDefinition,
   TileflowRuntimeLayerDefinition,
-  TileflowMapErrorContext,
+  TileflowRuntimeStyleErrorContext,
 } from './map-controller-browser';
 
 export type {TileflowColorOverrides} from './color-program-runtime';
 
 export {loadTileflowRuntimeAppearance} from './style-family-runtime';
+
+export {attachTileflowBranding, createTileflowBrandingLink} from './branding-browser';
+export type {TileflowBrandingMap, TileflowBrandingOptions} from './branding-browser';
+export {readTileflowBrandingSources, parseTileflowBrandingPolicy} from './branding';
+export type {TileflowBrandingPolicy, TileflowBrandingSource} from './branding';
 
 export {
   loadTileflowRuntimeStyle,
@@ -179,7 +185,9 @@ export {
   type TileflowBuildings3DMap,
   type TileflowBuildings3DOptions,
   type TileflowBuildings3DThemes,
+  type TileflowBuildingStandIns,
 } from './buildings-3d-browser';
+export type {TileflowStandInArea} from './building-stand-ins';
 export {
   meshTileflowBuildings,
   tileflowBuildingExtent,
@@ -351,15 +359,32 @@ export {
 } from './nautical-light-rhythm';
 
 export * from './fair-use-browser';
+export * from './map-error';
+export {
+  hasTileflowCssVariable,
+  resolveTileflowCssVariables,
+  TileflowCssVariableError,
+} from './css-variables';
+export * from './theme-appearance-browser';
 export {createTileflowAppearanceController} from './appearance-browser';
 export type {TileflowAppearanceSelection} from './appearance';
 export {
   registerTileflowPathGroundProtocol,
   type TileflowPathGroundRegistry,
 } from './path-ground-browser';
+export * from './navigation-control-browser';
+export * from './camera-fit-browser';
 export {
+  createTileflowContourRequestScope,
   registerTileflowContourProtocol,
   tileflowMaplibreContourVersion,
+  type TileflowContourFetch,
+  type TileflowContourFetchInit,
+  type TileflowContourFetchResponse,
+  type TileflowContourRequestParameters,
+  type TileflowContourRequestResourceType,
+  type TileflowContourRequestScope,
+  type TileflowContourRequestTransform,
   type TileflowContourProtocolHandler,
   type TileflowContourProtocolRegistrationOptions,
   type TileflowContourProtocolRegistry,
@@ -1028,7 +1053,7 @@ export function createTileflowThemeController(options: {
         return Promise.resolve({status: 'failed', error: duration});
       const animator = familyAnimator;
       const run = ++requestId;
-      return whenContextAvailable(options.map)
+      return whenPaintWritable(options.map)
         .then(() => {
           if (disposed || run !== requestId || animator !== familyAnimator)
             return {status: 'superseded'} as const;
@@ -1155,9 +1180,15 @@ export function createTileflowThemeController(options: {
         request.themes.every((style) => style.family === family)
       ) {
         const run = ++requestId;
-        const result = familyAnimator.setBlend(
-          request.themes.map((style) => style.theme!),
-          request.position,
+        const animator = familyAnimator;
+        const result = whenPaintWritable(options.map).then(
+          (): Promise<TileflowThemeTransitionResult> | TileflowThemeTransitionResult =>
+            run !== requestId || disposed || animator !== familyAnimator
+              ? {status: 'superseded'}
+              : animator.setBlend(
+                  request.themes.map((style) => style.theme!),
+                  request.position,
+                ),
         );
         return result.then((result) => {
           if (run !== requestId || disposed) return {status: 'superseded'} as const;
@@ -1241,7 +1272,7 @@ export function createTileflowThemeController(options: {
           phase: 'applying',
           targetTheme: style.theme,
         });
-        return whenContextAvailable(options.map)
+        return whenPaintWritable(options.map)
           .then(() => {
             if (run !== requestId || disposed)
               return {status: 'superseded', theme: style.theme} as const;
@@ -2372,6 +2403,29 @@ function whenContextAvailable(map: TileflowStyleSwitchMap): Promise<void> {
   });
 }
 
+/**
+ * Resolves once paint can be written in place: the WebGL context is there and the style has
+ * loaded. MapLibre throws "Style is not done loading" before that, for example when a theme
+ * changes during the first load, or in a background tab where the first load waits for a frame.
+ */
+function whenPaintWritable(map: TileflowStyleSwitchMap): Promise<void> {
+  return whenContextAvailable(map).then(() => {
+    // MapLibre keeps no public flag for a parsed style: isStyleLoaded also waits for every tile.
+    const style = (map as {style?: {_loaded?: unknown}}).style;
+    if (style?._loaded !== false) return;
+    return new Promise<void>((resolve) => {
+      const settle = () => {
+        map.off('style.load', settle);
+        map.off('remove', settle);
+        resolve();
+      };
+      map.on('style.load', settle);
+      // A map taken down first settles the change, which then reports itself superseded.
+      map.on('remove', settle);
+    });
+  });
+}
+
 function isContextLost(map: TileflowStyleSwitchMap): boolean {
   if (typeof map.getCanvas !== 'function') return false;
   try {
@@ -2836,14 +2890,19 @@ export function attachTileflowMapLifecycle<TMap, TFrame>(options: {
 }
 
 /**
- * Compose the caller's request transform with Tileflow analytics, the Hosted session, and the
- * World bridge. Analytics are read when each request starts, so an asynchronous user transform
- * never attaches analytics that changed while it was pending.
+ * Compose the caller's request transform with Tileflow analytics, the Hosted session, the World
+ * bridge and the contour request scope. Analytics are read when each request starts, so an
+ * asynchronous user transform never attaches analytics that changed while it was pending.
  */
 export function createTileflowTransformRequest<
   TRequest extends TileflowTransformRequestParameters = TileflowTransformRequestParameters,
   TResourceType = unknown,
 >(options: {
+  /**
+   * Binds contour tiles to this map, so the DEM requests they make go back through this
+   * transform. Create the scope with this transform and dispose it with the map.
+   */
+  contourRequestScope?: Pick<TileflowContourRequestScope, 'rewriteUrl'>;
   getAnalytics: () => TileflowAnalytics | undefined;
   sessionController?: TileflowSessionController;
   sessionId: string;
@@ -2853,8 +2912,19 @@ export function createTileflowTransformRequest<
   return (url, resourceType) => {
     const request = options.transformRequest?.(url, resourceType);
     const analytics = options.getAnalytics();
-    const apply = (resolvedRequest: TRequest | undefined) =>
-      applyTileflowRequest(
+    const apply = (resolvedRequest: TRequest | undefined) => {
+      const contourScope = options.contourRequestScope;
+      const requestUrl = resolvedRequest?.url ?? url;
+      if (contourScope && requestUrl.startsWith('tileflow-contour://')) {
+        // The protocol handler makes the session-bearing requests itself, through this transform.
+        return composeTileflowRequest(
+          url,
+          resolvedRequest,
+          contourScope.rewriteUrl(requestUrl),
+          true,
+        );
+      }
+      return applyTileflowRequest(
         url,
         resolvedRequest,
         analytics,
@@ -2862,6 +2932,7 @@ export function createTileflowTransformRequest<
         options.sessionController,
         options.worldRequestBridge,
       );
+    };
 
     if (isPromiseLike(request)) {
       return request.then((resolvedRequest) => apply(resolvedRequest) ?? resolvedRequest);
@@ -2973,6 +3044,7 @@ export {
   type TileflowMap3D,
   type TileflowMap3DMap,
   type TileflowMap3DOptions,
+  type TileflowMap3DPending,
 } from './map-3d-browser';
 
 export {

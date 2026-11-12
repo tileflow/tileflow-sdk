@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {mkdir, mkdtemp, readFile, rm, stat, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {test} from 'node:test';
@@ -7,7 +7,7 @@ import {createServer as createViteServer} from 'vite';
 import {streetsThemes} from '@tileflow/maps';
 import {createTileflowIconSetProject} from '../../../test-support/icon-set-project';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
-import {tileflow} from '../src/index';
+import {tileflow, tileflowMapLibreWorker} from '../src/index';
 
 test('emits manifest and style assets under the configured Vite base path', async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), 'tileflow-vite-'));
@@ -15,7 +15,7 @@ test('emits manifest and style assets under the configured Vite base path', asyn
   t.after(() => rm(cwd, {force: true, recursive: true}));
   await writeFile(join(cwd, 'tileflow.config.ts'), streetsConfig());
 
-  const plugin = tileflow({base: '/maps'});
+  const [plugin] = tileflow({base: '/maps'});
   assert.equal(plugin.name, 'tileflow:vite');
   assert.equal(typeof plugin.configResolved, 'function');
   assert.equal(typeof plugin.generateBundle, 'function');
@@ -37,6 +37,8 @@ test('emits manifest and style assets under the configured Vite base path', asyn
   const stableNames = [
     'maps/build-manifest.json',
     'maps/families/main.json',
+    'maps/icons/main/licenses/transit-madrid-emt.txt',
+    'maps/icons/main/licenses/transit-madrid-metro.txt',
     'maps/icons/main/sprite.json',
     'maps/icons/main/sprite.png',
     'maps/icons/main/sprite@2x.json',
@@ -51,7 +53,8 @@ test('emits manifest and style assets under the configured Vite base path', asyn
     stableNames,
   );
   const generated = names.filter((name) => name?.includes('/generations/'));
-  assert.equal(generated.length, 5 + Object.keys(streetsThemes).length);
+  // Two of these are the Streets transit-symbol credits written beside the sprite.
+  assert.equal(generated.length, 7 + Object.keys(streetsThemes).length);
   assert.ok(generated.every((name) => /^maps\/generations\/[a-f0-9]{64}\//.test(name ?? '')));
   const manifest = JSON.parse(
     String(emitted.find((asset) => asset.fileName === 'maps/manifest.json')?.source),
@@ -87,7 +90,7 @@ test('rejects a local PMTiles source before emitting Vite production assets', as
   const outDir = join(cwd, 'dist');
   await writeFile(join(cwd, 'stores.pmtiles'), archive);
   await writeFile(join(cwd, 'tileflow.config.ts'), localTilesetConfig);
-  const plugin = tileflow({base: '/maps'});
+  const [plugin] = tileflow({base: '/maps'});
   (plugin.configResolved as (config: unknown) => void)({
     base: '/',
     build: {outDir},
@@ -133,7 +136,7 @@ test('preserves Vite public URL kinds while keeping relative manifests owner-rel
 
   for (const [publicBase, expectedStyleUrl] of cases) {
     await t.test(publicBase, async () => {
-      const plugin = tileflow({base: '/maps'});
+      const [plugin] = tileflow({base: '/maps'});
       (plugin.configResolved as (config: unknown) => void)({
         base: publicBase,
         publicDir: join(cwd, 'public'),
@@ -187,21 +190,63 @@ test('serves the production manifest URL in real Vite dev under a non-root base'
   assert.equal((await fetch(`${origin}${darkStyleUrl}`)).status, 200);
 });
 
+test('adds the MapLibre worker plugin unless the application opts out', () => {
+  assert.deepEqual(
+    tileflow().map((plugin) => plugin.name),
+    ['tileflow:vite', 'tileflow:maplibre-worker'],
+  );
+  assert.deepEqual(
+    tileflow({mapLibreWorker: false}).map((plugin) => plugin.name),
+    ['tileflow:vite'],
+  );
+});
+
+test('client modules that use a Tileflow map import the worker of the MapLibre it runs', async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tileflow-vite-worker-'));
+  await linkWorkspacePackages(cwd, ['react']);
+  t.after(() => rm(cwd, {force: true, recursive: true}));
+  // React renders through @tileflow/dom, whose maplibre-gl is the one that runs the map.
+  const workerPath = join(
+    await realpath(resolve('../dom/node_modules/maplibre-gl')),
+    'dist/maplibre-gl-worker.mjs',
+  );
+  const plugin = tileflowMapLibreWorker();
+  assert.equal(plugin.enforce, 'post');
+  (plugin.configResolved as (config: unknown) => void)({root: cwd});
+  const transform = (code: string, id: string, ssr = false) =>
+    (plugin.transform as Function).call({warn: assert.fail}, code, id, {ssr}) as {
+      code: string;
+    } | null;
+  const app = "import {Map} from '@tileflow/react';\nexport const map = Map;\n";
+
+  const client = transform(app, join(cwd, 'src/App.tsx'));
+  assert.ok(client);
+  assert.ok(
+    client.code.startsWith(
+      `import __tileflowMapLibreWorkerUrl from ${JSON.stringify(`${workerPath}?worker&url`)};`,
+    ),
+  );
+  assert.match(client.code, /\?\? *= __tileflowMapLibreWorkerUrl;import \{Map\}/u);
+  assert.equal(transform(app, join(cwd, 'src/App.tsx'), true), null);
+  assert.equal(transform(app, join(cwd, 'node_modules/library/index.js')), null);
+  assert.equal(transform("import {defineMap} from '@tileflow/core';\n", join(cwd, 'a.ts')), null);
+});
+
 test('rejects traversal in the Vite output and route base', () => {
   for (const base of ['../maps', '/app/../maps', '/app//maps']) {
     assert.throws(() => tileflow({base}), /Invalid Tileflow base path/u);
   }
 });
 
-test('emits Baedeker web fonts from Maps with immutable runtime URLs', async (t) => {
+test('emits Streets web fonts from Maps with immutable runtime URLs', async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), 'tileflow-vite-fonts-'));
   await linkWorkspacePackages(cwd);
   t.after(() => rm(cwd, {force: true, recursive: true}));
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
-    "import {defineMap} from '@tileflow/core'; import {baedeker} from '@tileflow/maps'; export default defineMap({id:'night',version:1,extends:baedeker});\n",
+    "import {defineMap} from '@tileflow/core'; import {streets} from '@tileflow/maps'; export default defineMap({id:'night',version:1,extends:streets});\n",
   );
-  const plugin = tileflow({base: '/maps'});
+  const [plugin] = tileflow({base: '/maps'});
   (plugin.configResolved as (config: unknown) => void)({
     base: '/app/',
     publicDir: join(cwd, 'public'),
@@ -217,12 +262,14 @@ test('emits Baedeker web fonts from Maps with immutable runtime URLs', async (t)
 
   const names = emitted.map((asset) => asset.fileName ?? '');
   const stableFontAssets = names.filter((name) => name.startsWith('maps/fonts/'));
-  assert.equal(stableFontAssets.length, 4);
+  assert.equal(stableFontAssets.length, 6);
   assert.equal(
     stableFontAssets.filter((name) =>
-      /^maps\/fonts\/cormorant-garamond-(?:italic|regular|semibold)-[a-f0-9]{64}\.ttf$/u.test(name),
+      /^maps\/fonts\/(?:dinish|noto-sans)-(?:italic|regular|medium|bold)-[a-f0-9]{64}\.ttf$/u.test(
+        name,
+      ),
     ).length,
-    3,
+    5,
   );
   assert.equal(
     stableFontAssets.filter((name) =>
@@ -232,16 +279,16 @@ test('emits Baedeker web fonts from Maps with immutable runtime URLs', async (t)
   );
   assert.equal(
     names.filter((name) => /\/generations\/[a-f0-9]{64}\/fonts\//u.test(name)).length,
-    4,
+    6,
   );
   const manifest = JSON.parse(
     String(emitted.find((asset) => asset.fileName === 'maps/manifest.json')?.source),
   ) as RuntimeManifest;
   const fontFaces = manifest.maps.night?.themes.light?.fontFaces;
-  assert.equal(fontFaces?.length, 3);
+  assert.equal(fontFaces?.length, 5);
   assert.ok(
     fontFaces?.every((face) =>
-      /^\/app\/maps\/generations\/[a-f0-9]{64}\/fonts\/cormorant-garamond-(?:italic|regular|semibold)-[a-f0-9]{64}\.ttf$/u.test(
+      /^\/app\/maps\/generations\/[a-f0-9]{64}\/fonts\/(?:dinish|noto-sans)-(?:italic|regular|medium|bold)-[a-f0-9]{64}\.ttf$/u.test(
         face.source,
       ),
     ),
@@ -249,7 +296,7 @@ test('emits Baedeker web fonts from Maps with immutable runtime URLs', async (t)
 });
 
 test('can disable build artifact emission', async () => {
-  const plugin = tileflow({emitBuildArtifacts: false});
+  const [plugin] = tileflow({emitBuildArtifacts: false});
   let emitted = false;
   await (plugin.generateBundle as Function).call({emitFile: () => (emitted = true)}, {}, {}, false);
   assert.equal(emitted, false);
@@ -266,7 +313,7 @@ test('refuses to emit over a Hosted manifest copied from publicDir', async (t) =
   const manifestPath = join(publicDir, 'maps', 'manifest.json');
   await writeFile(manifestPath, JSON.stringify(hosted));
 
-  const plugin = tileflow({base: '/maps'});
+  const [plugin] = tileflow({base: '/maps'});
   (plugin.configResolved as (config: unknown) => void)({base: '/', publicDir, root: cwd});
   await assert.rejects(
     () => (plugin.generateBundle as Function).call({emitFile: () => undefined}, {}, {}, false),
@@ -287,7 +334,7 @@ test('allows an explicit Vite opt-in to replace Hosted manifest metadata', async
     `${JSON.stringify(createHostedManifest())}\n`,
   );
 
-  const plugin = tileflow({base: '/maps', overwriteHostedManifest: true});
+  const [plugin] = tileflow({base: '/maps', overwriteHostedManifest: true});
   (plugin.configResolved as (config: unknown) => void)({base: '/', publicDir, root: cwd});
   const emitted: Array<{fileName?: string; source?: unknown; type: string}> = [];
   await (plugin.generateBundle as Function).call(
@@ -322,7 +369,7 @@ test('refreshes the shared input graph and unwatches retired asset directories',
   const warnings: string[] = [];
   const callbacks = new Map<string, (file: string) => void>();
   let closeServer = () => undefined;
-  const plugin = tileflow();
+  const [plugin] = tileflow();
   (plugin.configureServer as Function)({
     config: {
       logger: {
@@ -378,7 +425,7 @@ test('watches a missing shared Icon Set lock and recovers when it is restored', 
   const reloads: unknown[] = [];
   const warnings: string[] = [];
   let closeServer = () => undefined;
-  const plugin = tileflow({icons: {cacheRoot: cwd, offline: true}});
+  const [plugin] = tileflow({icons: {cacheRoot: cwd, offline: true}});
   (plugin.configureServer as Function)({
     config: {
       logger: {
@@ -588,7 +635,7 @@ test('the Vite production build emits the exact locked icon composition', async 
   t.after(() => rm(cwd, {force: true, recursive: true}));
   await createTileflowIconSetProject(cwd);
 
-  const plugin = tileflow({base: '/maps', icons: {cacheRoot: cwd, offline: true}});
+  const [plugin] = tileflow({base: '/maps', icons: {cacheRoot: cwd, offline: true}});
   (plugin.configResolved as (config: unknown) => void)({
     base: '/app/',
     publicDir: join(cwd, 'public'),

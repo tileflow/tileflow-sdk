@@ -16,6 +16,7 @@ export {
   parseTileflowStyleFamily,
   tileflowStyleFamilyLimits,
 } from './style-family';
+export {clusterOverlay, geojsonSource, heatmapOverlay, maplibreOverlay} from './overlays';
 export type {TileflowStyleFamily} from './style-family';
 export {loadTileflowStyleFamily} from './style-family-loader';
 export {applyTileflowColorOverrides} from './color-program-runtime';
@@ -185,7 +186,15 @@ export type TileflowManifestFetchOptions = {
   cacheTtlMs?: number;
   fetch?: typeof globalThis.fetch;
   signal?: AbortSignal;
-  /** Hard request timeout in milliseconds. Defaults to 10 seconds and is capped at 60 seconds. */
+  /**
+   * How long to keep asking again while the server answers `503 Service Unavailable`, which is how
+   * a Tileflow route says it is still preparing the map. A `Retry-After` header sets the wait
+   * between requests. Defaults to 30 seconds for a manifest on the page's own origin and to 0 (no
+   * retry) for any other origin. It is capped at 60 seconds, and `timeoutMs` still bounds each
+   * request.
+   */
+  retryTimeoutMs?: number;
+  /** Hard timeout of each request in milliseconds. Defaults to 10 seconds and is capped at 60 seconds. */
   timeoutMs?: number;
 };
 
@@ -991,42 +1000,137 @@ export function loadTileflowManifest(
   if (cached) manifestCache.delete(url);
 
   const fetchManifest = options.fetch ?? globalThis.fetch;
-  const requestSignal = createManifestRequestSignal(options.signal, timeoutMs);
-  const promise = Promise.resolve()
-    .then(() => fetchManifest(url, {cache: 'no-store', signal: requestSignal.signal}))
-    .then(async (response) => {
-      if (response.status === 404) {
-        manifestCache.delete(url);
-        return null;
-      }
-      if (!response.ok) throw new Error(`Tileflow manifest failed: ${response.status}`);
-
-      const source = await readBoundedManifestResponse(response);
-      let input: unknown;
-      try {
-        input = JSON.parse(source) as unknown;
-      } catch {
-        throw new Error('Tileflow manifest is not valid JSON.');
-      }
-      try {
-        const {parseTileflowRuntimeManifest} = await import('./manifest');
-        return resolveLoadedTileflowManifestUrls(
-          parseTileflowRuntimeManifest(input),
-          response.url || resolveTileflowLoadedResourceUrl(url, getTileflowLocationBaseUrl()),
-        );
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'schema validation failed';
-        throw new Error(`Invalid Tileflow manifest: ${message}`);
-      }
-    })
-    .catch((error: unknown) => {
-      manifestCache.delete(url);
-      throw error;
-    })
-    .finally(requestSignal.cleanup);
+  const retryWindowMs = normalizeManifestRetryWindow(options.retryTimeoutMs, url);
+  const promise = fetchManifestWithRetry(url, {
+    fetch: fetchManifest,
+    retryWindowMs,
+    signal: options.signal,
+    timeoutMs,
+  }).catch((error: unknown) => {
+    manifestCache.delete(url);
+    throw error;
+  });
 
   if (cacheable) manifestCache.set(url, {expiresAt: now + ttl, promise});
   return promise;
+}
+
+const manifestRetryStatus = 503;
+const maximumManifestRetryDelayMs = 5_000;
+const minimumManifestRetryDelayMs = 200;
+
+/**
+ * Requests the manifest, asking again while the server says it is not ready (503). Each request has
+ * its own timeout; the retry window bounds the whole wait.
+ */
+async function fetchManifestWithRetry(
+  url: string,
+  input: {
+    fetch: typeof globalThis.fetch;
+    retryWindowMs: number;
+    signal: AbortSignal | undefined;
+    timeoutMs: number;
+  },
+): Promise<TileflowRuntimeManifest | null> {
+  const fetchManifest = input.fetch;
+  const deadline = Date.now() + input.retryWindowMs;
+  for (let attempt = 0; ; attempt += 1) {
+    const requestSignal = createManifestRequestSignal(input.signal, input.timeoutMs);
+    try {
+      const response = await fetchManifest(url, {cache: 'no-store', signal: requestSignal.signal});
+      if (response.status === manifestRetryStatus) {
+        const delay = manifestRetryDelayMs(response, attempt);
+        if (Date.now() + delay <= deadline) {
+          await response.body?.cancel().catch(() => undefined);
+          requestSignal.cleanup();
+          await waitForManifestRetry(delay, input.signal);
+          continue;
+        }
+      }
+      return await readManifestResponse(url, response);
+    } finally {
+      requestSignal.cleanup();
+    }
+  }
+}
+
+async function readManifestResponse(
+  url: string,
+  response: Response,
+): Promise<TileflowRuntimeManifest | null> {
+  if (response.status === 404) {
+    manifestCache.delete(url);
+    return null;
+  }
+  if (!response.ok) throw new Error(`Tileflow manifest failed: ${response.status}`);
+
+  const source = await readBoundedManifestResponse(response);
+  let input: unknown;
+  try {
+    input = JSON.parse(source) as unknown;
+  } catch {
+    throw new Error('Tileflow manifest is not valid JSON.');
+  }
+  try {
+    const {parseTileflowRuntimeManifest} = await import('./manifest');
+    return resolveLoadedTileflowManifestUrls(
+      parseTileflowRuntimeManifest(input),
+      response.url || resolveTileflowLoadedResourceUrl(url, getTileflowLocationBaseUrl()),
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'schema validation failed';
+    throw new Error(`Invalid Tileflow manifest: ${message}`);
+  }
+}
+
+/** The wait before the next request: `Retry-After` when the server sent one, else a short backoff. */
+function manifestRetryDelayMs(response: Response, attempt: number): number {
+  const header = response.headers.get('retry-after')?.trim();
+  let delay: number | undefined;
+  if (header) {
+    if (/^\d+$/u.test(header)) delay = Number(header) * 1_000;
+    else {
+      const date = Date.parse(header);
+      if (Number.isFinite(date)) delay = date - Date.now();
+    }
+  }
+  delay ??= 500 * 2 ** Math.min(attempt, 3);
+  return Math.min(maximumManifestRetryDelayMs, Math.max(minimumManifestRetryDelayMs, delay));
+}
+
+function waitForManifestRetry(delayMs: number, signal: AbortSignal | undefined): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal!.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, delayMs);
+    signal?.addEventListener('abort', onAbort, {once: true});
+  });
+}
+
+function normalizeManifestRetryWindow(value: number | undefined, url: string): number {
+  if (value === undefined) return isSameOriginManifestUrl(url) ? 30_000 : 0;
+  if (!Number.isFinite(value) || value < 0 || value > 60_000) {
+    throw new TypeError('retryTimeoutMs must be between 0 and 60000 milliseconds.');
+  }
+  return value;
+}
+
+function isSameOriginManifestUrl(url: string): boolean {
+  try {
+    const origin = getTileflowLocationOrigin();
+    return new URL(url, origin).origin === origin;
+  } catch {
+    return false;
+  }
 }
 
 function resolveLoadedTileflowManifestUrls(

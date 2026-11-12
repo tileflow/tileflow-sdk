@@ -184,6 +184,13 @@ actor OfflineStoreCore {
       for (scope, packs) in served(id, active, apiOrigin: origin) {
         snapshot.packs[scope, default: .init()].merge(packs)
       }
+      if let plan = try? plan(id, active) {
+        for pack in plan.downloads {
+          let scope = ResourceCacheScope.grant(apiOrigin: origin, mapID: pack.manifest.mapID)
+            .directory
+          snapshot.branding[scope, default: []].append(pack.manifest.catalogLogoRequired)
+        }
+      }
       for (scope, credits) in credits(id, active, apiOrigin: origin) {
         OfflineCredit.merge(credits.regional, into: &snapshot.credits[scope, default: []])
         OfflineObligation.merge(

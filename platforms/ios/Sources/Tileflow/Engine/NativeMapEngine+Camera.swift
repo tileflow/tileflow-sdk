@@ -25,6 +25,9 @@ extension NativeMapEngine {
       if event == "cameraMoveStarted", value["reason"] == .string("gesture") {
         self.mapLocation.interrupt(.gesture)
       }
+      if event == "tap", let point = value["point"], let touch = try? Self.point(point) {
+        self.expandDataCluster(at: touch)
+      }
       if event == "tap", case .object(var payload) = value, let point = payload["point"],
         let touch = try? Self.point(point), let coordinate = payload["coordinate"],
         let selection = self.poi(at: touch, coordinate: coordinate) {

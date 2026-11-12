@@ -22,6 +22,7 @@ import {
   validateTileflowNativePreparedStyle,
   validateTileflowNativeStyle,
 } from '@tileflow/core/native-profile';
+import {tileflowIconAttributionDirectory} from './icon-attribution';
 import type {TileflowBuildAsset} from './icons';
 import {
   degradeTileflowNativeStyle,
@@ -403,7 +404,12 @@ export function replaceTileflowNativeFontSources(
 /** The shared compiler owns pixels; verify the generated density pair using its existing limits. */
 function validNativeSprites(map: string, assets: readonly TileflowBuildAsset[]): boolean {
   const prefix = `icons/${map}/`;
-  const files = assets.filter((asset) => asset.fileName.startsWith(prefix));
+  // Required icon credits travel beside the sprite but are not part of the density pair.
+  const files = assets.filter(
+    (asset) =>
+      asset.fileName.startsWith(prefix) &&
+      !asset.fileName.startsWith(`${prefix}${tileflowIconAttributionDirectory}/`),
+  );
   if (!files.length) return true;
   try {
     if (files.length !== 4) return false;

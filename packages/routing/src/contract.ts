@@ -61,7 +61,7 @@ export const routingLimits = Object.freeze({
   maximumRequestBytes: 8 * 1024,
   maximumResponseBytes: 4 * 1024 * 1024,
   minimumLocations: 2,
-  maximumLocations: 5,
+  maximumLocations: 25,
   maximumAlternatives: 2,
   /** Sum of straight-line distances between consecutive locations, per mode. */
   maximumDirectDistanceMeters: Object.freeze({
@@ -150,6 +150,15 @@ function refineTravelOptions(request: TravelOptions, context: z.RefinementCtx) {
   }
 }
 
+/** A wall-clock time, `YYYY-MM-DDTHH:mm`, that exists in the calendar. */
+const localDateTime = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/u, 'Use YYYY-MM-DDTHH:mm, local to the first location.')
+  .refine((value) => {
+    const date = new Date(`${value}:00Z`);
+    return !Number.isNaN(date.getTime()) && date.toISOString().startsWith(value);
+  }, 'This date does not exist.');
+
 export const routingRouteRequestSchema = z
   .object({
     locations: z
@@ -159,6 +168,13 @@ export const routingRouteRequestSchema = z
     ...travelOptions,
     alternatives: z.number().int().min(0).max(routingLimits.maximumAlternatives).optional(),
     language: z.enum(routingLanguages).optional(),
+    /**
+     * Visits the stops between the first and the last location in the fastest order the engine
+     * finds. The first and the last location stay in place; repeat the first to return to it.
+     */
+    optimize: z.boolean().optional(),
+    /** When the route leaves the first location, in that location's local time. */
+    departAt: localDateTime.optional(),
   })
   .strict()
   .superRefine((request, context) => {
@@ -169,6 +185,21 @@ export const routingRouteRequestSchema = z
         path: ['alternatives'],
         message: 'Alternatives are available only between two locations.',
       });
+    }
+    if (request.optimize) {
+      // The order is unknown here, so the reach of the matrix that finds it bounds the request.
+      const limit = routingLimits.maximumMatrixDistanceMeters[request.mode];
+      const tooFar = request.locations.some((a, index) =>
+        request.locations.slice(index + 1).some((b) => routingDirectDistance(a, b) > limit),
+      );
+      if (tooFar) {
+        context.addIssue({
+          code: 'custom',
+          path: ['locations'],
+          message: `Two locations are too far apart to optimize for ${request.mode}.`,
+        });
+      }
+      return;
     }
     let distance = 0;
     for (let index = 1; index < request.locations.length; index += 1) {
@@ -370,6 +401,11 @@ export const routingLegSchema = z
   .object({
     distance: meters,
     duration: seconds,
+    /** With `departAt`: when the leg ends, in local time at its end, with that UTC offset. */
+    arriveAt: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}[+-]\d{2}:\d{2}$/u)
+      .optional(),
     steps: z.array(routingStepSchema).min(1).max(routingLimits.maximumSteps),
   })
   .strict();
@@ -486,6 +522,18 @@ export const routingRouteResponseSchema = z
       .array(routingRouteSchema)
       .min(1)
       .max(routingLimits.maximumAlternatives + 1),
+    /** With `optimize`: the requested index of each location, in the order the route visits them. */
+    locationOrder: z
+      .array(
+        z
+          .number()
+          .int()
+          .min(0)
+          .max(routingLimits.maximumLocations - 1),
+      )
+      .min(routingLimits.minimumLocations)
+      .max(routingLimits.maximumLocations)
+      .optional(),
     usage: routingUsageSchema,
   })
   .strict();

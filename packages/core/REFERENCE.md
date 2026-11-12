@@ -78,9 +78,9 @@ holes remain unpainted. Classification follows tile geometry, not imagery or inf
 Framework web adapters, CLI preview, capture, and the embedded mobile web runtime register the
 derived-source protocol automatically. Raw MapLibre integrations must call
 `registerTileflowPathGroundProtocol({addProtocol: maplibregl.addProtocol})` from
-`@tileflow/core/browser` before creating the map. Native renderers cannot run this browser
-protocol: `native-v1` keeps the complete ground-colored paths, omits the green portions and their
-derived source, and records a `pathGround` degradation.
+`@tileflow/core/browser` before creating the map. The `native-v1` build keeps the complete
+ground-colored paths and disables the green overlay, since native renderers cannot run this
+browser protocol. Its build record explicitly reports `pathGround: 'ground-fallback'`.
 
 Themes are complete appearance documents, not loose color overrides. Every theme must supply the
 same token schema. Use `token.color(...)`, `token.number(...)`, `token.image(...)`, and typed font
@@ -125,7 +125,24 @@ prepare once; discrete values and RGBA icons switch at the dominant theme withou
 Fades use premultiplied OKLab. Parameter columns are not semantic tokens.
 
 `controller.setColors({'surface.water': '#008800'})` overrides named tokens; `{}` restores authored
-colours. Fixed colours and application layers remain. Web builds retain token bindings; direct
+colours. Values may be hex, `rgb()`, `hsl()`, `lab()`, `lch()`, `oklch()`, `oklab()` or `color-mix()` in `srgb`,
+`srgb-linear`, `oklab` or `oklch`; they are converted to sRGB, with chroma reduced for a colour
+outside the gamut. A value the SDK cannot read, such as `var(--x)` or a named colour, is an error
+that names it. `createTileflowAppearanceBinding` (`@tileflow/core/browser`), which the React, Vue and
+Svelte maps use for `colors` and `emphasis`, takes an `element` and resolves `var(--name, fallback)`,
+also inside `color-mix()` and nested, against its computed style. It resolves again when the `class`,
+`style` or `data-theme` attribute of `<html>` or `<body>`, or `prefers-color-scheme`, changes, and
+shows colours again only if the result changed. A variable with no value and no fallback is reported
+to `onError` with the `colors` part, by name. Fixed colours and application layers remain. A map may declare colour knobs with
+`colorKnobs`: named colours with no dot that stand for many tokens, so `setColors({water: '#2563eb'})`
+works without naming a token. A knob lists its tokens, each with an operation: `replace` gives the
+token the colour; `shift` moves it by as much as the knob's `reference` token moves to reach the
+colour, so tokens lighter or darker than the reference stay so; `mix` moves it `amount` of the way;
+`tint` keeps its lightness and takes the colour's hue and chroma (`chroma` scales it). Any operation
+may add a `lightness` offset, and a token's own alpha is kept. Knobs start from the colours of the
+theme on screen, so each theme keeps its own offsets. A token has one knob; a token named in
+`setColors` wins over its knob; an unknown knob is an error that lists the map's knobs. Derived
+maps inherit knobs, entries replace by name, and `remove()` drops one. Streets' knobs are listed in [its reference](https://github.com/tileflow/tileflow-sdk/blob/main/packages/maps/REFERENCE.md#streets-colour-knobs). Web builds retain token bindings; direct
 `createStyle` calls opt in with `runtimeColors: true`. `createTileflowAppearanceController().set()`
 selects author-owned `fixed`, `system` or local `clock` behaviour without UI or location requests.
 Profile performance on target devices.
@@ -141,8 +158,10 @@ mix 3D directions (angular fallback for opposite vectors) and OKLab light colour
 `createTileflowBuildings3D` enables worker-meshed buildings rising at zoom 15–15.3, scene sun,
 cast/contact shadows and 0.8 m rounded corners; effects are independently overridable. Its
 `tileflow-buildings-scene-3d` layer replaces `tileflow-buildings-native-extrusion` only after visible
-building tiles draw. Failure keeps the native fallback; 2D restores authored visibility. Native
-apps draw that extrusion and record a `scene3d` degradation.
+building tiles draw. Until then the native extrusion leaves out the buildings that landmarks and
+placed models stand in for (`standIns`). It draws once their footprints round the view are known, or
+their downloads have taken 1.5 s, and after a change only once its tiles are read again. Failure
+keeps the native fallback; 2D restores authored visibility.
 Street lights default off, including in Streets: enable `roads.streetLights.enabled` and mount
 `createTileflowStreetLights`. `createTileflowVegetation` follows the map's `3d`, `flat` or `auto` policy.
 
@@ -211,31 +230,112 @@ const nativeSource = {
 } satisfies TileflowNativeSource;
 ```
 
-Framework Maps select a prepared map from its manifest. They accept neither a renderer
-discriminator nor a direct style. The
+These objects select existing prepared maps; they do not compile or render one. Every Tileflow
+framework Map is manifest-backed, without a renderer discriminator or direct-style mode. The
 obsolete source fields `kind` and `style` are rejected. Completely unmanaged maps use upstream
 MapLibre directly. Omitted themes use the manifest default, concrete themes select exact names,
 and `system` requires the manifest's explicit light/dark mapping and a supplied runtime color scheme.
-The unpublished React Native package uses this contract for its mounted Map.
+The pre-release React Native
+package uses this contract for its mounted Map; it is not yet published.
 
 ## Data, terrain, and browser resources
 
 Tileflow World is the hosted primary source, with an open (CC0)
 [schema](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/reference/tileflow-world-v1.json);
 detail layers load only when drawn. `vectorTiles()` takes that schema or OpenMapTiles
-(`openMapTiles()`). `hostedTileset()`, `boundaryAreas` and overlays add named sources.
+(`openMapTiles()`). `hostedTileset()`, `geojsonSource()`, `boundaryAreas` and overlays add named
+sources.
+
+`geojsonSource()` declares GeoJSON in `sources`, and `clusterOverlay()` and `heatmapOverlay()` return
+ordinary overlays that keep `placement`, `remove()`, and `tileflow validate`:
+
+<!-- docs:check -->
+
+```ts
+import {clusterOverlay, defineMap, geojsonSource, heatmapOverlay} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+
+export default defineMap({
+  id: 'store-locator',
+  version: 1,
+  extends: streets,
+  sources: {
+    stores: geojsonSource({
+      attribution: 'Stores © Example',
+      cluster: true,
+      clusterMaxZoom: 14,
+      clusterRadius: 50,
+    }),
+  },
+  overlays: {
+    density: heatmapOverlay({
+      id: 'density',
+      maxZoom: 9,
+      placement: 'below-labels',
+      source: 'stores',
+    }),
+    stores: clusterOverlay({id: 'stores', placement: 'above-labels', source: 'stores'}),
+  },
+});
+```
+
+Omit `data` to fill the source at runtime through a framework adapter's `dataSources`. Inline `data`
+is limited to 512,000 bytes; larger files use an absolute `https://` URL. Clustering options keep
+their MapLibre and Mapbox names. A cluster overlay over a source without `cluster: true` fails
+validation with `TF_OVERLAY_CLUSTER_SOURCE_INVALID`, and a map with no label font and no `font` option
+fails with `TF_OVERLAY_FONT_UNAVAILABLE`. Web helpers are also exported from
+`@tileflow/core/runtime`. `heatmapOverlay()` also accepts `sourceLayer` for hosted vector tilesets,
+which cannot cluster. See the
+[interactions reference](https://github.com/tileflow/tileflow-sdk/blob/main/packages/interactions/REFERENCE.md)
+for runtime data, click-to-expand, and React Native support.
 
 `bathymetry({vectorLayers: {...}})` declares contour/name layers. `marine: 'nautical'` adds
 navigation marks, flashing lights, and a "Not for navigation" notice.
+
+`circular_feature` optionally retains `network` (a normalized road-network string; coverage is
+partial) and `official` (a numeric path-status indicator). For paths, footways, cycleways and
+bridleways, `official=0` means OSM marks the way `informal=yes`; `official=1` means `informal=no`
+or a recorded operator, unless `informal=yes`. Absence means unknown or not applicable.
+This indicator does not establish legal recognition or public access.
 
 World attribution credits Tileflow and OpenStreetMap; other vector data keeps its owner's
 attribution.
 
 `projection` accepts `mercator` or `globe`. Terrain supports `none`, `hillshade`, `3d`, and an object
-form for explicit hillshade and contour configuration. Browser-derived contours require a DEM tile
-template, zoom limits, thresholds, and the Tileflow contour protocol. Framework adapters and local
+form for explicit hillshade and contour configuration. Browser-derived contours require zoom limits,
+thresholds, and the Tileflow contour protocol. They read the terrain's DEM: `contours.demUrl` when
+given, else the first `terrain.tiles` template, else the `terrain.url` TileJSON, which defaults to
+hosted Tileflow Terrain. A TileJSON is read when the first contour tile is requested; its first tile
+template is the DEM, so contours follow the same Terrain release and map binding as hillshade.
+`registerTileflowContourProtocol` accepts `fetch` and `transformTileJsonUrl` to route that request
+through an application transport. The protocol is registered once per page, so a map that sends a
+Hosted session gives its contours a request scope: `createTileflowContourRequestScope` takes the
+map's `transformRequest`, `createTileflowTransformRequest({contourRequestScope})` names the scope
+on each contour tile request, and the protocol sends the DEM TileJSON (`Source`) and every DEM tile
+(`Tile`) back through that transform when it fetches them. Each request then carries the map's
+current `session` and `grant`, as hillshade tiles do; dispose the scope when the map is removed.
+The React, Vue and Svelte components do this for every map. Framework adapters and local
 tooling prepare browser resources; direct MapLibre integrations must register required protocols
 before loading a style.
+
+### Catalog branding
+
+The React, Vue, Svelte, React Native and embedded mobile maps manage the Tileflow symbol
+in the lower-left corner automatically. Preview and capture include it too. The symbol links to
+https://tileflow.dev and follows the active catalog sources, independently of data attribution.
+Own and third-party tiles do not require the Tileflow mark. Public Tileflow catalog delivery shows
+it; catalog delivery bound to a Map ID reads the owner's current branding entitlement. A paid map
+never inserts a provisional mark. While a managed decision is unavailable, the surface remains
+hidden instead of guessing Free; it retries and renews a short-lived decision while mounted.
+
+Direct MapLibre integrations call `attachTileflowBranding(map)` from `@tileflow/core/browser`
+synchronously after constructing the map, before yielding to the browser. It follows style/source
+changes and cleans up on `map.remove()`; its returned function also disposes it explicitly. Keep it
+when disabling other MapLibre controls. `apiUrl` selects an alternative Tileflow API origin and
+`baseUrl` resolves relative source URLs. `loadTileflowRuntimeStyle` preserves catalog provenance
+when expanding TileJSON. Applications that rewrite source URLs themselves must retain their source
+identity. This presentation control cannot prevent a modified open-source client from removing DOM;
+service branding requirements and third-party attribution obligations still apply.
 
 ### Load a portable style in MapLibre
 
@@ -281,7 +381,9 @@ under the camera, read chosen layers of a vector source for an area at a fixed z
 Browser 3D scenes resolve `camera.adaptivePerspective` from caller override, map default, then
 `false`; Streets enables it. Buildings occlude depth markers. `camera.pitchLimit: {maxZoom, maxPitch}`
 caps inclination through `maxZoom`, respecting stricter application caps. Closer views and disposal
-restore the application's maximum.
+restore the application's maximum. A `jumpTo`, `easeTo`, `flyTo` or `fitBounds` whose target zoom is
+above `maxZoom` keeps its requested pitch throughout, even when it starts at an overview; a movement
+that stops at or below `maxZoom` is capped again.
 3D layers prioritize visible ground from viewport bottom toward the horizon. Buildings fade across
 the far boundary, followed by haze. Coverage follows resize and projection within each layer's
 `maxTiles` budget (default 25), prioritizing nearest ground.
@@ -293,10 +395,27 @@ their lighting. Model corners belong to the asset; ordinary buildings use `edgeR
 entrance zooms, without zoom/arrival growth or fading. Equal endpoints such as
 `entrance: {buildings: [14.25, 14.25], models: [14.25, 14.25]}` switch immediately at that zoom.
 
-Text requires exactly one provider. Soundings and Blueprint use URL glyphs; Streets packages DINish
-and Noto Sans; Baedeker, 1777 and Siegfried package Cormorant; Cívica packages its lettering. Hosted
+Text requires exactly one provider. Soundings and Blueprint use URL glyphs; Streets and Terrain package DINish
+and Noto Sans; the community Baedeker, 1777 and Siegfried maps package Cormorant. Hosted
 rejects packaged/local fonts: self-host or replace them with compatible public glyphs. Tile and font
 URLs do not grant redistribution rights.
+
+`labels.roadPlacement: 'readable'` draws complete street names above the 3D scene, below foreground
+destinations. `attachTileflowLabelPlacement(map)` from `@tileflow/core/browser` adds per-instance
+visibility to supported MapLibre WebGL2 line-symbol buffers; frameworks, preview and capture
+attach it automatically. Asynchronous depth queries hide whole names whose ground anchors are
+occluded, without changing source filters or collision placement. Above 40° the distant view is
+reduced, at 55° names beyond the centre yield, and at 60° only the near foreground remains.
+Native renderers, terrain, globe and unsupported browser bucket layouts keep complete text above
+buildings.
+The adapter does not reproduce Mapbox's proprietary layout engine or its placement transitions.
+
+`glyphs.fontStacks` lists the stacks the provider serves, exactly as MapLibre joins a `text-font`
+array with commas. A Tileflow glyph set URL (`/base/<assetSetSha256>/glyphs/{fontstack}/{range}.pbf`)
+combines fallback stacks, the first font holding a glyph winning, so there it is enough to declare
+each font: a `text-font` list of at most 10 declared fonts is accepted without declaring the joined
+stack. A declaration naming more than 10 fonts, or a font a known Tileflow glyph set does not
+publish, is rejected. Other providers must declare every joined stack the styles use.
 
 ## Reference
 
@@ -319,6 +438,10 @@ Land may supply a georeferenced `globalLandcoverUnderlay` image with `url`, four
 and themed `opacity`. It is drawn below global cover and omitted when land is disabled.
 Tree forms may use `sizeAnchor` and `crownAnchor` (metres) with `sizeCompression`
 from 0 to 1 to reduce size variation while preserving each tree’s proportions.
+Decorative canopy clearance bounds the available space; it is not a measured crown diameter.
+When canopy height is available, inferred crowns also follow the selected tree form's proportions.
+Individually mapped trees retain their measured dimensions. Hedges use continuous, joined surfaces
+with a 0.5 m footprint, a flat top, and clipped tile boundaries; tree size controls do not resize them.
 
 ## Flat footprints under 3D buildings
 
@@ -330,7 +453,7 @@ flat fallback remains. Streets selects this option; other maps keep their author
 
 ## Runtime sources and layers
 
-The unreleased `@tileflow/core/browser` runtime controller backs the React, Vue and Svelte
+The unreleased `@tileflow/core/browser` runtime controller backs `@tileflow/dom`, which owns the React, Vue and Svelte
 component references. It accepts JSON style-spec definitions and owns only resources registered
 through its methods. Existing raw MapLibre callbacks remain available; mutations through them are
 outside the controller's restoration contract.
@@ -356,7 +479,7 @@ The insertion range is zero through that count, inclusive. Omitting a position a
 slot. `aboveLayerId` and `belowLayerId` are alternative positions; combining them with another
 position, using an unknown reference, or crossing slots rejects before mutation.
 
-`TileflowMapError` exposes `code` and structured `context`. Position conflicts use
+`TileflowRuntimeStyleError` exposes `code` and structured `context`. Position conflicts use
 `invalidRequest` with reason `layerPositionConflict`, the affected IDs and slots, the field path,
 and correction codes/messages. This rejection deliberately differs from Mapbox's cross-slot
 reference behavior; `slotIndex` does not claim equivalence to Mapbox `layerIndex`.

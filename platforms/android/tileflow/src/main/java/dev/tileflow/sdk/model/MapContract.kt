@@ -26,6 +26,7 @@ internal object MapContract {
         SET_BLEND("setBlend"),
         SET_OPTIONS("setOptions"),
         SET_CONTENT("setContent"),
+        SET_DATA_LAYERS("setDataLayers"),
         PROJECT("project"),
         UNPROJECT("unproject"),
         SET_VISIBILITY("setVisibility"),

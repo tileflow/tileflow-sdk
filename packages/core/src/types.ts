@@ -205,8 +205,11 @@ export type TileflowTerrainContoursConfig = {
   /** Maximum native zoom exposed by the DEM tile template. */
   demMaxZoom: number;
   /**
-   * HTTP(S) DEM template containing {z}, {x}, and {y}. Defaults to the hosted Tileflow Terrain
-   * tiles, `{apiBaseUrl}/tiles/terrain/{z}/{x}/{y}.webp`, which follow the current release.
+   * HTTP(S) DEM template containing {z}, {x}, and {y}. When omitted, contours read the terrain's
+   * own DEM: the first `terrain.tiles` template, else the `terrain.url` TileJSON, which defaults to
+   * hosted Tileflow Terrain (`{apiBaseUrl}/tiles/terrain/tiles.json`). A TileJSON is read when the
+   * first contour tile is requested, so hosted Terrain serves its current release with the map
+   * binding of the hosted style.
    */
   demUrl?: string;
   index?: TileflowTerrainContourLineStyle;
@@ -402,12 +405,13 @@ export type TileflowLabelsModuleConfig = {
   /**
    * Where street names draw. `foreground` (the default) keeps them above buildings and
    * vegetation. `ground` places them above flat footprints and below raised buildings,
-   * with map-aligned text by default.
-   * Ground names retain their road-class collision order, but foreground symbols are offered
-   * first by the renderer; `collisionPriority` cannot make ground names outrank those symbols.
+   * with map-aligned text by default. `readable` keeps names above the scene but below
+   * foreground destinations; the web runtime hides whole occluded or distant names.
+   * Ground and readable names retain their road-class collision order, but foreground symbols
+   * are offered first; `collisionPriority` cannot make these names outrank those symbols.
    * Shields and junction numbers keep their foreground placement.
    */
-  roadPlacement?: 'ground' | 'foreground';
+  roadPlacement?: 'ground' | 'foreground' | 'readable';
   /** Defaults to streets, including local street names where their geometry is enabled. */
   roads?: TileflowRoadLabelDetail;
   shields?: TileflowRoadShieldDetail;

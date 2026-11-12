@@ -18,19 +18,20 @@ const allowedTileflowDependencies = {
   'coordinates-runtime': new Set(['coordinates']),
   core: new Set(),
   dev: new Set(['core']),
+  dom: new Set(['core', 'interactions']),
   elevation: new Set(),
   geoip: new Set(),
   interactions: new Set(),
   maps: new Set(['core']),
   next: new Set(['dev']),
-  react: new Set(['core', 'interactions', 'static']),
-  'react-native': new Set([]),
+  react: new Set(['core', 'dom', 'interactions', 'static']),
+  'react-native': new Set(['core']),
   routing: new Set(),
   search: new Set(),
   static: new Set(),
-  svelte: new Set(['core', 'interactions']),
+  svelte: new Set(['core', 'dom', 'interactions']),
   vite: new Set(['dev']),
-  vue: new Set(['core', 'interactions']),
+  vue: new Set(['core', 'dom', 'interactions']),
   webpack: new Set(['dev']),
 };
 
@@ -72,6 +73,7 @@ test('public package sources respect the SDK responsibility graph', async () => 
             [
               'coordinates',
               'core',
+              'dom',
               'elevation',
               'geoip',
               'interactions',
@@ -113,7 +115,7 @@ test('public package sources respect the SDK responsibility graph', async () => 
         );
       }
 
-      if (['react', 'svelte', 'vue'].includes(packageName)) {
+      if (['dom', 'react', 'svelte', 'vue'].includes(packageName)) {
         assertTypeOnlyRootImports(source, label, '@tileflow/core');
         assertTypeOnlyStaticMapLibreImports(source, label);
         assertLazyMapLibreImportsStayIsolated(source, label);

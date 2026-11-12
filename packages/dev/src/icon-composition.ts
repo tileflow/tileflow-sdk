@@ -13,6 +13,7 @@ import {
   type TileflowIconSource,
 } from '@tileflow/core';
 import type {TileflowEffectiveIconSourceIdentity} from '@tileflow/core/build';
+import type {TileflowIconAttributionNotice} from './icon-attribution';
 import {loadTileflowIconSetArtifact, type TileflowIconCacheOptions} from './icon-cache';
 import {readTileflowIconsLockfile} from './icon-lockfile';
 import {packTileflowRenderedIcons, type TileflowRenderedIcon} from './icon-sprite';
@@ -57,6 +58,8 @@ export type TileflowComposedIconContributor =
 
 /** One effective icon after ordered last-wins replacement has completed. */
 export type TileflowComposedIconWinner = {
+  /** Required credit declared beside a filesystem-backed winner. */
+  attribution?: TileflowIconAttributionNotice;
   contributor: number;
   id: string;
   identity: TileflowEffectiveIconSourceIdentity;
@@ -96,6 +99,7 @@ export async function composeTileflowIconSources(
   const winners = new Map<
     string,
     {
+      attribution?: TileflowIconAttributionNotice;
       ordinal: number;
       icon: TileflowRenderedIcon;
       identity: TileflowEffectiveIconSourceIdentity;
@@ -193,7 +197,7 @@ export async function composeTileflowIconSources(
             'ICON_COMPOSITION_INVALID',
             'Effective local icon originals exceed the source-byte limit',
           );
-        addWinner(ordinal, item.icon, item.identity, item.source);
+        addWinner(ordinal, item.icon, item.identity, item.source, item.attribution);
       }
     }
   }
@@ -243,6 +247,7 @@ export async function composeTileflowIconSources(
     watchFiles: [...watchFiles].sort(compareCodeUnits),
     watchPaths: [...watchPaths].sort(compareCodeUnits),
     winners: sorted.map((winner) => ({
+      ...(winner.attribution ? {attribution: winner.attribution} : {}),
       contributor: winner.ordinal,
       id: winner.icon.id,
       identity: winner.identity,
@@ -255,6 +260,7 @@ export async function composeTileflowIconSources(
     icon: TileflowRenderedIcon,
     identity: TileflowEffectiveIconSourceIdentity,
     source: TileflowIconDirectorySourceFile | null,
+    attribution?: TileflowIconAttributionNotice,
   ): void {
     pixelBytes += icon.oneX.rgba.byteLength + icon.twoX.rgba.byteLength;
     const maximumPixelBytes =
@@ -266,7 +272,7 @@ export async function composeTileflowIconSources(
         'ICON_COMPOSITION_INVALID',
         'Composed rendered cells exceed the final sprite capacity',
       );
-    winners.set(icon.id, {ordinal, icon, identity, source});
+    winners.set(icon.id, {...(attribution ? {attribution} : {}), ordinal, icon, identity, source});
   }
 }
 

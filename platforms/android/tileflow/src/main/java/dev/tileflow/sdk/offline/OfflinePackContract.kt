@@ -123,6 +123,8 @@ internal class OfflineDownloadManifest(
     val revalidationIntervalMillis: Long,
     /** The end of the download window. */
     val downloadExpiresAtMillis: Long,
+    /** Persisted service receipt; older packs need a refresh. */
+    val catalogLogoRequired: Boolean? = null,
 ) {
     fun source(name: String): OfflineDownloadSource? = sources.firstOrNull { it.source == name }
 }
@@ -390,6 +392,7 @@ internal object OfflinePackContract {
             billableResourceCount = billableCount,
             bytes = bytes,
             attribution = attribution,
+            catalogLogoRequired = value.opt("catalogLogoRequired") as? Boolean,
             maximumPackResources = maximum,
             dailyDownloads = daily,
             revalidationIntervalMillis = interval * 1_000,

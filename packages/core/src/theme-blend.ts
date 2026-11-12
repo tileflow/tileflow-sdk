@@ -1,4 +1,5 @@
 import {isColorProgramMarker} from './color-program';
+import {parseTileflowCssColor} from './css-color';
 import type {MapLibreStyle} from './types';
 
 /**
@@ -939,7 +940,7 @@ function colourFromOklab([lightness, a, b, alpha]: readonly number[]): string {
   return `rgba(${red}, ${green}, ${blue}, ${Number(alpha!.toFixed(3))})`;
 }
 
-/** A hex, rgb(a), or hsl(a) colour as sRGB channels and alpha, each from 0 to 1; null otherwise. */
+/** A CSS colour (see `parseTileflowCssColor`) as sRGB channels and alpha, each from 0 to 1; null otherwise. */
 export function tileflowColourChannels(colour: string): [number, number, number, number] | null {
   const rgba = parseColour(colour);
   if (!rgba) return null;
@@ -951,52 +952,7 @@ export function tileflowColourChannels(colour: string): [number, number, number,
   ];
 }
 
-/** Hex, rgb(a), and hsl(a) colours as 0–255 channels and 0–1 alpha. */
+/** Any colour `parseTileflowCssColor` reads, as 0–255 channels and 0–1 alpha. */
 function parseColour(colour: string): [number, number, number, number] | null {
-  const text = colour.trim().toLowerCase();
-  const hex = /^#([\da-f]{3,8})$/u.exec(text)?.[1];
-  if (hex && [3, 4, 6, 8].includes(hex.length)) {
-    const full = hex.length <= 4 ? [...hex].map((digit) => digit + digit).join('') : hex;
-    const channels = full.match(/../gu)!.map((pair) => Number.parseInt(pair, 16));
-    return [channels[0]!, channels[1]!, channels[2]!, channels.length > 3 ? channels[3]! / 255 : 1];
-  }
-  const functional = /^(rgba?|hsla?)\(([^)]+)\)$/u.exec(text);
-  if (!functional) return null;
-  const parts = functional[2]!.split(/[\s,/]+/u).filter(Boolean);
-  if (parts.length < 3 || parts.length > 4) return null;
-  const alpha = parts[3] === undefined ? 1 : parseUnit(parts[3], 1);
-  if (functional[1]!.startsWith('rgb')) {
-    const [r, g, b] = parts.slice(0, 3).map((part) => parseUnit(part, 255));
-    if ([r, g, b, alpha].some((value) => value === null)) return null;
-    return [r!, g!, b!, alpha!];
-  }
-  const hue = Number.parseFloat(parts[0]!);
-  const saturation = parseUnit(parts[1]!, 1);
-  const light = parseUnit(parts[2]!, 1);
-  if (!Number.isFinite(hue) || saturation === null || light === null || alpha === null) return null;
-  const chroma = (1 - Math.abs(2 * light - 1)) * saturation;
-  const sector = (((hue % 360) + 360) % 360) / 60;
-  const x = chroma * (1 - Math.abs((sector % 2) - 1));
-  const [r1, g1, b1] =
-    sector < 1
-      ? [chroma, x, 0]
-      : sector < 2
-        ? [x, chroma, 0]
-        : sector < 3
-          ? [0, chroma, x]
-          : sector < 4
-            ? [0, x, chroma]
-            : sector < 5
-              ? [x, 0, chroma]
-              : [chroma, 0, x];
-  const offset = light - chroma / 2;
-  return [(r1 + offset) * 255, (g1 + offset) * 255, (b1 + offset) * 255, alpha];
-}
-
-/** A CSS number or percentage scaled to `scale`; null when it is neither. */
-function parseUnit(part: string, scale: number): number | null {
-  const percentage = part.endsWith('%');
-  const value = Number.parseFloat(part);
-  if (!Number.isFinite(value)) return null;
-  return percentage ? (value / 100) * scale : value;
+  return parseTileflowCssColor(colour);
 }

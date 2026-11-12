@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {tileflowBuildings3DLayerId} from '../src/buildings-3d-browser';
 import {tileflowNativeBuildingsLayerId} from '../src/building-layer-ids';
+import {tileflowBuildings3DLayerId} from '../src/buildings-3d-browser';
 import {attachTileflowMap3D} from '../src/map-3d-attach-browser';
 
 // React, Vue and Svelte mount the scene through attachTileflowMap3D with this loader.
@@ -69,16 +69,34 @@ test('a style that declares buildings mounts the 3D buildings by default', async
   assert.equal(map.layers.has(tileflowBuildings3DLayerId), false);
 });
 
-test('the native extrusion stays visible through lazy loading and takes over if loading fails', async () => {
-  const map = fakeMap(buildings);
+function nativeVisibility(map: ReturnType<typeof fakeMap>) {
   map.layers.set(tileflowNativeBuildingsLayerId, {id: tileflowNativeBuildingsLayerId});
-  let visibility = 'none';
+  const state = {visibility: 'none'};
   Object.assign(map, {
-    getLayoutProperty: () => visibility,
+    getLayoutProperty: () => state.visibility,
     setLayoutProperty: (_id: string, _property: string, next: string) => {
-      visibility = next;
+      state.visibility = next;
     },
   });
+  return state;
+}
+
+test('while the renderers load, the native extrusion draws buildings no model stands in for', async () => {
+  const map = fakeMap({'tileflow:buildings': {version: 1}});
+  const native = nativeVisibility(map);
+  const attachment = attachTileflowMap3D({
+    map,
+    load: () => new Promise(() => {}),
+  });
+  assert.equal(native.visibility, 'visible');
+  attachment.setViewMode('2d');
+  assert.equal(native.visibility, 'none');
+  attachment.dispose();
+});
+
+test('while the renderers load, a map with landmarks keeps the native extrusion until the scene knows which buildings they replace, or loading fails', async () => {
+  const map = fakeMap(buildings);
+  const native = nativeVisibility(map);
   let fail!: (error: Error) => void;
   const errors: unknown[] = [];
   const attachment = attachTileflowMap3D({
@@ -86,36 +104,40 @@ test('the native extrusion stays visible through lazy loading and takes over if 
     load: () => new Promise((_resolve, reject) => (fail = reject)),
     onError: (error) => errors.push(error),
   });
-  assert.equal(visibility, 'visible');
+  assert.equal(native.visibility, 'none');
   attachment.setViewMode('2d');
-  assert.equal(visibility, 'none');
   attachment.setViewMode('3d');
-  assert.equal(visibility, 'visible');
+  assert.equal(native.visibility, 'none');
   fail(new Error('loader failed'));
   await mounted();
-  assert.equal(visibility, 'visible');
+  // Without the scene, the native extrusion draws every building.
+  assert.equal(native.visibility, 'visible');
   assert.equal(errors.length, 1);
+  attachment.setViewMode('2d');
+  assert.equal(native.visibility, 'none');
+  attachment.setViewMode('3d');
+  assert.equal(native.visibility, 'visible');
   attachment.dispose();
-  assert.equal(visibility, 'none');
+  assert.equal(native.visibility, 'none');
 });
 
-test('mounting the scene keeps native buildings until its first drawable frame', async () => {
+test('a mounted scene keeps the native extrusion off a landmark until it knows its footprint, waiting a moment at most', async (t) => {
+  t.mock.timers.enable({apis: ['setTimeout']});
   const map = fakeMap(buildings);
-  map.layers.set(tileflowNativeBuildingsLayerId, {id: tileflowNativeBuildingsLayerId});
-  let visibility = 'none';
-  Object.assign(map, {
-    getLayoutProperty: () => visibility,
-    setLayoutProperty: (_id: string, _property: string, next: string) => {
-      visibility = next;
-    },
-  });
+  const native = nativeVisibility(map);
   const attachment = attachTileflowMap3D({map, load});
-  assert.equal(visibility, 'visible');
-  await mounted();
+  for (let turns = 0; turns < 1000 && !attachment.scene; turns += 1)
+    await new Promise((resolve) => setImmediate(resolve));
   assert.ok(map.layers.has(tileflowBuildings3DLayerId));
-  assert.equal(visibility, 'visible');
+  // The landmarks round the view are not known yet: nothing may draw what they replace.
+  assert.equal(attachment.scene?.buildings?.standIns.known, false);
+  assert.equal(native.visibility, 'none');
+  t.mock.timers.tick(5_000);
+  // They did not arrive in time: the map's own buildings draw until the scene is ready.
+  assert.equal(attachment.scene?.buildings?.standIns.known, true);
+  assert.equal(native.visibility, 'visible');
   attachment.dispose();
-  assert.equal(visibility, 'none');
+  assert.equal(native.visibility, 'none');
 });
 
 test('the 2D view opts out: no 3D layer is mounted until the scene is shown', async () => {
@@ -248,6 +270,115 @@ test('authored pitch caps hold through zoom 15 and release on closer views and s
   assert.equal(maximum, 30);
 });
 
+// Like the renderer, a camera change clamps its pitch against the maximum in force before any event
+// reports the new zoom; an animation clamps every frame and ends with `moveend`.
+function steerableMap(metadata: Record<string, unknown>) {
+  const map = fakeMap(metadata);
+  let animation:
+    {from: {zoom: number; pitch: number}; to: {zoom: number; pitch: number}} | undefined;
+  const camera = {zoom: 2, pitch: 0, maximum: 85};
+  const frame = (zoom: number, pitch: number) => {
+    camera.zoom = zoom;
+    camera.pitch = Math.min(pitch, camera.maximum);
+    map.fire('move');
+    map.fire('zoom');
+  };
+  const steerable = Object.assign(map, {
+    camera,
+    getZoom: () => camera.zoom,
+    getPitch: () => camera.pitch,
+    getMaxPitch: () => camera.maximum,
+    setMaxPitch(value: number) {
+      camera.maximum = value;
+      camera.pitch = Math.min(camera.pitch, value);
+    },
+    isMoving: () => animation !== undefined,
+    stop() {
+      if (!animation) return;
+      animation = undefined;
+      map.fire('moveend');
+    },
+    jumpTo(options: {zoom?: number; pitch?: number}) {
+      steerable.stop();
+      frame(options.zoom ?? camera.zoom, options.pitch ?? camera.pitch);
+      map.fire('moveend');
+    },
+    easeTo(options: {zoom?: number; pitch?: number}) {
+      steerable.stop();
+      animation = {
+        from: {zoom: camera.zoom, pitch: camera.pitch},
+        to: {zoom: options.zoom ?? camera.zoom, pitch: options.pitch ?? camera.pitch},
+      };
+    },
+    /** Draws the running animation at progress `k`; 1 ends it. */
+    step(k: number) {
+      const {from, to} = animation!;
+      frame(from.zoom + (to.zoom - from.zoom) * k, from.pitch + (to.pitch - from.pitch) * k);
+      if (k === 1) {
+        animation = undefined;
+        map.fire('moveend');
+      }
+    },
+    cameraForBounds: (_bounds: unknown, options?: {zoom?: number}) => ({zoom: options?.zoom ?? 17}),
+    fitBounds(bounds: unknown, options?: {pitch?: number}) {
+      steerable.jumpTo({zoom: steerable.cameraForBounds(bounds).zoom, ...options});
+    },
+  });
+  return steerable;
+}
+const capped = {
+  ...buildings,
+  'tileflow:camera': {version: 1, pitchLimit: {maxZoom: 15, maxPitch: 38}},
+};
+
+test('a camera change from an overview into a closer view keeps the pitch it asks for', async () => {
+  const map = steerableMap(capped);
+  const jumpTo = map.jumpTo;
+  const attachment = attachTileflowMap3D({map, load});
+  await mounted();
+  assert.notEqual(map.jumpTo, jumpTo);
+  assert.equal(map.camera.maximum, 38);
+  map.jumpTo({zoom: 16.4, pitch: 64});
+  assert.deepEqual([map.camera.zoom, map.camera.pitch, map.camera.maximum], [16.4, 64, 85]);
+  map.jumpTo({zoom: 2, pitch: 64});
+  assert.deepEqual([map.camera.pitch, map.camera.maximum], [38, 38], 'overviews stay capped');
+  map.jumpTo({zoom: 10, pitch: 64});
+  assert.equal(map.camera.pitch, 38, 'a change that ends at an overview zoom is capped');
+  map.fitBounds(
+    [
+      [2.29, 48.85],
+      [2.3, 48.86],
+    ],
+    {pitch: 64},
+  );
+  assert.deepEqual([map.camera.zoom, map.camera.pitch], [17, 64], 'fitted bounds use their zoom');
+  attachment.dispose();
+  assert.equal(map.jumpTo, jumpTo, 'disposal restores the map’s own camera calls');
+  assert.equal(map.camera.maximum, 85);
+});
+
+test('an animation into a closer view keeps its pitch; one stopped at an overview is capped', async () => {
+  const map = steerableMap(capped);
+  attachTileflowMap3D({map, load});
+  await mounted();
+  map.easeTo({zoom: 16.4, pitch: 64});
+  map.step(0.5);
+  assert.equal(map.camera.maximum, 85, 'the cap stays lifted until the movement ends');
+  map.step(1);
+  assert.deepEqual([map.camera.zoom, map.camera.pitch, map.camera.maximum], [16.4, 64, 85]);
+
+  map.jumpTo({zoom: 2, pitch: 0});
+  map.easeTo({zoom: 16.4, pitch: 64});
+  map.step(0.75);
+  assert.ok(map.camera.zoom < 15 && map.camera.pitch === 48, 'the flight tilts on its way in');
+  map.stop();
+  assert.deepEqual([map.camera.pitch, map.camera.maximum], [38, 38], 'an interrupted flight');
+  map.easeTo({zoom: 16.4, pitch: 70});
+  map.step(0.25);
+  map.easeTo({zoom: 4, pitch: 70});
+  assert.equal(map.camera.maximum, 38, 'a replacing animation that ends at an overview is capped');
+});
+
 test('flat footprints remain until the 3D renderer has a drawable frame', async () => {
   const native = {visibility: 'visible'};
   const map = fakeMap({
@@ -316,4 +447,21 @@ test('caller camera changes before lazy loading win, and removal never writes th
   attachment.dispose();
   assert.equal(attachment.scene, undefined);
   assert.equal(map.getVerticalFieldOfView(), before);
+});
+
+test('the scene reports what it still waits for, and nothing while hidden', async () => {
+  const map = {
+    ...fakeMap(buildings),
+    getSource: () => ({tiles: ['https://scene-test.invalid/{z}/{x}/{y}.pbf'], maxzoom: 15}),
+  };
+  const attachment = attachTileflowMap3D({map, load});
+  await mounted();
+  const scene = attachment.scene!;
+  // Mounted but not yet drawn: the building tiles round the camera are still to be read.
+  assert.ok(scene.pending().buildingTiles > 0);
+  assert.equal(scene.loaded(), false);
+  await scene.hide();
+  assert.deepEqual(scene.pending(), {buildingTiles: 0, models: 0, treeTiles: 0, transitions: 0});
+  assert.equal(scene.loaded(), true);
+  attachment.dispose();
 });

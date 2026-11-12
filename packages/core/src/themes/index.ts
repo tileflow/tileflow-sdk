@@ -22,6 +22,7 @@ import type {
   TileflowTypographyDomain,
   TileflowTypographyStyle,
 } from '../types';
+import {normalizeTileflowCssColor, parseTileflowCssColor} from '../css-color';
 import {resolveTileflowTheme, type TileflowTheme} from './model';
 
 export * from './model';
@@ -696,34 +697,24 @@ function hexToRgba(hex: string): {
   b: number;
 } {
   hex = colorProgramValue(hex) as string;
-  const rgbMatch = hex.match(
-    /^rgba?\(\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)(?:\s*,\s*(\d+(?:\.\d+)?))?\s*\)$/,
-  );
-
-  if (rgbMatch) {
-    return {
-      a: roundAlpha(Number(rgbMatch[4] ?? 1)),
-      r: Math.round(Number(rgbMatch[1])),
-      g: Math.round(Number(rgbMatch[2])),
-      b: Math.round(Number(rgbMatch[3])),
-    };
-  }
-
-  const value = hex.replace('#', '');
-  const normalized =
-    value.length === 3 || value.length === 4
-      ? value
-          .split('')
-          .map((character) => character + character)
-          .join('')
-      : value;
+  const rgba = parseTileflowCssColor(hex);
+  if (!rgba) throw new TypeError(describeUnreadableColor(hex));
 
   return {
-    a: normalized.length === 8 ? roundAlpha(Number.parseInt(normalized.slice(6, 8), 16) / 255) : 1,
-    r: Number.parseInt(normalized.slice(0, 2), 16),
-    g: Number.parseInt(normalized.slice(2, 4), 16),
-    b: Number.parseInt(normalized.slice(4, 6), 16),
+    a: roundAlpha(rgba[3]),
+    r: Math.round(rgba[0]),
+    g: Math.round(rgba[1]),
+    b: Math.round(rgba[2]),
   };
+}
+
+function describeUnreadableColor(value: string): string {
+  try {
+    normalizeTileflowCssColor(value);
+  } catch (error) {
+    if (error instanceof TypeError) return error.message;
+  }
+  return `The colour ${JSON.stringify(value)} cannot be mixed.`;
 }
 
 function cssColor(hex: string): string {

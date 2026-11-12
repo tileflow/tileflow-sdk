@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  clusterOverlay,
   createStyle,
   defineMap,
   disable,
+  geojsonSource,
   hostedTileset,
   maplibreOverlay,
   resolveMap,
@@ -72,6 +74,30 @@ test('prepares path-free hosted styles and one canonical logical Team source rec
     inspectTileflowHostedCompatibility(project, {'hosted-overlays': prepared.styles}),
     [],
   );
+});
+
+test('leaves GeoJSON sources in the hosted style and out of the Team source record', () => {
+  const clustered = defineMap({
+    id: 'clustered',
+    version: 1,
+    extends: map,
+    overlays: {
+      places: clusterOverlay({
+        font: ['Noto Sans Regular'],
+        id: 'places',
+        placement: 'above-labels',
+        source: 'places',
+      }),
+    },
+    sources: {places: geojsonSource({cluster: true})},
+  });
+  const prepared = prepareTileflowHostedThemeFamily('clustered', resolveMap(clustered), {
+    light: createStyle(clustered),
+  });
+
+  assert.deepEqual(Object.keys(prepared.teamSources), ['stores']);
+  assert.equal(prepared.styles.light?.sources.places?.type, 'geojson');
+  assert.equal(prepared.styles.light?.sources.places?.url, undefined);
 });
 
 test('prepares an empty Team source record for a World-only Map', () => {

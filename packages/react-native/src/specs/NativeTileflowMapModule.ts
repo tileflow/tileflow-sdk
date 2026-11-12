@@ -29,6 +29,7 @@ export type MapMethod =
   | 'setImages'
   | 'setBoundaryValues'
   | 'joinBoundaryRows'
+  | 'setDataLayers'
   | 'setStyleState'
   | 'setEmphasis'
   | 'setSun'

@@ -45,3 +45,49 @@ export async function writeFrameworkMapFixture(
       : writeFile(join(directory, 'style.json'), JSON.stringify(style), 'utf8'),
   ]);
 }
+
+/** Two themes with a label font and placement anchors, as a compiled map has. */
+export async function writeDataLayerFixture(cwd: string, origin: string) {
+  const directory = join(cwd, 'public/tileflow-fixture');
+  await mkdir(join(directory, 'glyphs/Test'), {recursive: true});
+  const style = (background: string) => ({
+    glyphs: `${origin}/tileflow-fixture/glyphs/{fontstack}/{range}.pbf`,
+    layers: [
+      {id: 'background', paint: {'background-color': background}, type: 'background'},
+      {
+        id: 'labels',
+        layout: {'text-field': ['get', 'name'], 'text-font': ['Test']},
+        source: 'places',
+        type: 'symbol',
+      },
+    ],
+    metadata: {
+      'tileflow:overlay-placement-manifest': {
+        anchors: {'above-labels': null, 'below-labels': 'labels'},
+        schemaVersion: 1,
+      },
+    },
+    sources: {places: {data: {features: [], type: 'FeatureCollection'}, type: 'geojson'}},
+    version: 8,
+  });
+  await Promise.all([
+    writeFile(join(directory, 'glyphs/Test/0-255.pbf'), ''),
+    writeFile(join(directory, 'light.json'), JSON.stringify(style('#dfe7ef'))),
+    writeFile(join(directory, 'dark.json'), JSON.stringify(style('#101820'))),
+    writeFile(
+      join(directory, 'manifest.json'),
+      JSON.stringify({
+        maps: {
+          main: {
+            defaultTheme: 'light',
+            themes: {
+              dark: {colorScheme: 'dark', fontFaces: [], styleUrl: './dark.json'},
+              light: {colorScheme: 'light', fontFaces: [], styleUrl: './light.json'},
+            },
+          },
+        },
+        version: 1,
+      }),
+    ),
+  ]);
+}

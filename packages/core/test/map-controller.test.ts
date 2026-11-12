@@ -4,7 +4,7 @@ import test from 'node:test';
 import {
   composeTileflowRuntimeStyle,
   createTileflowMapController,
-  TileflowMapError,
+  TileflowRuntimeStyleError,
 } from '../src/map-controller-browser';
 import type {MapLibreStyle} from '../src/types';
 
@@ -108,7 +108,7 @@ for (const sample of fixture.rejections)
         ? controller.moveLayer(sample.layer.id, sample.position)
         : controller.addLayer(layer(sample.layer), sample.position),
       (error: unknown) => {
-        assert.ok(error instanceof TileflowMapError);
+        assert.ok(error instanceof TileflowRuntimeStyleError);
         assert.equal(error.code, 'invalidRequest');
         assert.equal(error.context.reason, 'layerPositionConflict');
         assert.equal(error.context.path, sample.error.path);
@@ -139,7 +139,8 @@ for (const sample of fixture.slotIndices)
       await assert.rejects(
         change,
         (error: unknown) =>
-          error instanceof TileflowMapError && error.context.reason === 'invalidLayerPosition',
+          error instanceof TileflowRuntimeStyleError &&
+          error.context.reason === 'invalidLayerPosition',
       );
     else await change;
     const ids = new Set(
@@ -191,7 +192,7 @@ test('owns only registered resources and composes before style replacement', asy
   controller.dispose();
   await assert.rejects(
     controller.addSource('later', source),
-    (error: unknown) => error instanceof TileflowMapError && error.code === 'disposed',
+    (error: unknown) => error instanceof TileflowRuntimeStyleError && error.code === 'disposed',
   );
 });
 
@@ -230,7 +231,7 @@ test('terminal failure and disposal reject pending calls without reaching a new 
   binding.dispose();
   await assert.rejects(
     pending,
-    (error: unknown) => error instanceof TileflowMapError && error.code === 'disposed',
+    (error: unknown) => error instanceof TileflowRuntimeStyleError && error.code === 'disposed',
   );
   assert.throws(() => binding.attach(mock()));
   const failed = createTileflowMapControllerBinding();
@@ -343,7 +344,8 @@ test('source removal refuses external consumers without adopting their layers', 
   map.addLayer({id: 'external', type: 'circle', source: 'points'});
   await assert.rejects(
     controller.removeSource('points'),
-    (error: unknown) => error instanceof TileflowMapError && error.context.reason === 'sourceInUse',
+    (error: unknown) =>
+      error instanceof TileflowRuntimeStyleError && error.context.reason === 'sourceInUse',
   );
   assert.ok(map.getSource('points'));
   await assert.rejects(controller.removeLayer('external'));
@@ -414,7 +416,8 @@ test('theme composition rejects externally replaced resources', async () => {
   assert.throws(
     () => composeTileflowRuntimeStyle(map, base()),
     (error: unknown) =>
-      error instanceof TileflowMapError && error.context.reason === 'sourceOwnershipChanged',
+      error instanceof TileflowRuntimeStyleError &&
+      error.context.reason === 'sourceOwnershipChanged',
   );
   controller.dispose();
 });
@@ -465,7 +468,8 @@ test('transition preparation does not strip foreign replacements from a live sna
   assert.throws(
     () => stripTileflowRuntimeStyle(map, snapshot),
     (error: unknown) =>
-      error instanceof TileflowMapError && error.context.reason === 'layerOwnershipChanged',
+      error instanceof TileflowRuntimeStyleError &&
+      error.context.reason === 'layerOwnershipChanged',
   );
   assert.deepEqual(map.getStyle(), snapshot);
   map.removeLayer('route');
@@ -524,7 +528,7 @@ test('a completed application token cannot claim a later identical external relo
   const replacement = map.getStyle();
   map.replace(replacement);
   assert.notEqual(map.getSource('points'), ownSource);
-  assert.equal((errors[0] as TileflowMapError).context.reason, 'sourceOwnershipChanged');
+  assert.equal((errors[0] as TileflowRuntimeStyleError).context.reason, 'sourceOwnershipChanged');
   controller.dispose();
   assert.deepEqual(map.getStyle(), replacement);
 });

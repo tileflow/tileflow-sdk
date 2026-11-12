@@ -13,6 +13,7 @@ internal class NativeMapPreparation(
     val context: String,
     private val load: (URI) -> ByteArray,
     private val storedZooms: ((String) -> IntRange?)?,
+    private val dataLayers: NativeDataLayers = NativeDataLayers(),
 ) {
     class Map(
         val manifest: NativeMapManifest,
@@ -44,6 +45,9 @@ internal class NativeMapPreparation(
     }
 
     fun project(style: JSONObject, url: String): NativeStyleProjection =
+        NativeStyleDocument.project(dataLayers.apply(style), url, context, load, storedZooms)
+
+    fun projectSource(style: JSONObject, url: String): NativeStyleProjection =
         NativeStyleDocument.project(style, url, context, load, storedZooms)
 
     companion object {

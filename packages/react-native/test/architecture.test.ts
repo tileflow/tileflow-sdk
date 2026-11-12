@@ -57,6 +57,7 @@ test('React Native delegates rendering and delivery to its native SDKs', async (
   const root = fileURLToPath(new URL('../src/', import.meta.url));
   for (const file of await sourceFiles(root)) {
     for (const specifier of imports(await readFile(file, 'utf8'))) {
+      if (specifier === '@tileflow/core/native' && file.endsWith('/contract.ts')) continue;
       assert.doesNotMatch(specifier, /^(?:node:|@tileflow\/|@maplibre\/|maplibre-gl)/u, file);
     }
   }

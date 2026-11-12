@@ -1,17 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {auditTileflowMapThemeValues, resolveMap, resolveTileflowTheme} from '@tileflow/core';
-import {
-  baedeker,
-  blueprint,
-  civica,
-  map1777,
-  siegfried,
-  siegfriedThemes,
-  soundings,
-  streets,
-  streetsThemes,
-} from '../src';
+import {outdoors, soundings, streets, streetsThemes} from '../src';
 
 type TokenReference = {
   category: 'color' | 'font' | 'image' | 'number';
@@ -129,7 +119,7 @@ test('every official module, render stack, and terrain value has a valid semanti
     water: ['water', 'hydro', 'surface', 'labels'],
   };
 
-  for (const map of [streets, baedeker, civica, map1777, blueprint, siegfried, soundings]) {
+  for (const map of [streets, soundings, outdoors]) {
     assert.deepEqual(
       auditTileflowMapThemeValues(resolveMap(map)),
       [],
@@ -182,27 +172,8 @@ test('Streets light and dark expose the same complete semantic vocabulary', () =
   assert.ok(Object.keys(streetsThemes.light.tokens.color).length > 110);
 });
 
-test('Siegfried light and dark expose identical semantic vocabularies', () => {
-  const light = resolveTileflowTheme(siegfriedThemes.light);
-  const dark = resolveTileflowTheme(siegfriedThemes.dark);
-
-  for (const category of ['color', 'font', 'image', 'number'] as const) {
-    assert.deepEqual(
-      Object.keys(dark.tokens[category]).sort(),
-      Object.keys(light.tokens[category]).sort(),
-      `${category} token coverage differs by Siegfried theme`,
-    );
-  }
-  assert.deepEqual(
-    Object.values(light.tokens.image).sort(),
-    Object.values(dark.tokens.image)
-      .map((id) => id.replace('siegfried-dark-', 'siegfried-'))
-      .sort(),
-  );
-});
-
 test('every official map has a deterministic complete theme collection', () => {
-  for (const map of [streets, baedeker, civica, map1777, blueprint, siegfried, soundings]) {
+  for (const map of [streets, soundings, outdoors]) {
     const resolved = resolveMap(map);
     assert.ok(Object.keys(resolved.themes).length > 0, `${map.id} has no themes`);
     assert.ok(resolved.themes[resolved.defaultTheme], `${map.id} has an invalid defaultTheme`);

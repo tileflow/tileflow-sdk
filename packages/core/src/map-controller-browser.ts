@@ -13,16 +13,19 @@ export type TileflowLayerPosition = Readonly<{
   aboveLayerId?: string;
   belowLayerId?: string;
 }>;
-export type TileflowMapErrorContext = Omit<Partial<TileflowLayerPositionContext>, 'reason'> & {
+export type TileflowRuntimeStyleErrorContext = Omit<
+  Partial<TileflowLayerPositionContext>,
+  'reason'
+> & {
   reason?: string;
   message?: string;
 };
 
-export class TileflowMapError extends Error {
-  readonly name = 'TileflowMapError';
+export class TileflowRuntimeStyleError extends Error {
+  readonly name = 'TileflowRuntimeStyleError';
   constructor(
     readonly code: 'invalidRequest' | 'disposed' | 'resourceFailed',
-    readonly context: TileflowMapErrorContext = {},
+    readonly context: TileflowRuntimeStyleErrorContext = {},
   ) {
     super(context.message ?? `Tileflow map operation failed: ${context.reason ?? code}.`);
   }
@@ -79,10 +82,10 @@ const applicationMetadataKey = 'tileflow:runtime-style-application';
 let nextRuntime = 0;
 const idPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const invalid = (reason: string, message?: string): never => {
-  throw new TileflowMapError('invalidRequest', {
+  throw new TileflowRuntimeStyleError('invalidRequest', {
     reason,
     ...(message ? {message} : {}),
-  } as TileflowMapErrorContext);
+  } as TileflowRuntimeStyleErrorContext);
 };
 const record = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === 'object' && !Array.isArray(value));
@@ -105,7 +108,7 @@ function json<T>(input: T): T {
     visit(input);
     return JSON.parse(JSON.stringify(input)) as T;
   } catch (error) {
-    if (error instanceof TileflowMapError) throw error;
+    if (error instanceof TileflowRuntimeStyleError) throw error;
     return invalid('invalidStyle');
   }
 }
@@ -187,7 +190,7 @@ function placement(
     corrections: TileflowLayerPositionContext['corrections'],
     extra: Partial<TileflowLayerPositionContext> = {},
   ): never => {
-    throw new TileflowMapError('invalidRequest', {
+    throw new TileflowRuntimeStyleError('invalidRequest', {
       reason,
       operation,
       path,
@@ -282,7 +285,7 @@ export function createTileflowMapControllerBinding(
       styleOf(map),
     );
   const requireMap = () => {
-    if (!map) throw new TileflowMapError('disposed');
+    if (!map) throw new TileflowRuntimeStyleError('disposed');
     return map;
   };
   function pump() {
@@ -297,9 +300,9 @@ export function createTileflowMapControllerBinding(
           entry.resolve();
         } catch (error) {
           entry.reject(
-            error instanceof TileflowMapError
+            error instanceof TileflowRuntimeStyleError
               ? error
-              : new TileflowMapError('invalidRequest', {
+              : new TileflowRuntimeStyleError('invalidRequest', {
                   message: error instanceof Error ? error.message : String(error),
                 }),
           );
@@ -338,7 +341,7 @@ export function createTileflowMapControllerBinding(
   }
   function currentBase() {
     const current = styleOf(requireMap());
-    if (!current) throw new TileflowMapError('resourceFailed');
+    if (!current) throw new TileflowRuntimeStyleError('resourceFailed');
     return strip(current);
   }
   function strip(style: MapLibreStyle): MapLibreStyle {
@@ -480,9 +483,12 @@ export function createTileflowMapControllerBinding(
     for (const entry of pending.splice(0)) entry.reject(error);
   }
   function dispose() {
-    if (terminal?.name === 'TileflowMapError' && (terminal as TileflowMapError).code === 'disposed')
+    if (
+      terminal?.name === 'TileflowRuntimeStyleError' &&
+      (terminal as TileflowRuntimeStyleError).code === 'disposed'
+    )
       return;
-    terminal = new TileflowMapError('disposed');
+    terminal = new TileflowRuntimeStyleError('disposed');
     for (const entry of pending.splice(0)) entry.reject(terminal);
     if (map) {
       map.off('style.load', sync);
@@ -601,7 +607,7 @@ export function createTileflowMapControllerBinding(
     attach(next, initialStyle) {
       if (terminal) throw terminal;
       if (map && map !== next)
-        throw new TileflowMapError('invalidRequest', {
+        throw new TileflowRuntimeStyleError('invalidRequest', {
           message: 'Create a new controller binding for a new map instance.',
         });
       if (map === next) return;

@@ -8,19 +8,11 @@ import {
   type TileflowNativeDiagnostic,
   tileflowNativeProfile,
 } from '@tileflow/core/native-profile';
-import {baedeker, blueprint, map1777, siegfried, soundings, streets} from '@tileflow/maps';
+import {outdoors, soundings, streets} from '@tileflow/maps';
 import {createTileflowArtifactPlan, disposeTileflowBuildArtifacts} from '../src/artifacts';
 import {prepareTileflowCatalogIcons} from '../src/icons';
 
-export const nativeCatalogMaps = [
-  baedeker,
-
-  map1777,
-  blueprint,
-  siegfried,
-  soundings,
-  streets,
-] as const;
+export const nativeCatalogMaps = [soundings, streets, outdoors] as const;
 
 export type NativeCatalogRow = {
   map: string;

@@ -47,12 +47,14 @@ for (const step of fastest?.legs[0]?.steps ?? []) console.log(step.instruction);
 
 **Request:**
 
-- `locations`: two to five `[longitude, latitude]` positions: an origin, optional stops and a
+- `locations`: two to 25 `[longitude, latitude]` positions: an origin, optional stops and a
   destination. Each stretch between consecutive positions is a leg.
 - `mode`: `driving`, `walking`, `cycling` or `truck`.
 - `alternatives` (optional, 0–2): only between two positions. Fewer come back when no distinct
   alternative exists.
 - `language` (optional): writes the instructions in one of `routingLanguages`.
+- `optimize` (optional): see [Visit stops in the fastest order](#visit-stops-in-the-fastest-order).
+- `departAt` (optional): see [Choose a departure time](#choose-a-departure-time).
 - `vehicle`, `avoid` and `traffic` (optional): see
   [Route a truck around tolls](#route-a-truck-around-tolls).
 
@@ -66,6 +68,41 @@ for (const step of fastest?.legs[0]?.steps ?? []) console.log(step.instruction);
   highways, the `exit` number and the destinations it is signed `toward`.
 
 Durations are estimates without traffic; see [Travel times and traffic](#travel-times-and-traffic).
+
+## Visit stops in the fastest order
+
+Set `optimize` to visit the stops between the first and the last location in the fastest order the
+service finds. The first and the last location stay in place; repeat the first to return to it.
+
+```ts
+import {route} from '@tileflow/routing';
+
+const stops: [number, number][] = [
+  [-80.1918, 25.7617],
+  [-80.1312, 25.7795],
+  [-80.2569, 25.7215],
+  [-80.2195, 25.7655],
+  [-80.1918, 25.7617],
+];
+
+const answer = await route({locations: stops, mode: 'driving', optimize: true}, {apiKey});
+
+// The requested index of each location, in the order the route visits them.
+for (const index of answer.locationOrder ?? []) console.log(stops[index]);
+```
+
+The legs of the route follow `locationOrder`. Every two locations must lie within the reach of a
+[matrix](#calculate-a-travel-time-matrix) for the mode: 200 km driving, 10 km walking or
+cycling. An optimized route counts 10 API units, whatever its locations; a route in the given
+order counts 5.
+
+## Choose a departure time
+
+`departAt` says when the route leaves the first location, as `YYYY-MM-DDTHH:mm` in that location's
+local time. The route then respects roads closed at that time where OpenStreetMap records it, and
+each leg states `arriveAt`: its local time at the end of the leg with the UTC offset, such as
+`2027-03-01T16:47-06:00`. It does not add traffic: durations stay
+[without traffic](#travel-times-and-traffic), whatever the time.
 
 ## Route a truck around tolls
 

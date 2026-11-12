@@ -118,13 +118,21 @@ test('runs the standalone published native file with no installed dependencies o
       'TileflowNativeSourceError',
       'TileflowNativeUrlError',
       'TileflowThemeBlendError',
+      'bindTileflowBrandingSources',
+      'clusterOverlay',
       'createBoundaryFeatureState',
+      'createTileflowBrandingController',
       'createTileflowNativeSourceController',
       'fillTileflowThemeBlendTemplate',
+      'geojsonSource',
+      'heatmapOverlay',
       'loadTileflowNativeManifest',
+      'maplibreOverlay',
       'nearestTileflowBlendTheme',
     'parseTileflowMobileDiscovery',
       'planTileflowThemeBlend',
+      'readTileflowBrandingSources',
+      'rememberTileflowBrandingSources',
       'resolveTileflowNativeInitialView',
       'resolveTileflowNativeManifestUrl',
       'resolveTileflowNativeResourceUrl',
@@ -142,6 +150,16 @@ test('runs the standalone published native file with no installed dependencies o
       origin + '/maps/' + mapId + '/mobile/manifest.json');
     assert.equal(discovery.mapId, mapId);
     assert.equal(native.tileflowMobileDiscoveryMaximumBytes, 4096);
+    const catalogStyle = {sources: {world: {type: 'vector',
+      url: 'https://api.tileflow.dev/tiles/world/tiles.json?map=' + mapId}},
+      layers: [{id: 'land', source: 'world'}]};
+    assert.deepEqual(native.readTileflowBrandingSources(catalogStyle),
+      [{apiUrl: 'https://api.tileflow.dev', mapId}]);
+    const remembered = native.rememberTileflowBrandingSources(catalogStyle);
+    catalogStyle.sources.world.url = 'tileflow-native://source/world';
+    native.bindTileflowBrandingSources(catalogStyle, remembered);
+    assert.deepEqual(native.readTileflowBrandingSources(catalogStyle),
+      [{apiUrl: 'https://api.tileflow.dev', mapId}]);
     for (const origin of ['http://127.0.0.1:8765', 'http://10.0.2.2:8765']) {
       const results = checkNativeUrlContract(native, origin);
       assert.equal(results.length, 22);

@@ -40,21 +40,22 @@ export async function resolveTeamAuthority(
   options: HostedTeamOptions,
   scopes: HostedTeamCapabilityScope[],
   dependencies: HostedTeamDependencies,
+  fail: typeof emitFailure = emitFailure,
 ): Promise<HostedTeamAuthority | null> {
   let apiOrigin: string;
   try {
     apiOrigin = normalizeApiOrigin(options.apiUrl ?? dependencies.defaultApiUrl);
   } catch (error) {
-    emitFailure(options.json, 'invalid_api_url', safeMessage(error));
+    fail(options.json, 'invalid_api_url', safeMessage(error));
     return null;
   }
   if (options.apiKey !== undefined) {
     if (!isHostedApiKey(options.apiKey)) {
-      emitFailure(options.json, 'invalid_team_data_key', 'Team data API key is invalid.');
+      fail(options.json, 'invalid_team_data_key', 'Team data API key is invalid.');
       return null;
     }
     if (options.team) {
-      emitFailure(
+      fail(
         options.json,
         'team_selector_with_api_key',
         'A Team data key already selects its Team; omit --team.',
@@ -65,7 +66,7 @@ export async function resolveTeamAuthority(
   }
 
   if (!allowsStoredAccountSession()) {
-    emitFailure(
+    fail(
       options.json,
       'api_key_required',
       'CI requires TILEFLOW_API_KEY or --api-key. Saved personal logins are not used in CI.',
@@ -77,12 +78,12 @@ export async function resolveTeamAuthority(
   try {
     config = await dependencies.loadAuthConfig();
   } catch (error) {
-    emitFailure(options.json, 'auth_state_unavailable', safeMessage(error));
+    fail(options.json, 'auth_state_unavailable', safeMessage(error));
     return null;
   }
   const selected = resolveAccountSession(config, options.apiUrl ?? dependencies.defaultApiUrl);
   if (selected.kind !== 'selected') {
-    emitFailure(
+    fail(
       options.json,
       `account_session_${selected.kind}`,
       selected.kind === 'expired'
@@ -93,14 +94,14 @@ export async function resolveTeamAuthority(
   }
   const discovered = await listAccountTeams(selected.session);
   if (!discovered.ok) {
-    emitFailure(options.json, 'team_discovery_failed', discovered.error);
+    fail(options.json, 'team_discovery_failed', discovered.error);
     return null;
   }
   const requested = options.team
     ? /^@([A-Za-z0-9][A-Za-z0-9._-]{0,127})$/u.exec(options.team)
     : null;
   if (options.team && !requested) {
-    emitFailure(options.json, 'invalid_team', 'Team must use @team syntax.');
+    fail(options.json, 'invalid_team', 'Team must use @team syntax.');
     return null;
   }
   const team = requested
@@ -110,7 +111,7 @@ export async function resolveTeamAuthority(
       : null;
   if (!team) {
     const options_ = discovered.teams.map(({slug}) => `@${slug}`);
-    emitFailure(
+    fail(
       options.json,
       options_.length > 1 ? 'team_ambiguous' : 'team_not_found',
       options_.length > 1
@@ -122,7 +123,7 @@ export async function resolveTeamAuthority(
   }
   const capability = await requestTeamCapability(selected.session, `@${team.slug}`, scopes);
   if (!capability.ok || capability.team.id !== team.id) {
-    emitFailure(
+    fail(
       options.json,
       'team_capability_failed',
       capability.ok ? 'Team capability response was invalid.' : capability.error,

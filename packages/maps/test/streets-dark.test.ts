@@ -180,6 +180,9 @@ const approvedLightStyleColors = new Set([
   '#F6F6F4',
   '#F8F7F3',
   '#F9EFDD',
+  // Activity areas fade out in their colour, from z15 to z16.25.
+  'RGBA(249, 239, 221, 0.75)',
+  'RGBA(249, 239, 221, 0)',
   '#FEFEFE',
   '#FF668C',
   '#FF809A',
@@ -469,8 +472,13 @@ test('Streets Dark recolors every color-bearing Streets layer without major ligh
       darkColors['buildings.raised.neutral'],
     ],
   );
+  // Activity areas fade out in their colour: its first stop is the area colour.
   assert.equal(
-    requireLayer(dark, 'tileflow-land-render-activityAreas').paint?.['fill-color'],
+    String(
+      (
+        requireLayer(dark, 'tileflow-land-render-activityAreas').paint?.['fill-color'] as unknown[]
+      )[4],
+    ).toUpperCase(),
     darkColors['landuse.activity'],
   );
 
@@ -957,7 +965,11 @@ test('Streets restores Mapbox-scale contrast at city overview and building detai
     /"residential"\],"#F5F3F3"/u,
   );
   assert.equal(
-    requireLayer(style, 'tileflow-land-render-activityAreas').paint?.['fill-color'],
+    String(
+      (
+        requireLayer(style, 'tileflow-land-render-activityAreas').paint?.['fill-color'] as unknown[]
+      )[4],
+    ).toUpperCase(),
     '#F9EFDD',
   );
   const buildingFill = requireLayer(style, 'tileflow-buildings-fill');
@@ -1300,12 +1312,13 @@ test('Streets keeps ferries subordinate and limits attributed hillshade to regio
     const source = style.sources['tileflow-terrain'] as Record<string, unknown>;
     assert.equal(source.type, 'raster-dem');
     assert.equal(source.encoding, 'terrarium');
-    // Tileflow Terrain, which Hosted binds to the Map; 512-pixel tiles at the engines' default.
-    assert.match(String(source.url), /^https:\/\/[^/]+\/tiles\/terrain\/tiles\.json$/u);
-    assert.equal(source.tiles, undefined);
-    assert.equal(source.maxzoom, 11);
-    assert.equal(source.tileSize, undefined);
-    assert.match(String(source.attribution), /mapterhorn\.com\/attribution/u);
+    assert.equal(source.url, undefined);
+    assert.deepEqual(source.tiles, [
+      'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png',
+    ]);
+    assert.equal(source.maxzoom, 12);
+    assert.equal(source.tileSize, 256);
+    assert.equal(source.attribution, '<a href="https://tileflow.dev/copyright">© Tileflow</a>');
     assert.equal(style.terrain, undefined);
     const ferry = style.layers.find(({id}) => id.includes('ferry') && !id.includes('label'));
     assert.ok(ferry);
@@ -1486,8 +1499,8 @@ test('Streets street names yield to destinations and buildings without flattenin
         `${layer.id} must cover road markings`,
       );
       assert.ok(
-        style.layers.indexOf(layer) < buildingIndex,
-        `${layer.id} must be hidden by buildings`,
+        style.layers.indexOf(layer) > buildingIndex,
+        `${layer.id} must retain complete glyphs around buildings`,
       );
       assert.ok(
         style.layers.indexOf(layer) < ordinaryPoiIndex,
@@ -1499,7 +1512,7 @@ test('Streets street names yield to destinations and buildings without flattenin
       );
       assert.deepEqual(layer.metadata?.['tileflow:road-label-placement'], {
         version: 1,
-        mode: 'ground',
+        mode: 'readable',
       });
       assert.equal(layer.layout?.['symbol-placement'], 'line');
       assert.equal(layer.layout?.['text-pitch-alignment'], 'viewport');

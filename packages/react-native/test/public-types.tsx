@@ -42,3 +42,18 @@ export const example = (
     />
   </MapView>
 );
+
+export const portableData = (
+  <MapView
+    source={{mapId: 'map_0123456789abcdef'}}
+    dataSources={{stores: {kind: 'geojson', data: points, cluster: true}}}
+    dataOverlays={{
+      points: {
+        kind: 'maplibre-overlay',
+        source: 'stores',
+        placement: 'below-labels',
+        layers: [{id: 'stores', type: 'circle', paint: {'circle-radius': 7}}],
+      },
+    }}
+  />
+);

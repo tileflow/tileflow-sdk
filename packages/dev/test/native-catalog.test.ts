@@ -18,7 +18,7 @@ test('prepares every official theme, recording what each native artifact draws d
   const first = await evaluateNativeCatalog(cwd);
   const second = await evaluateNativeCatalog(cwd);
   assert.equal(serializeCanonicalJson(first), serializeCanonicalJson(second));
-  assert.equal(new Set(first.rows.map(({map}) => map)).size, 6);
+  assert.equal(new Set(first.rows.map(({map}) => map)).size, 3);
   const expected = nativeCatalogMaps
     .flatMap((map) =>
       Object.keys(parseTileflowMap(map).themes).map((theme) => `${map.id}/${theme}`),
@@ -42,10 +42,7 @@ test('prepares every official theme, recording what each native artifact draws d
       incompatibleThemes,
     ]),
     [
-      ['baedeker', ['deviceContours:baedeker-contours'], []],
-      ['blueprint', ['deviceContours:blueprint-contours'], []],
-      ['map-1777', [], []],
-      ['siegfried', ['deviceContours:siegfried-contours'], []],
+      ['outdoors', ['deviceContours:outdoors-contours'], []],
       ['soundings', [], []],
       ['streets', [], []],
     ],
@@ -65,11 +62,6 @@ test('prepares every official theme, recording what each native artifact draws d
     'scene3d:extrusions',
     'sky:none',
     'trees3d:none',
-  ]);
-  assert.deepEqual(degradations('map-1777'), [
-    'models3d:extrusions',
-    'scene3d:extrusions',
-    'trees3d:flat',
   ]);
   assert.deepEqual(degradations('soundings'), [
     'nauticalLightRhythm:steady',

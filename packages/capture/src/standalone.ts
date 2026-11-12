@@ -3,7 +3,14 @@ import {open} from 'node:fs/promises';
 import {createRequire} from 'node:module';
 import {dirname, join} from 'node:path';
 import type {Browser, BrowserContext, Page} from 'playwright';
-import type {MapLibreStyle, NormalizedTileflowCaptureScene} from '@tileflow/core';
+import {
+  type MapLibreStyle,
+  type NormalizedTileflowCaptureScene,
+  tileflowBuildingsMetadataKey,
+  tileflowStreetLightsMetadataKey,
+  tileflowVegetationDisplayMetadataKey,
+  tileflowVegetationMetadataKey,
+} from '@tileflow/core';
 import {getTileflowStyleFontFaces, type TileflowStyleFontFace} from '@tileflow/core/runtime';
 import {
   createTileflowLineBackgroundGlyphResponder,
@@ -15,6 +22,7 @@ import {
 } from '@tileflow/dev/artifacts';
 import {assertValidTileflowStyle, TileflowStyleValidationError} from '@tileflow/dev/validation';
 import {type TileflowCaptureAsset, tileflowSyntheticAssetOrigin} from './assets';
+import type {TileflowCaptureGraphics} from './browser';
 import {
   TileflowCaptureError,
   type TileflowCapturePhase,
@@ -29,6 +37,8 @@ export type StandaloneTileflowCaptureInput = {
   browser: Browser;
   /** Project root whose `.tileflow/cache` stores upstream glyph ranges. */
   glyphCacheDirectory?: string;
+  /** The browser's WebGL rendering, reported in warnings when GPU capture fell back to software. */
+  graphics?: TileflowCaptureGraphics;
   /** Upstream glyph templates for maps whose text uses line-fitted backgrounds. */
   lineBackgroundGlyphs?: TileflowLineBackgroundGlyphProviders;
   localTilesets?: readonly TileflowLocalTilesetFile[];
@@ -84,14 +94,17 @@ const tileflowBrowserModule = `${readFileSync(
 globalThis.__tileflowRegisterPathGroundProtocol = registerTileflowPathGroundProtocol;
 globalThis.__tileflowRegisterPmtilesProtocol = registerTileflowPmtilesProtocol;
 globalThis.__tileflowAttachAtmosphere = attachTileflowAtmosphere;
+globalThis.__tileflowAttachBranding = attachTileflowBranding;
 globalThis.__tileflowAttachNotices = attachTileflowNotices;
 globalThis.__tileflowAttachNauticalLights = attachTileflowNauticalLights;
 globalThis.__tileflowMaxPitch = tileflowMaxPitch;
 globalThis.__tileflowAttachLabelPlacement = attachTileflowLabelPlacement;
+globalThis.__tileflowCreateMap3D = createTileflowMap3D;
 globalThis.__tileflowCreateThemeController = createTileflowThemeController;`;
 
 type PagePhaseResult =
-  {status: 'ok'} | {message?: string; reason: 'error' | 'timeout'; status: 'failed'};
+  | {status: 'ok'; warnings?: string[]}
+  | {message?: string; reason: 'error' | 'timeout'; status: 'failed'};
 
 export async function captureStandaloneTileflowScene(
   input: StandaloneTileflowCaptureInput,
@@ -156,6 +169,8 @@ export async function withStandaloneTileflowPage<T>(
   let context: BrowserContext | undefined;
   let phase: TileflowCapturePhase = 'browser-start';
   let timeout: NodeJS.Timeout | undefined;
+  let budgetStartedAt = Date.now();
+  const pageWarnings = new Set<string>();
   const onAbort = () => {
     termination = 'aborted';
     void context?.close().catch(() => undefined);
@@ -166,6 +181,7 @@ export async function withStandaloneTileflowPage<T>(
   };
   const restartTimeout = () => {
     stopTimeout();
+    budgetStartedAt = Date.now();
     timeout = setTimeout(() => {
       termination = 'timeout';
       void context?.close().catch(() => undefined);
@@ -213,6 +229,13 @@ export async function withStandaloneTileflowPage<T>(
     const resourceFailures: TileflowCaptureResourceDiagnostic[] = [];
     let pageFailed = false;
     const recordResourceFailure = (url: string, status?: number) => {
+      // Data the account may not read, and 3D models that are missing, leave a map that still
+      // draws: they become loud warnings naming what is missing rather than failing the capture.
+      const degraded = describeDegradedResource(url, status);
+      if (degraded) {
+        if (pageWarnings.size < 32) pageWarnings.add(degraded);
+        return;
+      }
       const diagnostic = classifyResource(url, status);
       if (!diagnostic || resourceFailures.length >= 16) return;
       const key = JSON.stringify(diagnostic);
@@ -339,7 +362,11 @@ export async function withStandaloneTileflowPage<T>(
         recordResourceFailure(response.url(), response.status());
       }
     });
-    page.on('requestfailed', (request) => recordResourceFailure(request.url()));
+    page.on('requestfailed', (request) => {
+      // A request the page cancelled, such as a tile that left the view, did not fail.
+      if (request.failure()?.errorText === 'net::ERR_ABORTED') return;
+      recordResourceFailure(request.url());
+    });
     page.setDefaultTimeout(timeoutMs);
 
     await page.goto(mapLibreRuntimeUrls.document, {waitUntil: 'domcontentloaded'});
@@ -355,9 +382,25 @@ globalThis.maplibregl = maplibregl;`,
     );
     await page.addScriptTag({content: tileflowBrowserModule, type: 'module'});
     await page.addScriptTag({content: renderMapInPageScript});
+    if (input.graphics === 'gpu') {
+      const renderer = await page.evaluate(() => {
+        const context = document.createElement('canvas').getContext('webgl2');
+        const info = context?.getExtension('WEBGL_debug_renderer_info');
+        return info ? String(context!.getParameter(info.UNMASKED_RENDERER_WEBGL)) : '';
+      });
+      pageWarnings.add(
+        /swiftshader|llvmpipe|software/iu.test(renderer) || renderer === ''
+          ? 'GPU rendering is unavailable on this machine; the capture used software rendering.'
+          : "Rendered with this machine's GPU: pixels depend on its hardware and driver, so compare it only with other GPU captures from the same machine.",
+      );
+    }
 
     const step = async (stepPhase: StandaloneTileflowPagePhase, name: string, value: unknown) => {
       phase = stepPhase;
+      // The 3D scene settles within what is left of the budget, keeping time for the last frames
+      // and the PNG: a software-rendered frame of a dense 3D scene can take seconds.
+      const reserveMs = Math.max(10_000, Math.round(timeoutMs * 0.35));
+      const sceneBudgetMs = Math.max(0, timeoutMs - (Date.now() - budgetStartedAt) - reserveMs);
       const result = await page.evaluate(
         ({name: functionName, value: stepInput}) => {
           const renderWindow = window as unknown as Record<
@@ -366,9 +409,12 @@ globalThis.maplibregl = maplibregl;`,
           >;
           return renderWindow[functionName]!(stepInput);
         },
-        {name, value},
+        {name, value: {...(value as object), sceneBudgetMs}},
       );
       assertPhaseSucceeded(result, stepPhase, syntheticAssetFailure, resourceFailures, pageFailed);
+      if (result.status === 'ok') {
+        for (const warning of result.warnings ?? []) pageWarnings.add(safeSceneWarning(warning));
+      }
     };
 
     return await run({
@@ -418,9 +464,12 @@ globalThis.maplibregl = maplibregl;`,
       result() {
         return {
           networkDependent: remoteOrigins.size > 0,
-          warnings: [...remoteOrigins]
-            .sort(compareCodeUnits)
-            .map((origin) => `Capture requested remote resources from ${origin}.`),
+          warnings: [
+            ...[...remoteOrigins]
+              .sort(compareCodeUnits)
+              .map((origin) => `Capture requested remote resources from ${origin}.`),
+            ...[...pageWarnings].sort(compareCodeUnits),
+          ],
         };
       },
     });
@@ -430,10 +479,11 @@ globalThis.maplibregl = maplibregl;`,
     }
 
     if (termination === 'timeout') {
-      throw new TileflowCaptureError('CAPTURE_TIMEOUT', timeoutMessage(phase), {
-        cause: error,
-        details: {phase},
-      });
+      throw new TileflowCaptureError(
+        'CAPTURE_TIMEOUT',
+        `${timeoutMessage(phase)}${slowSceneHint(input.style, input.graphics, phase)}`,
+        {cause: error, details: {phase}},
+      );
     }
 
     if (error instanceof CallerFailure) {
@@ -751,6 +801,50 @@ function classifyResource(
   };
 }
 
+/**
+ * The warning for a resource whose failure leaves a drawable but incomplete map: a Tileflow dataset
+ * or another data resource refused with HTTP 401 or 403, or a 3D model file that is missing.
+ * Glyphs and sprites stay failures, since without them no label or icon draws.
+ */
+export function describeDegradedResource(value: string, status?: number): string | undefined {
+  if (status === undefined) return undefined;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return undefined;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined;
+  const kind = classifyResource(value, status)?.kind;
+  if (kind === 'glyph' || kind === 'sprite-json' || kind === 'sprite-image') return undefined;
+  const dataset = tileflowDatasetOf(url);
+  if (status === 401 || status === 403) {
+    const subject = dataset ? `Tileflow dataset "${dataset}"` : `Data from ${url.origin}`;
+    return `${subject} returned HTTP ${status}: this capture is not entitled to read it, so its layers are missing from the image.`;
+  }
+  if (status === 404 && isModelResource(url)) {
+    return `A 3D model from ${dataset ? `Tileflow dataset "${dataset}"` : url.origin} returned HTTP 404; the buildings under it were captured instead.`;
+  }
+  return undefined;
+}
+
+/** The hosted dataset a Tileflow tile URL reads: `/tiles/<dataset>/…` or `/v1/tiles/<dataset>/…`. */
+export function tileflowDatasetOf(url: URL): string | undefined {
+  const match = /^\/(?:v1\/)?tiles\/([^/]+)\//u.exec(url.pathname);
+  if (!match) return undefined;
+  try {
+    const name = decodeURIComponent(match[1]!);
+    return /^[a-z0-9][a-z0-9,_-]{0,63}$/u.test(name) ? name : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isModelResource(url: URL): boolean {
+  const path = url.pathname.toLowerCase();
+  return path.endsWith('.glb') || /\/(?:landmarks|models)(?:\/|$)/u.test(path);
+}
+
 function fontStackContext(path: string): string | undefined {
   const segments = path.split('/').filter(Boolean);
   const index = segments.findIndex((segment) => /^(?:fonts?|glyphs?)$/i.test(segment));
@@ -786,6 +880,27 @@ function resourceLabel(kind: TileflowCaptureResourceKind): string {
   }[kind];
 }
 
+/** The scene metadata through which a compiled style declares 3D buildings, trees or lights. */
+const sceneMetadataKeys = [
+  tileflowBuildingsMetadataKey,
+  tileflowVegetationMetadataKey,
+  tileflowVegetationDisplayMetadataKey,
+  tileflowStreetLightsMetadataKey,
+];
+
+function slowSceneHint(
+  style: MapLibreStyle,
+  graphics: TileflowCaptureGraphics | undefined,
+  phase: TileflowCapturePhase,
+): string {
+  if (graphics === 'gpu' || (phase !== 'map-idle' && phase !== 'screenshot')) return '';
+  const metadata = style.metadata as Record<string, unknown> | undefined;
+  if (!sceneMetadataKeys.some((key) => metadata?.[key] !== undefined && metadata[key] !== null)) {
+    return '';
+  }
+  return ' Software rendering draws a dense 3D scene slowly: raise --timeout, or pass --gpu for exploratory captures.';
+}
+
 function timeoutMessage(phase: TileflowCapturePhase): string {
   if (phase === 'map-load') return 'MapLibre did not finish loading before the capture timeout.';
   if (phase === 'theme-blend') return 'The theme blend was not ready before the capture timeout.';
@@ -806,6 +921,14 @@ function safeMapError(value: string): string {
     .replace(/[^A-Za-z0-9 _.,:'"@+()[\]/=-]/g, '')
     .trim()
     .slice(0, 200);
+}
+
+function safeSceneWarning(value: string): string {
+  return value
+    .replace(/[A-Za-z][A-Za-z0-9+.-]*:\/\/\S+/g, 'resource')
+    .replace(/[^A-Za-z0-9 _.,:;'"@+()[\]/=-]/g, '')
+    .trim()
+    .slice(0, 300);
 }
 
 function safeAssetName(value: string): string {
@@ -902,10 +1025,22 @@ window.__tileflowCaptureLoad = async function(input) {
     window.__tileflowCaptureStyle = input.style;
     window.__tileflowAttachAtmosphere(map);
     // Notices such as "Not for navigation" are part of the map, so captured images keep them.
+    window.__tileflowAttachBranding(map);
     window.__tileflowAttachNotices(map);
     // Capture prefers reduced motion, so Nautical lights stay steady and every image is stable.
     window.__tileflowAttachNauticalLights(map);
     window.__tileflowAttachLabelPlacement(map);
+    // The 3D scene the style declares (buildings, landmarks and Team models, trees, street
+    // lights), mounted as an application and the preview mount it, so captures show the same map.
+    window.__tileflowSceneErrors = [];
+    window.__tileflowScene = window.__tileflowCreateMap3D?.({
+      map,
+      onError: (error) => {
+        if (window.__tileflowSceneErrors.length < 4) {
+          window.__tileflowSceneErrors.push(String(error?.message || error || "unknown error"));
+        }
+      }
+    });
     return await waitForMapEvent(map, "load", input.mapEventTimeoutMs);
   } catch (error) {
     return {status: "failed", reason: "error", message: String(error?.message || error || "")};
@@ -963,14 +1098,11 @@ async function loadTileflowFontFaces(definitions) {
 window.__tileflowCaptureIdle = async function(input) {
   const map = window.__tileflowMap;
   if (!map) return {status: "failed", reason: "error"};
+  releaseFrames(map);
 
   try {
     applyCamera(map, input.camera);
-    const result = await waitForMapEvent(map, "idle", input.mapEventTimeoutMs);
-    if (result.status === "failed") return result;
-    await nextFrame();
-    await nextFrame();
-    return {status: "ok"};
+    return await settleMap(map, input);
   } catch {
     return {status: "failed", reason: "error"};
   }
@@ -980,6 +1112,7 @@ window.__tileflowCaptureIdle = async function(input) {
 window.__tileflowCapturePrepareBlend = async function(input) {
   const map = window.__tileflowMap;
   if (!map) return {status: "failed", reason: "error"};
+  releaseFrames(map);
 
   try {
     const controller = window.__tileflowCreateThemeController({
@@ -1004,6 +1137,7 @@ window.__tileflowCapturePrepareBlend = async function(input) {
 window.__tileflowCaptureFrame = async function(input) {
   const map = window.__tileflowMap;
   if (!map) return {status: "failed", reason: "error"};
+  releaseFrames(map);
 
   try {
     const blend = window.__tileflowShotBlend;
@@ -1018,17 +1152,110 @@ window.__tileflowCaptureFrame = async function(input) {
     }
     applyCamera(map, input.camera);
     map.triggerRepaint();
-    const result = await waitForMapEvent(map, "idle", input.mapEventTimeoutMs);
-    if (result.status === "failed") return result;
-    await nextFrame();
-    await nextFrame();
-    return {status: "ok"};
+    return await settleMap(map, input);
   } catch {
     return {status: "failed", reason: "error"};
   }
 };
 
+// MapLibre's idle covers the style's own sources only, and a 3D scene still preparing keeps asking
+// for frames, so on a slow renderer the map may not become idle. With a 3D scene the capture waits until
+// the map's tiles have loaded and the scene has nothing pending, across a few consecutive checks.
+async function settleMap(map, input) {
+  const scene = window.__tileflowScene;
+  if (!scene) {
+    const result = await waitForMapEvent(map, "idle", input.mapEventTimeoutMs);
+    if (result.status === "failed") return result;
+    await nextFrame();
+    await nextFrame();
+    return {status: "ok", warnings: []};
+  }
+  const warnings = [];
+  const budget = Math.max(0, Math.min(input.mapEventTimeoutMs, input.sceneBudgetMs ?? 0));
+  const deadline = performance.now() + budget;
+  const failure = watchMapErrors(map);
+  let quiet = 0;
+  let pending = scene.pending();
+  try {
+    // The scene asks for the frames it needs; forcing more would only slow a software renderer.
+    while (quiet < 3 && performance.now() < deadline) {
+      await delay(100);
+      await nextFrame();
+      if (failure.result) return failure.result;
+      pending = scene.pending();
+      const busy = pending.buildingTiles + pending.models + pending.treeTiles + pending.transitions;
+      quiet = busy === 0 && map.loaded() ? quiet + 1 : 0;
+    }
+  } finally {
+    failure.stop();
+  }
+  if (quiet < 3) {
+    const parts = [];
+    if (!map.loaded()) parts.push("map tiles");
+    if (pending.buildingTiles) parts.push(pending.buildingTiles + " building tiles");
+    if (pending.models) parts.push(pending.models + " models");
+    if (pending.treeTiles) parts.push(pending.treeTiles + " tree tiles");
+    if (pending.transitions) parts.push(pending.transitions + " transitions");
+    // Map tiles still loading are a MapLibre failure to settle, as without a 3D scene.
+    if (!map.loaded() && parts.length === 1) return {status: "failed", reason: "timeout"};
+    warnings.push(
+      "The 3D scene was still loading when the capture budget ran out (" +
+        parts.join(", ") +
+        " pending after " + Math.round(budget / 1000) + " s); the image may be incomplete. Raise --timeout, or pass --gpu for exploratory captures."
+    );
+  }
+  for (const message of window.__tileflowSceneErrors || []) {
+    warnings.push("The 3D scene failed to draw (" + message + "); the flat map was captured instead.");
+  }
+  if (quiet >= 3) {
+    map.triggerRepaint();
+    await nextFrame();
+    await nextFrame();
+  }
+  holdFrames(map);
+  return {status: "ok", warnings};
+}
+
+// Keeps the last frame on screen while the PNG is taken: on a software renderer a 3D scene that
+// is still preparing would otherwise queue frames that take seconds each and stall the screenshot.
+// The next frame step releases it.
+function holdFrames(map) {
+  if (map.__tileflowHeldRepaint) return;
+  map.__tileflowHeldRepaint = map.triggerRepaint;
+  map.triggerRepaint = () => map;
+}
+
+function releaseFrames(map) {
+  if (!map.__tileflowHeldRepaint) return;
+  map.triggerRepaint = map.__tileflowHeldRepaint;
+  map.__tileflowHeldRepaint = undefined;
+}
+
+// Reports the first map error while the scene settles, with the idle wait's tolerance for source
+// layers a TileJSON advertises but one tile lacks.
+function watchMapErrors(map) {
+  const state = {result: undefined, stop: () => undefined};
+  const pending = waitForMapEvent(map, "tileflow:never", 2147483647);
+  pending.then((result) => {
+    if (result.status === "failed" && result.reason === "error") state.result = result;
+  });
+  state.stop = () => pending.cancel?.();
+  return state;
+}
+
+function delay(milliseconds) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+// A map's pitch cap can depend on zoom (a 3D scene lowers it over the overview), so a camera
+// that changes both is applied again once the new zoom has lifted the cap.
 function applyCamera(mapInstance, camera) {
+  moveCamera(mapInstance, camera);
+  const pitch = camera.pitch ?? 0;
+  if (Math.abs(mapInstance.getPitch() - pitch) > 1e-6) moveCamera(mapInstance, camera);
+}
+
+function moveCamera(mapInstance, camera) {
   if (camera.type === "bounds") {
     mapInstance.fitBounds(
       [
@@ -1054,7 +1281,8 @@ function applyCamera(mapInstance, camera) {
 }
 
 function waitForMapEvent(mapInstance, event, timeoutMs) {
-  return new Promise((resolve) => {
+  let cancel;
+  const promise = new Promise((resolve) => {
     const timeout = window.setTimeout(() => {
       cleanup();
       resolve({status: "failed", reason: "timeout"});
@@ -1064,6 +1292,15 @@ function waitForMapEvent(mapInstance, event, timeoutMs) {
       resolve({status: "ok"});
     };
     const onError = (errorEvent) => {
+      // Data the key cannot read leaves the rest of the map drawable; the capture reports it as a
+      // warning naming the dataset instead of failing.
+      const status = errorEvent?.error?.status;
+      if (status === 401 || status === 403) {
+        // MapLibre never finishes loading a style whose source it could not read; the source and
+        // its layers come off, so the rest of the map loads and draws.
+        if (errorEvent?.sourceId) removeRefusedSource(mapInstance, errorEvent.sourceId);
+        return;
+      }
       const message = String(errorEvent?.error?.message || errorEvent?.message || "");
       const missingSourceLayer = message.match(
         /^Source layer "(.+)" does not exist on source "(.+)" as specified by style layer ".+"\.$/
@@ -1093,9 +1330,27 @@ function waitForMapEvent(mapInstance, event, timeoutMs) {
       mapInstance.off("error", onError);
     };
 
+    cancel = () => {
+      cleanup();
+      resolve({status: "cancelled"});
+    };
     mapInstance.once(event, onSuccess);
     mapInstance.on("error", onError);
   });
+  promise.cancel = cancel;
+  return promise;
+}
+
+function removeRefusedSource(mapInstance, sourceId) {
+  try {
+    if (!mapInstance.getSource(sourceId)) return;
+    for (const layer of mapInstance.getStyle()?.layers || []) {
+      if (layer.source === sourceId) mapInstance.removeLayer(layer.id);
+    }
+    mapInstance.removeSource(sourceId);
+  } catch {
+    // The warning still names the dataset; MapLibre reports anything else it cannot load.
+  }
 }
 
 function isLoopbackSourceUrl(value) {

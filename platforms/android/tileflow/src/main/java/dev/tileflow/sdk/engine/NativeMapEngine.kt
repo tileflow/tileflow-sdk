@@ -28,6 +28,7 @@ import dev.tileflow.sdk.model.MapPayloadStore
 import dev.tileflow.sdk.offline.OfflineReachability
 import dev.tileflow.sdk.offline.OfflineServingIndex
 import dev.tileflow.sdk.offline.OfflineServingRule
+import dev.tileflow.sdk.transport.ResourcePolicy
 import dev.tileflow.sdk.transport.MapResourceContexts
 import dev.tileflow.sdk.transport.MapResourceOutcome
 import dev.tileflow.sdk.transport.MapResourceRoute
@@ -37,6 +38,11 @@ import dev.tileflow.sdk.transport.TileflowHttpClient
 import java.net.URI
 import kotlin.coroutines.resume
 import kotlin.math.roundToInt
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -103,11 +109,34 @@ internal class NativeMapEngine(
     /** Whether MapLibre finished loading the current style and its resources. */
     private var loaded = false
     /** Whether MapLibre loaded the map's style. */
+    private val dataLayerScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var clusterMove: Job? = null
+    private var dataLayers = NativeDataLayers()
+    private var dataLayerInput = JSONObject().put("dataSources", JSONObject()).put("dataOverlays", JSONObject()).toString()
+    private var dataLayerBase: JSONObject? = null
     private var contentStyleLoaded = false
     /** Whether the view initialized this engine and waits for its content. */
     private var awaitingContent = false
     /** The attribution the map shows, in the SDK's own control. */
     internal val attribution = MapAttributionControl(context)
+    private var brandingOrigin = "https://api.tileflow.dev"
+    private var brandingMapId: String? = null
+    private val brandingButton = NativeBrandingButton(context)
+    private val branding = NativeBranding(
+        load = { load(it) },
+        offline = {
+            val scope = grantScope
+            if (scope != null && OfflineServingRule.hostedUsesPacks(
+                    TileflowHttpClient.networkEnabled, OfflineReachability.isReachable(application)))
+                true to OfflineServingIndex.shared(application).catalogLogoRequired(scope)
+            else false to null
+        },
+        present = { state ->
+            container.visibility = if (state == NativeBranding.State.PENDING) android.view.View.INVISIBLE else android.view.View.VISIBLE
+            brandingButton.visibility = if (state == NativeBranding.State.REQUIRED) android.view.View.VISIBLE else android.view.View.GONE
+        },
+    )
+
     /** Reads the downloaded regions' credits off the main thread, which the index may block. */
     private val creditReader =
         java.util.concurrent.Executors.newSingleThreadExecutor { work ->
@@ -219,6 +248,8 @@ internal class NativeMapEngine(
                 ViewGroup.LayoutParams.MATCH_PARENT,
             ),
         )
+        container.addView(brandingButton, FrameLayout.LayoutParams((44 * density).toInt(), (44 * density).toInt(), android.view.Gravity.BOTTOM or android.view.Gravity.LEFT))
+        brandingButton.setOnClickListener { callbacks.externalLink(URI("https://tileflow.dev/")) }
         attribution.onLink = { url ->
             if (!retired) runCatching { URI(url) }.getOrNull()?.let(callbacks.externalLink)
         }
@@ -345,6 +376,7 @@ internal class NativeMapEngine(
             received[method] = (received[method] ?: 0) + 1
             val request = payload as? JSONObject
             return when (method) {
+                MapContract.Method.SET_DATA_LAYERS -> setDataLayers(map, NativeDataLayers.decode(request ?: invalid(), data, references))
                 MapContract.Method.INITIALIZE -> initialize(map, request ?: invalid())
                 in NativeRuntimeStyle.methods -> {
                     val result = try {
@@ -434,6 +466,8 @@ internal class NativeMapEngine(
     /** Reads the map, projects its style and gives it to MapLibre. */
     private suspend fun initialize(map: MapLibreMap, options: JSONObject): Any {
         val source = options.getJSONObject("source")
+        brandingMapId = source.opt("discoveryMapId") as? String
+        if (brandingMapId != null) brandingOrigin = ResourcePolicy.origin(URI(source.getString("manifestUrl")))
         val theme = if (options.isNull("theme")) null else options.optString("theme")
         colorScheme = options.optString("colorScheme", "light")
         viewMode = options.optJSONObject("options")?.optString("viewMode")?.ifEmpty { null } ?: "2d"
@@ -520,10 +554,33 @@ internal class NativeMapEngine(
 
     private fun load(url: URI): ByteArray = NativeMapPreparation.read(loader, url)
 
+    private suspend fun setDataLayers(map: MapLibreMap, input: JSONObject): Any {
+        if (input.toString() == dataLayerInput) return JSONObject.NULL
+        val next = NativeDataLayers(input)
+        while (!retired) {
+            val style = dataLayerBase ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
+            val revision = appearanceRevision
+            val address = styleAddress()
+            val context = resourceContext ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
+            val projected = withContext(Dispatchers.IO) {
+                NativeMapPreparation(context, ::load, storedZooms, next).project(style, address)
+            }
+            currentCoroutineContext().ensureActive()
+            if (revision != appearanceRevision) continue
+            dataLayers = next
+            dataLayerInput = input.toString()
+            awaitingContent = true
+            show(map, style, projected)
+            return JSONObject.NULL
+        }
+        throw TileflowMapException(retiredCode)
+    }
+
     private fun preparation() = NativeMapPreparation(
         resourceContext ?: throw TileflowMapException(TileflowErrorCode.NOT_READY),
         ::load,
         storedZooms,
+        dataLayers,
     )
 
     private suspend fun loadStyle(url: String): Pair<JSONObject, NativeStyleProjection> =
@@ -540,7 +597,7 @@ internal class NativeMapEngine(
         val base = styleAddress()
         val owner = resourceContext ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
         val projected = withContext(Dispatchers.IO) {
-            project(JSONObject().put("sources", JSONObject().put("app", spec)), base)
+            preparation().projectSource(JSONObject().put("sources", JSONObject().put("app", spec)), base)
         }
         if (retired || resourceContext != owner) throw TileflowMapException(retiredCode)
         val source = projected.style.getJSONObject("sources").getJSONObject("app")
@@ -584,6 +641,8 @@ internal class NativeMapEngine(
 
     /** Gives MapLibre a projected style; what the engine reads from it applies once it loads. */
     private fun show(map: MapLibreMap, style: JSONObject, projected: NativeStyleProjection) {
+        branding.update(NativeBrandingSource.read(dataLayers.apply(style), brandingOrigin, brandingMapId))
+        dataLayerBase = style
         projection = projected
         poi = NativePoiManifest.read(projected.style)
         attribution.setStyle(style, (projected.attributions + runtimeStyle.attributions).distinct())
@@ -716,6 +775,8 @@ internal class NativeMapEngine(
     }
 
     override fun retire(code: TileflowErrorCode) {
+        dataLayerScope.cancel()
+        branding.retire()
         if (retired) return
         shown = false
         syncLifecycle()
@@ -1268,12 +1329,37 @@ internal class NativeMapEngine(
     // Camera
 
     /** Creates the camera and the gestures. MapLibre's own compass stays hidden: the SDK draws it. */
+    private fun expandDataCluster(map: MapLibreMap, at: PointF) {
+        if (!contentStyleLoaded) return
+        val layers = projection?.style?.optJSONArray("layers") ?: return
+        val style = map.style ?: return
+        for (i in layers.length() - 1 downTo 0) {
+            val layer = layers.optJSONObject(i) ?: continue
+            val cluster = layer.optJSONObject("metadata")?.optJSONObject("tileflow:cluster") ?: continue
+            if (cluster.optString("role") != "cluster" || !cluster.optBoolean("expandOnClick", true)) continue
+            val source = style.getSourceAs<org.maplibre.android.style.sources.GeoJsonSource>(layer.optString("source")) ?: continue
+            for (feature in map.queryRenderedFeatures(at, layer.optString("id"))) {
+                val point = feature.geometry() as? org.maplibre.geojson.Point ?: continue
+                if (!feature.hasProperty("cluster_id")) continue
+                val zoom = runCatching { source.getClusterExpansionZoom(feature) }.getOrNull() ?: continue
+                val target = JSONObject().put("target", JSONObject()
+                    .put("center", JSONObject().put("longitude", point.longitude()).put("latitude", point.latitude()))
+                    .put("zoom", zoom))
+                    .put("animation", JSONObject().put("type", "ease").put("duration", 300))
+                clusterMove?.cancel()
+                clusterMove = dataLayerScope.launch { runCatching { camera?.move(target) } }
+                return
+            }
+        }
+    }
+
     private fun prepareCamera(map: MapLibreMap) {
         map.uiSettings.isCompassEnabled = false
         val emit: (String, JSONObject) -> Unit = { event, value ->
             if (!retired) {
                 if (event == "tap") {
                     val at = point(value.getJSONObject("point"))
+                    expandDataCluster(map, at)
                     poi?.at(map, at, value.getJSONObject("coordinate"))?.let { value.put("poi", it) }
                 }
                 if (event == "gestureStarted" || (event == "cameraMoveStarted" && value.optString("reason") == "gesture")) {

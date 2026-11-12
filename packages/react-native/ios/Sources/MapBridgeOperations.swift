@@ -100,6 +100,8 @@ enum MapBridgeOperations {
       let result = try await map.joinBoundaryRows(request.rows, options: request.options)
       try host.checkGeneration(generation)
       return try MapBridgeValues.boundaryJoinJSON(result)
+    case "setDataLayers":
+      try await map.setDataLayers(dataSources: input.object("dataSources").values, dataOverlays: input.object("dataOverlays").values)
     case "setStyleState":
       for (name, value) in try MapBridgeValues.state(input.object("state")) {
         try host.checkGeneration(generation)

@@ -33,7 +33,9 @@ import {
 import {streetsFonts, streetsIcons, streetsModels} from '../assets';
 import {mapboxRailTransitStyle} from './mapbox-rail';
 import {withStreetsCartography} from './streets-cartography';
+import {streetsColorKnobs} from './streets-color-knobs';
 import {withStreetsConstruction} from './streets-construction';
+import {streetsCreditsAttribution} from './streets-credits';
 import {streetsPoiImage} from './streets-poi';
 import {streetsThemes, streetsVisual} from './streets-themes';
 import {streetsTrees} from './streets-trees';
@@ -1092,19 +1094,10 @@ function cityRoadSurfaceColor(roadClass: keyof typeof streetsCityRoadPalette) {
     ([level, color]) =>
       [
         level,
+        // Roads under construction are invisible in these layers: their marks are drawn apart.
+        // Giving them a colour of their own would only make the colour depend on the feature.
         expr.case<ColorValue>(
           [
-            {
-              when: expr.all(
-                expr.eq(expr.get(field('class')), 'construction'),
-                expr.match(
-                  expr.get(field('type')),
-                  [{labels: [...worldConstructionTypes[roadClass]], value: true}],
-                  false,
-                ),
-              ),
-              value: roadSurfaceColor,
-            },
             {
               when: expr.eq(expr.get(field('surface')), 'unpaved'),
               value:
@@ -1487,14 +1480,8 @@ function roadLabelStyle(kind: RoadLabelKind, minZoom: number): TileflowSymbolSty
       ],
       0,
     ),
-    // World name geometry is split into more short segments at street detail.
-    // Increase repeat distance gently without thinning the overview network.
-    spacing: zoom.linear([
-      [13, 250],
-      [15, 300],
-      [17, 400],
-      [19, 450],
-    ]),
+    // Keep Standard's repeat distance as the camera approaches street detail.
+    spacing: 250,
     text: {
       color: streetsVisual.label.road,
       font: streetsVisual.font.navigation,
@@ -1503,12 +1490,7 @@ function roadLabelStyle(kind: RoadLabelKind, minZoom: number): TileflowSymbolSty
       haloWidth: 1,
       letterSpacing: path || pedestrian ? 0.01 : 0.15,
       maxAngle: 30,
-      // Screen-space breathing room at city overview. Restore normal padding by z14
-      // so the same policy does not suppress useful names on the neighbourhood view.
-      padding: zoom.linear([
-        [13, 5],
-        [14, 1],
-      ]),
+      padding: 1,
       // Follow the road's bearing while retaining readable glyph height in perspective.
       pitchAlignment: 'viewport',
       rotationAlignment: 'map',
@@ -1528,6 +1510,7 @@ const streetsBase = bindOfficialMapTheme(
     name: 'Streets',
     fonts: [streetsFonts],
     themes: streetsThemes,
+    colorKnobs: streetsColorKnobs,
     timeOfDay: {
       light: {day: 'light', dawn: 'dawn', dusk: 'dusk', night: 'dark'},
       faded: {day: 'faded', dawn: 'dawn-faded', dusk: 'dusk-faded', night: 'dark-faded'},
@@ -1563,8 +1546,10 @@ const streetsBase = bindOfficialMapTheme(
     terrain: {
       mode: 'hillshade',
       encoding: 'terrarium',
-      maxZoom: 11,
-      attribution: 'Terrain: <a href="https://mapterhorn.com/attribution">© Mapterhorn</a>',
+      tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      maxZoom: 12,
+      attribution: streetsCreditsAttribution,
       hillshade: {
         minZoom: 5,
         maxZoom: 14,
@@ -2424,9 +2409,9 @@ const streetsBase = bindOfficialMapTheme(
           collisionPriority: 'navigation',
           language: 'local', // 'auto' | 'local' | 'en' | another language field suffix.
           places: 'all', // 'none' | 'major' | 'all'.
-          // Street names yield to foreground destinations and are hidden by 3D buildings.
-          // Their viewport-aligned lettering stays readable at an oblique camera angle.
-          roadPlacement: 'ground',
+          // Preserve whole names around the 3D scene and remove occluded/distant instances.
+          // Destination labels still win collisions; letters never intersect building faces.
+          roadPlacement: 'readable',
           roadNameFormat: 'compact',
           roadGrouping: 'network',
           roads: 'all',

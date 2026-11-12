@@ -21,6 +21,7 @@
     "setBlend",
     "setOptions",
     "setContent",
+    "setDataLayers",
     "project",
     "unproject",
     "setVisibility",
@@ -156,7 +157,7 @@
     "layerPositionConflict": "A relative layer position references a layer in a different slot.",
     "unknownSource": "A request names an application source that the map does not hold.",
     "featureUnavailable": "The map holds something this renderer does not draw; the rest of the map continues. The context's feature names the capability.",
-    "boundaryLookupOffline": "The lookup for the map’s current release is not stored or cannot be verified, and no network is available.",
+    "boundaryLookupOffline": "The lookup for the map\u2019s current release is not stored or cannot be verified, and no network is available.",
     "boundaryLookupUnavailable": "The map does not expose the requested Boundaries lookup.",
     "boundaryLookupInvalid": "The Boundaries lookup could not be decoded or verified."
   },

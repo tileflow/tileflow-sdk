@@ -186,8 +186,13 @@ enum HostedContract {
     else { return false }
     if let match = capture(
       path,
-      #"^/maps/(map_[A-Za-z0-9_-]{16})/(?:(?:mobile/webview-v1|native)/v([1-9][0-9]{0,15})/[A-Za-z][A-Za-z0-9_-]{0,63}|(?:mobile/webview-v1|native)/family/v([1-9][0-9]{0,15}))\.json$"#
-    ) {
+      #"^/maps/(map_[A-Za-z0-9_-]{16})/(?:mobile/webview-v1|native)/v([1-9][0-9]{0,15})/[A-Za-z][A-Za-z0-9_-]{0,63}\.json$"#
+    )
+      ?? capture(
+        path,
+        #"^/maps/(map_[A-Za-z0-9_-]{16})/(?:mobile/webview-v1|native)/family/v([1-9][0-9]{0,15})\.json$"#
+      )
+    {
       return raw == path && components.query == nil && match[1] == mapID
         && (Double(match[2].isEmpty ? match[3] : match[2]) ?? .infinity) <= 9_007_199_254_740_991
         && authority.scopes.contains("style")
@@ -305,6 +310,7 @@ enum HostedContract {
   }
 
   private static let publicAPIPaths = [
+    #"^/maps/map_[A-Za-z0-9_-]{16}/mobile/branding$"#,
     #"^/landmarks/tiles\.json$"#,
     #"^/landmarks/releases/[0-9a-f]{64}/regions/6/(?:0|[1-9][0-9]{0,4})/(?:0|[1-9][0-9]{0,4})\.json$"#,
     #"^/landmarks/releases/[0-9a-f]{64}/NOTICE\.md$"#,

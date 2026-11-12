@@ -90,7 +90,7 @@ final class SceneState {
 
   var replay: [Edit] {
     let methods: [MapContract.Method] = [
-      .setImages, .setDepthMarkers, .setSun, .setEmphasis, .setStyleState, .setBoundaryValues,
+      .setDataLayers, .setImages, .setDepthMarkers, .setSun, .setEmphasis, .setStyleState, .setBoundaryValues,
     ]
     var seen = Set<Destination>()
     let latest = edits.reversed().filter {
@@ -270,6 +270,15 @@ extension TileflowMapView {
           references
         )
       })
+  }
+
+  /// Fills authored GeoJSON sources and adds portable overlays across theme changes.
+  public func setDataLayers(dataSources: [String: Any], dataOverlays: [String: Any]) async throws {
+    let payload = JSONValue(foundation: ["dataSources": dataSources, "dataOverlays": dataOverlays])
+    _ = try NativeDataLayers(payload)
+    try await sendScene(SceneCommand(.setDataLayers) { channel, _ in
+      try NativeDataLayers.wire(payload, channel: channel)
+    })
   }
 
   /// Sets a style-wide state that the map's themes read with `globalState`. A number eases from

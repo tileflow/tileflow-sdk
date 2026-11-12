@@ -124,6 +124,7 @@ internal class SceneState {
 
     private companion object {
         val replayOrder = listOf(
+            MapContract.Method.SET_DATA_LAYERS,
             MapContract.Method.SET_IMAGES, MapContract.Method.SET_DEPTH_MARKERS,
             MapContract.Method.SET_SUN, MapContract.Method.SET_EMPHASIS,
             MapContract.Method.SET_STYLE_STATE, MapContract.Method.SET_BOUNDARY_VALUES,
@@ -535,4 +536,13 @@ private suspend fun TileflowMapView.runAnimation(
         }
         throw cancellation
     }
+}
+
+/** Fills authored GeoJSON sources and adds portable overlays across theme changes. */
+public suspend fun TileflowMapView.setDataLayers(dataSources: JSONObject, dataOverlays: JSONObject) {
+    val payload = JSONObject().put("dataSources", dataSources).put("dataOverlays", dataOverlays)
+    dev.tileflow.sdk.engine.NativeDataLayers(payload)
+    sendScene(SceneCommand(MapContract.Method.SET_DATA_LAYERS) { channel, _ ->
+        dev.tileflow.sdk.engine.NativeDataLayers.wire(payload, channel)
+    })
 }

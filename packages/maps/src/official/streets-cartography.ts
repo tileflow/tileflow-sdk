@@ -1,7 +1,9 @@
 import {
+  color,
   defineMap,
   expr,
   field,
+  fixed,
   refineRenderTarget,
   renderPass,
   resolveMap,
@@ -14,12 +16,17 @@ import {
   zoom,
 } from '@tileflow/core';
 import {streetsClimateImage} from './streets-climate';
+import {streetsCreditsAttribution} from './streets-credits';
 import {
   streetsAccessOverview,
   streetsAgriculturalColor,
   streetsGroundBackground,
 } from './streets-ground-and-access';
 import {streetsOverviewRoads} from './streets-network-overview';
+
+/** Activity areas fade out as buildings take over, the same way in every theme. */
+const activityFade = (opacity: number) =>
+  fixed(opacity, {reason: 'Activity areas fade out as buildings take over.'});
 
 // A footprint whose building parts draw it says `extrude: false`.
 const activityOpacity = expr.interpolate(
@@ -96,8 +103,7 @@ export function withStreetsCartography(base: TileflowMap) {
               [180, -85.0511287798066],
               [-180, -85.0511287798066],
             ],
-            attribution:
-              'Climate context: <a href="https://doi.org/10.1038/s41597-023-02549-6">Beck et al. (2023)</a>, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>; colours and smoothing adapted by Tileflow',
+            attribution: streetsCreditsAttribution,
             maxZoom: 11,
             opacity: zoom.linear<TileflowThemeNumberValue>([
               [0, token.number('land.climate.opacity')],
@@ -131,13 +137,16 @@ export function withStreetsCartography(base: TileflowMap) {
             renderer: 'fill',
             selector: {field: 'class', kind: 'compare', operator: 'eq', value: 'activity_area'},
             style: {
-              color: token.color('landuse.activity'),
-              minZoom: 11,
-              opacity: expr.interpolate({kind: 'linear'}, expr.zoom(), [
-                [15, activityOpacity],
-                [15.5, expr.multiply(activityOpacity, 0.75)],
-                [16.25, 0],
+              // The fade lives in the colour and the activity level in the opacity: a single
+              // opacity reading both would be evaluated at each tile's zoom, so tilted views
+              // would fade areas differently where tile zooms meet.
+              color: zoom.linear([
+                [15, color.alpha(token.color('landuse.activity'), activityFade(1))],
+                [15.5, color.alpha(token.color('landuse.activity'), activityFade(0.75))],
+                [16.25, color.alpha(token.color('landuse.activity'), activityFade(0))],
               ]),
+              minZoom: 11,
+              opacity: activityOpacity,
             },
           }),
         },
@@ -219,10 +228,10 @@ export function withStreetsCartography(base: TileflowMap) {
   });
 }
 
-function stackOf(module: object): TileflowNamedRenderStack {
+export function stackOf(module: object): TileflowNamedRenderStack {
   return 'renderStack' in module ? (module.renderStack as TileflowNamedRenderStack) : {};
 }
-function withoutStack<T extends object>(module: T): T & {readonly renderStack?: undefined} {
+export function withoutStack<T extends object>(module: T): T & {readonly renderStack?: undefined} {
   const result = {...module};
   if ('renderStack' in result) delete result.renderStack;
   return result as T & {readonly renderStack?: undefined};

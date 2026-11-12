@@ -607,6 +607,288 @@ test('tileset management rejects extra remote fields without reflecting them', a
   assert.doesNotMatch(stderr, new RegExp(secret));
 });
 
+const storesId = 'tls_0123456789abcdef0123456789abcdef';
+const activeUpload = {
+  id: 'upl_a',
+  state: 'uploading',
+  byteCount: 42,
+  expiresAt: '2027-01-01T00:00:00Z',
+};
+
+function storesDetail(version: number) {
+  return Response.json({
+    schemaVersion: 1,
+    tileset: {
+      id: storesId,
+      slug: 'stores',
+      name: 'Stores',
+      state: 'active',
+      currentVersion: version,
+      attribution: null,
+      dependencies: [],
+      dependencyNextCursor: null,
+    },
+  });
+}
+
+function managementSession(
+  t: import('node:test').TestContext,
+  respond: (path: string, init: RequestInit) => Response,
+  accountOrigin?: string,
+) {
+  const originalExitCode = process.exitCode;
+  t.after(() => {
+    process.exitCode = originalExitCode;
+  });
+  t.mock.method(globalThis, 'fetch', async (url: URL | string, init: RequestInit = {}) =>
+    respond(new URL(String(url)).pathname, init),
+  );
+  let stdout = '';
+  let stderr = '';
+  t.mock.method(process.stdout, 'write', (chunk: string | Uint8Array) => {
+    stdout += String(chunk);
+    return true;
+  });
+  t.mock.method(process.stderr, 'write', (chunk: string | Uint8Array) => {
+    stderr += String(chunk);
+    return true;
+  });
+
+  return async (args: string[]) => {
+    stdout = '';
+    stderr = '';
+    process.exitCode = 0;
+    const program = new Command().name('tileflow').exitOverride();
+    registerTilesetCommands(program, {
+      defaultApiUrl: 'https://api.example.test',
+      loadAuthConfig: async () => {
+        if (!accountOrigin) throw new Error('Unexpected account lookup');
+        return {
+          version: 2,
+          sessions: {
+            [accountOrigin]: {
+              account: {id: 'usr_ada', email: 'ada@example.test', name: 'Ada'},
+              accountSession: `tf_session_${'a'.repeat(64)}`,
+              apiOrigin: accountOrigin,
+              createdAt: new Date().toISOString(),
+              expiresAt: new Date(Date.now() + 3600000).toISOString(),
+              sessionId: 'cli_ada',
+            },
+          },
+        };
+      },
+    });
+    const auth = accountOrigin ? [] : ['--api-key', `tf_live_${'a'.repeat(48)}`];
+    await program.parseAsync([...args, ...auth, '--json'], {
+      from: 'user',
+    });
+    assert.equal(Boolean(stdout) !== Boolean(stderr), true, 'expected a single JSON document');
+    const result = JSON.parse(stderr || stdout);
+    assert.equal(process.exitCode, result.error ? 1 : 0);
+    return result;
+  };
+}
+
+function nextCommands(error: {nextSteps: {command?: string}[]}) {
+  return error.nextSteps.flatMap(({command}) => (command ? [command] : []));
+}
+
+for (const delivered of [true, false]) {
+  test(`a pending restore retries the original operation after delivery ${delivered ? 'finishes' : 'stalls'}`, async (t) => {
+    let currentVersion = 2;
+    let swaps = 0;
+    const versions: number[] = [];
+    const run = managementSession(t, (_path, init) => {
+      if (init.method === 'GET') return storesDetail(currentVersion);
+      const {expectedCurrentVersion} = JSON.parse(String(init.body));
+      versions.push(expectedCurrentVersion);
+      if (versions.length > 1 && !delivered) {
+        return Response.json({
+          schemaVersion: 1,
+          tileset: {
+            id: storesId,
+            slug: 'stores',
+            currentVersion,
+            previousVersion: null,
+            outcome: 'repaired',
+          },
+        });
+      }
+      if (expectedCurrentVersion !== currentVersion) {
+        return Response.json({code: 'TF_TILESET_CURRENT_VERSION_CHANGED'}, {status: 409});
+      }
+      currentVersion = currentVersion === 2 ? 1 : 2;
+      swaps++;
+      return Response.json({code: 'TF_TILESET_DELIVERY_PENDING'}, {status: 503});
+    });
+    const first = await run(['tileset', 'restore', 'stores']);
+    const retry = nextCommands(first.error).find((command) =>
+      command.startsWith('tileflow tileset restore '),
+    );
+    assert.ok(retry);
+    const second = await run(retry.split(' ').slice(1));
+    assert.deepEqual(versions, [2, 2]);
+    assert.equal(swaps, 1);
+    if (delivered) {
+      assert.equal(second.error.code, 'TF_TILESET_CURRENT_VERSION_CHANGED');
+      assert.deepEqual(nextCommands(second.error), [`tileflow tileset status ${storesId}`]);
+    } else {
+      assert.equal(second.tileset.outcome, 'repaired');
+    }
+  });
+}
+
+for (const failure of ['transport', 'unreadable', 'server', 'unavailable'] as const) {
+  test(`an uncertain restore offers a version-bound retry after a ${failure} failure`, async (t) => {
+    const run = managementSession(t, (_path, init) => {
+      if (init.method === 'GET') return storesDetail(9);
+      if (failure === 'transport') throw new TypeError('Network unavailable');
+      if (failure === 'unreadable') return new Response('Incomplete');
+      return Response.json(
+        failure === 'unavailable' ? {code: 'TF_TILESET_RESTORE_UNAVAILABLE'} : {},
+        {status: 503},
+      );
+    });
+    const {error} = await run(['tileset', 'restore', 'stores']);
+    assert.deepEqual(nextCommands(error), [
+      `tileflow tileset status ${storesId}`,
+      `tileflow tileset restore ${storesId} --expected-current-version 9`,
+    ]);
+  });
+}
+
+test('an invalid expected version never sends a request', async (t) => {
+  let requests = 0;
+  const run = managementSession(t, () => {
+    requests++;
+    return storesDetail(2);
+  });
+  for (const version of ['0', '-1', '1.5', 'invalid', '9007199254740992']) {
+    const {error} = await run([
+      'tileset',
+      'restore',
+      'stores',
+      '--expected-current-version',
+      version,
+    ]);
+    assert.equal(error.code, 'invalid_expected_current_version');
+  }
+  assert.equal(requests, 0);
+});
+
+test('abort keeps the upload identity from the restore refusal', async (t) => {
+  let deletes = 0;
+  const run = managementSession(t, (path, init) => {
+    if (init.method === 'DELETE') deletes++;
+    if (init.method === 'POST')
+      return Response.json(
+        {code: 'TF_TILESET_UPLOAD_IN_PROGRESS', upload: activeUpload},
+        {status: 409},
+      );
+    if (path.endsWith('/uploads'))
+      return Response.json({schemaVersion: 1, upload: {...activeUpload, id: 'upl_b'}});
+    return storesDetail(2);
+  });
+  const {error} = await run(['tileset', 'restore', 'stores']);
+  const [abort] = nextCommands(error);
+  assert.equal(abort, `tileflow tileset upload abort ${storesId} --upload-id upl_a`);
+  const refused = await run(abort!.split(' ').slice(1));
+  assert.equal(refused.error.code, 'tileset_upload_changed');
+  assert.equal(deletes, 0);
+});
+
+for (const state of ['aborting', 'aborted', 'wrong-id', 'invalid'] as const) {
+  test(`abort reports the verified upload result for ${state}`, async (t) => {
+    const id = 'tsu_0123456789abcdef0123456789abcdef';
+    const run = managementSession(t, (path, init) => {
+      if (init.method === 'DELETE') {
+        if (state === 'invalid') return Response.json({state: 'aborted', uploadId: id});
+        return Response.json(
+          uploadSession(
+            {
+              byteCount: 42,
+              contentHash: 'a'.repeat(64),
+              contentHashAlgorithm: 'sha256-fixed-parts-v1',
+              parts: [],
+              partSize: 16_777_216,
+            },
+            {
+              state: state === 'wrong-id' ? 'aborted' : state,
+              uploadId: state === 'wrong-id' ? 'tsu_11111111111111111111' : id,
+              partCount: 1,
+            },
+          ),
+        );
+      }
+      if (path.endsWith('/uploads'))
+        return Response.json({schemaVersion: 1, upload: {...activeUpload, id}});
+      return storesDetail(1);
+    });
+    const document = await run(['tileset', 'upload', 'abort', 'stores', '--upload-id', id]);
+    if (state === 'wrong-id' || state === 'invalid') {
+      assert.ok(document.error.code);
+      assert.ok(Array.isArray(document.error.nextSteps));
+    } else {
+      assert.equal(document.aborted, state === 'aborted');
+      assert.equal(document.upload.state, state);
+      if (state === 'aborting')
+        assert.match(nextCommands(document).join(' '), /^tileflow tileset status \S+$/u);
+    }
+  });
+}
+
+test('a Team restore keeps the selected origin and Team in every continuation', async (t) => {
+  const origin = 'https://staging.example.test';
+  const team = {id: 'org_acme', name: 'Acme', slug: 'acme'};
+  const env = ['CI', 'GITHUB_ACTIONS', 'GITLAB_CI', 'TILEFLOW_API_KEY'] as const;
+  for (const name of env) {
+    const before = process.env[name];
+    delete process.env[name];
+    t.after(() => {
+      if (before !== undefined) process.env[name] = before;
+    });
+  }
+  const run = managementSession(
+    t,
+    (path, init) => {
+      if (path === '/v1/cli/teams') return Response.json({schemaVersion: 1, teams: [team]});
+      if (path === '/v1/cli/team-capabilities')
+        return Response.json({
+          schemaVersion: 1,
+          capability: `tf_cap_${'1'.repeat(80)}`,
+          expiresAt: new Date(Date.now() + 300000).toISOString(),
+          reference: '@acme',
+          scopes: ['tilesets:write'],
+          team,
+        });
+      if (init.method === 'POST')
+        return Response.json(
+          {code: 'TF_TILESET_UPLOAD_IN_PROGRESS', upload: activeUpload},
+          {status: 409},
+        );
+      return storesDetail(2);
+    },
+    origin,
+  );
+  const {error} = await run([
+    'tileset',
+    'restore',
+    'stores',
+    '--team',
+    '@acme',
+    '--api-url',
+    origin,
+  ]);
+  assert.equal(error.code, 'TF_TILESET_UPLOAD_IN_PROGRESS');
+  const commands = nextCommands(error);
+  assert.ok(commands.length > 0);
+  for (const command of commands) {
+    assert.match(command, /--team @acme/u);
+    assert.ok(command.includes(`--api-url ${origin}`));
+    assert.doesNotMatch(command, /tf_live|tf_cap|tf_session|--api-key/u);
+  }
+});
+
 function inventoryItem(logicalName: string) {
   return {
     currentVersion: null,

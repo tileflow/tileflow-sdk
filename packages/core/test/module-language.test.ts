@@ -286,6 +286,7 @@ test('publishes AI-reference constraints that match exact assets and capture aut
     atmosphere: 'atomic',
     boundaryAreas: 'atomic',
     camera: 'deep',
+    colorKnobs: 'keyed-resources',
     data: 'atomic',
     defaultTheme: 'atomic',
     extends: 'lineage',

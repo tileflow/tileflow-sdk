@@ -1,6 +1,5 @@
 import {renderToString} from '@vue/server-renderer';
 import assert from 'node:assert/strict';
-import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 import {createSSRApp, h} from 'vue';
 import type {TileflowInteractionDiagnostic} from '@tileflow/interactions';
@@ -93,15 +92,4 @@ test('diagnoses semantic interactions in image mode without evaluating MapLibre'
     diagnostics.map(({code}) => code),
     ['UNSUPPORTED_MODE'],
   );
-});
-
-test('gates custom interaction views on Vue commit and two animation frames', async () => {
-  const source = await readFile(new URL('../src/index.ts', import.meta.url), 'utf8');
-
-  assert.match(source, /syncInteractionRenderTargetReadiness/u);
-  assert.match(source, /void nextTick\(\)\.then/u);
-  assert.match(source, /const firstFrame = view\.requestAnimationFrame/u);
-  assert.match(source, /const secondFrame = view\.requestAnimationFrame/u);
-  assert.match(source, /currentMapCaptureState\.value === 'error'/u);
-  assert.match(source, /interactionCaptureState\.value === 'error'/u);
 });

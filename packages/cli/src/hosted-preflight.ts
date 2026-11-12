@@ -31,6 +31,9 @@ export function prepareTileflowHostedThemeFamily(
   );
   const teamSources = Object.fromEntries(
     Object.entries(map.sources ?? {})
+      .flatMap(([sourceId, source]) =>
+        source.kind === 'hosted-tileset' ? [[sourceId, source] as const] : [],
+      )
       .sort(([left], [right]) => compareCodeUnits(left, right))
       .map(([sourceId, source]) => {
         for (const [themeName, style] of Object.entries(prepared)) {

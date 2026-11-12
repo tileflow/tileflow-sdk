@@ -271,3 +271,32 @@ catalog publication and lock maintenance stay in the `tileflow` CLI, which is th
 Declare SDF defaults and optional stretch/content layout in `tileflow.icons.json` beside ordinary artwork. Preparation
 verifies both densities and rejects mixed representations within one symbol layer, including
 fallbacks and local overrides.
+
+## Third-party icon credits
+
+When an icon's license requires attribution, declare it in the same `tileflow.icons.json` entry
+and keep the complete license text as a `.txt` file in that directory:
+
+```json
+{
+  "schemaVersion": 1,
+  "icons": {
+    "city-metro": {
+      "representation": "rgba",
+      "attribution": {
+        "credit": "Original author",
+        "source": "https://commons.wikimedia.org/wiki/File:Example.svg",
+        "license": "CC BY-SA 4.0",
+        "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "licenseFile": "LICENSE-CC-BY-SA-4.0.txt",
+        "changes": "Scaled into a 24px map icon cell."
+      }
+    }
+  }
+}
+```
+
+Whenever that icon wins the composition, local builds write `icons/<map>/licenses/<icon>.txt`
+beside the sprite with the credit, source, license, optional changes and the complete license
+text. A shadowed icon's credit is not written. Attribution does not change the icon's pixels or
+source identity.

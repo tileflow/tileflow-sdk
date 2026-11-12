@@ -1,13 +1,14 @@
 # Official map assets
 
-These directories contain the package-owned sources required by the official Streets, Baedeker,
-1777, Siegfried, Soundings, Blueprint, and Cívica maps. Their SVG icons and
-patterns live under each map's `icons/` directory. Streets includes a pinned CC0 subset of Maki
-pictograms inside Tileflow-authored circular POI markers; its provenance is recorded in
-`../THIRD_PARTY_NOTICES.md` and the upstream license is kept at `streets/LICENSE-MAKI.txt`. A map
-refers to those directories through the exported `streetsIcons`, `baedekerIcons`, `map1777Icons`,
-`siegfriedIcons`, `soundingsIcons`, `blueprintIcons`, and `civicaIcons` descriptors. Baedeker, Cívica, 1777, and Siegfried refer to their own
-packaged font directories through `baedekerFonts`, `civicaFonts`, `map1777Fonts`, and `siegfriedFonts`; the files and their `LICENSE.txt` remain beside the map that owns them.
+These directories contain the package-owned sources for Streets, Soundings and Outdoors.
+Streets' icons, fonts and models are shared by Outdoors; Outdoors adds its own summit symbols.
+Use the exported `streetsIcons`, `streetsFonts`, `streetsModels`, `soundingsIcons` and `outdoorsIcons`
+descriptors to compose resources. Streets includes a pinned CC0 subset of Maki pictograms inside
+Tileflow-authored circular POI markers; provenance is in `../THIRD_PARTY_NOTICES.md` and the
+upstream license is kept at `streets/LICENSE-MAKI.txt`.
+
+Baedeker, 1777, Siegfried and Blueprint resources now belong to
+[Community Maps](https://github.com/tileflow/community-maps/tree/main/maps), with their licenses.
 
 The seven `road-shield-*` SVGs are original Tileflow artwork: a deliberately generic neutral,
 colored-rectangle, and neutral-circle vocabulary. They do not reproduce a national sign template
@@ -38,34 +39,6 @@ supporting branches, reducing tessellation at distance instead of dropping limbs
 Package tests prepare and decode the real models, verify finite
 geometry and normals, and check the committed assets against the generator.
 
-The 1777 directory contains eleven original intrinsic-size material patterns, each with
-Day, Dawn, Dusk and Night pigments (44 SVG files). The Day IDs are
-`map-1777-crop-cross`, `map-1777-crop-hatch`, `map-1777-crop-lines`, `map-1777-heath`, `map-1777-orchard`, `map-1777-paper-grain`,
-`map-1777-residential`, `map-1777-sand`, `map-1777-water-ripples`, `map-1777-wetland`, and
-`map-1777-woodland`. Woods and gardens use pigment grain, not repeated tree symbols.
-1777 also owns three licensed Cormorant Garamond faces under `map-1777/fonts/`.
-
-The Baedeker directory contains eight original intrinsic-size SVG patterns:
-`baedeker-hachures`, `baedeker-orchard`, `baedeker-paper-grain`, `baedeker-park-stipple`,
-`baedeker-residential`, `baedeker-sand`, `baedeker-water-lines`, and `baedeker-wetland`. Tileflow
-authored them from scratch using the
-[Baedeker / Karl Wagner & Debes collection](https://www.antiquemapsandprints.com/collections/baedeker-karl-wagner-debes?srsltid=AfmBOoqG_2Q_Zje0wPPVYjShDjDZe5aIgH_h08XcPkpu7zFaPvF6n5hq)
-and Wikimedia Commons'
-[maps by Karl Baedeker of Italy](https://commons.wikimedia.org/wiki/Category:Maps_by_Karl_Baedeker_of_Italy)
-as visual references. No historical scan, raster pixel, historical typeface, legend artwork,
-geospatial data, or source map is included or redistributed. Baedeker also owns a package copy of
-the three Cormorant Garamond faces selected by the map. Browser-derived Mapterhorn contours are
-runtime terrain and no Mapterhorn tile is packaged here. Baedeker is not affiliated with or
-endorsed by Baedeker or Wagner & Debes. See `baedeker/README.md` and the package-level
-`THIRD_PARTY_NOTICES.md`.
-
-The Siegfried directory contains nine original intrinsic-size motifs, each drawn in coordinated
-light and dark artwork: forest, glacier, gravel, orchard, paper grain, rock, scree, water lines, and
-wetland. The 18 runtime IDs use `siegfried-<motif>` for the historical light treatment and
-`siegfried-dark-<motif>` for the nocturnal engraver-proof treatment. It also owns the three locally
-packaged Cormorant Garamond faces selected by both themes. See `siegfried/README.md` and the
-package-level `THIRD_PARTY_NOTICES.md` for provenance and licensing.
-
 The Soundings directory contains twenty-seven original nautical symbols and intrinsic-size patterns:
 `soundings-harbor`, `soundings-marina`, `soundings-lighthouse`, `soundings-light-flare`,
 `soundings-buoy-port`, `soundings-buoy-starboard`, `soundings-buoy-cardinal`,
@@ -84,18 +57,8 @@ fixed-colour artwork and is unused because rocks are drawn as chart crosses. A g
 deliberately not relabelled as a harbour. Soundings uses GEBCO-derived depth bands only as broad
 cartographic context, and neither it nor its Nautical marks is a navigation product.
 
-The Blueprint directory contains four original intrinsic-size patterns and one original
-technical symbol: `blueprint-grid`, `blueprint-building-hatch`,
-`blueprint-landscape-hatch`, `blueprint-water-hatch`, and `blueprint-poi-node`.
-Together they provide drawing-paper grid, building, landscape, and water notation plus a schematic
-POI marker without importing another official map's sprite assets.
-
-The Cívica directory contains five original transparent patterns: `civica-paper-grain`,
-`civica-park-groves`, `civica-orchard`, `civica-water-lines`, and `civica-industrial-hatch`.
-Eleven original `civica-poi-*` pictograms provide civic, cultural, garden, transport, and everyday
-destination glyphs with fine ivory clearances and compact paper squares for transport symbols.
-Small marks and a quiet secondary point preserve the map's label hierarchy. The map also owns its packaged fonts; artwork and font
-provenance are recorded in `civica/README.md` and `civica/fonts/README.md`.
+Outdoors adds two original circular summit badges, one for light ground and one for dark ground.
+It shares Streets’ packaged lettering and POI resources. No elevation tiles are bundled.
 
 `@tileflow/dev` resolves each package descriptor, verifies that its real path remains inside the
 installed package, and compiles the complete ordered directory composition into deterministic
@@ -105,17 +68,11 @@ lower-kebab, and a later directory wins on an exact duplicate ID.
 
 Font preparation is generic: it reads any map's declared `fonts` directories, derives IDs from
 OpenType full names, includes only used faces, and publishes content-addressed font and license
-assets. A self-hosted Baedeker build materializes its selected font files and license without
-a map-name special case. Its manifest and Style carry the strict `tileflow:fontFaces`
-public-asset contract; Style font values are exact OpenType full names.
-The compiler never manufactures a face ID by adding a weight. Streets, Soundings,
-and Blueprint each declare the canonical Tileflow glyph URL with exact
-`Noto Sans Regular` and `Noto Sans Bold` stacks. Baedeker, 1777 and Siegfried each name `Cormorant Garamond Regular`,
-`Cormorant Garamond SemiBold`, and `Cormorant Garamond Italic` from their respective packaged
-directories. Cívica packages `DM Serif Text Regular` and `DM Serif Text Italic` for its place
-and water lettering, `Barlow Semi Condensed Regular` and `Barlow Semi Condensed SemiBold` for
-roads and destinations, and `Noto Sans Regular` as an explicit local fallback. It declares only local fonts because the public contract makes local
-font directories and remote glyph providers mutually exclusive. The compatibility URL
+assets. Streets and Outdoors materialize their selected DINish and Noto Sans faces and licenses.
+Their manifest and Style carry the strict `tileflow:fontFaces` public-asset contract;
+Style font values are exact OpenType full names. Soundings declares the canonical Tileflow
+glyph URL with exact `Noto Sans Regular` and `Noto Sans Bold` stacks. The compiler never
+manufactures a face ID by adding a weight. The compatibility URL
 is canonical but not content-addressed; responses
 revalidate and do not provide an exact-byte receipt. Reproducible official PBF delivery will use the
 separate `/base/<assetSetSha256>/glyphs/...` contract once Hosted has verified and published that

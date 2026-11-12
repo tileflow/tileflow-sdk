@@ -17,6 +17,7 @@ export type {
   TileflowAnnotation,
   TileflowAnnotationInteractionEvent,
   TileflowAnnotationMarker,
+  TileflowAnnotationMarkerState,
   TileflowAnnotationSurface,
   TileflowAnnotationViewContext,
   TileflowInteractionAction,
@@ -40,6 +41,7 @@ export type {
   TileflowPoiProperties,
   TileflowPoiSizeRank,
   TileflowResolvedAnnotationTarget,
+  TileflowResolvedClusterTarget,
   TileflowResolvedInteractionTarget,
   TileflowResolvedMapTarget,
   TileflowResolvedPoiFeature,
@@ -53,8 +55,20 @@ export {
   reduceTileflowInteractionState,
   tileflowInteractionTargetRefsEqual,
 } from './reducer';
+export {createTileflowAnnotationClusterIndex} from './annotation-clusters';
+export {withTileflowClusterLabelFont} from './cluster-label-font';
+export type {
+  TileflowAnnotationCluster,
+  TileflowAnnotationClusterIndex,
+  TileflowAnnotationClusterOptions,
+  TileflowAnnotationClusterView,
+} from './annotation-clusters';
 export {tileflowInteractionReference} from './reference';
-export {validateTileflowAnnotations, validateTileflowInteractionBindings} from './validation';
+export {
+  unusedTileflowRendererDiagnostics,
+  validateTileflowAnnotations,
+  validateTileflowInteractionBindings,
+} from './validation';
 export type {
   TileflowAnnotationValidationResult,
   TileflowInteractionBindingValidationResult,

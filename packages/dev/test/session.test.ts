@@ -689,7 +689,7 @@ test('serves pinned local preview assets and a cancellable session event stream'
     handler(new Request('http://localhost/__runtime/maplibre-gl-worker.mjs')),
     handler(new Request('http://localhost/__runtime/maplibre-gl.css')),
     handler(new Request('http://localhost/__runtime/three.module.js')),
-    handler(new Request('http://localhost/__runtime/three.core.min.js')),
+    handler(new Request('http://localhost/__runtime/three.core.js')),
     handler(new Request('http://localhost/__runtime/three-addons/lines/LineMaterial.js')),
     handler(new Request('http://localhost/__runtime/three-addons/lines/LineSegments2.js')),
     handler(new Request('http://localhost/__runtime/three-addons/lines/LineSegmentsGeometry.js')),
@@ -1177,11 +1177,19 @@ test('recovers from an initially invalid local font through fallback watch paths
   await writeFile(join(cwd, 'fonts', 'LICENSE.txt'), 'Fixture font license\n');
   await writeFile(join(cwd, 'fonts', 'medium.ttf'), 'invalid font');
   await writeFile(join(cwd, 'fonts', 'semibold.ttf'), 'invalid font');
+  // Keep font recovery within its watch deadline without preparing the Streets sprite atlas.
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
-    `import {defineMap} from '@tileflow/core';
-import {baedeker} from '@tileflow/maps';
-export default defineMap({id:'main',version:1,extends:baedeker,fonts:['./fonts']});\n`,
+    `import {defineMap, disable} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+export default defineMap({
+  id: 'main',
+  version: 1,
+  extends: streets,
+  fonts: ['./fonts'],
+  icons: [],
+  modules: {poi: {type: 'poi', icons: false}, roads: disable(), vegetation: disable()}
+});\n`,
   );
 
   const session = await createTileflowArtifactSession({cwd, debounceMs: 10, watch: true});
@@ -1193,18 +1201,15 @@ export default defineMap({id:'main',version:1,extends:baedeker,fonts:['./fonts']
   const invalidGeneration = session.getState().generation;
 
   for (const [file, source] of [
-    ['medium.ttf', 'Regular'],
-    ['semibold.ttf', 'SemiBold'],
-    ['italic.ttf', 'Italic'],
+    ['medium.ttf', 'DINish-Medium'],
+    ['semibold.ttf', 'DINish-Bold'],
+    ['regular.ttf', 'NotoSans-Regular'],
+    ['bold.ttf', 'NotoSans-Bold'],
+    ['italic.ttf', 'NotoSans-Italic'],
   ]) {
     await writeFile(
       join(cwd, 'fonts', file),
-      await readFile(
-        new URL(
-          `../../maps/assets/baedeker/fonts/CormorantGaramond-${source}.ttf`,
-          import.meta.url,
-        ),
-      ),
+      await readFile(new URL(`../../maps/assets/streets/fonts/${source}.ttf`, import.meta.url)),
     );
   }
 
@@ -1216,7 +1221,7 @@ export default defineMap({id:'main',version:1,extends:baedeker,fonts:['./fonts']
   assert.ok(
     session
       .getLastGoodArtifacts()
-      ?.assets.some((asset) => asset.fileName.startsWith('fonts/cormorant-garamond-regular-')),
+      ?.assets.some((asset) => asset.fileName.startsWith('fonts/noto-sans-regular-')),
   );
 
   await writeFile(join(cwd, 'tileflow.config.ts'), invalidConfig, 'utf8');
@@ -1228,7 +1233,7 @@ export default defineMap({id:'main',version:1,extends:baedeker,fonts:['./fonts']
     await createTileflowDevRequestHandler({session})(new Request('http://localhost/'))
   ).text();
   assert.match(lastGoodPreview, /const previewFontFaces = \[\{/);
-  assert.match(lastGoodPreview, /fonts\/cormorant-garamond-regular-/);
+  assert.match(lastGoodPreview, /fonts\/noto-sans-regular-/);
 });
 
 test('rejects and never watches icon directories outside the working tree', async (t) => {
@@ -1732,6 +1737,7 @@ function runPreviewScript(
       };
     },
     attachTileflowNauticalLights: () => () => {},
+    attachTileflowBranding: () => () => {},
     attachTileflowNotices: () => () => {},
     attachTileflowAtmosphere: () => () => {},
     tileflowMaxPitch: 85,

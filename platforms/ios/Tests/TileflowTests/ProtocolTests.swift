@@ -35,7 +35,7 @@ final class ProtocolTests: XCTestCase {
       [
         "invalidSource", "unsupportedDevice", "invalidRequest", "disposed", "credentialRejected",
         "accessDenied", "quotaExceeded", "sessionRejected", "missingCredential",
-        "invalidConfiguration",
+        "invalidConfiguration", "nativePublicationRequired",
       ])
     for code in MapContract.rendererErrors {
       XCTAssertNotNil(TileflowMapError.Code(rawValue: code), code)

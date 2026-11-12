@@ -327,7 +327,9 @@ test('package checks accept the materialized Native release without relaxing sou
           from: null,
           to: '0.1.0-alpha.0',
           differences: ['package-unpublished'],
-          runtimeDependencies: {},
+          runtimeDependencies: {
+            dependencies: {'@tileflow/core': automaticInternalRuntimeRange('0.1.0-alpha.17')},
+          },
         },
       ],
     },
@@ -336,7 +338,10 @@ test('package checks accept the materialized Native release without relaxing sou
   await assert.rejects(validateSourceManifests(root), /source version must be/u);
 
   const materialized = JSON.parse(await readFile(manifestPath, 'utf8'));
-  assert.deepEqual(materialized.dependencies, source.dependencies);
+  assert.deepEqual(materialized.dependencies, {
+    ...source.dependencies,
+    '@tileflow/core': `workspace:${automaticInternalRuntimeRange('0.1.0-alpha.17')}`,
+  });
   assert.deepEqual(materialized.peerDependencies, source.peerDependencies);
 
   for (const path of [

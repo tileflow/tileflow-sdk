@@ -1,3 +1,7 @@
+export {createTileflowBrandingController} from './branding-controller';
+export type {TileflowBrandingState} from './branding-controller';
+export {readTileflowBrandingSources, rememberTileflowBrandingSources} from './branding-native';
+export {bindTileflowBrandingSources} from './branding';
 export type {TileflowTimeOfDay, TileflowTimeOfDayVariants} from './time-of-day';
 export {
   resolveTileflowNativeManifestUrl,
@@ -69,3 +73,9 @@ export {
   tileflowMobileDiscoveryMaximumBytes,
 } from './mobile-discovery';
 export type {TileflowMobileDiscovery} from './mobile-discovery';
+export {clusterOverlay, geojsonSource, heatmapOverlay, maplibreOverlay} from './overlays';
+export type {
+  TileflowGeoJsonSource,
+  TileflowMapLibreOverlay,
+  TileflowOverlayPlacement,
+} from './overlays';

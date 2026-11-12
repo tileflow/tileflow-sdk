@@ -62,13 +62,9 @@ The CLI owns the interface; compiler and runtime changes require rebuilding thos
 
 - `streets`: contemporary street cartography with Mapbox-inspired time-of-day and color themes,
   ranked POIs, Madrid transit network symbols, generic road-reference shields, and regional hillshade.
-- `baedeker`: warm travel-atlas styling, serif labels, original engraved patterns, and contours.
-- `civica`: illustrated civic-print styling with warm paper, olive parks, blue annotations, and
-  vermilion landmarks.
-- `map1777` (1777): 1777 ink and watercolor on current data, with 3D and four times of day.
-- `siegfried`: a terrain atlas with coordinated light/dark ink palettes, contours, and engraved patterns.
 - `soundings`: bathymetric reference cartography with depth bands, continuous relief, and port context.
-- `blueprint`: a dark architectural drawing style, with a default camera centered on San Francisco.
+- `outdoors`: contemporary topography with 3D relief, hillshade, contours, trails, peaks and natural
+  landcover. It shares Streets' lettering, roads, POIs and four times of day.
 
 Every official map is a complete, independent root using the same Core compiler. Official map
 objects are deeply frozen shared instances. Do not mutate them; use `defineMap({extends: ...})`
@@ -138,10 +134,9 @@ Hedges (from z15, shaded from z17), fences and walls (from z16) come from `traff
 Ferry routes fade in from z8, use fine blue dashes from z13, and show uppercase route names
 along the line from z15 when the data includes them. Their labels use a water-colored halo.
 
-Regional hillshade uses Tileflow Terrain, which carries [Mapterhorn](https://mapterhorn.com/attribution/)
-data, from z5 through z13, with source attribution. The 512-pixel Terrarium source is capped at
-native z11, the ground resolution of 256-pixel tiles at z12; closer views reuse that resolution
-instead of requesting regional high-resolution tiles. This is an additional remote data request. To omit
+Regional hillshade uses [Mapzen Terrain Tiles on AWS](https://registry.opendata.aws/terrain-tiles/)
+from z5 through z13; its source credits are listed on the [Tileflow map data credits page](https://tileflow.dev/copyright#streets-terrain). The 256-pixel Terrarium source is capped at native z12;
+closer views reuse that resolution, avoiding requests for coverage-dependent high-resolution DEM tiles. This is an additional remote data request. To omit
 it, set `terrain: 'none'` in a map extending `streets`. Hillshade does not change road geometry or
 raise the terrain. Buildings appear automatically from zoom 15 with an opacity fade through 15.25;
 the preview's **3D** control can hide them, and its **Trees** control enables vegetation.
@@ -160,12 +155,10 @@ Street lights are opt-in: set `roads.streetLights.enabled: true`.
 Streets uses `groundOcclusion: 0.07` and `groundOcclusionRadius: 1.5` for subtle ground contact.
 `buildings.threeDimensional.occlusion: false` disables contact and model occlusion.
 `buildings.contactShadow` styles the flat fallback.
-Streets selects Core's `labels.roadPlacement: 'ground'`: street names follow the road plane below
-buildings; POIs, transit names and shields remain above.
-Road names retain class zoom/size curves, favor major roads and add padding through z13.
-Pedestrian paths group separately. Compact types preserve language;
-`labels.roadNameFormat: 'full'` keeps source names.
-Disabling roads omits their names.
+Streets uses `labels.roadPlacement: 'readable'`: whole street names above buildings, yielding to
+destinations. The web runtime hides occluded/distant names; other renderers keep them complete.
+Names repeat at 250 px with a neutral 1 px halo. Pedestrian paths group separately.
+`labels.roadNameFormat: 'full'` preserves source names. Disabling roads omits their names.
 Road rings, ramp and surface ordering use [Core's replaceable defaults](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md).
 All non-day themes grade day's ground, water, roads, trees and 2D/3D materials across zooms:
 yellow warmth at dawn, dimmer stone at dusk, cool night. Day palettes stay unchanged.
@@ -222,34 +215,28 @@ reference uses DIN Pro Medium, so font shapes and stroke weight
 remain an approximation. Available POIs, abbreviated names,
 proprietary landmark models, transit branding, and building detail can differ from the reference.
 
-### Blueprint naming
+### Outdoors
 
-Use `blueprint` and `blueprintIcons` for the architectural drawing map. Its map ID and
-asset directory are `blueprint`, its theme key is `blueprint`, its theme ID is `blueprint-dark`,
-and its grid artwork ID is `blueprint-grid`.
+Outdoors includes `light`, `dawn`, `dusk` and `dark` themes, a `light` time-of-day family, and
+system light/dark selection. Summit labels include their elevation in metres when the data provides it. Its initial view looks across Chamonix in 3D. Use
+`packages/maps/outdoors.config.ts` in an SDK checkout to preview or capture the regional, mountain,
+trail, city and mobile scenes through the same CLI as Streets.
 
-<!-- docs:check -->
-
-```ts
-import {defineMap} from '@tileflow/core';
-import {blueprint} from '@tileflow/maps';
-
-export default defineMap({
-  id: 'city-plan',
-  version: 1,
-  extends: blueprint,
-  view: {center: [-3.7038, 40.4168], zoom: 14},
-});
-```
+The default elevation source is public Mapterhorn Terrarium tiles (512 px, maximum source zoom 12).
+Relief, hillshade and generated contours share that TileJSON. To change providers, retain the
+elevation settings with `resolveMap(outdoors).terrain` and replace its `url`, `encoding`, `tileSize`
+and `maxZoom` as appropriate; `terrain` is an atomic configuration field when extending a map.
+A custom `contours.demUrl` overrides the contour provider explicitly. Geographic tiles are requested
+at runtime and are not bundled. Local map detail depends on the available World and elevation data.
 
 ### Community maps
 
-Cyberpunk, Terminal, and Super Tile World are maintained in
-[Tileflow Community Maps](https://github.com/tileflow/community-maps), with editable source,
-assets, previews, and contribution instructions. They are not part of this package.
-The GitHub-distributed `@tileflow/community-maps` package exports `cyberpunk`, `terminal`, and
-`superTileWorld`, plus each map's font and icon descriptors. Install an exact Git commit using
-the instructions and compatible Core version in that repository.
+Baedeker, 1777, Siegfried and Blueprint are maintained in
+[Tileflow Community Maps](https://github.com/tileflow/community-maps), alongside Cyberpunk,
+Terminal and Super Tile World. Change their imports from `@tileflow/maps` to
+`@tileflow/community-maps`; the transferred maps keep their export names, IDs, themes and resource
+names, including `siegfriedThemes`. Install an exact Git commit and the compatible Core version
+specified by that repository. Their editable source, assets, examples and notices live there.
 
 Soundings is not a navigation product; its depth-band edges are approximate. It draws Nautical
 marks with its chart symbols and a "Not for navigation" notice; other maps opt in with
@@ -257,21 +244,16 @@ marks with its chart symbols and a "Not for navigation" notice; other maps opt i
 
 ## Themes and assets
 
-`streetsThemes` and `siegfriedThemes` expose complete `light` and `dark` themes. Import those
+`streetsThemes` and `outdoorsThemes` expose their complete appearance collections. Import those
 collections when using `defineTheme()` to derive a new appearance. A declared `themes` collection
 replaces the inherited collection, so also declare the intended `defaultTheme` and `systemThemes`
 and optional `timeOfDay` mappings. `system` belongs to browser selection; captures and builds use concrete theme names.
 
-Every map exports an icon-directory descriptor: `streetsIcons`, `baedekerIcons`, `civicaIcons`,
-`map1777Icons`, `siegfriedIcons`, `soundingsIcons`, and `blueprintIcons`. The descriptors point into this installed package; they are not sprite URLs.
-The CLI and build integrations compile the selected directories into runtime assets.
-
-Baedeker, 1777 and Siegfried export `baedekerFonts`, `map1777Fonts` and `siegfriedFonts` for
-their packaged Cormorant Garamond faces.
-Cívica exports `civicaFonts` for DM Serif Text, Barlow Semi Condensed, and Noto Sans fallback.
-Streets exports `streetsFonts` for its packaged navigation lettering and Noto Sans fallback.
-Soundings and Blueprint declare Noto Sans URL glyph providers
-from one immutable Hosted base-asset set, versioned independently of World data.
+The package exports `streetsIcons`, `soundingsIcons` and `outdoorsIcons`. These are installed
+resource directories, not sprite URLs. Outdoors composes Streets' artwork with its own summit
+symbols. Streets and Outdoors share `streetsFonts` (DINish and Noto Sans) and `streetsModels`.
+Soundings declares a Noto Sans URL glyph provider from an immutable Hosted base-asset set.
+The CLI and build integrations prepare the selected directories into runtime assets.
 
 Omitting `icons` inherits the parent's directory list. Declaring a list replaces it; `[]` removes
 all icon directories. Compose explicitly when adding application icons:

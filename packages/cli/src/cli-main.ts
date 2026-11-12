@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import {serve} from '@hono/node-server';
-import type {Command} from 'commander';
 import {createHash, randomBytes} from 'node:crypto';
 import {existsSync, realpathSync} from 'node:fs';
 import {readFile, writeFile} from 'node:fs/promises';
@@ -71,18 +70,20 @@ import {
 import {registerAiCommands} from './ai-commands';
 import {installSignalAbortController, registerCaptureCommands} from './capture-command';
 import {writeAtomicFile} from './capture-output';
-import {createCliProgram} from './cli-program';
+import {configureJsonErrors, createCliProgram} from './cli-program';
 import {getCliVersion, isRootCliVersionRequest} from './cli-version';
 import {registerCaptureRecordComparison} from './compare-record-command';
 import {withTileflowConfigSecretsHidden} from './config-execution';
 import {registerConfigInspectCommand} from './config-inspect-command';
 import {registerCoordinatesCommands} from './coordinates-command';
 import {allowsStoredDeployCredential, resolveDeploySource} from './deploy-source';
+import {registerDeploymentCommands} from './deployment-command';
 import {registerDescribeCommand} from './describe-command';
 import {
   defaultTileflowDevHost,
   parseTileflowDevHost,
   redirectTileflowDevNavigation,
+  rejectTileflowDevRebinding,
   tileflowDevOrigin,
 } from './dev-host';
 import {registerFeatureInspectCommand} from './feature-inspect-command';
@@ -133,6 +134,7 @@ import {
 import {openTileflowExternal} from './open-external';
 import {registerProjectCommands} from './project-commands';
 import {runRendererArtifactCommand} from './renderer-artifact-command';
+import {isRestoreJsonCommand, parseRestoreJson} from './restore-guidance';
 import {registerTilesetCommands, registerTilesetInspectCommand} from './tileset-command';
 import {registerVisualCommands} from './visual-command';
 import {createWorkbenchService, registerWorkbenchInspection} from './workbench-service';
@@ -860,9 +862,11 @@ program
             const createdServer = serve(
               {
                 fetch: (request) =>
+                  rejectTileflowDevRebinding(request) ??
                   (renderer === 'web'
                     ? redirectTileflowDevNavigation(request, origin)
-                    : undefined) ?? fetch(request),
+                    : undefined) ??
+                  fetch(request),
                 hostname: host,
                 port,
               },
@@ -1138,6 +1142,17 @@ program
     printMapStatus(status, api.apiUrl);
   });
 
+registerDeploymentCommands(program, {
+  resolveApi: (options, behavior) => {
+    const source = resolveDeploySource(process.env);
+    return requireApiOptions(options, {
+      ...behavior,
+      allowStoredCredential: allowsStoredDeployCredential(source),
+      assertExplicitKeyMap: true,
+    });
+  },
+});
+
 const iconsCommand = program.command('icons').description('Inspect managed Tileflow icons');
 
 registerIconLockCommands(program, {defaultApiUrl, defaultConfigPath, loadAuthConfig});
@@ -1191,6 +1206,8 @@ registerMapCommands(program, {defaultApiUrl, loadAuthConfig});
 
 if (isRootCliVersionRequest(process.argv.slice(2))) {
   process.stdout.write(`${getCliVersion()}\n`);
+} else if (isRestoreJsonCommand(process.argv.slice(2))) {
+  await parseRestoreJson(program);
 } else {
   const structuredCommand = process.argv[2] ?? 'tileflow';
   const structuredErrors =
@@ -1206,13 +1223,7 @@ if (isRootCliVersionRequest(process.argv.slice(2))) {
       'semantic-diff',
       'language',
     ].includes(structuredCommand);
-  if (structuredErrors) {
-    const configureStructuredErrors = (command: Command): void => {
-      command.exitOverride().configureOutput({writeErr: () => {}});
-      for (const child of command.commands) configureStructuredErrors(child);
-    };
-    configureStructuredErrors(program);
-  }
+  if (structuredErrors) configureJsonErrors(program);
   program.parseAsync().catch((error: unknown) => {
     if (structuredErrors) {
       if (
@@ -1427,7 +1438,10 @@ async function runTileflowComparisonPreview(
       await new Promise<void>((resolveListening, rejectListening) => {
         const createdServer = serve(
           {
-            fetch: (request) => redirectTileflowDevNavigation(request, origin) ?? fetch(request),
+            fetch: (request) =>
+              rejectTileflowDevRebinding(request) ??
+              redirectTileflowDevNavigation(request, origin) ??
+              fetch(request),
             hostname: address.host,
             port: address.port,
           },
@@ -1800,34 +1814,37 @@ async function requireApiOptions(
     assertExplicitKeyMap?: boolean;
     capabilityScopes?: Array<'static:write' | 'status:read' | 'styles:write'>;
     silent?: boolean;
+    onFailure?: ((code: string, message: string) => void) | undefined;
   } = {},
 ): Promise<{apiUrl: string; apiKey: string; mapId: string} | null> {
+  const refuse = (code: string, message: string, steps: string[] = []) => {
+    if (behavior.onFailure) behavior.onFailure(code, message);
+    else if (!behavior.silent) {
+      logError(message);
+      if (steps.length) printNextSteps(steps);
+    }
+    process.exitCode = 1;
+    return null;
+  };
+
   const apiUrl = normalizeApiOrigin(options.apiUrl ?? defaultApiUrl);
   const requestedMapId = options.mapId;
 
   if (!requestedMapId || !/^map_[A-Za-z0-9_-]{16}$/u.test(requestedMapId)) {
-    if (!behavior.silent) logError('Managed Map ID is invalid.');
-    process.exitCode = 1;
-    return null;
+    return refuse('invalid_map_id', 'Managed Map ID is invalid.');
   }
 
   if (options.apiKey !== undefined) {
     if (!isHostedApiKey(options.apiKey)) {
-      if (!behavior.silent) logError('Tileflow API key is invalid.');
-      process.exitCode = 1;
-      return null;
+      return refuse('invalid_api_key', 'Tileflow API key is invalid.');
     }
     if (behavior.assertExplicitKeyMap) {
       const profile = await validateApiKey(apiUrl, options.apiKey);
       if (!profile.ok) {
-        if (!behavior.silent) logError(profile.error);
-        process.exitCode = 1;
-        return null;
+        return refuse('api_key_validation_failed', profile.error);
       }
       if (!apiProfileCanTargetMap(profile.value, requestedMapId)) {
-        if (!behavior.silent) logError('This API key belongs to another Map.');
-        process.exitCode = 1;
-        return null;
+        return refuse('api_key_map_mismatch', 'This API key belongs to another Map.');
       }
     }
     return {apiKey: options.apiKey, apiUrl, mapId: requestedMapId};
@@ -1837,37 +1854,31 @@ async function requireApiOptions(
     behavior.allowStoredCredential !== false &&
     allowsStoredDeployCredential(resolveDeploySource(process.env));
   if (!allowStoredCredential) {
-    if (!behavior.silent) {
-      logError('CI requires an explicit Tileflow credential with access to the target Map.');
-      printNextSteps([
+    return refuse(
+      'api_key_required',
+      'CI requires an explicit Tileflow credential with access to the target Map.',
+      [
         `Set ${pc.cyan('TILEFLOW_API_KEY')} from the CI secret store.`,
         'The saved personal account session is never used in CI.',
-      ]);
-    }
-    process.exitCode = 1;
-    return null;
+      ],
+    );
   }
 
   let config: AuthConfig;
   try {
     config = await loadAuthConfig();
   } catch (error) {
-    if (!behavior.silent) logError(safeAuthError(error));
-    process.exitCode = 1;
-    return null;
+    return refuse('auth_state_unavailable', safeAuthError(error));
   }
   const resolvedSession = resolveAccountSession(config, apiUrl);
   if (resolvedSession.kind !== 'selected') {
-    if (!behavior.silent) {
-      logError(
-        resolvedSession.kind === 'expired'
-          ? 'The Tileflow account session has expired.'
-          : 'No Tileflow account session is saved.',
-      );
-      printNextSteps([`Run ${command('tileflow login')} to authorize this machine.`]);
-    }
-    process.exitCode = 1;
-    return null;
+    return refuse(
+      `account_session_${resolvedSession.kind}`,
+      resolvedSession.kind === 'expired'
+        ? 'The Tileflow account session has expired.'
+        : 'No Tileflow account session is saved.',
+      [`Run ${command('tileflow login')} to authorize this machine.`],
+    );
   }
 
   const capability = await requestMapCapability(
@@ -1876,9 +1887,7 @@ async function requireApiOptions(
     behavior.capabilityScopes ?? ['status:read'],
   );
   if (!capability.ok) {
-    if (!behavior.silent) logError(capability.error);
-    process.exitCode = 1;
-    return null;
+    return refuse('map_capability_failed', capability.error);
   }
   return {apiKey: capability.capability, apiUrl, mapId: capability.mapId};
 }

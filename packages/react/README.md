@@ -23,7 +23,7 @@ Prepared styles may retain relative asset URLs. The component loads them through
 resource loader before creating the map and before changing or blending themes. Sprites, fonts,
 data and model resources resolve against their declaring documents. Pending document loads are
 cancelled when the map is replaced or unmounted; `mapOptions.transformRequest` also applies to
-style and HTTP TileJSON requests.
+style and HTTP TileJSON requests, and to the DEM TileJSON and DEM tiles that contours read.
 
 ## Prepare a map
 
@@ -58,19 +58,19 @@ hosted manifest.
 
 ## Configure the worker
 
-In a Vite application's client entry, add this before mounting React:
+With Vite, the
+[`@tileflow/vite` plugin](https://github.com/tileflow/tileflow-sdk/blob/main/packages/vite/README.md#maplibres-worker)
+gives maps MapLibre's worker in development and production. With Next.js or Webpack, follow that
+guide. Elsewhere, configure it once before the first map, outside component rendering:
 
 ```ts
 import {configureTileflowMapLibre} from '@tileflow/react';
-import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 
-configureTileflowMapLibre({workerUrl});
+configureTileflowMapLibre({workerUrl: '/assets/maplibre-gl-worker.mjs'});
 ```
 
-This import syntax is specific to Vite. Use the Next.js or Webpack guide linked above for that
-bundler's worker-delivery recipe. Configure the worker once, outside component rendering. Do not
-use a CDN worker from another MapLibre version. Next.js interactive components belong behind a
-`'use client'` boundary.
+Serve the installed `maplibre-gl/dist/maplibre-gl-worker.mjs` there, not a CDN worker of another
+version; this call wins over the plugin's. Next.js map components need a `'use client'` boundary.
 
 ## Render a map
 
@@ -118,6 +118,48 @@ themes instead of `theme`: position 0 is the first theme and 1.5 is halfway from
 third. Moving the position updates the map at once. See
 [theme transitions and blends](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md).
 
+`colors={{'surface.land': '#f4f1ea'}}` overrides named colour tokens of the map's
+theme, and `emphasis={{recede: {roads: 0.3}, labels: 0.6}}` makes modules recede and labels fade so
+your own content reads first. Both ease in over `themeTransition`, stay through theme changes, and
+follow the props: an empty `colors` or no `emphasis` restores the map as designed. An unknown token or an
+invalid value is reported as an error and leaves the colours unchanged.
+A map that declares colour knobs, as Streets does, also takes them by name, such as `colors={{water: '#2563eb', roads: '#9aa5b1'}}`; see [Streets' knobs](https://github.com/tileflow/tileflow-sdk/blob/main/packages/maps/REFERENCE.md#streets-colour-knobs).
+
+A colour may use CSS variables, so the map follows your design tokens: `colors={{'surface.land':
+'var(--background)', 'surface.water': 'color-mix(in oklab, var(--primary) 30%, var(--background))'}}`.
+The map reads each variable where it sits, with `var(--name, fallback)` and nested variables, and
+reads them again when the `class`, `style`, or `data-theme` attribute of `<html>` or `<body>`, or the
+system colour scheme, changes. A variable with no value and no fallback is reported through
+`onError` as `colors`, naming the variable.
+
+`onError` receives `{code, error}` when the map cannot do what you asked, where `error` is an `Error` and
+`code` is one of:
+
+- `manifest`: the manifest could not be loaded, or it has no map named `source.map`.
+- `theme`: the requested theme or `timeOfDay` is not in the map, or the change failed.
+- `blend`: a `themeBlend` names a theme the map does not have, or the blend failed.
+- `colors` and `emphasis`: the setting was rejected, for example an unknown token or an invalid value.
+- `runtime`: the map could not be created, loaded, or taken down.
+- `scene`: the 3D scene could not be loaded.
+- `camera`: `bounds` or `fitAnnotations` could not be turned into a view.
+
+Without a handler, these failures go to `console.error`. Interactive-state problems keep their own
+channel, `onInteractionDiagnostic`.
+
+A `ref` on `Map` gives a handle with two methods: `getMap()` returns the MapLibre map, and
+`getThemeController()` returns the controller that changes the map's theme, colours, and emphasis
+at run time. Both return `null` until the map has loaded, in image mode, and after it is taken
+down, so call them from event handlers and effects, not while rendering. `TileflowMapHandle` types the ref.
+
+```tsx
+import {useRef} from 'react';
+import {Map, type TileflowMapHandle} from '@tileflow/react';
+
+const handle = useRef<TileflowMapHandle>(null);
+// Later, in an event handler:
+handle.current?.getMap()?.flyTo({center: [-3.7, 40.4], zoom: 12});
+```
+
 Interactive maps show the 3D scene their style declares by default: buildings with Tileflow
 landmarks and the map's Team building models, 3D trees, and street lights where the map enables
 them. The 3D renderers load only when the style declares a scene, so 2D maps do not download them.
@@ -129,6 +171,16 @@ They do not change camera pitch and do not apply in image mode. See
 [the map's 3D scene](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md)
 and [vegetation controls](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md).
 
+Interactive maps show no zoom or compass buttons unless you ask for them. `navigationControl` shows
+them at the top right, and `navigationControl={{position: 'bottom-left', showCompass: false}}` moves
+them or limits their buttons.
+
+`bounds={[west, south, east, north]}` starts the map on those bounds and moves it when they change;
+`fitBoundsOptions={{padding: 24, maxZoom: 14, duration: 600}}` shapes the fit. `fitAnnotations` fits
+the map to all `annotations`, with 48 pixels of padding and at most zoom 15, and again when their
+positions change. `bounds` takes precedence over it, and `center` and `zoom` set the first view only
+until one of them is given.
+
 `mapOptions` accepts native MapLibre options except `container` and `style`. Direct camera props
 take priority over `mapOptions`, then the manifest view, then shared defaults. `Map` always selects
 a Tileflow map through its manifest; it has no renderer discriminator or direct-style mode.
@@ -139,78 +191,6 @@ thin edges of 3D models stay continuous; other context attributes you pass are k
 `canvasContextAttributes: {antialias: false}` trades that smoothing for lower GPU cost.
 The obsolete source fields `kind` and `style` are rejected. For a completely unmanaged map, use
 `maplibre-gl` directly rather than a Tileflow component.
-
-Attribution stays visible during map interaction. The information button opens the full credits
-and links. Tileflow ignores `mapOptions.attributionControl: false` and `compact: true`.
-Use `mapOptions.attributionControl.customAttribution` to add credits.
-
-## Add runtime sources and layers
-
-This API is unreleased. Use the matching local packed packages until a compatible alpha is
-published. `TileflowMapRef` provides `addSource`, `removeSource`, `addLayer`, `moveLayer`, and
-`removeLayer` in interactive mode.
-
-<!-- docs:check -->
-
-```tsx
-import {Map, type TileflowMapRef} from '@tileflow/react';
-import {useRef} from 'react';
-
-export function RuntimePoints() {
-  const map = useRef<TileflowMapRef>(null);
-
-  async function addPoints() {
-    const current = map.current;
-    if (!current) return;
-    await current.addSource('places', {
-      type: 'geojson',
-      data: {
-        type: 'FeatureCollection',
-        features: [
-          {
-            type: 'Feature',
-            properties: {},
-            geometry: {type: 'Point', coordinates: [-3.7038, 40.4168]},
-          },
-        ],
-      },
-    });
-    await current.addLayer(
-      {
-        id: 'place-points',
-        type: 'circle',
-        source: 'places',
-        slot: 'above-labels',
-        paint: {'circle-radius': 8, 'circle-color': '#e9573f'},
-      },
-      {slotIndex: 0},
-    );
-  }
-
-  return (
-    <Map
-      ref={map}
-      source={{map: 'madrid'}}
-      onLoad={() => {
-        void addPoints().catch(console.error);
-      }}
-    />
-  );
-}
-```
-
-Methods return promises and wait for map/style readiness, including theme transitions. Registered
-resources survive theme changes. Replacing the map or unmounting cancels pending operations and
-releases those resources. Image mode rejects runtime mutations.
-
-`slotIndex` starts at zero and counts only registered application layers in the same slot; an index
-equal to the count appends. Moves exclude the moving layer from that count. Use `aboveLayerId` or
-`belowLayerId` instead to reference a layer in the same slot. Conflicting positions reject without
-mutation. Moving with no `slot` keeps the current slot; `slot: null` explicitly removes it.
-
-Remove dependent layers before removing their source. These methods own only resources registered
-through this reference; the existing `onLoad` callback still receives MapLibre. Typed errors expose
-`code` and actionable `context`. See the [runtime contract](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/REFERENCE.md#runtime-sources-and-layers).
 
 ## Color boundary areas from application data
 
@@ -238,6 +218,10 @@ export function Unemployment({rates}: {rates: {ine: string; rate: number}[]}) {
   return <Map source={{map: 'madrid-unemployment'}} onLoad={setMap} />;
 }
 ```
+
+A map that declares only `boundaryAreas` still carries the Boundaries source, so the choropleth does
+not have to be declared in `tileflow.config.ts` either: pass `boundaryChoropleth({classes, scale, id})`
+through `dataOverlays`, keyed by its `id`, and the app owns both the colours and the rows.
 
 Rows join by `ref` here, so this map declares `boundaryAreas: {family: 'boundaries', promoteId:
 'ref'}`. Without `promoteId`, rows join by registry `id`. See
@@ -314,8 +298,35 @@ compatible interaction metadata. With semantic bindings, narrow `context.target.
 annotation-only. See the
 [interaction guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/interactions/README.md).
 
+`renderMarker` receives `state`, `{hovered, focused, selected}`, where `selected` means the marker's
+popup is open. Each marker's view updates on its own when its state changes. A `renderPopup` or
+`renderTooltip` with no annotation or interaction that sets `popup` or `tooltip` has nothing to draw,
+so the map reports an `UNUSED_RENDERER` diagnostic. A wrapper component that forwards its props to
+`Map` can type them as `MapAnnotationProps<TAnnotation>`, or `MapInteractionProps<TAnnotation>` when
+it takes `interactions`, so an inline `renderPopup` keeps its parameter types.
+
 Text/field content uses safe text defaults. A `view` is an application renderer name, not HTML.
 Keep tooltips non-interactive; put buttons, links, and forms in popups.
+
+## Cluster points and draw density
+
+Use `annotationClusters` for up to 1,000 annotations, or `dataSources` and `dataOverlays` for larger
+GeoJSON sets. Clicking a cluster zooms in and reports a `cluster` target through `onInteractionEvent`.
+
+<!-- docs:check -->
+
+```ts
+import {clusterOverlay, geojsonSource} from '@tileflow/core/runtime';
+
+export const dataSources = {stores: geojsonSource({cluster: true, clusterRadius: 50})};
+export const dataOverlays = {
+  stores: clusterOverlay({id: 'stores', placement: 'above-labels', source: 'stores'}),
+};
+```
+
+See the
+[interactions reference](https://github.com/tileflow/tileflow-sdk/blob/main/packages/interactions/REFERENCE.md)
+for heatmaps, events, and polygon drawing with Terra Draw.
 
 ## Display an image or create a render
 
@@ -388,21 +399,7 @@ must remain visible beside the image. Omitted attribution uses embedded automati
 See the [Static Maps guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/static/README.md)
 for server transport, errors, overlays, and limits.
 
-## Capture, authorization, and errors
+## Runtime and delivery contracts
 
-`captureId` disambiguates repeated maps on a page. The root exposes `data-tileflow-map`, the resolved
-`data-tileflow-theme`, optional `data-tileflow-capture-id`, and `data-tileflow-state="loading|idle|error"`.
-Capture waits for MapLibre/image readiness and committed custom interaction views. Manifest 404s,
-unknown maps/themes, and missing styles or images enter the error state rather than silently using
-another map.
-
-Hosted interactive maps acquire a short-lived session grant before eligible resource requests.
-`analytics={{enabled: false}}` disables the optional beacon, not hosted authorization. A stable
-`surfaceId`, such as `store-locator`, identifies a product location; do not use user IDs or URLs.
-Existing request transforms remain application-owned, and direct World use can display an
-owner-action notice when managed delivery is required.
-
-The image/SSR path does not load MapLibre. Interactive rendering needs a browser with WebGL and the
-matching worker assets. For release-specific APIs, use the installed declarations and README;
-source `main` may be ahead of npm. Report defects in the
-[issue tracker](https://github.com/tileflow/tileflow-sdk/issues).
+See the [React reference](REFERENCE.md) for runtime source/layer edits, attribution, capture,
+authorization and error handling.

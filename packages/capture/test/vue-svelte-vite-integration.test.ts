@@ -57,6 +57,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 
 const cleanupState = ref('loading');
 const showProbe = ref(true);
+const showMissingMap = new URLSearchParams(window.location.search).has('missing-map');
 const source = {map: 'main', manifestUrl: '/tileflow-fixture/manifest.json'};
 const annotations = [{
   ariaLabel: 'Vue browser popup proof',
@@ -98,7 +99,7 @@ function onProbeLoad(map: MapLibreMap) {
       </TileflowMap>
     </div>
     <div style="width: 150px"><TileflowMap capture-id="image" :height="80" image-url="${imageUrl}" mode="image" :source="source" /></div>
-    <div style="width: 150px"><TileflowMap capture-id="missing-map" :height="80" :source="{...source, map: 'missing'}" /></div>
+    <div v-if="showMissingMap" style="width: 150px"><TileflowMap capture-id="missing-map" :height="80" :source="{...source, map: 'missing'}" /></div>
     <div style="width: 150px"><TileflowMap capture-id="unresolved-image" :height="80" mode="image" :source="source" /></div>
     <div id="cleanup-proof" :data-tileflow-state="cleanupState" style="display: block; height: 16px; width: 16px"></div>
     <div v-if="showProbe" class="probe"><TileflowMap :height="64" :source="source" @load="onProbeLoad" /></div>
@@ -127,6 +128,7 @@ const svelteApplicationSource = `<script>
 
   let cleanupState = 'loading';
   let showProbe = true;
+  const showMissingMap = new URLSearchParams(window.location.search).has('missing-map');
   const source = {map: 'main', manifestUrl: '/tileflow-fixture/manifest.json'};
   const annotations = [{
     ariaLabel: 'Svelte browser popup proof',
@@ -160,7 +162,9 @@ const svelteApplicationSource = `<script>
 <main>
   <div style="width: 260px"><TileflowMap {annotations} captureId="interactive" {defaultInteractionState} height={180} {popup} {source} /></div>
   <div style="width: 150px"><TileflowMap captureId="image" height={80} imageUrl="${imageUrl}" mode="image" {source} /></div>
-  <div style="width: 150px"><TileflowMap captureId="missing-map" height={80} source={{...source, map: 'missing'}} /></div>
+  {#if showMissingMap}
+    <div style="width: 150px"><TileflowMap captureId="missing-map" height={80} source={{...source, map: 'missing'}} /></div>
+  {/if}
   <div style="width: 150px"><TileflowMap captureId="unresolved-image" height={80} mode="image" {source} /></div>
   <div id="cleanup-proof" data-tileflow-state={cleanupState} style="display: block; height: 16px; width: 16px"></div>
   {#if showProbe}

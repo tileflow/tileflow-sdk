@@ -54,6 +54,7 @@ public class MapContractTest {
                 TileflowErrorCode.UNSUPPORTED_DEVICE,
                 TileflowErrorCode.INVALID_REQUEST,
                 TileflowErrorCode.DISPOSED,
+                TileflowErrorCode.NATIVE_PUBLICATION_REQUIRED,
                 TileflowErrorCode.CREDENTIAL_REJECTED,
                 TileflowErrorCode.ACCESS_DENIED,
                 TileflowErrorCode.QUOTA_EXCEEDED,

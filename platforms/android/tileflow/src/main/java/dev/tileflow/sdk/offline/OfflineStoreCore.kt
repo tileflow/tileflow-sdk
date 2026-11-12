@@ -188,6 +188,7 @@ internal class OfflineStoreCore(
      */
     private fun publishServing() {
         val index = index ?: return
+        val branding = HashMap<String, MutableList<Boolean?>>()
         val paths = HashSet<String>()
         val packs = HashMap<String, OfflineServedPacks>()
         val credits = HashMap<String, OfflineSourceCredits>()
@@ -197,6 +198,10 @@ internal class OfflineStoreCore(
             paths.addAll(keys(id, active))
             val origin = active.apiOrigin?.let { URI(it) } ?: continue
             if (active.downloads == 0) continue
+            runCatching { plan(id, active) }.getOrNull()?.downloads?.forEach { pack ->
+                val scope = ResourceCacheScope.grant(origin, pack.manifest.mapId).directory
+                branding.getOrPut(scope) { mutableListOf() }.add(pack.manifest.catalogLogoRequired)
+            }
             for ((scope, served) in served(id, active, origin))
                 packs[scope] = packs[scope]?.merging(served) ?: served
             for ((scope, each) in credits(id, active, origin))
@@ -208,6 +213,7 @@ internal class OfflineStoreCore(
                 packs,
                 credits.mapValues { it.value.regional },
                 credits.mapValues { it.value.obligations },
+                branding,
             ),
             this,
         )

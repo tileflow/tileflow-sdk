@@ -92,6 +92,36 @@ test('route posts the validated request with the credential and returns the answ
   assert.deepEqual(JSON.parse(String(calls[0]!.init.body)), routeRequest);
 });
 
+test('an optimized route must answer a whole order, and no other route may state one', async () => {
+  const legs = [routeAnswer.routes[0]!.legs[0]!];
+  const answerWith = (locationOrder?: number[]) => ({
+    ...routeAnswer,
+    routes: [{...routeAnswer.routes[0]!, legs: [...legs, ...legs, ...legs]}],
+    ...(locationOrder ? {locationOrder} : {}),
+  });
+  const request = {
+    locations: [
+      [-80.2, 25.7],
+      [-80.19, 25.71],
+      [-80.18, 25.72],
+      [-80.17, 25.73],
+    ] as [number, number][],
+    mode: 'driving' as const,
+    optimize: true,
+    departAt: '2027-03-01T08:30',
+  };
+  const good = fakeFetch(() => Response.json(answerWith([0, 2, 1, 3])));
+  const answer = await route(request, {apiKey: 'tf_live_example', fetch: good.fetcher});
+  assert.deepEqual(answer.locationOrder, [0, 2, 1, 3]);
+  assert.deepEqual(JSON.parse(String(good.calls[0]!.init.body)), request);
+  for (const order of [undefined, [0, 2, 3, 1], [0, 1, 1, 3], [0, 1, 3], [0, 1, 2, 9]]) {
+    const {fetcher} = fakeFetch(() => Response.json(answerWith(order)));
+    await assert.rejects(route(request, {apiKey: 'tf_live_example', fetch: fetcher}));
+  }
+  const {fetcher} = fakeFetch(() => Response.json({...routeAnswer, locationOrder: [0, 1]}));
+  await assert.rejects(route(routeRequest, {apiKey: 'tf_live_example', fetch: fetcher}));
+});
+
 test('native apps identify themselves and a loopback API is accepted', async () => {
   const {calls, fetcher} = fakeFetch(() => Response.json(routeAnswer));
   await route(routeRequest, {

@@ -63,6 +63,30 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   private var contentPending = false
   /// The attribution the map shows, in the SDK's own control.
   let attribution = MapAttributionControl()
+  private var brandingOrigin = "https://api.tileflow.dev"
+  private var brandingMapID: String?
+  private let brandingButton = NativeBrandingButton(frame: .zero)
+  private var branding: NativeBranding?
+
+  private func installBranding() {
+    branding = NativeBranding(
+    load: { [weak self] url in
+      guard let self else { throw TileflowMapError.disposed }
+      return try await NativeMapPreparation.read(url, kind: .other, loader: self.loader).value
+    },
+    offline: { [weak self] in
+      guard let self, let scope = self.grantScope,
+        OfflineServingRule.hostedUsesPacks(networkEnabled: TileflowHTTPClient.shared.isNetworkEnabled,
+                                         reachable: OfflineReachability.shared.isReachable)
+      else { return (false, nil) }
+      return (true, await self.offline.catalogLogoRequired(for: scope))
+    },
+    present: { [weak self] state in
+      self?.container.isHidden = state == .pending
+      self?.brandingButton.isHidden = state != .required
+    })
+  }
+
 
   // MARK: Appearance state, kept in NativeMapEngine+Appearance.swift
 
@@ -77,6 +101,8 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   /// The style document MapLibre loads or shows, with what the engine reads from it.
   private(set) var poiCatalog: NativePoiCatalog?
   var document: NativeStyleDocument.Shown?
+  private var dataLayers = try! NativeDataLayers()
+  private var clusterMove: Task<Void, Never>?
   var boundaryLookup: BoundaryLookupDescriptor?
   var boundaryLookupRevision = 0
   var appearanceRevision = 0
@@ -140,7 +166,14 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
       self.attribution.view.frame = self.container.bounds
       self.attribution.onLink = { [weak self] url in self?.onExternalLink?(url) }
       self.container.addSubview(self.attribution.view)
+      self.brandingButton.frame = CGRect(x: 0, y: self.container.bounds.height - 44, width: 44, height: 44)
+      self.brandingButton.autoresizingMask = [.flexibleTopMargin, .flexibleRightMargin]
+      self.brandingButton.addAction(UIAction { [weak self] _ in
+        self?.onExternalLink?(URL(string: "https://tileflow.dev/")!)
+      }, for: .primaryActionTriggered)
+      self.container.addSubview(self.brandingButton)
       self.mapView = mapView
+      self.installBranding()
       self.prepareCamera(mapView)
       self.mapLocation.install(on: mapView)
       self.onReady?()
@@ -191,6 +224,8 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
         work.cancel()
       }
     case .setSun: return try await scene.setSun(payload)
+    case .setDataLayers:
+      return try await setDataLayers(NativeDataLayers.decode(payload, channel: self.data, references: data))
     case .setStyleState: return try await scene.setStyleState(payload)
     case .joinBoundaryRows: return try await joinBoundaries(payload)
     case .setBoundaryValues:
@@ -264,7 +299,10 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
       if command == .addSource || command == .updateSource {
         let source = try await NativeRuntimeStyle.prepareSource(
           request, channel: data, styleURL: url, load: loadApplicationData,
-          project: { [self] in try await project($0, styleURL: $1, context: context) })
+          project: { [self] style, url in
+            try await NativeMapPreparation(loader: loader, context: context, storedZooms: storedZooms)
+              .projectSource(.init(value: style), styleURL: url)
+          })
         try Task.checkCancellation()
         if let error = retirementError { throw error }
         if command == .addSource {
@@ -356,6 +394,8 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
     mapAnnotations.retire()
     sceneAnimations.retire()
     scene.retire()
+    clusterMove?.cancel()
+    branding?.retire()
     retirementError = error
     retired = true
     if let context { MapResourceContexts.shared.retire(context) }
@@ -396,6 +436,10 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
     guard let map = payload["source"]?["map"]?.string,
       let manifestURL = payload["source"]?["manifestUrl"]?.string.flatMap(URL.init(string:))
     else { throw TileflowMapError.invalidRequest }
+    brandingMapID = payload["source"]?["discoveryMapId"]?.string
+    if brandingMapID != nil {
+      brandingOrigin = ResourcePolicy.origin(manifestURL)
+    }
     let resourceKinds = self.resourceKinds
     let context = MapResourceContexts.shared.register(
       MapResourceRoute(
@@ -421,7 +465,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
       let offline = self.offline
       storedZooms = { template in await offline.storedZooms(template: template, scope: grantScope) }
     }
-    let preparation = NativeMapPreparation(loader: loader, context: context, storedZooms: storedZooms)
+    let preparation = NativeMapPreparation(loader: loader, context: context, storedZooms: storedZooms, dataLayers: dataLayers)
     let prepared = try await preparation.map(
       map, manifestURL: manifestURL, discoveryMapID: payload["source"]?["discoveryMapId"]?.string,
       theme: payload["theme"]?.string, colorScheme: colorScheme, fromPacks: fromPacks)
@@ -440,16 +484,37 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
     show(prepared.document.value, projected: prepared.projected)
   }
 
+  private func setDataLayers(_ payload: JSONValue) async throws -> JSONValue {
+    let next = try NativeDataLayers(payload)
+    if next == dataLayers { return .null }
+    while !retired {
+      guard let style = document?.style, let theme = shown?.theme,
+        let url = manifest?.styles[theme], let context
+      else { throw TileflowMapError.notReady }
+      let revision = appearanceRevision
+      let projected = try await NativeMapPreparation(
+        loader: loader, context: context, storedZooms: storedZooms, dataLayers: next
+      ).project(.init(value: style), styleURL: url)
+      try Task.checkCancellation()
+      if revision != appearanceRevision { continue }
+      dataLayers = next
+      contentPending = true
+      show(style, projected: projected)
+      return .null
+    }
+    throw TileflowMapError.disposed
+  }
+
   /// Reads a theme's style through the map's transport and projects it for this map.
   func loadStyle(_ url: URL) async throws -> ([String: Any], ProjectedStyle) {
     guard let context else { throw TileflowMapError.notReady }
-    let preparation = NativeMapPreparation(loader: loader, context: context, storedZooms: storedZooms)
+    let preparation = NativeMapPreparation(loader: loader, context: context, storedZooms: storedZooms, dataLayers: dataLayers)
     let (document, projected) = try await preparation.style(url)
     return (document.value, projected)
   }
 
   func project(_ style: [String: Any], styleURL: URL, context: String) async throws -> ProjectedStyle {
-    try await NativeMapPreparation(loader: loader, context: context, storedZooms: storedZooms)
+    try await NativeMapPreparation(loader: loader, context: context, storedZooms: storedZooms, dataLayers: dataLayers)
       .project(.init(value: style), styleURL: styleURL)
   }
 
@@ -481,6 +546,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
 
   /// Gives MapLibre a projected style. What the engine reads from it applies once it loads.
   func show(_ style: [String: Any], projected: ProjectedStyle) {
+    branding?.update(NativeBrandingSource.read((try? dataLayers.applying(to: style)) ?? style, apiOrigin: brandingOrigin, hostedMapID: brandingMapID))
     boundaryLookup = projected.boundaryLookup
     boundaryLookupRevision += 1
     guard let mapView else { return }
@@ -570,6 +636,38 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
     where layer.isVisible && include(layer) {
       for feature in map.visibleFeatures(at: point, styleLayerIdentifiers: [layer.identifier]) {
         if found(layer, feature) { return }
+      }
+    }
+  }
+
+  func expandDataCluster(at point: CGPoint) {
+    guard let mapView, let native = mapView.style, styleLoaded, let base = document?.style,
+      let style = try? dataLayers.applying(to: base), let layers = style["layers"] as? [[String: Any]]
+    else { return }
+    for layer in layers.reversed() {
+      let cluster = (layer["metadata"] as? [String: Any])?["tileflow:cluster"] as? [String: Any]
+      guard cluster?["role"] as? String == "cluster", cluster?["expandOnClick"] as? Bool != false,
+        let id = layer["id"] as? String, let sourceId = layer["source"] as? String,
+        let source = native.source(withIdentifier: sourceId) as? MLNShapeSource
+      else { continue }
+      for feature in mapView.visibleFeatures(at: point, styleLayerIdentifiers: [id]) {
+        guard let point = feature as? MLNPointFeature,
+          let identifier = feature.attributes["cluster_id"] as? NSNumber else { continue }
+        let hit = MLNPointFeatureCluster()
+        hit.identifier = identifier
+        hit.attributes = feature.attributes
+        let zoom = source.zoomLevel(forExpanding: hit)
+        guard zoom >= 0 else { continue }
+        let target = JSONValue(foundation: [
+          "target": ["center": ["longitude": point.coordinate.longitude, "latitude": point.coordinate.latitude], "zoom": zoom],
+          "animation": ["type": "ease", "duration": 300],
+        ])
+        clusterMove?.cancel()
+        clusterMove = Task { @MainActor [weak self] in
+          guard let self, !self.retired else { return }
+          _ = try? await self.camera?.move(target)
+        }
+        return
       }
     }
   }

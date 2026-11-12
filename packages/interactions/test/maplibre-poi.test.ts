@@ -202,6 +202,29 @@ test('activates stable POIs and fails closed for popup targets without identity'
   controller.dispose();
 });
 
+test('leaves a click that a cluster above the POI already claimed', () => {
+  const fixture = createFixture();
+  const activated: unknown[] = [];
+  const controller = createTileflowMapLibrePoiController({
+    bindings: [binding],
+    cancelFrame: () => undefined,
+    map: fixture.map,
+    onActivate: (match) => activated.push(match),
+    requestFrame: (callback) => fixture.frames.push(callback),
+  });
+  const queries = fixture.queries();
+
+  fixture.fire('click', {
+    defaultPrevented: true,
+    lngLat: {lat: 0, lng: 0},
+    point: {x: 1, y: 2},
+  });
+
+  assert.deepEqual(activated, []);
+  assert.equal(fixture.queries(), queries);
+  controller.dispose();
+});
+
 test('deduplicates repeated POI representations using manifest priority', () => {
   const fixture = createFixture();
   fixture.setFeatures([

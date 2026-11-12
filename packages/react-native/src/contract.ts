@@ -1,3 +1,4 @@
+import type {TileflowGeoJsonSource, TileflowMapLibreOverlay} from '@tileflow/core/native';
 import type {ReactNode} from 'react';
 import type {ViewProps} from 'react-native';
 import type {
@@ -126,6 +127,8 @@ export type MapViewProps = ViewProps &
   NativeAppearance &
   Omit<NativeMapOptions, 'initialCamera' | 'cameraLimits' | 'eventLevel' | 'contentInset'> & {
     source: MapSource;
+    dataSources?: Readonly<Record<string, TileflowGeoJsonSource>>;
+    dataOverlays?: Readonly<Record<string, TileflowMapLibreOverlay>>;
     children?: ReactNode;
     contentInset?: number | readonly number[] | CameraPadding;
     boundaryValues?: BoundaryValues | null;

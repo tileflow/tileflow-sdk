@@ -561,7 +561,7 @@ test("deploy uploads a map's own fonts as a font bundle that both renderer famil
   const fixture = await createFixture(t);
   await writeFile(
     fixture.configPath,
-    "import {defineMap} from '@tileflow/core'; import {baedeker} from '@tileflow/maps'; export default defineMap({id:'night',name:'Night',version:1,platforms:['web','native'],extends:baedeker});\n",
+    "import {defineMap} from '@tileflow/core'; import {outdoors} from '@tileflow/maps'; export default defineMap({id:'night',name:'Night',version:1,platforms:['web','native'],extends:outdoors});\n",
   );
   const api = await startFakePlatform(t, {mapId: managedMapId});
   const result = await runCli(fixture.directory, deployArguments(fixture, api.url), {
@@ -576,7 +576,7 @@ test("deploy uploads a map's own fonts as a font bundle that both renderer famil
     'PUT /v1/styles/deployments/native',
     'POST /v1/styles',
   ]);
-  assert.match(result.stdout, /Uploaded font bundle \(3 faces,/u);
+  assert.match(result.stdout, /Uploaded font bundle \(5 faces,/u);
   const body = deployBody(api);
   const bundle = api.requests.find((request) => request.path.startsWith('/v1/font-bundles/'))!;
   const contentHash = bundle.path.split('/').pop()!;

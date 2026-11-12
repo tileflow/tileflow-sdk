@@ -70,6 +70,11 @@ export function StoreMap() {
 Self-hosted sources use `{map, manifestUrl}`. The native SDK owns loading, resource access,
 theme changes and offline delivery. Runtime sources and layers survive theme changes.
 
+`MapView` also accepts the web definitions `dataSources` and `dataOverlays`. Named GeoJSON data
+fills an authored source without replacing its clustering options; overlays retain their declared
+placement. Removing these props restores the authored composition. Catalog branding follows the
+Map's policy, including the receipt stored with an offline region.
+
 `Camera`, the five source components and ten layer components use declarative props. Layer styles
 accept generated camelCase properties and expression arrays. `MapViewRef` provides projection,
 queries, feature state and scene controls. `GeoJSONSourceRef` updates features by id and queries

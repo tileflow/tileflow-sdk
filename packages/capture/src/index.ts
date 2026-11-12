@@ -4,7 +4,11 @@ export {
   setupTileflowCaptureBrowser,
   TileflowCaptureBrowserManager,
 } from './browser';
-export type {TileflowBrowserInstallProgress, TileflowBrowserLaunchOptions} from './browser';
+export type {
+  TileflowBrowserInstallProgress,
+  TileflowBrowserLaunchOptions,
+  TileflowCaptureGraphics,
+} from './browser';
 export {
   captureTileflowScenes,
   captureTileflowShot,
@@ -21,6 +25,8 @@ export type {
   TileflowShotCaptureOptions,
   TileflowShotCaptureResult,
 } from './capture';
+export {renderTileflowContactSheet, tileflowContactSheetLimits} from './contact-sheet';
+export type {TileflowContactSheetImage, TileflowContactSheetOptions} from './contact-sheet';
 export {tileflowShotFramesSha256} from './shot';
 export type {TileflowShotCapture, TileflowShotFormat, TileflowShotFrame} from './shot';
 export type {TileflowShotVideoCodec} from './shot-encoder';

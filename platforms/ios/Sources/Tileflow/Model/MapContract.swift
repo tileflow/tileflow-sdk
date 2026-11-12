@@ -22,6 +22,7 @@ enum MapContract {
     case setBlend
     case setOptions
     case setContent
+    case setDataLayers
     case project
     case unproject
     case setVisibility

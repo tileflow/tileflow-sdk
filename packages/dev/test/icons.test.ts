@@ -11,7 +11,7 @@ import {
   type TileflowMap,
 } from '@tileflow/core';
 import {createStyleFromCatalog, type TileflowBuildCatalog} from '@tileflow/core/build';
-import {baedeker, blueprint, map1777, siegfried, soundings, streets} from '@tileflow/maps';
+import {outdoors, soundings, streets} from '@tileflow/maps';
 import {
   compileTileflowIconPackages,
   prepareTileflowCatalogIcons,
@@ -44,17 +44,40 @@ test('prepares inherited Streets directories without mutating the authored map',
 
     assert.deepEqual(compiled.watchPaths, []);
     assert.deepEqual(compiled.packages[0]?.manifest.iconNames, streetsIconIds);
-    assert.deepEqual(compiled.bindings, [
-      {
-        iconIds: streetsIconIds,
-        label: 'main',
-        mapName: 'main',
-        packageHash: compiled.packages[0]?.contentHash,
-      },
-    ]);
+    const {attributions, ...binding} = compiled.bindings[0]!;
+    assert.deepEqual(binding, {
+      iconIds: streetsIconIds,
+      label: 'main',
+      mapName: 'main',
+      packageHash: compiled.packages[0]?.contentHash,
+    });
+    assert.deepEqual(
+      attributions?.map(({id, license}) => [id, license]),
+      [
+        ['transit-madrid-emt', 'CC BY-SA 4.0'],
+        ['transit-madrid-metro', 'CC BY-SA 3.0'],
+      ],
+    );
 
     const prepared = await prepareTileflowCatalogIcons(project, {assetBaseUrl: '/tileflow', cwd});
-    assert.equal(prepared.assets.length, 4);
+    assert.deepEqual(
+      prepared.assets.map((asset) => asset.fileName),
+      [
+        'icons/main/sprite.json',
+        'icons/main/sprite.png',
+        'icons/main/sprite@2x.json',
+        'icons/main/sprite@2x.png',
+        'icons/main/licenses/transit-madrid-emt.txt',
+        'icons/main/licenses/transit-madrid-metro.txt',
+      ],
+    );
+    const metroNotice = String(prepared.assets[5]!.source);
+    assert.ok(
+      metroNotice.startsWith(
+        'Icon: transit-madrid-metro\nCredit: Przemysław Sakrajda, simplified by Kizar, with the current vector revision by Teo.raff\n',
+      ),
+    );
+    assert.match(metroNotice, /\nAttribution-ShareAlike 3\.0 Unported\n/u);
     assert.equal(prepared.project, project);
     assert.deepEqual(prepared.mapAssets.main?.icons, {
       ids: streetsIconIds,
@@ -82,14 +105,9 @@ test('prepares every independent official root from its package-owned directorie
   await withFixture(async (cwd) => {
     const project: TileflowBuildCatalog = {
       maps: {
-        baedeker: resolveFixtureMap(baedeker),
-
-        'map-1777': resolveFixtureMap(map1777),
-
-        blueprint: resolveFixtureMap(blueprint),
-        siegfried: resolveFixtureMap(siegfried),
         soundings: resolveFixtureMap(soundings),
         streets: resolveFixtureMap(streets),
+        outdoors: resolveFixtureMap(outdoors),
       },
     };
     const compiled = await compileTileflowIconPackages(project, {cwd, target: 'hosted'});
@@ -97,62 +115,6 @@ test('prepares every independent official root from its package-owned directorie
       compiled.packages.map((iconPackage) => [iconPackage.contentHash, iconPackage]),
     );
     const expectedNames = {
-      baedeker: [
-        'baedeker-hachures',
-        'baedeker-orchard',
-        'baedeker-paper-grain',
-        'baedeker-park-stipple',
-        'baedeker-residential',
-        'baedeker-sand',
-        'baedeker-water-lines',
-        'baedeker-wetland',
-      ],
-
-      'map-1777': ['', 'dawn-', 'dusk-', 'night-']
-        .flatMap((moment) =>
-          [
-            'crop-cross',
-            'crop-hatch',
-            'crop-lines',
-            'heath',
-            'orchard',
-            'paper-grain',
-            'residential',
-            'sand',
-            'water-ripples',
-            'wetland',
-            'woodland',
-          ].map((plate) => `map-1777-${moment}${plate}`),
-        )
-        .sort(),
-
-      blueprint: [
-        'blueprint-building-hatch',
-        'blueprint-grid',
-        'blueprint-landscape-hatch',
-        'blueprint-poi-node',
-        'blueprint-water-hatch',
-      ],
-      siegfried: [
-        'siegfried-dark-forest',
-        'siegfried-dark-glacier',
-        'siegfried-dark-gravel',
-        'siegfried-dark-orchard',
-        'siegfried-dark-paper-grain',
-        'siegfried-dark-rock',
-        'siegfried-dark-scree',
-        'siegfried-dark-water-lines',
-        'siegfried-dark-wetland',
-        'siegfried-forest',
-        'siegfried-glacier',
-        'siegfried-gravel',
-        'siegfried-orchard',
-        'siegfried-paper-grain',
-        'siegfried-rock',
-        'siegfried-scree',
-        'siegfried-water-lines',
-        'siegfried-wetland',
-      ],
       soundings: [
         'soundings-boat-hoist',
         'soundings-boatyard',
@@ -183,10 +145,11 @@ test('prepares every independent official root from its package-owned directorie
         'soundings-wreck',
       ],
       streets: streetsIconIds,
+      outdoors: [...streetsIconIds, 'outdoors-peak', 'outdoors-peak-dark'].sort(),
     } as const;
 
     assert.deepEqual(compiled.watchPaths, []);
-    assert.equal(compiled.packages.length, 6);
+    assert.equal(compiled.packages.length, 3);
     for (const binding of compiled.bindings) {
       assert.deepEqual(
         packagesByHash.get(binding.packageHash)?.manifest.iconNames,
@@ -195,7 +158,8 @@ test('prepares every independent official root from its package-owned directorie
     }
 
     const prepared = await prepareTileflowCatalogIcons(project, {assetBaseUrl: '/tileflow', cwd});
-    assert.equal(prepared.assets.length, 24);
+    // Three sprites of four files each; Streets and Outdoors each retain their transit credits.
+    assert.equal(prepared.assets.length, 16);
     for (const binding of compiled.bindings) {
       assert.deepEqual(prepared.mapAssets[binding.mapName]?.icons?.ids, binding.iconIds);
     }

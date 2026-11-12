@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		7C05295CB7902BC78EC3EA93 /* NativeDataLayersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0A14BF92D436BA97BED0F8E /* NativeDataLayersTests.swift */; };
 		00289D1B4C4E5F2D871EB08F /* NativeEvaluatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55EBEAC678E6BCD7405A24C8 /* NativeEvaluatorTests.swift */; };
 		01669A25488FDB843A26B226 /* NativeMapViewIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 808A9F338B0741E97666C63E /* NativeMapViewIntegrationTests.swift */; };
 		0E83AF35A9AED3462865F2CB /* ServiceStub.swift in Sources */ = {isa = PBXBuildFile; fileRef = B256C80B61A6F967B2514581 /* ServiceStub.swift */; };
@@ -69,6 +70,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		A0A14BF92D436BA97BED0F8E /* NativeDataLayersTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDataLayersTests.swift; sourceTree = "<group>"; };
 		0DD6B154807CDBD5D78CB989 /* MapTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapTestFixtures.swift; sourceTree = "<group>"; };
 		109C7D06683E789B360AD995 /* AnnotationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnotationTests.swift; sourceTree = "<group>"; };
 		113918A3BD759C2E418A20A6 /* SceneTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneTests.swift; sourceTree = "<group>"; };
@@ -167,6 +169,7 @@
 				E30338B5AA50BFB0BB01C2AC /* NativeAttributionIntegrationTests.swift */,
 				AF434C1BA4135D3176A91EC6 /* NativeCameraTests.swift */,
 				55EBEAC678E6BCD7405A24C8 /* NativeEvaluatorTests.swift */,
+				A0A14BF92D436BA97BED0F8E /* NativeDataLayersTests.swift */,
 				8DD188362EA206DCDCA2C5F9 /* NativeLocationIntegrationTests.swift */,
 				9181EFB75DF0019A93B3D631 /* NativeMapCameraIntegrationTests.swift */,
 				A99CC988D29E9A7F1F66ADBE /* NativeMapContentIntegrationTests.swift */,
@@ -355,6 +358,7 @@
 				4607DA7C3A821F4E0E5FF44B /* NativeAttributionIntegrationTests.swift in Sources */,
 				63CAD3000CE758CEF4346435 /* NativeCameraTests.swift in Sources */,
 				00289D1B4C4E5F2D871EB08F /* NativeEvaluatorTests.swift in Sources */,
+				7C05295CB7902BC78EC3EA93 /* NativeDataLayersTests.swift in Sources */,
 				C6CAA4425CD48E65C49F032A /* NativeLocationIntegrationTests.swift in Sources */,
 				54E2A89BD326E71031AAEEE5 /* NativeMapCameraIntegrationTests.swift in Sources */,
 				6EADE922D9E042CD0F0EA711 /* NativeMapContentIntegrationTests.swift in Sources */,

@@ -6,9 +6,16 @@ import {TileflowMap, type TileflowMapRef} from '../src/index.js';
 class Node {
   parent: Node | null = null;
   children: Node[] = [];
-  ownerDocument = {defaultView: null};
+  ownerDocument = {
+    defaultView: {
+      cancelAnimationFrame() {},
+      requestAnimationFrame: () => 0,
+    },
+  };
   complete = false;
   naturalWidth = 0;
+  addEventListener() {}
+  removeEventListener() {}
   constructor(
     readonly tag: string,
     public text = '',

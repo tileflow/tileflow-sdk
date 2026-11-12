@@ -191,6 +191,7 @@ export type MapCommandPayloads = {
       lookup?: {rows: readonly TileflowBoundaryLookupRow[]};
     };
   }>;
+  setDataLayers: Readonly<{dataSources: JsonObject; dataOverlays: JsonObject}>;
   setStyleState: Readonly<{state: StyleState}>;
   setEmphasis: Readonly<{emphasis: JsonObject | null; duration?: number}>;
   setSun: Readonly<{sun: JsonObject | null; duration?: number}>;

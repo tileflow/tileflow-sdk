@@ -1,13 +1,15 @@
+import type {Map as MapLibreMap} from 'maplibre-gl';
+import type {TileflowMapError, TileflowThemeController} from '@tileflow/core/browser';
 import type {TileflowAnnotation} from '@tileflow/interactions';
 import TileflowMap, {
   configureTileflowMapLibre,
   TileflowMap as NamedTileflowMap,
   type TileflowMapAnnotationSnippet,
+  type TileflowMapHandle,
   type TileflowMapInteractionSnippet,
   type TileflowMapLibreConfiguration,
   type TileflowMapProps,
 } from '../src/index.js';
-// Component references expose the shared asynchronous runtime-style API.
 import type {TileflowMapRef} from '../src/index.js';
 
 const source = {map: 'main'};
@@ -128,6 +130,25 @@ const imageCallback: TileflowMapProps = {
   source,
 };
 
+// `onError` receives a stable code and an `Error`, in interactive and image mode.
+const errorProps = [
+  {onError: ({code, error}: TileflowMapError) => [code, error.message], source},
+  {mode: 'image', onError: (event: TileflowMapError) => event.error.name, source},
+] satisfies TileflowMapProps[];
+const wrongCode: TileflowMapProps = {
+  // @ts-expect-error a code outside the stable set is not an error code.
+  onError: (event: {code: 'other'; error: Error}) => event.code,
+  source,
+};
+void [errorProps, wrongCode];
+
+// `bind:this` gives the component, which is a handle to the MapLibre map and the theme controller.
+declare const component: TileflowMap;
+const mapOrNull: MapLibreMap | null = component.getMap();
+const controllerOrNull: TileflowThemeController | null = component.getThemeController();
+const handle: TileflowMapHandle = component;
+void [mapOrNull, controllerOrNull, handle];
+
 const namedComponent: typeof TileflowMap = NamedTileflowMap;
 
 void [
@@ -148,6 +169,21 @@ void [
   imageCallback,
   namedComponent,
 ];
+
+const clusteredProps: import('../src/index.js').TileflowMapProps = {
+  annotationClusters: {clusterRadius: 60},
+  dataOverlays: {},
+  dataSources: {stores: {data: 'https://example.com/stores.geojson', kind: 'geojson'}},
+  source: {map: 'main'},
+};
+void clusteredProps;
+// @ts-expect-error image mode draws no runtime data.
+const imageData: import('../src/index.js').TileflowMapProps = {
+  dataSources: {},
+  mode: 'image',
+  source: {map: 'main'},
+};
+void imageData;
 
 declare const runtimeRef: TileflowMapRef;
 const sourceAdded: Promise<void> = runtimeRef.addSource('points', {

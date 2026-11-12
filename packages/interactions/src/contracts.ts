@@ -411,13 +411,38 @@ export type TileflowResolvedMapTarget = {
   kind: 'map';
 };
 
+/** One clustered group of annotations or GeoJSON points. */
+export type TileflowResolvedClusterTarget = {
+  /** The annotations inside the group, when annotations were clustered. */
+  annotationIds?: readonly string[];
+  clusterId: number;
+  coordinate: TileflowInteractionCoordinate;
+  kind: 'cluster';
+  pointCount: number;
+  /** Cluster properties, including any `clusterProperties` aggregates. */
+  properties: Readonly<Record<string, TileflowInteractionJsonValue>>;
+  /** The GeoJSON source, when a source was clustered. */
+  source?: string;
+};
+
 export type TileflowResolvedInteractionTarget<
   TAnnotation extends TileflowAnnotation = TileflowAnnotation,
 > =
   | TileflowResolvedAnnotationTarget<TAnnotation>
+  | TileflowResolvedClusterTarget
   | TileflowResolvedSemanticFeatureTarget
   | TileflowResolvedStyleFeatureTarget
   | TileflowResolvedMapTarget;
+
+/** What a visitor is doing to a marker, for a marker view that changes with it. */
+export type TileflowAnnotationMarkerState = Readonly<{
+  /** The marker holds keyboard focus. */
+  focused: boolean;
+  /** A pointer is over the marker. */
+  hovered: boolean;
+  /** The marker's popup is open. */
+  selected: boolean;
+}>;
 
 export type TileflowAnnotationViewContext<
   TAnnotation extends TileflowAnnotation = TileflowAnnotation,
@@ -425,6 +450,11 @@ export type TileflowAnnotationViewContext<
   annotation: TAnnotation;
   close: () => void;
   content?: TileflowInteractionContent;
+  /**
+   * Present in a marker view: hover, focus and whether the popup is open. Each marker's view is
+   * updated on its own, so a change to one marker does not render the others again.
+   */
+  state?: TileflowAnnotationMarkerState;
   target: TileflowResolvedAnnotationTarget<TAnnotation>;
   viewName?: string;
 };

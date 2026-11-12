@@ -1,0 +1,107 @@
+# Shows Tileflow map changes in merge requests from this project. Include it with `include:remote`
+# and pin both the URL and `action_ref` to the same full commit.
+spec:
+  inputs:
+    action_ref:
+      description: Full commit of tileflow/tileflow-sdk that provides the review code.
+    stage:
+      default: test
+    image:
+      description: Image for the capture job. Baselines only match renders from the same image.
+      default: mcr.microsoft.com/playwright:v1.62.1-noble
+    working_directory:
+      default: .
+    config:
+      default: tileflow.config.ts
+    baseline_dir:
+      default: test/visual-baselines
+    install_command:
+      default: ''
+    noise_ratio:
+      default: '0.0001'
+    evidence_branch:
+      default: tileflow-visual-review
+    separate_approver:
+      description: Set to true so the person who opened a merge request cannot approve it.
+      default: 'false'
+---
+.tileflow-visual-review-base:
+  stage: $[[ inputs.stage ]]
+  image: $[[ inputs.image ]]
+  variables:
+    TILEFLOW_REVIEW_PROVIDER: gitlab
+    TILEFLOW_REVIEW_WORKING_DIRECTORY: $[[ inputs.working_directory ]]
+    TILEFLOW_REVIEW_BASELINE_DIR: $[[ inputs.baseline_dir ]]
+    TILEFLOW_REVIEW_EVIDENCE_BRANCH: $[[ inputs.evidence_branch ]]
+    TILEFLOW_REVIEW_SEPARATE_APPROVER: $[[ inputs.separate_approver ]]
+    TILEFLOW_REVIEW_OUTPUT: $CI_PROJECT_DIR/.tileflow-visual-review
+    TILEFLOW_REVIEW_PULL_REQUEST: $CI_MERGE_REQUEST_IID
+    TILEFLOW_REVIEW_DRY_RUN: 'false'
+  before_script:
+    - mkdir -p /tmp/tileflow-review
+    - >-
+      curl -fsSL "https://codeload.github.com/tileflow/tileflow-sdk/tar.gz/$[[ inputs.action_ref ]]"
+      | tar -xz -C /tmp/tileflow-review --strip-components=4 --wildcards
+      "*/packages/visual-review-action/src/*"
+    - export TILEFLOW_REVIEW_HEAD_SHA="${CI_MERGE_REQUEST_SOURCE_BRANCH_SHA:-$CI_COMMIT_SHA}"
+    - export TILEFLOW_REVIEW_BASE_SHA="${CI_MERGE_REQUEST_TARGET_BRANCH_SHA:-$CI_MERGE_REQUEST_DIFF_BASE_SHA}"
+
+# The capture job omits the publishing environment. Merge request pipelines use source-branch
+# configuration, so branch authors must be trusted when the project owns its CI configuration.
+tileflow-visual-review-capture:
+  extends: .tileflow-visual-review-base
+  variables:
+    GIT_DEPTH: '0'
+    TILEFLOW_REVIEW_CONFIG: $[[ inputs.config ]]
+    TILEFLOW_REVIEW_INSTALL_COMMAND: $[[ inputs.install_command ]]
+    TILEFLOW_REVIEW_NOISE_RATIO: $[[ inputs.noise_ratio ]]
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_PROJECT_ID == $CI_PROJECT_ID && $CI_MERGE_REQUEST_SOURCE_PROJECT_ID == $CI_PROJECT_ID
+  script:
+    - chown -R pwuser "$CI_PROJECT_DIR"
+    - cd "$TILEFLOW_REVIEW_WORKING_DIRECTORY"
+    - runuser -u pwuser -- env HOME=/home/pwuser node /tmp/tileflow-review/main.mjs capture
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - .tileflow-visual-review/
+
+.tileflow-visual-review-publish:
+  extends: .tileflow-visual-review-base
+  variables:
+    GIT_STRATEGY: none
+  environment:
+    name: tileflow-visual-review
+    action: access
+
+tileflow-visual-review-report:
+  extends: .tileflow-visual-review-publish
+  needs:
+    - job: tileflow-visual-review-capture
+      artifacts: true
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_PROJECT_ID == $CI_PROJECT_ID && $CI_MERGE_REQUEST_SOURCE_PROJECT_ID == $CI_PROJECT_ID
+      when: always
+  script:
+    - node /tmp/tileflow-review/main.mjs report
+
+tileflow-visual-review-approve:
+  extends: .tileflow-visual-review-publish
+  needs:
+    - job: tileflow-visual-review-report
+      artifacts: false
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_PROJECT_ID == $CI_PROJECT_ID && $CI_MERGE_REQUEST_SOURCE_PROJECT_ID == $CI_PROJECT_ID
+      when: manual
+      allow_failure: true
+  script:
+    - node /tmp/tileflow-review/main.mjs approve
+
+# GitLab has no merge event for CI, so each push to the default branch settles closed reviews.
+tileflow-visual-review-promote:
+  extends: .tileflow-visual-review-publish
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script:
+    - node /tmp/tileflow-review/main.mjs promote

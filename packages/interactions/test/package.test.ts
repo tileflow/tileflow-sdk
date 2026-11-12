@@ -8,6 +8,7 @@ import * as source from '../src/index';
 const execFileAsync = promisify(execFile);
 
 const runtimeExports = [
+  'createTileflowAnnotationClusterIndex',
   'initialTileflowInteractionState',
   'reduceTileflowInteractionState',
   'tileflowAnnotationSchema',
@@ -25,8 +26,10 @@ const runtimeExports = [
   'tileflowInteractionTargetRefsEqual',
   'tileflowInteractionTargetSchema',
   'tileflowPoiCategories',
+  'unusedTileflowRendererDiagnostics',
   'validateTileflowAnnotations',
   'validateTileflowInteractionBindings',
+  'withTileflowClusterLabelFont',
 ];
 
 test('publishes one focused root entry and its package metadata', async () => {
@@ -45,7 +48,7 @@ test('publishes one focused root entry and its package metadata', async () => {
     default: './dist/maplibre-entry.js',
   });
   assert.equal(manifest.exports['./package.json'], './package.json');
-  assert.deepEqual(manifest.files, ['dist', 'LICENSE']);
+  assert.deepEqual(manifest.files, ['dist', 'LICENSE', 'REFERENCE.md']);
   assert.equal(manifest.sideEffects, false);
 });
 

@@ -98,6 +98,8 @@ struct OfflineDownloadManifest: Sendable {
   let revalidationInterval: TimeInterval
   /// The end of the download window.
   let downloadExpiresAt: Date
+  /// Presentation receipt persisted with the service response; older packs need a refresh.
+  var catalogLogoRequired: Bool? = nil
 
   func source(_ name: String) -> OfflineDownloadSource? { sources.first { $0.source == name } }
 }
@@ -324,7 +326,8 @@ enum OfflinePackContract {
       origins: origins, excluded: excluded, resourceCount: resourceCount,
       billableResourceCount: billableCount, bytes: bytes, attribution: attribution,
       maximumPackResources: maximum, dailyDownloads: daily,
-      revalidationInterval: TimeInterval(interval), downloadExpiresAt: expiresAt)
+      revalidationInterval: TimeInterval(interval), downloadExpiresAt: expiresAt,
+      catalogLogoRequired: value["catalogLogoRequired"]?.bool)
   }
 
   /// `[min, max]` zooms.

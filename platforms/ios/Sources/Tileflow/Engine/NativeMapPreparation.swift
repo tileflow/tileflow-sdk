@@ -5,6 +5,7 @@ struct NativeMapPreparation: Sendable {
   let loader: any ResourceLoading
   let context: String
   let storedZooms: NativeStyleDocument.StoredZooms?
+  var dataLayers = try! NativeDataLayers()
 
   /// Foundation JSON is handed to one owner after the loader finishes reading it.
   struct Document: @unchecked Sendable {
@@ -50,6 +51,13 @@ struct NativeMapPreparation: Sendable {
   }
 
   func project(_ style: Document, styleURL: URL) async throws -> ProjectedStyle {
+    try await NativeStyleDocument.project(
+      dataLayers.applying(to: style.value), styleURL: styleURL, context: context,
+      load: { url, kind in try await Self.read(url, kind: kind, loader: loader).value },
+      storedZooms: storedZooms)
+  }
+
+  func projectSource(_ style: Document, styleURL: URL) async throws -> ProjectedStyle {
     try await NativeStyleDocument.project(
       style.value, styleURL: styleURL, context: context,
       load: { url, kind in try await Self.read(url, kind: kind, loader: loader).value },

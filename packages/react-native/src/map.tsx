@@ -42,6 +42,10 @@ let nextInstance = 0;
 const defaultLocation: NativeUserLocation = {visible: false};
 
 function Appearance({props}: {props: MapViewProps}) {
+  useMapCommand('setDataLayers', {
+    dataSources: (props.dataSources ?? {}) as JsonObject,
+    dataOverlays: (props.dataOverlays ?? {}) as JsonObject,
+  });
   useMapCommand('setBoundaryValues', {
     values: boundaryValuesInput(props.boundaryValues),
   });

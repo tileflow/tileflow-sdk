@@ -1,8 +1,15 @@
 import type {Map as MapLibreMap, MapOptions as MapLibreMapOptions} from 'maplibre-gl';
 import type {Snippet, SvelteComponentTyped} from 'svelte';
-import type {TileflowMapController} from '@tileflow/core';
+import type {TileflowGeoJsonSource, TileflowMapLibreOverlay} from '@tileflow/core';
 import type {
+  TileflowBounds,
   TileflowBrowserThemeBlendSelection,
+  TileflowColorOverrides,
+  TileflowEmphasis,
+  TileflowFitBoundsOptions,
+  TileflowMapError,
+  TileflowNavigationControlInput,
+  TileflowThemeController,
   TileflowThemeTransition,
   TileflowThemeTransitionOptions,
   TileflowViewMode,
@@ -13,6 +20,7 @@ import type {
   TileflowRuntimeSource,
   TileflowThemeSelection,
 } from '@tileflow/core/runtime';
+import type {TileflowMapRef as RuntimeStyleRef} from '@tileflow/dom';
 import type {
   TileflowAnnotation,
   TileflowAnnotationViewContext,
@@ -22,14 +30,11 @@ import type {
   TileflowInteractionState,
   TileflowInteractionViewContext,
 } from '@tileflow/interactions';
+import type {TileflowAnnotationClusterOptions} from '@tileflow/interactions/maplibre';
 
 export type TileflowMapMode = 'interactive' | 'image';
 export type TileflowMapOptions = Omit<MapLibreMapOptions, 'container' | 'style'>;
 export type TileflowMapSource = TileflowRuntimeSource;
-export type TileflowMapRef = Pick<
-  TileflowMapController,
-  'addSource' | 'removeSource' | 'addLayer' | 'moveLayer' | 'removeLayer'
->;
 export type TileflowMapLibreConfiguration = Readonly<{workerUrl: string}>;
 
 /** Configure the application-owned worker before mounting an interactive Tileflow map. */
@@ -56,6 +61,12 @@ type TileflowMapBaseProps = {
   imageUrl?: string;
   interactive?: boolean;
   mapOptions?: TileflowMapOptions;
+  /**
+   * Called with `{code, error}` when the map cannot load its manifest, apply a theme, blend,
+   * `colors` or `emphasis`, start its runtime or load its 3D scene. Without it, those failures go to
+   * `console.error`.
+   */
+  onError?: (event: TileflowMapError) => void;
   onThemeChange?: (transition: TileflowThemeTransition) => void;
   theme?: TileflowThemeSelection;
   timeOfDay?: TileflowTimeOfDay;
@@ -73,7 +84,36 @@ type TileflowMapBaseProps = {
 export type TileflowMapAnnotationProps<
   TAnnotation extends TileflowAnnotation = TileflowAnnotation,
 > = {
+  /** Group `annotations` into accessible cluster buttons. Up to 1,000 annotations. */
+  annotationClusters?: TileflowAnnotationClusterOptions;
   annotations?: readonly TAnnotation[];
+};
+
+export type TileflowMapAppearanceProps = {
+  /**
+   * Colour token overrides for the map, for example `{'surface.land': '#f4f1ea'}`, or colour knobs
+   * the map declares, for example `{water: '#2563eb'}`. The overrides ease in over
+   * `themeTransition`, stay through theme changes, and an empty object restores the map's own
+   * colours. A value may use CSS variables, such as `var(--primary)` or
+   * `color-mix(in oklab, var(--primary) 40%, white)`, read where the map sits and read again when
+   * the page's theme changes. The map must be configurable at run time; an unknown token, an
+   * invalid value or a variable with no value and no fallback is reported as an error and leaves
+   * the colours unchanged.
+   */
+  colors?: TileflowColorOverrides;
+  /**
+   * Makes chosen modules of the map recede and its labels fade, so your own content reads first.
+   * It eases in over `themeTransition` and stays through theme changes; leave it out for the map
+   * as designed.
+   */
+  emphasis?: TileflowEmphasis;
+};
+
+export type TileflowMapDataProps = {
+  /** Overlays drawn over `dataSources` or compiled sources, keyed as in `defineMap`. */
+  dataOverlays?: Readonly<Record<string, TileflowMapLibreOverlay>>;
+  /** Application GeoJSON, keyed as in `defineMap`. A compiled source of the same key is filled. */
+  dataSources?: Readonly<Record<string, TileflowGeoJsonSource>>;
 };
 
 export type TileflowMapInteractionStateProps =
@@ -92,10 +132,31 @@ type TileflowMapStyleSourceProps = {
 
 type TileflowMapInteractiveProps<TAnnotation extends TileflowAnnotation> =
   TileflowMapAnnotationProps<TAnnotation> &
+    TileflowMapAppearanceProps &
+    TileflowMapDataProps &
     TileflowMapInteractionStateProps & {
       interactions?: readonly TileflowInteractionBinding[];
       marker?: TileflowMapAnnotationSnippet<TAnnotation>;
       mode?: 'interactive';
+      /**
+       * The zoom and compass buttons of an interactive map. A map shows none unless asked: `true` shows
+       * them at `top-right`, and an object moves them or limits their buttons.
+       */
+      navigationControl?: TileflowNavigationControlInput;
+      /**
+       * Shows these bounds, `[west, south, east, north]` or `[[west, south], [east, north]]`. The
+       * map starts there, and moves to new bounds when this prop changes. `center` and `zoom` set
+       * the view only until bounds are given.
+       */
+      bounds?: TileflowBounds;
+      /**
+       * Fits the map to all `annotations`, with 48 pixels of padding and at most zoom 15 unless
+       * options say otherwise, and again whenever their positions change. `bounds` takes
+       * precedence.
+       */
+      fitAnnotations?: boolean | TileflowFitBoundsOptions;
+      /** How `bounds` is fitted: `padding`, `maxZoom` and `duration`. */
+      fitBoundsOptions?: TileflowFitBoundsOptions;
       onInteractionDiagnostic?: (diagnostic: TileflowInteractionDiagnostic) => void;
       onInteractionEvent?: (event: TileflowInteractionEvent<TAnnotation>) => void;
       onInteractionStateChange?: (state: TileflowInteractionState) => void;
@@ -104,12 +165,21 @@ type TileflowMapInteractiveProps<TAnnotation extends TileflowAnnotation> =
     };
 
 type TileflowMapImageProps = {
+  annotationClusters?: never;
   annotations?: never;
+  colors?: never;
+  dataOverlays?: never;
+  dataSources?: never;
   defaultInteractionState?: never;
+  emphasis?: never;
   interactions?: never;
   interactionState?: never;
   marker?: never;
   mode: 'image';
+  navigationControl?: never;
+  bounds?: never;
+  fitAnnotations?: never;
+  fitBoundsOptions?: never;
   onInteractionDiagnostic?: never;
   onInteractionEvent?: never;
   onInteractionStateChange?: never;
@@ -122,14 +192,30 @@ export type TileflowMapProps<TAnnotation extends TileflowAnnotation = TileflowAn
     TileflowMapStyleSourceProps &
     (TileflowMapInteractiveProps<TAnnotation> | TileflowMapImageProps);
 
+/**
+ * What `bind:this` on `TileflowMap` gives an application: the objects behind the map, for the
+ * moments when the props are not enough. Both are `null` until the map has loaded, in image mode,
+ * and after it is taken down, so call them from event handlers and from `on:load`.
+ */
+export type TileflowMapRef = TileflowMapHandle;
+
+export type TileflowMapHandle = RuntimeStyleRef & {
+  /** The MapLibre map, or `null` while there is none. */
+  getMap(): MapLibreMap | null;
+  /** Changes the map's theme, colours and emphasis; `null` when the map's style has no themes. */
+  getThemeController(): TileflowThemeController | null;
+};
+
 export default class TileflowMap<
   TAnnotation extends TileflowAnnotation = TileflowAnnotation,
 > extends SvelteComponentTyped<TileflowMapProps<TAnnotation>, {load: CustomEvent<MapLibreMap>}> {
-  addSource: TileflowMapRef['addSource'];
-  removeSource: TileflowMapRef['removeSource'];
-  addLayer: TileflowMapRef['addLayer'];
-  moveLayer: TileflowMapRef['moveLayer'];
-  removeLayer: TileflowMapRef['removeLayer'];
+  addSource: RuntimeStyleRef['addSource'];
+  removeSource: RuntimeStyleRef['removeSource'];
+  addLayer: RuntimeStyleRef['addLayer'];
+  moveLayer: RuntimeStyleRef['moveLayer'];
+  removeLayer: RuntimeStyleRef['removeLayer'];
+  getMap(): MapLibreMap | null;
+  getThemeController(): TileflowThemeController | null;
 }
 
 export {TileflowMap};

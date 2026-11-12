@@ -56,3 +56,9 @@ public suspend fun TileflowMapController.play(
     shot: TileflowShot,
     onCue: ((String) -> Unit)? = null,
 ): Boolean = attached().play(shot, onCue)
+
+/** See [TileflowMapView.setDataLayers]. */
+public suspend fun TileflowMapController.setDataLayers(
+    dataSources: org.json.JSONObject,
+    dataOverlays: org.json.JSONObject,
+): Unit = attached().setDataLayers(dataSources, dataOverlays)

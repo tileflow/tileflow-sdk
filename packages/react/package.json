@@ -25,7 +25,8 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
-    "LICENSE"
+    "LICENSE",
+    "REFERENCE.md"
   ],
   "scripts": {
     "prepack": "node ../../scripts/package-license.mjs --prepare",
@@ -52,6 +53,7 @@
   },
   "dependencies": {
     "@tileflow/core": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
+    "@tileflow/dom": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
     "@tileflow/interactions": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
     "@tileflow/static": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0"
   },

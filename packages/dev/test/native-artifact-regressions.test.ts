@@ -148,7 +148,7 @@ test('runs the repository native catalog report through the real tsx loader', as
     schemaVersion: number;
   };
   assert.equal(report.schemaVersion, 2);
-  assert.equal(report.maps.length, 6);
-  assert.equal(new Set(report.rows.map(({map}) => map)).size, 6);
+  assert.equal(report.maps.length, 3);
+  assert.equal(new Set(report.rows.map(({map}) => map)).size, 3);
   assert.ok(report.rows.every(({map, theme}) => Boolean(map && theme)));
 });

@@ -345,7 +345,11 @@ test('renders secure accessible defaults through textContent and stable DOM surf
   assert.equal(popup.container.className, 'tileflow-interaction-popup');
   assert.equal(popup.container.getAttribute('role'), 'dialog');
   assert.equal(contentOf(popup.container).textContent, unsafe);
-  assert.equal(popup.container.children[1]!.textContent, 'Close');
+  const closeButton = popup.container.children[1]!;
+  assert.equal(closeButton.getAttribute('aria-label'), 'Close Annotation safe');
+  assert.equal(closeButton.textContent, '');
+  assert.equal(closeButton.children[0]!.textContent, '\u00d7');
+  assert.equal(closeButton.children[0]!.getAttribute('aria-hidden'), 'true');
   assert.equal(harness.document.activeElement, popup.container.children[1]);
   assert.equal(marker.getAttribute('aria-expanded'), 'true');
   assert.equal(marker.getAttribute('aria-controls'), popup.container.id);
@@ -636,4 +640,23 @@ test('target removal closes overlays and dispose is idempotent', () => {
   harness.runtime.dispose();
   assert.equal(marker.removeCalls, 1);
   assert.throws(() => harness.runtime.reconcile([]), /disposed/u);
+});
+
+test('a hidden marker stays visible only while its popup is open', () => {
+  const harness = createHarness();
+  const input = annotation('clustered', {popup: {content: {kind: 'text', text: 'Details'}}});
+  harness.runtime.reconcile([input]);
+  const marker = markerElement(harness);
+
+  harness.runtime.setHiddenAnnotations(new Set(['clustered']));
+  assert.equal(marker.style.display, 'none');
+
+  harness.runtime.openPopup('clustered');
+  assert.equal(marker.style.display, '');
+
+  harness.runtime.closePopup();
+  assert.equal(marker.style.display, 'none');
+
+  harness.runtime.setHiddenAnnotations(new Set());
+  assert.equal(marker.style.display, '');
 });

@@ -13,6 +13,7 @@ import {
   defaultTileflowDevHost,
   parseTileflowDevHost,
   redirectTileflowDevNavigation,
+  rejectTileflowDevRebinding,
   tileflowDevOrigin,
 } from '../src/dev-host';
 import {inspectTileflowHostedCompatibility} from '../src/hosted-preflight';
@@ -100,6 +101,26 @@ test('Inspector navigation canonicalizes loopback aliases and preserves view par
       }
     }
     assert.equal(redirectTileflowDevNavigation(new Request(`${origin}/`), origin), undefined);
+  }
+});
+
+test('the dev server answers only IP literals and localhost, never a rebound DNS name', () => {
+  for (const url of [
+    'http://127.0.0.1:3333/map/__status',
+    'http://localhost:3333/',
+    'http://inspector.localhost:3333/',
+    'http://[::1]:3333/__workbench',
+    'http://192.168.1.20:3333/map/',
+  ])
+    assert.equal(rejectTileflowDevRebinding(new Request(url)), undefined, url);
+  for (const url of [
+    'http://rebound.example:3333/map/__status',
+    'http://localhost.rebound.example:3333/',
+    'http://127.0.0.1.nip.io:3333/__workbench',
+  ]) {
+    const response = rejectTileflowDevRebinding(new Request(url));
+    assert.equal(response?.status, 421, url);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
   }
 });
 

@@ -1,3 +1,5 @@
+import type {Map as MapLibreMap} from 'maplibre-gl';
+import type {TileflowMapError, TileflowThemeController} from '@tileflow/core/browser';
 import type {
   TileflowAnnotation,
   TileflowInteractionBinding,
@@ -7,11 +9,11 @@ import type {
 import {
   configureTileflowMapLibre,
   TileflowMap,
+  type TileflowMapHandle,
   type TileflowMapLibreConfiguration,
   type TileflowMapProps,
   type TileflowMapSlots,
 } from '../src/index.js';
-// Component references expose the shared asynchronous runtime-style API.
 import type {TileflowMapRef} from '../src/index.js';
 
 const source = {map: 'main'};
@@ -145,6 +147,36 @@ void [
   propertyComponentProps,
   propertySlots,
 ];
+
+// The `error` event carries a stable code and an `Error`.
+const emitted = new TileflowMap({source});
+emitted.$emit('error', {code: 'manifest', error: new Error('offline')});
+// @ts-expect-error a code outside the stable set is not an error code.
+emitted.$emit('error', {code: 'other', error: new Error('offline')});
+const errorEvent: TileflowMapError['code'] = 'colors';
+// A template ref reaches the MapLibre map and the theme controller.
+const map: MapLibreMap | null = emitted.getMap();
+const controller: TileflowThemeController | null = emitted.getThemeController();
+const exposed: TileflowMapHandle = emitted;
+// @ts-expect-error the handle has no other methods.
+emitted.getEverything();
+void [map, controller, exposed];
+void errorEvent;
+
+const clusteredProps: import('../src/index.js').TileflowMapProps = {
+  annotationClusters: {clusterRadius: 60},
+  dataOverlays: {},
+  dataSources: {stores: {data: 'https://example.com/stores.geojson', kind: 'geojson'}},
+  source: {map: 'main'},
+};
+void clusteredProps;
+// @ts-expect-error image mode draws no runtime data.
+const imageData: import('../src/index.js').TileflowMapProps = {
+  dataSources: {},
+  mode: 'image',
+  source: {map: 'main'},
+};
+void imageData;
 
 declare const runtimeRef: TileflowMapRef;
 const sourceAdded: Promise<void> = runtimeRef.addSource('points', {

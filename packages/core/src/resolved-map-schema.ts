@@ -1,6 +1,7 @@
 import {Color} from '@maplibre/maplibre-gl-style-spec';
 import {z} from 'zod';
 import {tileflowMaxPitch} from './camera-limits';
+import {tileflowColorKnobNamePattern, validateTileflowColorKnobs} from './color-knobs';
 import {
   type TileflowBandPlacement,
   tileflowBandPlacements,
@@ -55,6 +56,7 @@ import {tileflowRoadClasses} from './modules/roads/semantics';
 import {
   isSafeLocalPmtilesPath,
   tileflowHostedSourceLimit,
+  tileflowInlineGeoJsonByteLimit,
   tileflowOverlayPlacements,
 } from './overlays';
 import {tileflowThemeNameSchema} from './portable-identity';
@@ -1642,9 +1644,9 @@ const labelsModuleSchema = z
       )
       .optional(),
     roadPlacement: z
-      .enum(['ground', 'foreground'])
+      .enum(['ground', 'foreground', 'readable'])
       .describe(
-        'Street names draw in the foreground by default. Ground names draw below buildings, use map-aligned text by default, and yield collisions to foreground symbols. Shields and junction numbers stay in the foreground.',
+        'Street names draw in the foreground by default. Ground names draw below buildings and use map-aligned text by default. Readable names draw above the scene and the web runtime hides whole occluded or distant names. Ground and readable names yield collisions to foreground symbols. Shields and junction numbers stay in the foreground.',
       )
       .optional(),
     renderStack: renderStackSchema.optional(),
@@ -2178,8 +2180,36 @@ const hostedTilesetSourceSchema = z
       });
     }
   });
+const geojsonFeatureCollectionSchema = z
+  .object({
+    features: z.array(z.record(z.string(), z.unknown())),
+    type: z.literal('FeatureCollection'),
+  })
+  .refine(
+    (data) =>
+      new TextEncoder().encode(JSON.stringify(data)).byteLength <= tileflowInlineGeoJsonByteLimit,
+    `Expected at most ${tileflowInlineGeoJsonByteLimit} bytes of inline GeoJSON`,
+  );
+const geojsonSourceSchema = z
+  .object({
+    attribution: z.string().trim().min(1).max(4_096).optional(),
+    cluster: z.boolean().optional(),
+    clusterMaxZoom: z.number().min(0).max(24).optional(),
+    clusterMinPoints: z.number().int().min(2).optional(),
+    clusterProperties: z.record(z.string(), z.tuple([z.unknown(), z.unknown()])).optional(),
+    clusterRadius: z.number().positive().optional(),
+    data: z.union([
+      geojsonFeatureCollectionSchema,
+      z.string().refine((value) => value.startsWith('https://'), 'Expected an https:// URL'),
+    ]),
+    kind: z.literal('geojson'),
+  })
+  .strict();
 const hostedSourcesSchema = z
-  .record(tileflowMapIdSchema, hostedTilesetSourceSchema)
+  .record(
+    tileflowMapIdSchema,
+    z.discriminatedUnion('kind', [hostedTilesetSourceSchema, geojsonSourceSchema]),
+  )
   .superRefine((sources, context) => {
     if (Object.keys(sources).length > tileflowHostedSourceLimit) {
       context.addIssue({
@@ -2221,6 +2251,42 @@ const maplibreOverlaySchema = z
   })
   .strict();
 const overlaysSchema = z.record(tileflowMapIdSchema, maplibreOverlaySchema);
+const colorKnobOperationNameSchema = z.enum(['mix', 'replace', 'shift', 'tint']);
+const colorKnobsSchema = z
+  .record(
+    z.string().regex(tileflowColorKnobNamePattern),
+    z
+      .object({
+        description: z.string().trim().min(1).max(200).optional(),
+        reference: z.string().min(1).max(160).optional(),
+        tokens: z.record(
+          z.string().min(1).max(160),
+          z.union([
+            colorKnobOperationNameSchema,
+            z
+              .object({
+                amount: z.number().min(0).max(1).optional(),
+                chroma: z.number().min(0).max(8).optional(),
+                lightness: z.number().min(-1).max(1).optional(),
+                op: colorKnobOperationNameSchema,
+              })
+              .strict(),
+          ]),
+        ),
+      })
+      .strict(),
+  )
+  .superRefine((knobs, context) => {
+    // Token names are checked against the themes when the map compiles.
+    try {
+      validateTileflowColorKnobs(knobs, undefined);
+    } catch (error) {
+      context.addIssue({
+        code: 'custom',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
 const localAssetDirectorySchema = z
   .string()
   .min(3)
@@ -2605,6 +2671,7 @@ export const resolvedTileflowMapSchema: z.ZodType<TileflowCompilerConfig> = z
       })
       .strict()
       .optional(),
+    colorKnobs: colorKnobsSchema.optional(),
     data: dataSchema.optional(),
     defaultTheme: tileflowThemeNameSchema,
     fonts: fontDirectoriesSchema.optional(),

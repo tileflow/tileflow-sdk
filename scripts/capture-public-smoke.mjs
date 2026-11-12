@@ -197,6 +197,7 @@ if (typeof entry.attachTileflowMapLifecycle !== 'function') process.exit(2);
         'CoordinatesSetupError',
       ],
       '@tileflow/dev/artifacts': ['createTileflowBuildArtifacts'],
+      '@tileflow/dom': ['createTileflowMap'],
       '@tileflow/interactions': ['validateTileflowAnnotations'],
       '@tileflow/interactions/maplibre': ['createTileflowAnnotationRegistry'],
       '@tileflow/maps': ['streets'],

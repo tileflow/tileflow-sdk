@@ -10,6 +10,14 @@ export {
   type TileflowSkyTimesOfDay,
 } from './sky';
 export {tileflowMaxPitch} from './camera-limits';
+/** Read and rebuild compiled contour sources, for services that bind their DEM to a hosted map. */
+export {
+  createTileflowContourProtocolUrl,
+  parseTileflowContourSourceUrl,
+  tileflowContourProtocol,
+  type TileflowContourDemSource,
+  type TileflowContourProtocolConfig,
+} from './terrain/contour-protocol';
 export {createStyle, createStyleResult, parseTileflowMap, validateTileflowMap} from './map';
 export {
   validateTileflowCompiledIconCapabilities,
@@ -240,15 +248,29 @@ export {
   tileflowMapIdSchema,
 } from './maps';
 export {
+  clusterOverlay,
+  geojsonSource,
+  heatmapOverlay,
   hostedTileset,
   isSafeLocalPmtilesPath,
   maplibreOverlay,
   remove,
   tileflowHostedSourceLimit,
+  tileflowInlineGeoJsonByteLimit,
   tileflowOverlayPlacements,
 } from './overlays';
 export type {TileflowLayerPositionContext} from './layer-position-context';
 export type {
+  TileflowColorKnob,
+  TileflowColorKnobOperation,
+  TileflowColorKnobOperationName,
+  TileflowColorKnobs,
+} from './color-knobs';
+export type {
+  TileflowClusterProperty,
+  TileflowGeoJsonClusterOptions,
+  TileflowGeoJsonFeatureCollection,
+  TileflowGeoJsonSource,
   TileflowHostedSourceCollection,
   TileflowHostedTilesetSource,
   TileflowHostedTilesetType,
@@ -257,6 +279,7 @@ export type {
   TileflowOverlayCollection,
   TileflowOverlayPlacement,
   TileflowRemoveOperation,
+  TileflowSource,
 } from './overlays';
 export type {
   ResolvedTileflowMap,
@@ -711,6 +734,8 @@ export * from './icon-layout';
 export {
   assertTileflowSdfPixels,
   tileflowIconAppearanceSchema,
+  tileflowIconAttributionSchema,
+  type TileflowIconAttribution,
   tileflowIconAuthorMetadataSchema,
   tileflowIconMetadataFileName,
   type TileflowIconAppearance,
@@ -826,5 +851,5 @@ export type {
   TileflowLayerPosition,
   TileflowRuntimeSourceDefinition,
   TileflowRuntimeLayerDefinition,
-  TileflowMapErrorContext,
+  TileflowRuntimeStyleErrorContext,
 } from './map-controller-browser';

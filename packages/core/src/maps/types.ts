@@ -4,16 +4,18 @@ import type {TileflowCameraOptions} from '../camera';
 import type {TileflowCaptureScene} from '../capture-scene';
 import type {TileflowCaptureShot} from '../capture-shot';
 import type {TileflowResolvedSemanticModuleOverrides} from '../cartography/domain-registry';
+import type {TileflowColorKnob} from '../color-knobs';
 import type {TileflowDataConfig} from '../data';
 import type {TileflowIconSource} from '../icon-set';
 import type {TileflowMarine} from '../marine';
 import type {
   TileflowHostedSourceCollection,
-  TileflowHostedTilesetSource,
   TileflowMapLibreOverlay,
   TileflowOverlayCollection,
+  TileflowSource,
 } from '../overlays';
 import {tileflowPortableIdSchema} from '../portable-identity';
+import type {TileflowRemoveOperation} from '../overlays';
 import type {TileflowSky} from '../sky';
 import type {TileflowTheme, TileflowThemeName} from '../themes';
 import type {TileflowTimeOfDayVariants} from '../time-of-day';
@@ -62,6 +64,12 @@ export type TileflowMapDesign = TileflowMapTextAssets & {
   boundaryAreas?: TileflowBoundaryAreas;
   /** Browser 3D camera policy. Omission inherits; an explicit false disables the effect. */
   camera?: TileflowCameraOptions;
+  /**
+   * Named colours that each stand for many tokens, so an application recolours a map with a
+   * handful of colours instead of naming its tokens. `Map`'s `colors` accepts a knob by name.
+   * Omission inherits; an entry replaces the inherited knob of its name; `remove()` drops it.
+   */
+  colorKnobs?: Readonly<Record<string, TileflowColorKnob | TileflowRemoveOperation>>;
   data?: TileflowDataConfig;
   /** Name used whenever a concrete theme is not explicitly requested. */
   defaultTheme?: TileflowThemeName;
@@ -84,7 +92,7 @@ export type TileflowMapDesign = TileflowMapTextAssets & {
    * is dark. Colours take theme tokens. False disables an inherited sky.
    */
   sky?: TileflowSky;
-  /** Keyed logical hosted sources. Omission inherits; entries replace atomically. */
+  /** Keyed hosted tilesets and GeoJSON sources. Omission inherits; entries replace atomically. */
   sources?: TileflowHostedSourceCollection;
   /** Browser color-scheme mapping. Runtime resolves "system" to one of these concrete names. */
   systemThemes?: {
@@ -131,7 +139,7 @@ export type ResolvedTileflowMap = Omit<TileflowMapIdentity, 'name'> &
     name: string;
     platforms?: TileflowMapTooling['platforms'];
     overlays?: Readonly<Record<string, TileflowMapLibreOverlay>>;
-    sources?: Readonly<Record<string, TileflowHostedTilesetSource>>;
+    sources?: Readonly<Record<string, TileflowSource>>;
     themes: Readonly<Record<TileflowThemeName, TileflowTheme>>;
   };
 

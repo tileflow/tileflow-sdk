@@ -51,19 +51,33 @@ rendering may still request configured remote tiles and fonts.
 
 ## Configure the worker
 
-For Vite, add the following to the existing client entry before `createApp(...).mount(...)`:
+With Vite, the plugin from `@tileflow/vite` gives every map MapLibre's worker, in development and
+in production builds, so the application configures nothing. `tileflow()` prepares maps and adds
+the worker. When the CLI build or a hosted manifest provides the maps, add only the worker
+(`npm install --save-dev @tileflow/vite@alpha`):
 
 ```ts
-import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
-import {configureTileflowMapLibre} from '@tileflow/vue';
+import {defineConfig} from 'vite';
+import {tileflowMapLibreWorker} from '@tileflow/vite';
 
-configureTileflowMapLibre({workerUrl});
+export default defineConfig({plugins: [tileflowMapLibreWorker()]});
 ```
 
-Configure this once before mounting an interactive map. The worker must come from the same installed
-MapLibre package as the main module. The `?worker&url` import is Vite-specific; use the
-[Webpack recipe](https://github.com/tileflow/tileflow-sdk/blob/main/packages/webpack/README.md)
-for Webpack. Keep MapLibre's CSS in the client application as well.
+The worker comes from the same installed MapLibre as the map's main module.
+
+For Webpack, follow the
+[Webpack recipe](https://github.com/tileflow/tileflow-sdk/blob/main/packages/webpack/README.md).
+With another bundler, configure the worker once before mounting an interactive map, with the URL at
+which the application serves `maplibre-gl/dist/maplibre-gl-worker.mjs`:
+
+```ts
+import {configureTileflowMapLibre} from '@tileflow/vue';
+
+configureTileflowMapLibre({workerUrl: '/assets/maplibre-gl-worker.mjs'});
+```
+
+An explicit configuration wins over the Vite plugin's. Keep MapLibre's CSS in the client
+application as well.
 
 ## Render a map
 

@@ -19,7 +19,7 @@ from the presence of an npm package. Config files are trusted executable code.
 ## Browser UI
 
 - [React](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/react/README.md): Worker setup, interactive maps, annotations, and static rendering UI.
-- [DOM](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/dom/README.md): Pre-release, not yet on npm. Mount a map in any element without a framework; controller, views, and capture status.
+- [DOM](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/dom/README.md): Mount a map in any element without a framework; controller, views, and capture status.
 - [Vue](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/vue/README.md): Worker setup, TileflowMap, slots, and controlled interaction state.
 - [Svelte](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/svelte/README.md): Svelte 5 components, snippets, and interaction state.
 - [Interactions](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/interactions/README.md): Portable annotations, clustering, semantic POIs, validation, and popup state.

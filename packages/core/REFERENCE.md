@@ -350,6 +350,9 @@ them as the map's `dataSources` and `dataOverlays`, which Tileflow puts back aft
 change. Take the map down with the component or `destroy()`; `getMap().remove()` also stops the
 controller.
 
+`@tileflow/core/internal` holds the pieces Tileflow's own packages build the map from. It is not a
+public API and changes in any release.
+
 With `projection: 'globe'`, `atmosphere: true` adds a halo and stars; an object configures colors, star count and size.
 `sky` follows the sun at street level. Tileflow's web maps and capture attach both.
 

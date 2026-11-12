@@ -20,7 +20,7 @@ import {
   type TileflowMapLifecycleEvent,
   tileflowPmtilesMaximumDirectoryDepth,
   type TileflowWorldProtocolHandler,
-} from '../src/browser';
+} from '../src/browser-bundle';
 import {createTileflowSessionController} from '../src/runtime';
 import {
   createTileflowContourProtocolUrl,

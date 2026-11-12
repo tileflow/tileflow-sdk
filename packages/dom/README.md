@@ -5,10 +5,8 @@ the map, loads its manifest and style, keeps its theme, colours, camera, annotat
 interactions current, and takes everything down again. It draws nothing of its own around the map:
 marker, popup and tooltip views, loading and error states belong to your page.
 
-Use it for plain pages and web components. The React, Vue and Svelte packages are the easier way in
-those frameworks.
-
-> Pre-release: `@tileflow/dom` is not on npm yet. The React, Vue and Svelte packages run on it.
+Use it for plain pages and web components. The React, Vue and Svelte packages run on it and are the
+easier way in those frameworks.
 
 > Related packages and guides: [documentation index](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/llms.txt).
 

@@ -66,6 +66,11 @@
       "default": "./dist/capture.js"
     },
     "./config-reference.json": "./dist/config-reference.json",
+    "./internal": {
+      "types": "./dist/internal.d.ts",
+      "import": "./dist/browser.js",
+      "default": "./dist/browser.js"
+    },
     "./manifest": {
       "types": "./dist/manifest.d.ts",
       "import": "./dist/manifest.js",

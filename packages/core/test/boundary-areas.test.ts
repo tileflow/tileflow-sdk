@@ -19,7 +19,7 @@ import {
   tileflowBoundaryFamilies,
   type TileflowBoundaryAreas,
 } from '../src';
-import {createBoundaryFeatureState, type TileflowFeatureStateMap} from '../src/browser';
+import {createBoundaryFeatureState, type TileflowFeatureStateMap} from '../src/browser-bundle';
 import {
   madridLookupCsv,
   madridMunicipalityFeatures,

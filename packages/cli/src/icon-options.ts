@@ -13,9 +13,7 @@ export function resolveIconOptions(
 ): TileflowIconResolutionOptions | undefined {
   // Asset base URLs may contain a path; control-plane API URLs remain strict origins.
   const base =
-    options.apiUrl === undefined && options.apiBaseUrl
-      ? new URL(options.apiBaseUrl)
-      : undefined;
+    options.apiUrl === undefined && options.apiBaseUrl ? new URL(options.apiBaseUrl) : undefined;
   if (base) base.pathname = '/';
   const selected = options.apiUrl ?? base?.href ?? (process.env.TILEFLOW_API_URL || undefined);
   const origin = selected === undefined ? undefined : normalizeApiOrigin(selected);

@@ -89,16 +89,43 @@ export function createTileflowAdaptiveCamera(map: TileflowAdaptiveCameraMap) {
   return {setEnabled, dispose};
 }
 
-/** Enforces the map's overview pitch cap, restoring the caller's maximum on release. */
-export function createTileflowPitchLimit(map: TileflowAdaptiveCameraMap) {
+type TileflowCameraChange = {zoom?: number; pitch?: number};
+type TileflowCameraCall = (options: TileflowCameraChange, ...rest: unknown[]) => unknown;
+const tileflowCameraCalls = ['jumpTo', 'easeTo', 'flyTo', 'fitBounds'] as const;
+
+/** The map capabilities the overview pitch cap uses; camera calls it does not find stay unwrapped. */
+export type TileflowPitchLimitMap = TileflowAdaptiveCameraMap & {
+  jumpTo?(options: TileflowCameraChange, eventData?: unknown): unknown;
+  easeTo?(options: TileflowCameraChange, eventData?: unknown): unknown;
+  flyTo?(options: TileflowCameraChange, eventData?: unknown): unknown;
+  fitBounds?(bounds: unknown, options?: TileflowCameraChange, eventData?: unknown): unknown;
+  cameraForBounds?(bounds: unknown, options?: TileflowCameraChange): {zoom?: number} | undefined;
+  isMoving?(): boolean;
+};
+
+/**
+ * Enforces the map's overview pitch cap, restoring the caller's maximum on release.
+ *
+ * The renderer clamps a requested pitch against the maximum in force before any event reports the
+ * new zoom, so a camera change from an overview into a closer view would keep the overview cap. A
+ * camera call whose target lies above `maxZoom` therefore lifts the cap until its movement ends; a
+ * movement that ends at an overview zoom (an interrupted flight, for instance) is capped again.
+ */
+export function createTileflowPitchLimit(map: TileflowPitchLimitMap) {
   let limit: TileflowCameraOptions['pitchLimit'];
   let original: number | undefined;
   let applying = false;
   let disposed = false;
+  // A camera call that ends above the cap is in flight; `calling` covers the call itself, whose
+  // synchronous movement end (or the end of the movement it replaces) is not yet the final one.
+  let lifted = false;
+  let calling = 0;
   const update = () => {
     if (disposed || applying || original === undefined) return;
     const maximum =
-      limit && map.getZoom() <= limit.maxZoom ? Math.min(original, limit.maxPitch) : original;
+      limit && !lifted && map.getZoom() <= limit.maxZoom
+        ? Math.min(original, limit.maxPitch)
+        : original;
     if (map.getMaxPitch?.() === maximum) return;
     applying = true;
     try {
@@ -114,15 +141,64 @@ export function createTileflowPitchLimit(map: TileflowAdaptiveCameraMap) {
     update();
     if (!next) original = undefined;
   };
+  const onMoveEnd = () => {
+    if (calling || !lifted) return;
+    lifted = false;
+    update();
+  };
+  const targetZoom = (method: (typeof tileflowCameraCalls)[number], args: unknown[]) => {
+    if (method !== 'fitBounds') return (args[0] as TileflowCameraChange | undefined)?.zoom;
+    return map.cameraForBounds?.(args[0], args[1] as TileflowCameraChange | undefined)?.zoom;
+  };
+  const target = map as unknown as Record<string, TileflowCameraCall | undefined>;
+  // Each wrapper with the call it replaces, and whether that call was the map's own property.
+  const wrapped = new Map<
+    string,
+    {steer: TileflowCameraCall; call: TileflowCameraCall; own: boolean}
+  >();
+  if (map.getMaxPitch && map.setMaxPitch)
+    for (const method of tileflowCameraCalls) {
+      const call = target[method];
+      if (typeof call !== 'function') continue;
+      const own = Object.prototype.hasOwnProperty.call(map, method);
+      const steer: TileflowCameraCall = (...args) => {
+        if (disposed || !limit || original === undefined) return call.apply(map, args as never);
+        lifted = (targetZoom(method, args) ?? map.getZoom()) > limit.maxZoom;
+        update();
+        calling++;
+        try {
+          return call.apply(map, args as never);
+        } finally {
+          calling--;
+          if (!calling && lifted && !map.isMoving?.()) {
+            lifted = false;
+            update();
+          }
+        }
+      };
+      wrapped.set(method, {steer, call, own});
+      target[method] = steer;
+    }
   const onRemove = () => dispose(false);
   function dispose(restore = true) {
     if (disposed) return;
-    if (restore) setLimit(undefined);
+    if (restore) {
+      lifted = false;
+      setLimit(undefined);
+    }
     disposed = true;
+    // A later wrapper owns the method now; removing ours from under it would drop its behavior.
+    for (const [method, {steer, call, own}] of wrapped) {
+      if (target[method] !== steer) continue;
+      if (own) target[method] = call;
+      else delete target[method];
+    }
     map.off('zoom', update);
+    map.off('moveend', onMoveEnd);
     map.off('remove', onRemove);
   }
   map.on('zoom', update);
+  map.on('moveend', onMoveEnd);
   map.on('remove', onRemove);
   return {setLimit, dispose};
 }

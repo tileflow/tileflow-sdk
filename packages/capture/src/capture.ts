@@ -22,7 +22,16 @@ import {
 } from '@tileflow/dev/artifacts';
 import {assertValidTileflowStyle, TileflowStyleValidationError} from '@tileflow/dev/validation';
 import {captureApplicationTileflowScene, resolveTileflowApplicationUrl} from './application';
-import {type TileflowBrowserInstallProgress, TileflowCaptureBrowserManager} from './browser';
+import {
+  type TileflowBrowserInstallProgress,
+  TileflowCaptureBrowserManager,
+  type TileflowCaptureGraphics,
+} from './browser';
+import {
+  renderTileflowContactSheet,
+  type TileflowContactSheetImage,
+  type TileflowContactSheetOptions,
+} from './contact-sheet';
 import {TileflowCaptureError} from './errors';
 import {
   createTileflowCaptureRendererIdentity,
@@ -56,6 +65,8 @@ export type TileflowCaptureOptions = {
 
   onBrowserInstallProgress?: (progress: TileflowBrowserInstallProgress) => void;
   frame?: 'map' | 'viewport';
+  /** How the browser renders WebGL; see `TileflowCaptureGraphics`. Defaults to `software`. */
+  graphics?: TileflowCaptureGraphics;
   scenes: string[];
   signal?: AbortSignal;
   selector?: string;
@@ -126,6 +137,11 @@ export type TileflowCaptureSession = {
     options?: TileflowShotCaptureOptions,
   ): Promise<TileflowShotCaptureResult>;
   captureAllShots(options?: TileflowShotCaptureOptions): Promise<TileflowShotCaptureResult>;
+  /** Lays captured images out in one labelled grid PNG, with this session's browser. */
+  contactSheet(
+    images: readonly TileflowContactSheetImage[],
+    options?: TileflowContactSheetOptions & {signal?: AbortSignal},
+  ): Promise<Uint8Array>;
   close(): Promise<void>;
 };
 
@@ -174,6 +190,7 @@ export class TileflowCaptureSessionImpl implements TileflowCaptureSession {
     this.#options = options;
     this.#browserManager = new TileflowCaptureBrowserManager({
       allowInstall: options.allowBrowserInstall,
+      ...(options.graphics ? {graphics: options.graphics} : {}),
       onInstallProgress: options.onBrowserInstallProgress,
       signal: options.signal,
     });
@@ -312,6 +329,7 @@ export class TileflowCaptureSessionImpl implements TileflowCaptureSession {
                     lineBackgroundGlyphs: artifacts.lineBackgroundGlyphs,
                   }
                 : {}),
+              ...(this.#options.graphics ? {graphics: this.#options.graphics} : {}),
               scene,
               signal,
               style,
@@ -479,6 +497,16 @@ export class TileflowCaptureSessionImpl implements TileflowCaptureSession {
     }
 
     return {schemaVersion: tileflowCaptureResultSchemaVersion, shots};
+  }
+
+  async contactSheet(
+    images: readonly TileflowContactSheetImage[],
+    options: TileflowContactSheetOptions & {signal?: AbortSignal} = {},
+  ): Promise<Uint8Array> {
+    this.#assertOpen();
+    const {signal, ...layout} = options;
+    const browser = await this.#browserManager.getBrowser(signal ?? this.#options.signal);
+    return await renderTileflowContactSheet(browser, images, layout);
   }
 
   async close(): Promise<void> {

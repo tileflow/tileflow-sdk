@@ -9,7 +9,7 @@ import {createServer as createViteServer, type PluginOption} from 'vite';
 import {launchTileflowCaptureBrowser} from '../src/browser';
 import {writeDataLayerFixture} from './tileflow-source-fixture';
 
-export type MapAppFramework = 'react' | 'svelte' | 'vue';
+export type MapAppFramework = 'dom' | 'react' | 'svelte' | 'vue';
 
 export type MapAppPage = {
   consoleErrors: string[];
@@ -20,44 +20,55 @@ export type MapAppPage = {
 const reactSource = fileURLToPath(new URL('../../react/src/index.ts', import.meta.url));
 
 const appFile: Record<MapAppFramework, string> = {
+  dom: 'main.ts',
   react: 'main.tsx',
   svelte: 'App.svelte',
   vue: 'App.vue',
 };
 
-const entry = (framework: Exclude<MapAppFramework, 'react'>) =>
-  framework === 'vue'
-    ? `import {createApp} from 'vue';
-import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
-import {configureTileflowMapLibre} from '@tileflow/vue';
-import App from './App.vue';
+const entry = (framework: 'svelte' | 'vue', configureWorker: boolean) => {
+  const adapter = `@tileflow/${framework}`;
+  const worker = configureWorker
+    ? `import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+import {configureTileflowMapLibre} from '${adapter}';
 configureTileflowMapLibre({workerUrl});
+`
+    : '';
+  return framework === 'vue'
+    ? `import {createApp} from 'vue';
+${worker}import App from './App.vue';
 createApp(App).mount('#root');
 `
     : `import {mount} from 'svelte';
-import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
-import {configureTileflowMapLibre} from '@tileflow/svelte';
-import App from './App.svelte';
-configureTileflowMapLibre({workerUrl});
+${worker}import App from './App.svelte';
 mount(App, {target: document.getElementById('root')});
 `;
+};
 
 /**
  * Serves a small application of one framework from a throwaway Vite server, with the test fixture's
  * manifest at `/tileflow-fixture/manifest.json`, and runs `body` with a way to open its pages in
- * Chromium. React runs from the workspace sources; Vue and Svelte from their built packages.
+ * Chromium. React runs from the workspace sources; the framework-free core, Vue and Svelte from
+ * their built packages. The Vue and Svelte entries configure MapLibre's worker themselves unless
+ * `configureWorker` is `false`; extra `plugins` run beside the framework's own.
  */
 export async function withMapApp(
   framework: MapAppFramework,
   source: string,
   body: (open: (query?: string) => Promise<MapAppPage>) => Promise<void>,
-  options: {writeFixture?: (cwd: string, origin: string) => Promise<void>} = {},
+  options: {
+    configureWorker?: boolean;
+    plugins?: PluginOption[];
+    writeFixture?: (cwd: string, origin: string) => Promise<void>;
+  } = {},
 ): Promise<void> {
   const writeFixture = options.writeFixture ?? writeDataLayerFixture;
   const root = dirname(fileURLToPath(new URL('../package.json', import.meta.url)));
   const cwd = await mkdtemp(join(root, `.tileflow-test-${framework}-map-app-`));
-  const plugins: PluginOption[] =
-    framework === 'vue' ? [vue()] : framework === 'svelte' ? [svelte()] : [];
+  const plugins: PluginOption[] = [
+    ...(framework === 'vue' ? [vue()] : framework === 'svelte' ? [svelte()] : []),
+    ...(options.plugins ?? []),
+  ];
   let browser: Awaited<ReturnType<typeof launchTileflowCaptureBrowser>> | undefined;
   let vite: Awaited<ReturnType<typeof createViteServer>> | undefined;
   try {
@@ -65,11 +76,11 @@ export async function withMapApp(
     await Promise.all([
       writeFile(
         join(cwd, 'index.html'),
-        `<!doctype html><html><body><div id="root" style="width:640px"></div><script type="module" src="/${framework === 'react' ? 'main.tsx' : 'main.js'}"></script></body></html>`,
+        `<!doctype html><html><body><div id="root" style="width:640px"></div><script type="module" src="/${framework === 'react' || framework === 'dom' ? appFile[framework] : 'main.js'}"></script></body></html>`,
       ),
-      ...(framework === 'react'
+      ...(framework === 'react' || framework === 'dom'
         ? []
-        : [writeFile(join(cwd, 'main.js'), entry(framework as Exclude<MapAppFramework, 'react'>))]),
+        : [writeFile(join(cwd, 'main.js'), entry(framework, options.configureWorker ?? true))]),
       writeFile(join(cwd, appFile[framework]), source),
       writeFixture(cwd, 'http://127.0.0.1'),
     ]);

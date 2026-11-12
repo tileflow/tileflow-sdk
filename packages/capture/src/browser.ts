@@ -9,15 +9,23 @@ import {
 
 export type TileflowBrowserInstallProgress = 'installing' | 'installed';
 
+/**
+ * `software` (the default) renders WebGL on the CPU, so images match across machines. `gpu` uses
+ * this machine's graphics hardware: many times faster for 3D scenes, but its pixels depend on the
+ * hardware and driver, so it suits exploration rather than committed baselines.
+ */
+export type TileflowCaptureGraphics = 'software' | 'gpu';
+
 export type TileflowBrowserLaunchOptions = {
   allowInstall?: boolean;
+  graphics?: TileflowCaptureGraphics;
   onInstallProgress?: (progress: TileflowBrowserInstallProgress) => void;
   signal?: AbortSignal;
 };
 
 export type TileflowCaptureBrowserDependencies = {
   install(signal?: AbortSignal): Promise<void>;
-  launch(): Promise<Browser>;
+  launch(graphics?: TileflowCaptureGraphics): Promise<Browser>;
 };
 
 const chromiumEnvironmentAllowlist = [
@@ -91,7 +99,7 @@ export async function launchTileflowCaptureBrowserWithDependencies(
   throwIfAborted(options.signal);
 
   try {
-    return await dependencies.launch();
+    return await dependencies.launch(options.graphics);
   } catch (error) {
     if (!isMissingBrowserError(error)) {
       throw new TileflowCaptureError(
@@ -115,7 +123,7 @@ export async function launchTileflowCaptureBrowserWithDependencies(
     options.onInstallProgress?.('installed');
 
     try {
-      return await dependencies.launch();
+      return await dependencies.launch(options.graphics);
     } catch (retryError) {
       throw new TileflowCaptureError(
         'BROWSER_START_FAILED',
@@ -223,13 +231,27 @@ const windowsChromiumDisabledFeatures = [
   'TcpPortRandomizationWin',
 ];
 
-function launchPinnedBrowser(): Promise<Browser> {
+/** The switches that move the headless shell's WebGL from SwiftShader to the machine's GPU. */
+export function tileflowGpuBrowserArguments(
+  platform: NodeJS.Platform = process.platform,
+): string[] {
+  const backend = platform === 'darwin' ? 'metal' : platform === 'win32' ? 'd3d11' : 'vulkan';
+  return [
+    '--enable-gpu',
+    '--ignore-gpu-blocklist',
+    `--use-angle=${backend}`,
+    ...(platform === 'linux' ? ['--enable-features=Vulkan'] : []),
+  ];
+}
+
+function launchPinnedBrowser(graphics: TileflowCaptureGraphics = 'software'): Promise<Browser> {
   return chromium.launch({
     args: [
       '--disable-dev-shm-usage',
       ...(process.platform === 'win32'
         ? [`--disable-features=${windowsChromiumDisabledFeatures.join(',')}`]
         : []),
+      ...(graphics === 'gpu' ? tileflowGpuBrowserArguments() : []),
     ],
     chromiumSandbox: true,
     env: createTileflowCaptureBrowserEnvironment(),

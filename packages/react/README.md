@@ -58,19 +58,19 @@ hosted manifest.
 
 ## Configure the worker
 
-In a Vite application's client entry, add this before mounting React:
+With Vite, the
+[`@tileflow/vite` plugin](https://github.com/tileflow/tileflow-sdk/blob/main/packages/vite/README.md#maplibres-worker)
+gives maps MapLibre's worker in development and production. With Next.js or Webpack, follow that
+guide. Elsewhere, configure it once before the first map, outside component rendering:
 
 ```ts
 import {configureTileflowMapLibre} from '@tileflow/react';
-import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 
-configureTileflowMapLibre({workerUrl});
+configureTileflowMapLibre({workerUrl: '/assets/maplibre-gl-worker.mjs'});
 ```
 
-This import syntax is specific to Vite. Use the Next.js or Webpack guide linked above for that
-bundler's worker-delivery recipe. Configure the worker once, outside component rendering. Do not
-use a CDN worker from another MapLibre version. Next.js interactive components belong behind a
-`'use client'` boundary.
+Serve the installed `maplibre-gl/dist/maplibre-gl-worker.mjs` there, not a CDN worker of another
+version; this call wins over the plugin's. Next.js map components need a `'use client'` boundary.
 
 ## Render a map
 

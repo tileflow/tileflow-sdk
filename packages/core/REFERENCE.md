@@ -383,7 +383,9 @@ under the camera, read chosen layers of a vector source for an area at a fixed z
 Browser 3D scenes resolve `camera.adaptivePerspective` from caller override, map default, then
 `false`; Streets enables it. Buildings occlude depth markers. `camera.pitchLimit: {maxZoom, maxPitch}`
 caps inclination through `maxZoom`, respecting stricter application caps. Closer views and disposal
-restore the application's maximum.
+restore the application's maximum. A `jumpTo`, `easeTo`, `flyTo` or `fitBounds` whose target zoom is
+above `maxZoom` keeps its requested pitch throughout, even when it starts at an overview; a movement
+that stops at or below `maxZoom` is capped again.
 3D layers prioritize visible ground from viewport bottom toward the horizon. Buildings fade across
 the far boundary, followed by haze. Coverage follows resize and projection within each layer's
 `maxTiles` budget (default 25), prioritizing nearest ground.

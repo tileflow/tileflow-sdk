@@ -1,4 +1,5 @@
-import {resolve} from 'node:path';
+import {existsSync, realpathSync} from 'node:fs';
+import {dirname, isAbsolute, join, resolve} from 'node:path';
 import type {Plugin, ResolvedConfig} from 'vite';
 import {
   assertNoLocalTilesetsForProduction,
@@ -34,10 +35,119 @@ export type TileflowVitePluginOptions = {
    * transport used to hydrate exact locked pins. No build resolves a catalog head.
    */
   icons?: TileflowIconResolutionOptions;
+  /**
+   * Give interactive maps the application's own MapLibre worker, in development and production.
+   * On by default; `false` leaves the worker to an explicit `configureTileflowMapLibre` call.
+   */
+  mapLibreWorker?: boolean;
   overwriteHostedManifest?: boolean;
 };
 
-export function tileflow(options: TileflowVitePluginOptions = {}): Plugin {
+/**
+ * Prepare Tileflow maps for a Vite application and, unless `mapLibreWorker` is `false`, give its
+ * interactive maps MapLibre's worker.
+ */
+export function tileflow(options: TileflowVitePluginOptions = {}): Plugin[] {
+  const plugin = tileflowArtifacts(options);
+  return options.mapLibreWorker === false ? [plugin] : [plugin, tileflowMapLibreWorker()];
+}
+
+/**
+ * Give interactive Tileflow maps the application's own MapLibre worker, for an application that
+ * renders maps without `tileflow()`, such as one that only shows hosted maps.
+ *
+ * Every client module that imports `@tileflow/dom`, `@tileflow/react`, `@tileflow/vue`,
+ * `@tileflow/svelte` or `@tileflow/elements` also imports the worker of the MapLibre that package
+ * renders with, the way Vite delivers a worker (`?worker&url`), and offers it as the default. An
+ * explicit `configureTileflowMapLibre` call still decides, and the worker is configured once.
+ */
+export function tileflowMapLibreWorker(): Plugin {
+  const workerPaths = new Map<string, string | undefined>();
+  let root = process.cwd();
+  let warned = false;
+
+  return {
+    name: 'tileflow:maplibre-worker',
+    // After framework plugins have turned components into JavaScript, before Vite rewrites imports.
+    enforce: 'post',
+
+    configResolved(config) {
+      root = config.root;
+    },
+
+    transform(code, id, transformOptions) {
+      if (transformOptions?.ssr || !isApplicationModule(id)) return null;
+      const packageName = tileflowBrowserPackageImport.exec(code)?.[2];
+      if (packageName === undefined) return null;
+
+      const importerDirectory = isAbsolute(id) ? dirname(stripQuery(id)) : root;
+      const cacheKey = `${importerDirectory}\0${packageName}`;
+      if (!workerPaths.has(cacheKey)) {
+        workerPaths.set(
+          cacheKey,
+          findMapLibreWorker(`@tileflow/${packageName}`, importerDirectory),
+        );
+      }
+      const workerPath = workerPaths.get(cacheKey);
+      if (workerPath === undefined) {
+        if (!warned) {
+          warned = true;
+          this.warn(
+            `Unable to find the MapLibre worker of @tileflow/${packageName} from ${id}; configure it with configureTileflowMapLibre.`,
+          );
+        }
+        return null;
+      }
+
+      // Prepended on the first line so the module's existing source map stays valid.
+      const prelude =
+        `import __tileflowMapLibreWorkerUrl from ${JSON.stringify(`${normalizePath(workerPath)}?worker&url`)};` +
+        "globalThis[Symbol.for('tileflow.maplibre.workerUrl')] ??= __tileflowMapLibreWorkerUrl;";
+      return {code: `${prelude}${code}`, map: null};
+    },
+  };
+}
+
+const tileflowBrowserPackageImport =
+  /(?:\bfrom|\bimport)\s*\(?\s*(['"])@tileflow\/(dom|elements|react|svelte|vue)(?:\/[^'"]*)?\1/u;
+
+function isApplicationModule(id: string): boolean {
+  if (id.startsWith('\0') || /[\\/]node_modules[\\/]/u.test(id)) return false;
+  // A worker's own modules and asset requests never mount a map.
+  return !/[?&](?:worker|sharedworker|worker_file|url|raw|inline)\b/u.test(id);
+}
+
+/**
+ * The worker beside the `maplibre-gl` that `@tileflow/dom` imports for this package, found the way
+ * Node.js finds package directories, so it matches the renderer the map really runs.
+ */
+function findMapLibreWorker(packageName: string, fromDirectory: string): string | undefined {
+  const packageDirectory = findPackageDirectory(packageName, fromDirectory);
+  if (packageDirectory === undefined) return undefined;
+  const domDirectory =
+    packageName === '@tileflow/dom'
+      ? packageDirectory
+      : (findPackageDirectory('@tileflow/dom', packageDirectory) ?? packageDirectory);
+  const mapLibreDirectory = findPackageDirectory('maplibre-gl', domDirectory);
+  if (mapLibreDirectory === undefined) return undefined;
+  const workerPath = join(mapLibreDirectory, 'dist', 'maplibre-gl-worker.mjs');
+  return existsSync(workerPath) ? workerPath : undefined;
+}
+
+function findPackageDirectory(packageName: string, fromDirectory: string): string | undefined {
+  for (let directory = fromDirectory; ; directory = dirname(directory)) {
+    const candidate = join(directory, 'node_modules', packageName);
+    if (existsSync(join(candidate, 'package.json'))) return realpathSync(candidate);
+    if (dirname(directory) === directory) return undefined;
+  }
+}
+
+function stripQuery(id: string): string {
+  const queryIndex = id.indexOf('?');
+  return queryIndex === -1 ? id : id.slice(0, queryIndex);
+}
+
+function tileflowArtifacts(options: TileflowVitePluginOptions): Plugin {
   const basePath = normalizeTileflowBasePath(options.base ?? '/tileflow');
   const configPath = options.config ?? defaultTileflowConfigPath;
   let viteConfig: ResolvedConfig | null = null;

@@ -235,6 +235,14 @@ type MapComponent = {
   <TAnnotation extends TileflowAnnotation = TileflowAnnotation>(
     props: MapInteractionProps<TAnnotation> & RefAttributes<TileflowMapHandle>,
   ): ReactElement;
+  /**
+   * Every prop shape at once. JSX picks one of the signatures above, which type inline views;
+   * `lazy`, `ComponentProps` and other readers of a component's props use only the last
+   * signature, so this one must accept everything `Map` does.
+   */
+  <TAnnotation extends TileflowAnnotation = TileflowAnnotation>(
+    props: MapProps<TAnnotation> & RefAttributes<TileflowMapHandle>,
+  ): ReactElement;
   displayName?: string;
 };
 

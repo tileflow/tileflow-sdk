@@ -53,6 +53,10 @@ later-wins icon precedence apply to all contributors.
 keys, stale references, mixed Teams, invalid IDs, floating versions, unsafe URLs and manifest/hash
 mismatches. Serialization is canonical; hashes are internal integrity details.
 
+Delivery URLs require HTTPS, except canonical HTTP URLs on `localhost`, `127.0.0.1` or `[::1]`
+for a local registry. A lock does not authorize downloads: the caller must explicitly trust that
+exact origin through the development tooling's `deliveryOrigins` setting.
+
 Shared identity follows published artwork, not source-only SVG edits yielding identical artifacts.
 Git retains original artwork history. Shared packages contain no original-source hash, format or
 filesystem path; local/package originals retain source identity. Shared winners use `rendered-icon`
@@ -76,10 +80,9 @@ portions from the same HTTP(S) vector source, and places paths below vehicle cas
 woods, wetlands, orchards, nurseries, and green recreation polygons supply context; polygon
 holes remain unpainted. Classification follows tile geometry, not imagery or inferred climate.
 
-Framework web adapters, CLI preview, capture, and the embedded mobile web runtime register the
-derived-source protocol automatically. Raw MapLibre integrations must call
-`registerTileflowPathGroundProtocol({addProtocol: maplibregl.addProtocol})` from
-`@tileflow/core/browser` before creating the map. The `native-v1` build keeps the complete
+Tileflow's web maps (`@tileflow/dom` and the React, Vue and Svelte components), CLI preview,
+capture, and the embedded mobile web runtime register the derived-source protocol automatically.
+The `native-v1` build keeps the complete
 ground-colored paths and disables the green overlay, since native renderers cannot run this
 browser protocol. Its build record explicitly reports `pathGround: 'ground-fallback'`.
 
@@ -233,8 +236,7 @@ const nativeSource = {
 
 These objects select existing prepared maps; they do not compile or render one. Every Tileflow
 framework Map is manifest-backed, without a renderer discriminator or direct-style mode. The
-obsolete source fields `kind` and `style` are rejected. Completely unmanaged maps use upstream
-MapLibre directly. Omitted themes use the manifest default, concrete themes select exact names,
+obsolete source fields `kind` and `style` are rejected. Omitted themes use the manifest default, concrete themes select exact names,
 and `system` requires the manifest's explicit light/dark mapping and a supplied runtime color scheme.
 The pre-release React Native
 package uses this contract for its mounted Map; it is not yet published.
@@ -308,72 +310,52 @@ thresholds, and the Tileflow contour protocol. They read the terrain's DEM: `con
 given, else the first `terrain.tiles` template, else the `terrain.url` TileJSON, which defaults to
 hosted Tileflow Terrain. A TileJSON is read when the first contour tile is requested; its first tile
 template is the DEM, so contours follow the same Terrain release and map binding as hillshade.
-`registerTileflowContourProtocol` accepts `fetch` and `transformTileJsonUrl` to route that request
-through an application transport. The protocol is registered once per page, so a map that sends a
-Hosted session gives its contours a request scope: `createTileflowContourRequestScope` takes the
-map's `transformRequest`, `createTileflowTransformRequest({contourRequestScope})` names the scope
-on each contour tile request, and the protocol sends the DEM TileJSON (`Source`) and every DEM tile
-(`Tile`) back through that transform when it fetches them. Each request then carries the map's
-current `session` and `grant`, as hillshade tiles do; dispose the scope when the map is removed.
-The React, Vue and Svelte components do this for every map. Framework adapters and local
-tooling prepare browser resources; direct MapLibre integrations must register required protocols
-before loading a style.
+Tileflow's web maps register the contour protocol once per page and send each map's DEM TileJSON
+(`Source`) and DEM tiles (`Tile`) through that map's own `transformRequest`, so contour requests
+carry the map's current `session` and `grant`, as hillshade tiles do. Local tooling prepares the
+same resources.
 
 ### Catalog branding
 
-The React, Vue, Svelte, React Native and embedded mobile maps manage the Tileflow symbol
-in the lower-left corner automatically. Preview and capture include it too. The symbol links to
-https://tileflow.dev and follows the active catalog sources, independently of data attribution.
+The React, Vue, Svelte, React Native and embedded mobile maps manage the Tileflow logo in the
+lower-left corner automatically. Preview and capture include it too. The logo is the wordmark with
+the symbol, in white with a soft dark halo and no background; browser maps 250 px wide or narrower
+show the symbol alone. It links to https://tileflow.dev and follows the active catalog sources,
+independently of data attribution.
 Own and third-party tiles do not require the Tileflow mark. Public Tileflow catalog delivery shows
 it; catalog delivery bound to a Map ID reads the owner's current branding entitlement. A paid map
 never inserts a provisional mark. While a managed decision is unavailable, the surface remains
 hidden instead of guessing Free; it retries and renews a short-lived decision while mounted.
 
-Direct MapLibre integrations call `attachTileflowBranding(map)` from `@tileflow/core/browser`
-synchronously after constructing the map, before yielding to the browser. It follows style/source
-changes and cleans up on `map.remove()`; its returned function also disposes it explicitly. Keep it
-when disabling other MapLibre controls. `apiUrl` selects an alternative Tileflow API origin and
-`baseUrl` resolves relative source URLs. `loadTileflowRuntimeStyle` preserves catalog provenance
-when expanding TileJSON. Applications that rewrite source URLs themselves must retain their source
-identity. This presentation control cannot prevent a modified open-source client from removing DOM;
+The symbol stays when an application turns off MapLibre's other controls. Applications that
+rewrite source URLs in `transformRequest` must keep their source identity. This presentation control cannot prevent a modified open-source client from removing DOM;
 service branding requirements and third-party attribution obligations still apply.
 
-### Load a portable style in MapLibre
+### Create the map with Tileflow
 
-Await `loadTileflowRuntimeStyle` before giving MapLibre a runtime style. React, Vue and Svelte do
-this automatically. The loader prepares flat styles or shared families, resolving sprites, glyphs,
-fonts, sources and model/landmark URLs against their declaring documents. HTTP TileJSON loads once
-per preparation; explicit source options win. Artifacts and input objects remain unchanged.
+Applications create a map with `@tileflow/dom` or the React, Vue or Svelte component, not with
+`new maplibregl.Map(...)`. The map prepares its style before MapLibre sees it: flat styles or shared
+families, with sprites, glyphs, fonts, sources and model/landmark URLs resolved against the
+documents that declare them, and the fonts loaded. It registers Tileflow's protocols, sends hosted
+requests with the map's session, and switches themes without replacing the MapLibre instance.
+Style and TileJSON requests go through the application's `mapOptions.transformRequest` as
+`Style` and `Source`; defaults use same-origin credentials and reject redirects, and invalid
+documents, failed requests and size limits (style/family: 16 MiB; TileJSON: 1 MiB) stop the map with
+a `runtime` error.
 
-<!-- docs:check -->
+The MapLibre instance itself stays the application's to extend: `getMap()` (or the `onLoad`
+argument) is the real `maplibregl.Map`, for layers, sources, controls, events and other libraries.
+Tileflow owns the style it applied and the resources it added. A theme change may replace that
+style, keeping the camera: add application layers and sources again on `style.load`, or declare
+them as the map's `dataSources` and `dataOverlays`, which Tileflow puts back after every theme
+change. Take the map down with the component or `destroy()`; `getMap().remove()` also stops the
+controller.
 
-```ts
-import {loadTileflowRuntimeStyle, loadTileflowStyleFonts} from '@tileflow/core/browser';
-import type {TileflowRuntimeStyle} from '@tileflow/core/runtime';
-
-export async function prepareMapStyle(runtime: TileflowRuntimeStyle, signal?: AbortSignal) {
-  const prepared = await loadTileflowRuntimeStyle(runtime, {signal});
-  await loadTileflowStyleFonts(prepared.style, {fontFaces: prepared.fontFaces});
-  return prepared.style; // Use as new maplibregl.Map({container, style}).
-}
-```
-
-Resolve the runtime with `resolveTileflowRuntimeStyle`. For inline styles, `baseUrl` supplies the
-document URL (default: `document.baseURI`). Absolute URLs, signatures, template tokens and
-application data retain their meaning. Custom source protocols remain with MapLibre's handlers.
-
-`fetch`, `signal` and `transformRequest(url, 'Style' | 'Source')` control document requests, including
-families. Defaults use same-origin credentials and reject redirects. Invalid documents, failed
-requests and size limits (style/family: 16 MiB; TileJSON: 1 MiB) reject preparation.
-
-For theme changes, pass `initial: prepared` and `styleLoadOptions` to `createTileflowThemeController`.
-With flat styles, `initialStyle: prepared.style` can instead preserve the original `initial` and
-`getCurrent()` identity. Inline themes and `loadStyle` overrides must already be prepared. Disposal
-aborts pending loads; blends and rollback reuse prepared resources.
+`@tileflow/core/internal` holds the pieces Tileflow's own packages build the map from. It is not a
+public API and changes in any release.
 
 With `projection: 'globe'`, `atmosphere: true` adds a halo and stars; an object configures colors, star count and size.
-`sky` follows the sun at street level. Frameworks and capture attach both; direct
-MapLibre consumers call `attachTileflowAtmosphere(map)` from `@tileflow/core/browser`.
+`sky` follows the sun at street level. Tileflow's web maps and capture attach both.
 
 Applications that need the map's data themselves, such as streets to route over or the place
 under the camera, read chosen layers of a vector source for an area at a fixed zoom with
@@ -397,7 +379,8 @@ entrance zooms, without zoom/arrival growth or fading. Equal endpoints such as
 `entrance: {buildings: [14.25, 14.25], models: [14.25, 14.25]}` switch immediately at that zoom.
 
 Text requires exactly one provider. Streets, Outdoors and Soundings use URL glyphs from Tileflow's
-official glyph set, whose URL composites a comma-joined stack of its fonts per code point. A map
+official glyph set, whose URL composites a comma-joined stack of its fonts per code point.
+Community Blueprint also uses URL glyphs; Baedeker, 1777 and Siegfried package Cormorant. A map
 that declares `fonts` replaces inherited glyphs: Hosted deploy uploads its used faces and licenses as a
 font bundle before publishing the style. With `platforms: ['web', 'native']`, native styles use
 the same TTF/OTF files through `font-faces`; WOFF2 is supported only for web. Tile and font URLs
@@ -415,9 +398,8 @@ faces across scripts, including CJK with Japanese default glyph forms; it does n
 of every Unicode character. Its deployment requires the corresponding shared set to be available.
 
 `labels.roadPlacement: 'readable'` draws complete street names above the 3D scene, below foreground
-destinations. `attachTileflowLabelPlacement(map)` from `@tileflow/core/browser` adds per-instance
-visibility to supported MapLibre WebGL2 line-symbol buffers; frameworks, preview and capture
-attach it automatically. Asynchronous depth queries hide whole names whose ground anchors are
+destinations. Tileflow's web maps, preview and capture add per-instance visibility to supported
+MapLibre WebGL2 line-symbol buffers. Asynchronous depth queries hide whole names whose ground anchors are
 occluded, without changing source filters or collision placement. Above 40° the distant view is
 reduced, at 55° names beyond the centre yield, and at 60° only the near foreground remains.
 Native renderers, terrain, globe and unsupported browser bucket layouts keep complete text above

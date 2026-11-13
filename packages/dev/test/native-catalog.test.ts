@@ -54,11 +54,10 @@ test('prepares every official theme, recording what each native artifact draws d
         .flatMap((row) => row.degradations.map(({id, fallback}) => `${id}:${fallback}`)),
     ),
   ];
-  // Every Streets theme colours paths on green ground, so each derives the green portions.
+  // Streets no longer derives path-ground tiles.
   assert.deepEqual(degradations('streets'), [
     'globe:mercator',
     'models3d:extrusions',
-    'pathGround:tileflow-path-ground:none',
     'scene3d:extrusions',
     'sky:none',
     'trees3d:none',

@@ -157,18 +157,21 @@ internal class NativeBranding(
 
 internal class NativeBrandingButton(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    init { contentDescription = "Visit Tileflow"; isClickable = true; visibility = GONE }
+    init { contentDescription = "Visit Tileflow"; isClickable = true; visibility = GONE; setLayerType(LAYER_TYPE_SOFTWARE, null) }
     override fun onDraw(canvas: Canvas) {
         val density = resources.displayMetrics.density
         canvas.save()
         canvas.scale(density, density)
         paint.color = Color.argb(230, 255, 255, 255)
-        canvas.drawRoundRect(7f, 7f, 37f, 37f, 4f, 4f, paint)
-        paint.color = Color.rgb(37, 37, 37)
-        for ((x, y) in listOf(0 to 0, 6 to 0, 3 to 6, 9 to 6, 6 to 12, 12 to 12)) {
-            val left = 10f + x * 1.5f
-            val top = 10f + y * 1.5f
-            canvas.drawRect(left, top, left + 6, top + 6, paint)
+        paint.typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD)
+        paint.textSize = 17f
+        paint.setShadowLayer(2f, 0f, 0f, Color.argb(77, 0, 0, 0))
+        canvas.drawText("Tileflow", 10f, 31f, paint)
+        val symbolLeft = 11f + paint.measureText("Tileflow")
+        for ((x, y) in listOf(0 to 0, 6 to 0, (3 to 6), (9 to 6), (6 to 12), (12 to 12))) {
+            val left = symbolLeft + x * 0.77f
+            val top = 12f + y * 0.77f
+            canvas.drawRect(left, top, left + 3.08f, top + 3.08f, paint)
         }
         canvas.restore()
     }

@@ -96,7 +96,7 @@ const landformName = {
   },
 } satisfies TileflowSymbolStyle;
 
-/** Streets recolors paths for urban parks; these classes keep their trail ink everywhere. */
+/** Streets uses urban path styling; these classes keep their own trail ink and patterns. */
 const urbanPathRefinement = /^(?:footway|pathway|steps)-(?:bridge|surface)-(?:casing|fill)$/u;
 
 function serviceRoadsOnly(pass: TileflowRenderStackOperation): TileflowRenderStackOperation {
@@ -189,13 +189,11 @@ export const outdoors = bindOfficialMapTheme(
         // Valley views need more tilt than Streets; steeper angles can intersect nearby slopes.
         camera: {adaptivePerspective: false, pitchLimit: {maxZoom: 24, maxPitch: 60}},
         systemThemes: {light: 'light', dark: 'dark'},
+        // Hosted Tileflow Terrain feeds the 3D surface, hillshade and contours; its TileJSON
+        // declares the tile size and credit and caps the contour DEM zoom it can serve.
         terrain: {
-          url: 'https://tiles.mapterhorn.com/tilejson.json',
-          tileSize: 512,
-          maxZoom: 12,
-          attribution: 'Terrain: <a href="https://mapterhorn.com/attribution">© Mapterhorn</a>',
           contours: {
-            demMaxZoom: 12,
+            demMaxZoom: 14,
             index: {color: outdoorsVisual.contour, opacity: 0.5, width: 0.8},
             labels: {
               color: outdoorsVisual.contour,
@@ -344,7 +342,6 @@ export const outdoors = bindOfficialMapTheme(
               // Streets draws unpaved and restricted ways as solid carriageways; a trail stays a trail.
               modifiers: {unpaved: {enabled: false}},
               mountainBike: reset(),
-              pathGround: {opacity: 0},
               restrictions: {access: {enabled: false}},
             },
           ),

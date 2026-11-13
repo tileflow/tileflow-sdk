@@ -343,6 +343,48 @@ public class NativeMapEngineIntegrationTest {
     @Test
     public fun mixedFontFallbackRendersOffline() = checkMixedFontFallback(true)
 
+    /** Actual pack files in one app store, after two neighbouring Madrid regions. */
+    @Test
+    public fun sharedFontStorageAcrossTwoRegions() {
+        Fixture.require()
+        val store = store { OfflinePackClient(configuration) }
+        val packs = File(root, "store-0/packs")
+        fun snapshot(): org.json.JSONObject {
+            val files = packs.listFiles()?.filter { it.isFile && it.extension == "tfpack" }.orEmpty()
+            val fontPacks = files.mapNotNull { file ->
+                val entries = dev.tileflow.sdk.offline.OfflinePackFormat.index(file).entries.values
+                val fonts = entries.filter { it.contentType.startsWith("font/") }
+                if (fonts.isEmpty()) null else Triple(file, entries, fonts)
+            }
+            return org.json.JSONObject().apply {
+                put("fontFiles", fontPacks.sumOf { it.third.size })
+                put("fontBytes", fontPacks.sumOf { it.third.sumOf { entry -> entry.length.toLong() } })
+                put("officialFontBytes", fontPacks.sumOf { it.third.filter { entry -> entry.name.contains("/base/") }.sumOf { entry -> entry.length.toLong() } })
+                put("licenseBytes", fontPacks.sumOf { it.second.filter { entry -> entry.name.endsWith(".txt") }.sumOf { entry -> entry.length.toLong() } })
+                put("fontPackBytes", fontPacks.sumOf { it.first.length() })
+                put("allPackBytes", files.sumOf { it.length() })
+                put("fontPackDigests", org.json.JSONArray(fontPacks.map { it.first.name }.sorted()))
+            }
+        }
+        val snapshots = mutableListOf<org.json.JSONObject>()
+        for ((index, west) in listOf(-3.705, -3.695).withIndex()) {
+            download(store, "madrid-$index", TileflowOfflineRegionLoadOptions(
+                TileflowOfflineGeometry.BoundingBox(TileflowBoundingBox(west, 40.416, west + 0.01, 40.424)),
+                TileflowOfflineContent.Hosted(Fixture.HOSTED_MAP_ID, listOf("fallback")), minZoom = 13, maxZoom = 15,
+            ))
+            snapshots.add(snapshot())
+        }
+        val report = org.json.JSONObject().put("platform", "android").put("regions", org.json.JSONArray(snapshots))
+        File(context.filesDir, "offline-font-measurement.json").writeText(report.toString(2))
+        println("OFFLINE_FONT_MEASUREMENT $report")
+        assertEquals(148, snapshots[0].getInt("fontFiles"))
+        assertTrue(snapshots[0].getLong("fontBytes") > 32L * 1024 * 1024)
+        assertEquals(snapshots[0].getLong("fontPackBytes"), snapshots[1].getLong("fontPackBytes"))
+        assertEquals(snapshots[0].getJSONArray("fontPackDigests").toString(), snapshots[1].getJSONArray("fontPackDigests").toString())
+        runBlocking { store.removeRegion("madrid-0") }
+        assertEquals(snapshots[1].getLong("fontPackBytes"), snapshot().getLong("fontPackBytes"))
+    }
+
     private fun checkMixedFontFallback(offline: Boolean) {
         Fixture.require()
         val cache = TileflowMapCache.get(context)

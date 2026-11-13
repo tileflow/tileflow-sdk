@@ -2,16 +2,16 @@ import {dirname} from 'node:path';
 import {
   getTileflowStyleFontFaces,
   type MapLibreStyle,
-  type TileflowViewConfig,
   parseResolvedTileflowMap,
   serializeCanonicalJson,
+  type TileflowViewConfig,
 } from '@tileflow/core';
 import {
   compactTileflowDeploymentArtifact,
   createTileflowMapBuildManifest,
-  type TileflowMapBuildManifestV1,
   splitTileflowRendererDeployment,
   type TileflowBuildCatalog,
+  type TileflowMapBuildManifestV1,
   type TileflowRendererDeploymentArtifact,
   type TileflowRendererDeploymentResponse,
 } from '@tileflow/core/build';
@@ -399,6 +399,8 @@ export async function runHostedDeploy(
         throw new HostedDeploymentError(`Icon package upload failed: ${uploaded.status}.`, {
           resumable: uploaded.status >= 500,
           status: uploaded.status,
+          failure: uploaded,
+          operation: 'Icon package upload',
         });
       const expected = `${apiOrigin}/sprites/${uploaded.value.id}/sprite`;
       if (uploaded.value.contentHash !== icon.contentHash || uploaded.value.spriteUrl !== expected)
@@ -428,6 +430,8 @@ export async function runHostedDeploy(
         throw new HostedDeploymentError(`Font bundle upload failed: ${uploaded.status}.`, {
           resumable: uploaded.status >= 500,
           status: uploaded.status,
+          failure: uploaded,
+          operation: 'Font bundle upload',
         });
       if (new URL(uploaded.value.baseUrl).origin !== apiOrigin)
         throw new HostedDeploymentError(

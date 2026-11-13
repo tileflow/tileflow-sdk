@@ -20,13 +20,13 @@ import {
   type TileflowMapLifecycleEvent,
   tileflowPmtilesMaximumDirectoryDepth,
   type TileflowWorldProtocolHandler,
-} from '../src/browser';
+} from '../src/browser-bundle';
+import {createTileflowSessionController} from '../src/runtime';
 import {
   createTileflowContourProtocolUrl,
   parseTileflowContourSourceUrl,
   type TileflowContourProtocolConfig,
 } from '../src/terrain/contour-protocol';
-import {createTileflowSessionController} from '../src/runtime';
 import type {MapLibreStyle} from '../src/types';
 
 test('registers only the Tileflow-owned PMTiles protocol once per MapLibre registry', () => {
@@ -956,6 +956,104 @@ test('scoped contour requests carry each map’s current session and grant', asy
   );
 });
 
+test('withheld hosted Terrain leaves contour tiles empty instead of failing the map', async () => {
+  let handler: TileflowContourProtocolHandler | undefined;
+  const fetched: string[] = [];
+  const demTemplate =
+    'https://terrain.example.net/tiles/terrain/terrain-release-a/{z}/{x}/{y}.webp?map=map_one';
+  let tileJsonStatus = 503;
+  let demStatus = 200;
+  registerTileflowContourProtocol(
+    {
+      addProtocol: (_name, installed) => {
+        handler = installed;
+      },
+    },
+    {
+      fetch: async (url) => {
+        fetched.push(url);
+        if (new URL(url).pathname.endsWith('/tiles.json')) {
+          return Response.json(
+            {encoding: 'terrarium', maxzoom: 14, tiles: [demTemplate]},
+            {status: tileJsonStatus},
+          );
+        }
+        return new Response(demStatus === 200 ? new Uint8Array([1]) : null, {status: demStatus});
+      },
+      loadMaplibreContour: async () => ({
+        default: {
+          DemSource: class {
+            readonly url: string;
+            manager = {getTile: async (): Promise<{data: Blob}> => ({data: new Blob()})};
+            constructor(options: {url: string}) {
+              this.url = options.url;
+            }
+            contourProtocolUrl() {
+              return 'contour://{z}/{x}/{y}';
+            }
+            async contourProtocolV4(_request: unknown, controller: AbortController) {
+              await this.manager.getTile(
+                this.url.replace('{z}', '12').replace('{x}', '2134').replace('{y}', '1456'),
+                controller,
+              );
+              return {data: new Uint8Array([7, 7]).buffer};
+            }
+          },
+        },
+      }),
+    },
+  );
+  assert.ok(handler);
+  const {bridge: worldRequestBridge} = registerTestWorldBridge({});
+  const contourRequestScope = createTileflowContourRequestScope({
+    transformRequest: (url, resourceType) => transformRequest(url, resourceType),
+  });
+  // The map's transform bridges catalog tiles; contours still fetch the tile it wraps.
+  const transformRequest = createTileflowTransformRequest<{url: string}, string>({
+    contourRequestScope,
+    getAnalytics: () => undefined,
+    sessionId: 'ses_contours',
+    worldRequestBridge,
+  });
+  const contourTile = contourRequestScope.rewriteUrl(
+    createTileflowContourProtocolUrl({
+      demTileJson: 'https://api.example.test/tiles/terrain/tiles.json?map=map_one',
+      demMaxzoom: 14,
+      encoding: 'terrarium',
+      maxzoom: 15,
+      multiplier: 1,
+      overzoom: 2,
+      thresholds: {9: [100, 500]},
+    })
+      .replace('{z}', '12')
+      .replace('{x}', '2134')
+      .replace('{y}', '1456'),
+  );
+
+  const withheldDocument = await handler({url: contourTile}, new AbortController());
+  assert.equal(withheldDocument.data.byteLength, 0);
+
+  tileJsonStatus = 200;
+  for (const status of [429, 503]) {
+    demStatus = status;
+    const withheldTile = await handler({url: contourTile}, new AbortController());
+    assert.equal(withheldTile.data.byteLength, 0, String(status));
+  }
+  demStatus = 200;
+  const served = await handler({url: contourTile}, new AbortController());
+  assert.equal(served.data.byteLength, 2);
+  assert.equal(
+    fetched.at(-1),
+    'https://terrain.example.net/tiles/terrain/terrain-release-a/12/2134/1456.webp?map=map_one',
+  );
+
+  tileJsonStatus = 403;
+  const otherMap = contourTile.replace('map_one', 'map_two');
+  await assert.rejects(handler({url: otherMap}, new AbortController()), /HTTP 403/u);
+  contourRequestScope.dispose();
+  worldRequestBridge.dispose();
+});
+
 test('the pinned contour generator loads DEM tiles through its replaceable loader', async () => {
   // Scoped sources replace this loader; a release that moves it must fail here, not in production.
   const module = (await import('maplibre-contour')) as unknown as {
@@ -1376,6 +1474,76 @@ test('World bridge announces anonymous degradation without flicker and never ove
   bridge.dispose();
 });
 
+const exactTerrainTileUrl =
+  'https://terrain.example.net/tiles/terrain/terrain-release-mapterhorn-0.0.13-0123456789ab/' +
+  '9/267/181.webp?map=map_public&session=ses_terrain';
+
+test('Terrain tiles are catalog tiles by release path and render without relief when withheld', async () => {
+  const notices: Array<TileflowFairUseNotice | null> = [];
+  let response = new Response(new Uint8Array([1, 2, 3]));
+  const {bridge, protocolHandler} = registerTestWorldBridge({
+    fetch: async () => response,
+    onNotice: (notice) => notices.push(notice),
+  });
+  // A dedicated Terrain host is recognised by the path shape; other resources are left alone.
+  assert.match(bridge.rewriteUrl(exactTerrainTileUrl), /^tileflow-world:\/\/request\//u);
+  for (const url of [
+    `${exactTerrainTileUrl}&key=private`,
+    exactTerrainTileUrl.replace('https:', 'http:'),
+    exactTerrainTileUrl.replace('.webp', '.pbf'),
+    'https://terrain.example.net/tiles/terrain/tiles.json?map=map_public',
+    'https://terrain.example.net/tiles/terrain/../9/267/181.webp',
+  ]) {
+    assert.equal(bridge.rewriteUrl(url), url);
+  }
+  const request = {type: 'image', url: bridge.rewriteUrl(exactTerrainTileUrl)};
+  assert.equal((await protocolHandler(request, new AbortController())).data.byteLength, 3);
+
+  // A guarded tile resolves empty, which MapLibre renders as a tile without elevation.
+  response = new Response(null, {
+    status: 503,
+    headers: {'Tileflow-Fair-Use': 'open', 'Tileflow-Protection': 'cached-only'},
+  });
+  const degraded = await protocolHandler(request, new AbortController());
+  assert.equal(degraded.data.byteLength, 0);
+  assert.equal(degraded.cacheControl, 'private, no-store');
+  assert.equal(notices.at(-1)?.state, 'LIMITED');
+
+  for (const status of [429, 503]) {
+    response = new Response(null, {status});
+    assert.equal((await protocolHandler(request, new AbortController())).data.byteLength, 0);
+  }
+  response = new Response(null, {status: 500});
+  await assert.rejects(protocolHandler(request, new AbortController()), /failed: 500/u);
+  bridge.dispose();
+});
+
+test('anonymous edge Terrain and Trails tiles carry their digests and render empty when withheld', async () => {
+  let response = new Response(new Uint8Array([7]));
+  const {bridge, protocolHandler} = registerTestWorldBridge({fetch: async () => response});
+  const digest = 'a'.repeat(64);
+  const terrain = `https://world.tileflow.dev/tiles/terrain/terrain-release-a/9/267/181.webp?terrainDescriptorSha256=${digest}`;
+  const trails = `https://world.tileflow.dev/tiles/trails/trails-release-a/12/2134/1456.pbf?trailsManifestSha256=${digest}`;
+  for (const url of [terrain, trails]) {
+    assert.match(bridge.rewriteUrl(url), /^tileflow-world:\/\/request\//u);
+  }
+  for (const url of [
+    `${trails}&key=private`,
+    trails.replace('.pbf', '.webp'),
+    `https://world.tileflow.dev/tiles/trails/trails-release-a/12/2134/1456.pbf?terrainDescriptorSha256=${digest}`,
+    'https://world.tileflow.dev/tiles/trails/../12/2134/1456.pbf',
+  ]) {
+    assert.equal(bridge.rewriteUrl(url), url);
+  }
+  const request = {type: 'arrayBuffer', url: bridge.rewriteUrl(trails)};
+  assert.equal((await protocolHandler(request, new AbortController())).data.byteLength, 1);
+  for (const status of [429, 503]) {
+    response = new Response(null, {status});
+    assert.equal((await protocolHandler(request, new AbortController())).data.byteLength, 0);
+  }
+  bridge.dispose();
+});
+
 test('World bridge bounds declared and chunked bodies and cancels oversized streams', async () => {
   const maximumWorldTileBytes = 16 * 1024 * 1024;
   const oversizedMessage = 'Tileflow World tile exceeds the maximum response size';
@@ -1609,6 +1777,31 @@ test('map readiness waits two frames and invalidating events cancel stale idle w
   scheduler.flushNext();
   assert.deepEqual(states, ['loading', 'loading', 'loading', 'error', 'idle']);
 
+  lifecycle.dispose();
+});
+
+test('withheld relief keeps the map ready while other map errors still report', () => {
+  const map = new FakeMap();
+  const scheduler = new FakeFrameScheduler();
+  const states: string[] = [];
+  const lifecycle = attachTileflowMapLifecycle({
+    map,
+    scheduler,
+    setState: (state) => states.push(state),
+    subscribe: subscribeFakeMap,
+  });
+  const reliefError = (status: number, type = 'raster-dem') => ({
+    error: Object.assign(new Error('AJAXError'), {status}),
+    source: {type, url: 'https://api.example.test/tiles/terrain/tiles.json'},
+    sourceId: 'tileflow-terrain',
+  });
+  map.emit('error', reliefError(503));
+  map.emit('error', reliefError(429));
+  assert.deepEqual(states, ['loading']);
+  map.emit('error', reliefError(500));
+  map.emit('error', reliefError(503, 'vector'));
+  map.emit('error');
+  assert.deepEqual(states, ['loading', 'error', 'error', 'error']);
   lifecycle.dispose();
 });
 
@@ -1918,7 +2111,7 @@ const lifecycleEvents: TileflowMapLifecycleEvent[] = [
 ];
 
 class FakeMap {
-  readonly listeners = new Map<TileflowMapLifecycleEvent, Set<() => void>>();
+  readonly listeners = new Map<TileflowMapLifecycleEvent, Set<(event?: unknown) => void>>();
   unsubscribeCount = 0;
 
   get listenerCount(): number {
@@ -1927,15 +2120,15 @@ class FakeMap {
     return count;
   }
 
-  emit(event: TileflowMapLifecycleEvent): void {
-    for (const listener of [...(this.listeners.get(event) ?? [])]) listener();
+  emit(event: TileflowMapLifecycleEvent, payload?: unknown): void {
+    for (const listener of [...(this.listeners.get(event) ?? [])]) listener(payload);
   }
 }
 
 function subscribeFakeMap(
   map: FakeMap,
   event: TileflowMapLifecycleEvent,
-  listener: () => void,
+  listener: (event?: unknown) => void,
 ): () => void {
   const listeners = map.listeners.get(event) ?? new Set();
   listeners.add(listener);

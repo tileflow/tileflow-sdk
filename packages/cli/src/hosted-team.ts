@@ -8,6 +8,7 @@ import {
   requestHostedJson,
   requestTeamCapability,
 } from './hosted-client';
+import {formatHostedFailure, type HostedFailure, HostedRequestError} from './hosted-error';
 import {allowsStoredAccountSession, isHostedApiKey} from './hosted-options';
 
 export type HostedTeamOptions = {
@@ -94,7 +95,12 @@ export async function resolveTeamAuthority(
   }
   const discovered = await listAccountTeams(selected.session);
   if (!discovered.ok) {
-    fail(options.json, 'team_discovery_failed', discovered.error);
+    fail(
+      options.json,
+      discovered.failure?.code ?? 'team_discovery_failed',
+      discovered.error,
+      discovered.failure ?? {},
+    );
     return null;
   }
   const requested = options.team
@@ -125,8 +131,9 @@ export async function resolveTeamAuthority(
   if (!capability.ok || capability.team.id !== team.id) {
     fail(
       options.json,
-      'team_capability_failed',
+      (!capability.ok && capability.failure?.code) || 'team_capability_failed',
       capability.ok ? 'Team capability response was invalid.' : capability.error,
+      !capability.ok ? (capability.failure ?? {}) : {},
     );
     return null;
   }
@@ -139,6 +146,14 @@ export async function resolveTeamAuthority(
 
     renewal ??= requestTeamCapability(selected.session, `@${team.slug}`, scopes)
       .then((next) => {
+        if (!next.ok && next.failure)
+          throw new HostedRequestError(
+            'Team authorization renewal',
+            next.failure,
+            next.failure.status === 401
+              ? ['Run tileflow login to authorize this machine again.']
+              : [],
+          );
         if (
           !next.ok ||
           next.team.id !== team.id ||
@@ -201,4 +216,27 @@ export function emitFailure(
 
 export function safeMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Team command failed.';
+}
+
+export function emitHostedFailure(
+  json: boolean | undefined,
+  operation: string,
+  failure: HostedFailure,
+  context: Record<string, unknown> = {},
+) {
+  emitFailure(
+    json,
+    failure.code ?? `http_${failure.status}`,
+    [
+      formatHostedFailure(operation, failure),
+      ...(Array.isArray(context.nextSteps)
+        ? context.nextSteps.filter((step): step is string => typeof step === 'string')
+        : []),
+    ].join('\n'),
+    {
+      ...failure,
+      operation,
+      ...context,
+    },
+  );
 }

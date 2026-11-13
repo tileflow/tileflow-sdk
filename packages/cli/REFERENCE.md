@@ -7,6 +7,40 @@ For step-by-step guides, see the [Tileflow documentation](https://tileflow.dev/d
 This reference ships with the package. Use the copy included in your installed release for
 version-specific behavior; the GitHub `main` branch can contain unreleased changes.
 
+## Hosted operation errors
+
+`deploy` and `icon-set` commands show the API's public reason, code, validation paths and request
+ID when supplied. `deploy --json` writes one schema-version-1 success document to stdout or a
+failure document to stderr, with a nonzero exit code on failure. Icon Set commands use the same
+failure envelope: `{schemaVersion: 1, ok: false, error: {...}}`.
+
+Hosted failures retain `status`, `code`, `error`, `messages`, `requestId`, explicit `retryable` and
+`retryAfterMs` when available. `message` adds the operation and readable details. Validation
+messages may include `code`, `path`, and bounded `expected`, `actual` or `available` values.
+Treat codes and paths as machine-readable fields; prose can change. Only explicit server
+retryability recommends retrying. A retry delay alone does not mean retrying will fix the request.
+
+Diagnostics are bounded and redact credentials and URLs; raw HTML, database errors and stack dumps
+are never echoed. An unrecognized response still reports its HTTP status and safe request ID.
+Use the request ID when reporting a failure.
+
+Deploy success JSON includes `manifestPath` and `maps` for the renderer families selected by
+`platforms`. Both success and failure documents retain warnings. If a deploy creates a Map,
+`createdMapId`, `setupKey` and `nextSteps` let you reuse that Map after a later failure.
+Fix the reported problem, then follow the guidance to repeat your original deploy command with the
+created Map ID, preserving your configuration, map selection and manifest options. Publication failures preserve the
+local manifest; a warning identifies any Maps already published by that attempt.
+
+## Local Icon Set development
+
+Icon Set publication and exact locks support HTTP delivery on `localhost`, `127.0.0.1` and
+`[::1]`; other delivery hosts require HTTPS. Selecting an API with `--api-url`,
+`--api-base-url` where available, or `TILEFLOW_API_URL` also trusts that exact origin for
+locked icon downloads. Set `TILEFLOW_API_URL` across commands to use the same local API for
+publication, lock installation, validation, build, preview, capture and icon inspection.
+Production icon delivery remains trusted by default. A lock or server response cannot add
+another trusted origin, and downloads send no credentials and follow no redirects.
+
 ## capture
 
 ### Explore without committing a scene

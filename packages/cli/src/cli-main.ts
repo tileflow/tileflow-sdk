@@ -7,8 +7,8 @@ import {readFile, writeFile} from 'node:fs/promises';
 import {hostname} from 'node:os';
 import {dirname, isAbsolute, relative, resolve, sep} from 'node:path';
 import {createInterface} from 'node:readline/promises';
+import {stripVTControlCharacters} from 'node:util';
 import pc from 'picocolors';
-import {enableNativePlatforms, usesTileflowNativeSdk} from './native-sdk-detection';
 import {createLocalCoordinates, setupCoordinates} from '@tileflow/coordinates-runtime';
 import {auditTileflowMapThemeValues, tileflowMapIdSchema} from '@tileflow/core';
 import {
@@ -38,11 +38,7 @@ import {
   TileflowValidationError,
 } from '@tileflow/dev/config';
 import {prepareTileflowStyleFonts, TileflowFontCompilationError} from '@tileflow/dev/fonts';
-import {
-  compileTileflowIconPackages,
-  TileflowIconCompilationError,
-  type TileflowIconResolutionOptions,
-} from '@tileflow/dev/icons';
+import {compileTileflowIconPackages, TileflowIconCompilationError} from '@tileflow/dev/icons';
 import {resolveTileflowPreview} from '@tileflow/dev/preview';
 import {
   createTileflowComparisonRequestHandler,
@@ -97,6 +93,7 @@ import {
   validateAccountSession,
   validateApiKey,
 } from './hosted-client';
+import {type HostedFailure, HostedRequestError, safeHostedText} from './hosted-error';
 import {
   describeNativeDifference,
   HostedCompatibilityError,
@@ -111,9 +108,11 @@ import {
 import {hostedApiKeyOption, hostedApiUrlOption, isHostedApiKey} from './hosted-options';
 import {inspectTileflowHostedCompatibility} from './hosted-preflight';
 import type {HostedMapStatus} from './hosted-response';
+import {emitFailure, emitHostedFailure, emitJson} from './hosted-team';
 import {registerIconDiffCommand} from './icon-diff-command';
 import {registerIconListCommand} from './icon-list-command';
 import {registerIconLockCommands} from './icon-lock-command';
+import {resolveIconOptions} from './icon-options';
 import {registerIconSetCommands} from './icon-set-command';
 import {registerLanguageCommand} from './language-command';
 import {
@@ -131,6 +130,7 @@ import {
   resolveTileflowNativePreviewSelection,
   tileflowNativePreviewProfile,
 } from './native-preview-command';
+import {enableNativePlatforms, usesTileflowNativeSdk} from './native-sdk-detection';
 import {openTileflowExternal} from './open-external';
 import {registerProjectCommands} from './project-commands';
 import {runRendererArtifactCommand} from './renderer-artifact-command';
@@ -140,6 +140,12 @@ import {registerVisualCommands} from './visual-command';
 import {createWorkbenchService, registerWorkbenchInspection} from './workbench-service';
 
 const program = createCliProgram();
+// Deploy's machine output is one document; shared human printers stay quiet in this mode.
+let deployJson = false;
+let deployFailureWritten = false;
+let deploySecrets: string[] = [];
+const deployErrors: string[] = [];
+const deployWarnings: string[] = [];
 const defaultApiUrl = defaultTileflowApiUrl;
 const defaultAppUrl = 'https://tileflow.dev';
 const defaultConfigPath = defaultTileflowConfigPath;
@@ -933,6 +939,7 @@ addMapSetupOptions(
   .addOption(hostedApiUrlOption())
   .addOption(hostedApiKeyOption('Tileflow API key'))
   .option('--map-id <id>', 'managed Map destination; omit it to create a new Map')
+  .option('--json', 'print deterministic schema-version-1 JSON')
   .option('--map <name>', 'configured map to connect when the repository contains multiple maps')
   .option(
     '--overwrite-self-hosted-manifest',
@@ -951,136 +958,234 @@ addMapSetupOptions(
         mapId?: string;
         map?: string;
         offline?: boolean;
+        json?: boolean;
         overwriteSelfHostedManifest?: boolean;
       },
     ) => {
-      const source = resolveDeploySource(process.env);
-      if (!validateMapSetupTarget(options, source)) return;
-      const apiUrl = normalizeApiOrigin(options.apiUrl ?? defaultApiUrl);
-      if (!isHostedDeployOrigin(apiUrl)) {
-        logError('Hosted deploy requires an HTTPS Tileflow API URL (HTTP only on localhost).');
-        process.exitCode = 1;
-        return;
-      }
-      // The config is executable repository code. Keep the captured bearer
-      // credential for the HTTP request, but do not expose it while Jiti
-      // imports tileflow.config.ts or anything that file imports.
-      delete process.env.TILEFLOW_API_KEY;
-
-      logInfo(`Deploying ${pathLabel(options.config)}.`);
-      const loaded = await withTileflowConfigSecretsHidden(() =>
-        loadTileflowConfigWithInputs(options.config),
-      );
-      const project = loaded.project;
-      assertValidTileflowConfig(project);
-      const mapNames = selectManagedDeployMaps(getTileflowMapNames(project), options);
-      if (!mapNames) return;
-      if (!validateDeployTarget(options)) return;
-      if (!validateDeployManifestMapNames(mapNames)) return;
-      const mapName = mapNames[0]!;
-
-      // The selected renderer families are prepared before any authentication or remote write, so an
-      // invalid map always fails without network access.
-      let prepared: PreparedHostedDeploy;
+      deployJson = options.json === true;
+      deploySecrets = options.apiKey ? [options.apiKey] : [];
+      let mapCreation: {createdMapId: string; setupKey: string; nextSteps: string[]} | undefined;
       try {
-        prepared = await prepareHostedDeploy({
-          project,
-          configFile: loaded.configFile,
-          mapName,
-          apiUrl,
-          ...(resolveIconOptions(options) ? {icons: resolveIconOptions(options)} : {}),
-        });
-      } catch (error) {
-        if (!(error instanceof HostedCompatibilityError)) throw error;
-        printHostedCompatibilityIssues(error.issues.map((message) => ({message})));
-        return;
-      }
+        const source = resolveDeploySource(process.env);
+        if (!validateMapSetupTarget(options, source)) return;
+        const apiUrl = normalizeApiOrigin(options.apiUrl ?? defaultApiUrl);
+        if (!isHostedDeployOrigin(apiUrl)) {
+          logError('Hosted deploy requires an HTTPS Tileflow API URL (HTTP only on localhost).');
+          process.exitCode = 1;
+          return;
+        }
+        // The config is executable repository code. Keep the captured bearer
+        // credential for the HTTP request, but do not expose it while Jiti
+        // imports tileflow.config.ts or anything that file imports.
+        delete process.env.TILEFLOW_API_KEY;
 
-      let createdMapId: string | null = null;
-      if (
-        prepared.preflight.schemaVersion === 1 &&
-        (await usesTileflowNativeSdk(loaded.configFile))
-      )
-        logWarning(
-          `This repository uses a Tileflow native SDK. To publish this map for native apps, add: ${enableNativePlatforms}`,
+        logInfo(`Deploying ${pathLabel(options.config)}.`);
+        const loaded = await withTileflowConfigSecretsHidden(() =>
+          loadTileflowConfigWithInputs(options.config),
         );
-      let result: Awaited<ReturnType<typeof runHostedDeploy>>;
-      try {
-        result = await runHostedDeploy(
-          prepared,
-          {
+        const project = loaded.project;
+        assertValidTileflowConfig(project);
+        const mapNames = selectManagedDeployMaps(getTileflowMapNames(project), options);
+        if (!mapNames) return;
+        if (!validateDeployTarget(options)) return;
+        if (!validateDeployManifestMapNames(mapNames)) return;
+        const mapName = mapNames[0]!;
+
+        // The selected renderer families are prepared before any authentication or remote write, so an
+        // invalid map always fails without network access.
+        let prepared: PreparedHostedDeploy;
+        try {
+          prepared = await prepareHostedDeploy({
+            project,
+            configFile: loaded.configFile,
+            mapName,
             apiUrl,
-            manifest: options.manifest,
-            overwriteSelfHostedManifest: options.overwriteSelfHostedManifest === true,
-          },
-          {
-            source,
-            loadManifest: loadExistingDeployManifest,
-            writeManifest: writeDeployManifest,
-            progress: printHostedDeployProgress,
-            async resolveTarget({existing}) {
-              // Authentication and Map creation may perform network requests; they follow every
-              // deterministic config, asset, style, font, compatibility and manifest check.
-              if (!options.mapId) {
-                const deployedMapId = existing?.maps[mapName]?.mapId;
-                if (deployedMapId) {
-                  logError(`${pc.bold(mapName)} is already deployed to ${deployedMapId}.`);
-                  printNextSteps([
-                    `Deploy it again with ${command(`tileflow deploy --map-id ${deployedMapId}`)}.`,
-                  ]);
-                  process.exitCode = 1;
-                  return null;
-                }
-                createdMapId = await createMapForDeploy(options, {defaultApiUrl, loadAuthConfig});
-                if (!createdMapId) return null;
-                options.mapId = createdMapId;
-              }
-              return requireApiOptions(options, {
-                allowStoredCredential: allowsStoredDeployCredential(source),
-                assertExplicitKeyMap: true,
-                capabilityScopes: ['styles:write'],
-              });
-            },
-          },
-        );
-      } catch (error) {
-        if (!(error instanceof HostedDeploymentError)) throw error;
-        logError(error.message);
-        printNextSteps(
-          error.resumable
-            ? [
-                'The local manifest was preserved. Run the same deploy again: it resumes where this one stopped.',
-              ]
-            : ['The local manifest was preserved.'],
-        );
-        process.exitCode = 1;
-        return;
-      }
-      if (!result) return;
+            ...(resolveIconOptions(options) ? {icons: resolveIconOptions(options)} : {}),
+          });
+        } catch (error) {
+          if (!(error instanceof HostedCompatibilityError)) throw error;
+          printHostedCompatibilityIssues(error.issues.map((message) => ({message})));
+          return;
+        }
 
-      const versionLabel = ` (v${result.version})`;
-      logSuccess(
-        result.changed
-          ? `Published ${pc.bold(result.mapName)}${versionLabel} for ${result.nativeManifestUrl ? 'web and native apps' : 'web'}.`
-          : `Unchanged ${pc.bold(result.mapName)}${versionLabel}.`,
-      );
-      printNativeDifferences(result.mapName, result.nativeDifferences);
-      // Hosted maps draw a Team 3D model's published current version, not the project's files.
-      for (const teamModel of result.teamModels) {
-        if (teamModel.sources !== 'differ') continue;
-        logWarning(
-          `3D model ${pc.bold(teamModel.model)} draws its published version ${teamModel.version}, which was not prepared from this project's files. Run \`tileflow models publish\` to publish them.`,
+        let createdMapId: string | null = null;
+        if (
+          prepared.preflight.schemaVersion === 1 &&
+          (await usesTileflowNativeSdk(loaded.configFile))
+        )
+          logWarning(
+            `This repository uses a Tileflow native SDK. To publish this map for native apps, add: ${enableNativePlatforms}`,
+          );
+        let result: Awaited<ReturnType<typeof runHostedDeploy>>;
+        try {
+          result = await runHostedDeploy(
+            prepared,
+            {
+              apiUrl,
+              manifest: options.manifest,
+              overwriteSelfHostedManifest: options.overwriteSelfHostedManifest === true,
+            },
+            {
+              source,
+              loadManifest: loadExistingDeployManifest,
+              writeManifest: writeDeployManifest,
+              progress: printHostedDeployProgress,
+              async resolveTarget({existing}) {
+                // Authentication and Map creation may perform network requests; they follow every
+                // deterministic config, asset, style, font, compatibility and manifest check.
+                if (!options.mapId) {
+                  const deployedMapId = existing?.maps[mapName]?.mapId;
+                  if (deployedMapId) {
+                    logError(`${pc.bold(mapName)} is already deployed to ${deployedMapId}.`);
+                    printNextSteps([
+                      `Deploy it again with ${command(`tileflow deploy --map-id ${deployedMapId}`)}.`,
+                    ]);
+                    process.exitCode = 1;
+                    return null;
+                  }
+                  createdMapId = await createMapForDeploy(options, {
+                    defaultApiUrl,
+                    loadAuthConfig,
+                    onCreated: (createdMapId, setupKey) => {
+                      mapCreation = {
+                        createdMapId,
+                        setupKey,
+                        nextSteps: [
+                          `Run your original deploy command again with --map-id ${createdMapId}. Keep its --config, --map, --manifest and --api-url options, and omit Map creation flags (--team, --origin, --any-website and --setup-key).`,
+                        ],
+                      };
+                    },
+                  });
+                  if (!createdMapId) {
+                    deployFailureWritten = true;
+                    return null;
+                  }
+                  options.mapId = createdMapId;
+                }
+                return requireApiOptions(options, {
+                  allowStoredCredential: allowsStoredDeployCredential(source),
+                  assertExplicitKeyMap: true,
+                  capabilityScopes: ['styles:write'],
+                  onFailure: (code, message, failure, steps = []) => {
+                    const safeSteps = steps
+                      .map((step) => safeHostedText(stripVTControlCharacters(step), deploySecrets))
+                      .filter((step): step is string => step !== undefined);
+                    if (failure)
+                      throw new HostedRequestError('Deploy authorization', failure, safeSteps);
+                    const nextSteps = [...safeSteps, ...(mapCreation?.nextSteps ?? [])];
+                    if (options.json) {
+                      emitFailure(
+                        true,
+                        code,
+                        safeHostedText(message, deploySecrets) ?? 'Deploy authorization failed.',
+                        {
+                          ...(mapCreation ?? {}),
+                          ...(nextSteps.length ? {nextSteps} : {}),
+                        },
+                      );
+                    } else {
+                      logError(message);
+                      if (nextSteps.length) printNextSteps(nextSteps);
+                    }
+                    deployFailureWritten = true;
+                  },
+                });
+              },
+            },
+          );
+        } catch (error) {
+          if (!(error instanceof HostedDeploymentError)) throw error;
+          if (error.failure) {
+            emitHostedFailure(
+              options.json,
+              error.operation ?? `Deploy for ${mapName}`,
+              error.failure,
+              {
+                ...(mapCreation ?? {}),
+                ...(deployWarnings.length ? {warnings: deployWarnings} : {}),
+                nextSteps: [
+                  'The local manifest was preserved.' +
+                    (error.resumable ? ' Run the same deploy again to resume.' : ''),
+                ],
+              },
+            );
+            deployFailureWritten = true;
+            return;
+          }
+          logError(error.message);
+          printNextSteps(
+            error.resumable
+              ? [
+                  'The local manifest was preserved. Run the same deploy again: it resumes where this one stopped.',
+                ]
+              : ['The local manifest was preserved.'],
+          );
+          process.exitCode = 1;
+          return;
+        }
+        if (!result) return;
+
+        const versionLabel = ` (v${result.version})`;
+        logSuccess(
+          result.changed
+            ? `Published ${pc.bold(result.mapName)}${versionLabel} for ${result.nativeManifestUrl ? 'web and native apps' : 'web'}.`
+            : `Unchanged ${pc.bold(result.mapName)}${versionLabel}.`,
         );
+        printNativeDifferences(result.mapName, result.nativeDifferences);
+        // Hosted maps draw a Team 3D model's published current version, not the project's files.
+        for (const teamModel of result.teamModels) {
+          if (teamModel.sources !== 'differ') continue;
+          logWarning(
+            `3D model ${pc.bold(teamModel.model)} draws its published version ${teamModel.version}, which was not prepared from this project's files. Run \`tileflow models publish\` to publish them.`,
+          );
+        }
+        if (options.json)
+          emitJson({
+            command: 'deploy',
+            ok: true,
+            schemaVersion: 1,
+            manifestPath: result.manifestPath,
+            maps: {[result.mapName]: result.entry},
+            ...(mapCreation ?? {}),
+            ...(deployWarnings.length ? {warnings: deployWarnings} : {}),
+          });
+        printKeyValue('Manifest', pathLabel(result.manifestPath));
+        if (result.nativeManifestUrl) printKeyValue('Native', link(result.nativeManifestUrl));
+        printDeployedMaps({[result.mapName]: result.entry});
+        printNextSteps([
+          ...(createdMapId
+            ? [`Deploy later changes with ${command(`tileflow deploy --map-id ${createdMapId}`)}.`]
+            : []),
+          `Check hosted state with ${command(`tileflow status --map-id ${result.mapId}`)}.`,
+        ]);
+      } catch (error) {
+        if (error instanceof HostedRequestError) {
+          emitHostedFailure(options.json, error.operation, error.failure, {
+            ...(mapCreation ?? {}),
+            ...(error.nextSteps.length
+              ? {nextSteps: [...error.nextSteps, ...(mapCreation?.nextSteps ?? [])]}
+              : {}),
+            ...(deployWarnings.length ? {warnings: deployWarnings} : {}),
+          });
+          deployFailureWritten = true;
+        } else if (options.json) {
+          printCliError(error);
+          process.exitCode = 1;
+        } else {
+          throw error;
+        }
+      } finally {
+        if (options.json && process.exitCode && !deployFailureWritten) {
+          emitFailure(true, 'deploy_failed', deployErrors[0] ?? 'Deploy failed.', {
+            ...(mapCreation ?? {}),
+            ...(deployErrors.length > 1
+              ? {messages: deployErrors.slice(0, 16).map((message) => ({message}))}
+              : {}),
+            ...(deployWarnings.length ? {warnings: deployWarnings} : {}),
+          });
+        }
+        deployJson = false;
       }
-      printKeyValue('Manifest', pathLabel(result.manifestPath));
-      if (result.nativeManifestUrl) printKeyValue('Native', link(result.nativeManifestUrl));
-      printDeployedMaps({[result.mapName]: result.entry});
-      printNextSteps([
-        ...(createdMapId
-          ? [`Deploy later changes with ${command(`tileflow deploy --map-id ${createdMapId}`)}.`]
-          : []),
-        `Check hosted state with ${command(`tileflow status --map-id ${result.mapId}`)}.`,
-      ]);
     },
   );
 
@@ -1135,7 +1240,7 @@ program
     }
 
     if (options.json) {
-      console.log(JSON.stringify(status, null, 2));
+      printHumanLine(JSON.stringify(status, null, 2));
       return;
     }
 
@@ -1223,8 +1328,18 @@ if (isRootCliVersionRequest(process.argv.slice(2))) {
       'semantic-diff',
       'language',
     ].includes(structuredCommand);
-  if (structuredErrors) configureJsonErrors(program);
+  const deployStructured = structuredCommand === 'deploy' && process.argv.includes('--json');
+  if (structuredErrors || deployStructured) configureJsonErrors(program);
   program.parseAsync().catch((error: unknown) => {
+    if (deployStructured) {
+      if (error && typeof error === 'object' && 'exitCode' in error && error.exitCode === 0) return;
+      emitFailure(
+        true,
+        'deploy_failed',
+        safeHostedText(error instanceof Error ? error.message : undefined) ?? 'Deploy failed.',
+      );
+      return;
+    }
     if (structuredErrors) {
       if (
         typeof error === 'object' &&
@@ -1665,23 +1780,6 @@ async function writeDeployManifest(manifestPath: string, manifest: DeployedManif
   return manifestPath;
 }
 
-/**
- * Build the explicit shared Icon Set resolution settings for one command invocation.
- *
- * Only these options select a cache root or offline behavior. No command resolves a catalog head
- * during validation, build, preview or deploy.
- */
-function resolveIconOptions(options: {
-  cacheDir?: string;
-  offline?: boolean;
-}): TileflowIconResolutionOptions | undefined {
-  const icons: TileflowIconResolutionOptions = {
-    ...(options.cacheDir ? {cacheRoot: options.cacheDir} : {}),
-    ...(options.offline ? {offline: true} : {}),
-  };
-  return Object.keys(icons).length > 0 ? icons : undefined;
-}
-
 function selectManagedDeployMaps(
   mapNames: string[],
   options: {map?: string; mapId?: string},
@@ -1814,11 +1912,18 @@ async function requireApiOptions(
     assertExplicitKeyMap?: boolean;
     capabilityScopes?: Array<'static:write' | 'status:read' | 'styles:write'>;
     silent?: boolean;
-    onFailure?: ((code: string, message: string) => void) | undefined;
+    onFailure?:
+      | ((
+          code: string,
+          message: string,
+          failure?: HostedFailure,
+          steps?: readonly string[],
+        ) => void)
+      | undefined;
   } = {},
 ): Promise<{apiUrl: string; apiKey: string; mapId: string} | null> {
-  const refuse = (code: string, message: string, steps: string[] = []) => {
-    if (behavior.onFailure) behavior.onFailure(code, message);
+  const refuse = (code: string, message: string, steps: string[] = [], failure?: HostedFailure) => {
+    if (behavior.onFailure) behavior.onFailure(code, message, failure, steps);
     else if (!behavior.silent) {
       logError(message);
       if (steps.length) printNextSteps(steps);
@@ -1841,7 +1946,7 @@ async function requireApiOptions(
     if (behavior.assertExplicitKeyMap) {
       const profile = await validateApiKey(apiUrl, options.apiKey);
       if (!profile.ok) {
-        return refuse('api_key_validation_failed', profile.error);
+        return refuse('api_key_validation_failed', profile.error, [], profile.failure);
       }
       if (!apiProfileCanTargetMap(profile.value, requestedMapId)) {
         return refuse('api_key_map_mismatch', 'This API key belongs to another Map.');
@@ -1887,7 +1992,14 @@ async function requireApiOptions(
     behavior.capabilityScopes ?? ['status:read'],
   );
   if (!capability.ok) {
-    return refuse('map_capability_failed', capability.error);
+    return refuse(
+      'map_capability_failed',
+      capability.error,
+      capability.failure?.status === 401
+        ? ['Run tileflow login to authorize this machine again.']
+        : [],
+      capability.failure,
+    );
   }
   return {apiKey: capability.capability, apiUrl, mapId: capability.mapId};
 }
@@ -1964,49 +2076,60 @@ function printCliError(error: unknown) {
   }
 }
 
+function printHumanLine(message: string) {
+  if (!deployJson) console.log(message);
+}
+
 function logSuccess(message: string) {
-  console.log(`${pc.green('✓')} ${message}`);
+  printHumanLine(`${pc.green('✓')} ${message}`);
 }
 
 function logError(message: string) {
-  console.log(`${pc.red('✕')} ${message}`);
+  if (deployJson)
+    deployErrors.push(
+      safeHostedText(stripVTControlCharacters(message), deploySecrets) ??
+        'Deploy failed. Check the local configuration and connection.',
+    );
+  printHumanLine(`${pc.red('✕')} ${message}`);
 }
 
 function logWarning(message: string) {
-  console.log(`${pc.yellow('!')} ${message}`);
+  const warning = safeHostedText(stripVTControlCharacters(message), deploySecrets);
+  if (warning) deployWarnings.push(warning);
+  printHumanLine(`${pc.yellow('!')} ${message}`);
 }
 
 function logInfo(message: string) {
-  console.log(`${pc.cyan('i')} ${message}`);
+  printHumanLine(`${pc.cyan('i')} ${message}`);
 }
 
 function logMuted(message: string) {
-  console.log(pc.gray(message));
+  printHumanLine(pc.gray(message));
 }
 
 function printTitle(title: string, subtitle?: string) {
-  console.log(pc.bold(title));
+  printHumanLine(pc.bold(title));
   if (subtitle) {
-    console.log(pc.gray(subtitle));
+    printHumanLine(pc.gray(subtitle));
   }
 }
 
 function printKeyValue(label: string, value: string) {
-  console.log(`${pc.gray(`${label}:`.padEnd(13))} ${value}`);
+  printHumanLine(`${pc.gray(`${label}:`.padEnd(13))} ${value}`);
 }
 
 function printChecks(items: readonly string[]) {
   for (const item of items) {
-    console.log(`  ${pc.green('✓')} ${item}`);
+    printHumanLine(`  ${pc.green('✓')} ${item}`);
   }
 }
 
 function printNextSteps(steps: readonly string[]) {
   if (steps.length === 0) return;
 
-  console.log(`\n${pc.bold('Next steps')}`);
+  printHumanLine(`\n${pc.bold('Next steps')}`);
   for (const step of steps) {
-    console.log(`  ${pc.cyan('•')} ${step}`);
+    printHumanLine(`  ${pc.cyan('•')} ${step}`);
   }
 }
 
@@ -2014,7 +2137,8 @@ function printValidationErrors(messages: readonly {message: string; path: string
   logError('Tileflow config has errors.');
   for (const message of messages) {
     const path = message.path ? pc.cyan(message.path) : pc.cyan('(root)');
-    console.log(`  ${pc.red('✕')} ${path} ${pc.gray('-')} ${message.message}`);
+    if (deployJson) logError(`${message.path || '(root)'}: ${message.message}`);
+    else printHumanLine(`  ${pc.red('✕')} ${path} ${pc.gray('-')} ${message.message}`);
   }
 }
 
@@ -2053,11 +2177,11 @@ function printDeployedMaps(maps: Record<string, DeployedManifestMap>) {
   const entries = Object.entries(maps);
   if (entries.length === 0) return;
 
-  console.log(`\n${pc.bold('Maps')}`);
+  printHumanLine(`\n${pc.bold('Maps')}`);
   for (const [name, map] of entries) {
     for (const [themeName, theme] of Object.entries(map.themes)) {
       const label = `${name}/${themeName}`;
-      console.log(`  ${pc.green('✓')} ${label.padEnd(24)} ${link(theme.styleUrl)}`);
+      printHumanLine(`  ${pc.green('✓')} ${label.padEnd(24)} ${link(theme.styleUrl)}`);
     }
   }
 }
@@ -2162,7 +2286,7 @@ function printHostedDeployProgress(event: HostedDeployEvent) {
       );
       return;
     case 'uploaded':
-      console.log(
+      printHumanLine(
         `  ${pc.green('✓')} ${event.document === 'family' ? 'Family document' : `Native style ${event.theme}`} ${pc.gray(`${formatBytes(event.bytes)}, ${event.position}/${event.count}`)}`,
       );
       return;
@@ -2193,7 +2317,7 @@ function printNativeDifferences(mapName: string, differences: readonly NativeDif
   logWarning(`Native apps draw ${pc.bold(mapName)} without some web features:`);
   for (const difference of differences) {
     const themes = difference.all ? '' : pc.gray(` (${difference.themes.join(', ')})`);
-    console.log(`    ${describeNativeDifference(difference)}${themes}`);
+    printHumanLine(`    ${describeNativeDifference(difference)}${themes}`);
   }
 }
 
@@ -2201,12 +2325,12 @@ function printMapStatus(status: HostedMapStatus, apiUrl: string) {
   printTitle('Tileflow status');
   printKeyValue('Map', pc.bold(status.mapId));
 
-  console.log(`\n${pc.bold('Styles')}`);
+  printHumanLine(`\n${pc.bold('Styles')}`);
   if (status.styles.length === 0) {
     logMuted('  No styles deployed.');
   }
   for (const style of status.styles) {
-    console.log(
+    printHumanLine(
       `  ${pc.green('✓')} ${style.environment.padEnd(16)} ${link(`${apiUrl}/maps/${style.mapId}/style.json`).padEnd(36)} ${formatBytes(style.size).padStart(10)}  ${pc.gray(formatDate(style.uploaded))}`,
     );
   }

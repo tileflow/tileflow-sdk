@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {createTileflowThemeController} from '../src/browser';
+import {createTileflowThemeController} from '../src/browser-bundle';
 import {isTileflowClearValue, syncTileflowClearLayers} from '../src/clear-layers-browser';
 
 const underlay = 'tileflow-global-landcover-underlay';

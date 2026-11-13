@@ -263,7 +263,7 @@ test('restores only owned resources after an external style reload', async () =>
 });
 
 test('theme application includes app resources before setStyle and rollback retains them', async () => {
-  const {createTileflowThemeController} = await import('../src/browser');
+  const {createTileflowThemeController} = await import('../src/browser-bundle');
   const map = Object.assign(mock(), {
     submitted: [] as MapLibreStyle[],
     setStyle(style: MapLibreStyle) {
@@ -423,7 +423,7 @@ test('theme composition rejects externally replaced resources', async () => {
 });
 
 test('applying a theme preserves externally replaced resources', async () => {
-  const {createTileflowThemeController} = await import('../src/browser');
+  const {createTileflowThemeController} = await import('../src/browser-bundle');
   const map = Object.assign(mock(), {
     setStyle(style: MapLibreStyle) {
       this.loaded = false;
@@ -477,7 +477,7 @@ test('transition preparation does not strip foreign replacements from a live sna
 });
 
 test('a failed own style application may restore its newly created resource identities', async () => {
-  const {createTileflowThemeController} = await import('../src/browser');
+  const {createTileflowThemeController} = await import('../src/browser-bundle');
   const map = Object.assign(mock(), {
     setStyle(style: MapLibreStyle) {
       this.loaded = false;

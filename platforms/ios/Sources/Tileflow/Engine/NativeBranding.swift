@@ -193,11 +193,20 @@ final class NativeBrandingButton: UIButton {
   required init?(coder: NSCoder) { fatalError("Created by the map engine.") }
 
   override func draw(_ rect: CGRect) {
-    UIColor.white.withAlphaComponent(0.9).setFill()
-    UIBezierPath(roundedRect: CGRect(x: 7, y: 7, width: 30, height: 30), cornerRadius: 4).fill()
-    UIColor(white: 0.145, alpha: 1).setFill()
+    guard let context = UIGraphicsGetCurrentContext() else { return }
+    context.saveGState()
+    defer { context.restoreGState() }
+    context.setShadow(offset: .zero, blur: 2, color: UIColor.black.withAlphaComponent(0.3).cgColor)
+    let ink = UIColor.white.withAlphaComponent(0.9)
+    let attributes: [NSAttributedString.Key: Any] = [
+      .font: UIFont.boldSystemFont(ofSize: 17), .foregroundColor: ink, .kern: -0.6,
+    ]
+    let word = "Tileflow" as NSString
+    word.draw(at: CGPoint(x: 10, y: 15), withAttributes: attributes)
+    let left = 11 + word.size(withAttributes: attributes).width
+    ink.setFill()
     for (x, y) in [(0, 0), (6, 0), (3, 6), (9, 6), (6, 12), (12, 12)] {
-      UIRectFill(CGRect(x: 10 + Double(x) * 1.5, y: 10 + Double(y) * 1.5, width: 6, height: 6))
+      UIRectFill(CGRect(x: left + Double(x) * 0.77, y: 12 + Double(y) * 0.77, width: 3.08, height: 3.08))
     }
   }
 }

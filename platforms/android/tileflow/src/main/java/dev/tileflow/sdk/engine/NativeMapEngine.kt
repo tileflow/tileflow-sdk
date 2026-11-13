@@ -248,7 +248,7 @@ internal class NativeMapEngine(
                 ViewGroup.LayoutParams.MATCH_PARENT,
             ),
         )
-        container.addView(brandingButton, FrameLayout.LayoutParams((44 * density).toInt(), (44 * density).toInt(), android.view.Gravity.BOTTOM or android.view.Gravity.LEFT))
+        container.addView(brandingButton, FrameLayout.LayoutParams((90 * density).toInt(), (44 * density).toInt(), android.view.Gravity.BOTTOM or android.view.Gravity.LEFT))
         brandingButton.setOnClickListener { callbacks.externalLink(URI("https://tileflow.dev/")) }
         attribution.onLink = { url ->
             if (!retired) runCatching { URI(url) }.getOrNull()?.let(callbacks.externalLink)

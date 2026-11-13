@@ -25,6 +25,7 @@ test('Outdoors compiles every appearance with one elevation source for relief an
   for (const theme of Object.keys(outdoors.themes ?? {})) {
     const style = createStyle(outdoors, {theme, preparedAssets: assets});
     assert.deepEqual(validateStyleMin(style as never), [], theme);
+    assert.equal(style.sources['tileflow-path-ground'], undefined, theme);
     for (const kind of ['peak', 'volcano']) {
       const index = style.layers.findIndex((layer) => layer.id === `tileflow-landform-${kind}`);
       const summit = style.layers[index];
@@ -57,15 +58,19 @@ test('Outdoors compiles every appearance with one elevation source for relief an
     assert.equal(lines.length, 2);
     // Overzoom the final contour tiles without hiding their lines at close camera zooms.
     for (const line of lines) assert.ok(line.maxzoom === undefined || line.maxzoom >= 22);
-    const dem = style.sources[style.terrain.source] as {url: string; tileSize: number};
+    const dem = style.sources[style.terrain.source] as Record<string, unknown>;
     const contours = style.sources['outdoors-contours'] as {tiles: string[]};
-    assert.equal(parseTileflowContourSourceUrl(contours.tiles[0]!).demTileJson, dem.url);
-    assert.equal(dem.tileSize, 512);
-    assert.doesNotMatch(JSON.stringify(style), /elevation-tiles-prod/u);
+    const contourSource = parseTileflowContourSourceUrl(contours.tiles[0]!);
+    // Relief and contours read only hosted Terrain, whose TileJSON caps the contour DEM zoom.
+    assert.match(String(dem.url), /\/tiles\/terrain\/tiles\.json$/u);
+    for (const key of ['tiles', 'maxzoom', 'tileSize', 'attribution'])
+      assert.equal(dem[key], undefined, key);
+    assert.equal(contourSource.demTileJson, dem.url);
+    assert.equal(contourSource.demMaxzoom, 14);
   }
 });
 
-test('Outdoors can switch elevation providers without retaining the public DEM in contours', async () => {
+test('Outdoors can switch elevation providers without retaining the hosted DEM in contours', async () => {
   const resolved = resolveMap(outdoors);
   assert.ok(resolved.terrain && typeof resolved.terrain === 'object');
   const url = 'https://example.com/elevation/tiles.json';

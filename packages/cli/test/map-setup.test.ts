@@ -429,3 +429,57 @@ function runCli(
     child.on('close', (code) => resolve({code, stderr, stdout}));
   });
 }
+
+test('deploy JSON retains the created Map and setup key when authorization fails', async (t) => {
+  const directory = await createHome(t);
+  await linkWorkspacePackages(directory);
+  const configPath = join(directory, 'tileflow.config.ts');
+  await writeFile(configPath, tileflowMapFixture({id: 'madrid', fields: `name: 'Madrid'`}));
+  let createdSetupKey = '';
+  const api = await createFakeApi(t, async (request) => {
+    if (request.url === '/v1/cli/map-setup/teams') return {schemaVersion: 1, teams: [team('acme')]};
+    if (request.url === '/v1/cli/maps') {
+      const body = JSON.parse(await readBody(request));
+      createdSetupKey = body.idempotencyKey;
+      return createdResponse('acme', []);
+    }
+    assert.equal(request.url, '/v1/cli/map-capabilities');
+    await readBody(request);
+    return {
+      status: 401,
+      body: {
+        code: 'TF_SESSION_EXPIRED',
+        error: 'This account session has expired.',
+        requestId: 'session-ref',
+      },
+    };
+  });
+  await writeAccountSession(directory, api.url);
+  const result = await runCli(directory, [
+    'deploy',
+    '--json',
+    '--config',
+    configPath,
+    '--api-url',
+    api.url,
+    '--any-website',
+  ]);
+  assert.equal(result.code, 1);
+  assert.equal(result.stdout, '');
+  const document = JSON.parse(result.stderr);
+  assert.equal(document.error.code, 'TF_SESSION_EXPIRED');
+  assert.equal(document.error.createdMapId, createdMapId);
+  assert.match(document.error.setupKey, /^cli-[0-9a-f]{32}$/u);
+  assert.equal(document.error.setupKey, createdSetupKey);
+  assert.equal(document.error.recoveryCommand, undefined);
+  const recovery = document.error.nextSteps.find((step: string) =>
+    step.includes('original deploy command'),
+  );
+  assert.match(recovery, new RegExp(`--map-id ${createdMapId}`));
+  for (const option of ['--config', '--map', '--manifest', '--api-url'])
+    assert.ok(recovery.includes(option));
+  assert.match(recovery, /omit Map creation flags/u);
+  assert.ok(document.error.nextSteps.some((step: string) => step.includes('tileflow login')));
+  assert.equal(document.error.requestId, 'session-ref');
+  assert.doesNotMatch(result.stderr, new RegExp(accountSessionToken));
+});

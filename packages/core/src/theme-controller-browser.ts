@@ -1,0 +1,1954 @@
+/** The theme controller behind every Tileflow map. Internal to Tileflow's map packages. */
+import type {
+  TileflowStyleStateValue,
+  TileflowStyleSwitchMap,
+  TileflowSunRequest,
+  TileflowThemeBlendRequest,
+  TileflowThemeBlendState,
+  TileflowThemeChangeOptions,
+  TileflowThemeController,
+  TileflowThemeTransition,
+  TileflowThemeTransitionOptions,
+  TileflowThemeTransitionResult,
+} from './browser';
+import {syncTileflowClearLayers, type TileflowClearLayersMap} from './clear-layers-browser';
+import {createTileflowDynamicImageRegistry} from './dynamic-style-images';
+import {assertTileflowFontFallbackWebSupport} from './font-fallback';
+import {
+  beginTileflowRuntimeStyleChange,
+  prepareTileflowRuntimeStyleApplication,
+  stripTileflowRuntimeStyle,
+} from './map-controller-browser';
+import {isTileflowThemeName} from './portable-identity-rules';
+import {type TileflowRouteInks, tileflowRouteInksAt, tileflowStyleRouteInks} from './route-inks';
+import {type TileflowRuntimeStyle} from './runtime';
+import {readTileflowSky, tileflowSkyAtSun, tileflowSkyMetadataKey, tileflowSkySunKey} from './sky';
+import type {TileflowStyleFamily} from './style-family';
+import {
+  expandTileflowFamilyTemplate,
+  materializeTileflowStyleFamily,
+  parseTileflowStyleFamily,
+} from './style-family';
+import {createTileflowFamilyAnimator, mixTileflowFamilyValues} from './style-family-browser';
+import {prepareTileflowStyleFamilyForRendering} from './style-family-render';
+import {resolveTileflowFamilyResourceUrls} from './style-family-runtime';
+import {loadTileflowStyleFonts} from './style-fonts-browser';
+import {
+  loadTileflowRuntimeStyle,
+  loadTileflowRuntimeStyleFamily,
+  type TileflowRuntimeStyleLoadOptions,
+} from './style-resources-browser';
+import {
+  mixTileflowSunDirections,
+  readTileflowSunPreset,
+  resolveTileflowSun,
+  tileflowStyleSunPreset,
+  type TileflowSun,
+  tileflowSunLight,
+  tileflowSunPosition,
+  type TileflowSunPreset,
+  tileflowSunPresetAt,
+} from './sun';
+import {
+  fillTileflowThemeBlendTemplate,
+  planTileflowThemeBlend,
+  type TileflowThemeBlendPlan,
+} from './theme-blend';
+import {
+  emphasizeTileflowValue,
+  firstColour,
+  planTileflowEmphasis,
+  type TileflowEmphasis,
+  tileflowEmphasisGround,
+  type TileflowEmphasisTarget,
+  validateTileflowEmphasis,
+} from './theme-emphasis';
+import {
+  beginTileflowStyleCrossfade,
+  canBlendTileflowThemes,
+  createTileflowThemeBlender,
+  createTileflowThemeImageMixer,
+  prefersReducedMotion,
+  type TileflowThemeBlender,
+  tileflowThemeMotionView,
+} from './theme-motion-browser';
+import {
+  prepareTileflowThemeGeometry,
+  waitForTileflowThemeGeometry,
+} from './theme-preparation-browser';
+import type {MapLibreStyle} from './types';
+
+const maximumBlendThemes = 8;
+const maximumTransitionMs = 5_000;
+const defaultThemeTransitionMs = 450;
+/** Labels and icons cross-fade this long when the nearest theme of a blend changes. */
+const blendLabelFadeMs = 450;
+
+type ActiveBlend = {
+  blender: TileflowThemeBlender;
+  key: string;
+  plan: TileflowThemeBlendPlan;
+  themes: readonly TileflowRuntimeStyle[];
+};
+type PendingBlend = {
+  key: string;
+  position: number;
+  promise: Promise<TileflowThemeTransitionResult>;
+};
+type Shown = {blend?: ActiveBlend; style: MapLibreStyle | string};
+type SunDirection = {altitude: number; azimuth: number; source: TileflowSun['source']};
+// A style state: the value it was set to, the value on the map (between the two while a number
+// eases), and the motion moving it.
+type StyleState = {
+  run: number;
+  settle?: (result: TileflowThemeTransitionResult) => void;
+  shown: TileflowStyleStateValue | undefined;
+  stop?: () => void;
+  value: TileflowStyleStateValue;
+};
+type Target =
+  | {kind: 'theme'; style: TileflowRuntimeStyle; prepared: MapLibreStyle; transition: number}
+  | {
+      kind: 'blend';
+      key: string;
+      plan: TileflowThemeBlendPlan;
+      position: () => number;
+      themes: readonly TileflowRuntimeStyle[];
+      transition: number;
+    };
+
+function validateStyleState(name: unknown, value: unknown): TypeError | undefined {
+  if (typeof name !== 'string' || !name.trim())
+    return new TypeError('Style state names must be non-empty strings.');
+  if (
+    value === null ||
+    typeof value === 'boolean' ||
+    typeof value === 'string' ||
+    (typeof value === 'number' && Number.isFinite(value))
+  )
+    return undefined;
+  return new TypeError('Style state values must be booleans, finite numbers, strings, or null.');
+}
+
+/**
+ * Transactionally changes a MapLibre style while preserving the map instance and camera.
+ * Themes preload their documents and fonts independently; style application is serialized and
+ * the last request wins.
+ */
+export function createTileflowThemeController(options: {
+  initial: TileflowRuntimeStyle;
+  /** The prepared initial document already given to the map, when initial.style is a URL. */
+  initialStyle?: MapLibreStyle;
+  loadFonts?: (style: TileflowRuntimeStyle) => Promise<void>;
+  /** Override document preparation, for example for a native resource transport. */
+  loadStyle?: (url: string) => Promise<MapLibreStyle>;
+  /** Request policy used for style and TileJSON preparation, including theme changes and blends. */
+  styleLoadOptions?: TileflowRuntimeStyleLoadOptions;
+  loadFamily?: (url: string) => Promise<TileflowStyleFamily>;
+  map: TileflowStyleSwitchMap;
+  onTransition?: (transition: TileflowThemeTransition) => void;
+  timeoutMs?: number;
+  /** The default for every change; each change may pass its own. */
+  transition?: TileflowThemeTransitionOptions;
+}): TileflowThemeController {
+  assertConcreteRuntimeTheme(options.initial, 'initial');
+  const timeoutMs = normalizeThemeTransitionTimeout(options.timeoutMs);
+  const defaultTransition = normalizeThemeTransitionDuration(options.transition);
+  const defaultThemeTransition = normalizeThemeTransitionDuration(
+    options.transition,
+    defaultThemeTransitionMs,
+  );
+  const loadFonts =
+    options.loadFonts ??
+    ((runtimeStyle: TileflowRuntimeStyle) =>
+      loadTileflowStyleFonts(runtimeStyle.style, {fontFaces: runtimeStyle.fontFaces}));
+  const lifetime = new AbortController();
+  const abort = () => lifetime.abort();
+  const parentSignal = options.styleLoadOptions?.signal;
+  if (parentSignal?.aborted) abort();
+  else parentSignal?.addEventListener('abort', abort, {once: true});
+  const styleLoadOptions = {...options.styleLoadOptions, signal: lifetime.signal};
+  const preparedStyles = new WeakMap<
+    TileflowRuntimeStyle,
+    Promise<TileflowRuntimeStyle & {style: MapLibreStyle}>
+  >();
+  if (options.initialStyle)
+    preparedStyles.set(
+      options.initial,
+      Promise.resolve({...options.initial, style: options.initialStyle}),
+    );
+  function prepareStyle(
+    theme: TileflowRuntimeStyle,
+  ): Promise<TileflowRuntimeStyle & {style: MapLibreStyle}> {
+    let pending = preparedStyles.get(theme);
+    if (!pending) {
+      // Inline documents may already belong to a native transport. Their owner cannot be inferred.
+      pending =
+        typeof theme.style !== 'string'
+          ? Promise.resolve({...theme, style: theme.style})
+          : options.loadStyle
+            ? options.loadStyle(theme.style).then((style) => ({...theme, style}))
+            : loadTileflowRuntimeStyle(theme, styleLoadOptions);
+      preparedStyles.set(theme, pending);
+      pending.catch(() => preparedStyles.delete(theme));
+    }
+    return pending;
+  }
+  const loadStyle = async (url: string) => (await prepareStyle({style: url})).style;
+  async function prepareTheme(theme: TileflowRuntimeStyle): Promise<MapLibreStyle> {
+    const prepared = await prepareStyle(theme);
+    if (styleLoadOptions.mapLibreVersion)
+      assertTileflowFontFallbackWebSupport(prepared.style, styleLoadOptions.mapLibreVersion);
+    await loadFonts(prepared);
+    return prepared.style;
+  }
+  const familyCache = new Map<string, Promise<TileflowStyleFamily>>();
+  if (options.initial.familyUrl && options.initial.family)
+    familyCache.set(options.initial.familyUrl, Promise.resolve(options.initial.family));
+  const loadFamily = (url: string) =>
+    options.loadFamily
+      ? options
+          .loadFamily(url)
+          .then(parseTileflowStyleFamily)
+          .then((family) => resolveTileflowFamilyResourceUrls(family, url))
+          .then(prepareTileflowStyleFamilyForRendering)
+      : loadTileflowRuntimeStyleFamily(url, styleLoadOptions);
+  const resolveFamily = async (style: TileflowRuntimeStyle): Promise<TileflowRuntimeStyle> => {
+    if (!style.familyUrl || style.family) return style;
+    let pending = familyCache.get(style.familyUrl);
+    if (!pending) {
+      const url = style.familyUrl;
+      pending = loadFamily(url).catch((error: unknown) => {
+        familyCache.delete(url);
+        throw error;
+      });
+      familyCache.set(url, pending);
+      if (familyCache.size > 4) familyCache.delete(familyCache.keys().next().value!);
+    }
+    const family = await pending;
+    return {
+      ...style,
+      family,
+      style:
+        familyActive && current.family === family
+          ? style.style
+          : materializeTileflowStyleFamily(family, style.theme!),
+    };
+  };
+  const styleIdentities = new WeakMap<object, number>();
+  // The route inks of each blended theme, in blend order, by the blend's plan.
+  const blendRouteInks = new WeakMap<TileflowThemeBlendPlan, readonly TileflowRouteInks[]>();
+  const blendMetadata = new WeakMap<TileflowThemeBlendPlan, readonly unknown[]>();
+  let nextStyleIdentity = 0;
+  let current = options.initial;
+  // getStyle serializes every layer. URL-backed themes must not repeat that work for
+  // every 3D draw, shadow query and palette lookup while their metadata is unchanged.
+  let metadataStyle: {metadata?: unknown} | undefined;
+  const invalidateMetadata = () => {
+    metadataStyle = undefined;
+  };
+  // Shared layers an appearance keeps clear stay hidden, so their sources are never fetched.
+  const syncClearLayers = () => syncTileflowClearLayers(options.map as TileflowClearLayersMap);
+  const releaseMetadata = () => {
+    options.map.off('styledata', invalidateMetadata);
+    options.map.off('style.load', invalidateMetadata);
+    options.map.off('styledata', syncClearLayers);
+    options.map.off('style.load', syncClearLayers);
+    options.map.off('remove', releaseMetadata);
+    options.map.off('styledata', syncFamilyImages);
+    invalidateMetadata();
+  };
+  options.map.on('styledata', invalidateMetadata);
+  options.map.on('style.load', invalidateMetadata);
+  options.map.on('style.load', syncClearLayers);
+  options.map.on('styledata', syncClearLayers);
+  options.map.on('remove', releaseMetadata);
+  syncClearLayers();
+  let shown: Shown = {style: options.initialStyle ?? options.initial.style};
+  let activeBlend: ActiveBlend | undefined;
+  let pendingBlend: PendingBlend | undefined;
+  let stopThemeMotion: (() => void) | undefined;
+  let disposed = false;
+  let requestId = 0;
+  let applyQueue: Promise<void> = Promise.resolve();
+  // The layers of the style the map shows, as they were applied, for emphasis.
+  let shownLayers: readonly unknown[] | undefined =
+    typeof shown.style === 'string' ? undefined : shown.style.layers;
+  // Emphasis: the latest request, the request whose values are on the map (kept while it eases
+  // out), its eased strength and goal, and the values it changes in the shown style.
+  let emphasis: TileflowEmphasis | undefined;
+  let emphasisShown: TileflowEmphasis | undefined;
+  let emphasisStrength = 0;
+  let emphasisGoal = 0;
+  let emphasisTargets = new Map<string, TileflowEmphasisTarget>();
+  let emphasisBase = new Map<string, unknown>();
+  let emphasisBlended = new Set<string>();
+  let emphasisGroundTemplate: unknown;
+  let emphasisStaticGround: string | undefined;
+  const emphasisWritten = new Map<string, string>();
+  let emphasisRun = 0;
+  let emphasisFrame: (() => void) | undefined;
+  let emphasisSettle: ((result: TileflowThemeTransitionResult) => void) | undefined;
+  const states = new Map<string, StyleState>();
+  let images: ReturnType<typeof createTileflowDynamicImageRegistry> | undefined;
+  // The sun: the presets of each blend's themes, whether the themes describe a sun, the preset of
+  // a single theme on screen, and the direction an application placed it in (`shown` eases towards
+  // the request; undefined follows the themes).
+  const blendSuns = new WeakMap<
+    TileflowThemeBlendPlan,
+    {presets: readonly TileflowSunPreset[]; published: boolean}
+  >();
+  let themeSun: {preset: TileflowSunPreset; published: boolean} | undefined;
+  let sunRequest: SunDirection | undefined;
+  let sunShown: SunDirection | undefined;
+  let sunRun = 0;
+  let sunStop: (() => void) | undefined;
+  let sunSettle: ((result: TileflowThemeTransitionResult) => void) | undefined;
+  let sunLightWritten: string | undefined;
+  // The sky a placed sun wrote, and the sky of the style a theme given by URL compiled.
+  let sunSkyWritten: string | undefined;
+  let urlStyleSky: unknown;
+  let family = options.initial.family && parseTileflowStyleFamily(options.initial.family);
+  let familyActive = false;
+  let familyBlend: TileflowThemeBlendState | undefined;
+  const familyView = tileflowThemeMotionView(options.map);
+  let familyAnimator: ReturnType<typeof createTileflowFamilyAnimator> | undefined;
+  let familyImagePlan: TileflowThemeBlendPlan['images'] = [];
+  let familyImages: ReturnType<typeof createTileflowThemeImageMixer> | undefined;
+  const syncFamilyImages = () => {
+    if (!familyActive || !familyAnimator || !familyImages || !family) return;
+    const {metadata, position} = familyAnimator.frame;
+    const value = metadata[position < 0.5 ? 0 : metadata.length - 1] as
+      Record<string, unknown> | undefined;
+    const index = family.themes.indexOf(String(value?.['tileflow:family-image-theme']));
+    if (index >= 0) {
+      familyImages.paint('dominant', index);
+      familyImages.paint('position', index);
+    }
+  };
+
+  installFamily(options.initial);
+  function installFamily(style: TileflowRuntimeStyle) {
+    const initialColors = style.family === family ? familyAnimator?.getColors() : undefined;
+    options.map.off('styledata', syncFamilyImages);
+    familyBlend = undefined;
+    familyAnimator?.dispose();
+    familyAnimator = undefined;
+    familyImages = undefined;
+    familyImagePlan = [];
+    family = style.family && parseTileflowStyleFamily(style.family);
+    familyActive = Boolean(
+      family?.updates.appearanceOnly &&
+      familySharesLayout(family) &&
+      typeof options.map.setPaintProperty === 'function',
+    );
+    if (!familyActive || !family) return;
+    const imagePlan = materializeTileflowStyleFamily(family, style.theme!).metadata?.[
+      'tileflow:family-images'
+    ] as TileflowThemeBlendPlan['images'] | undefined;
+    familyImagePlan = imagePlan ?? [];
+    if (
+      imagePlan?.length &&
+      typeof options.map.getImage === 'function' &&
+      typeof options.map.updateImage === 'function'
+    ) {
+      images?.assertBlend(imagePlan);
+      options.map.on('styledata', syncFamilyImages);
+      familyImages = createTileflowThemeImageMixer(
+        options.map as Parameters<typeof createTileflowThemeImageMixer>[0],
+        imagePlan,
+      );
+    }
+    familyAnimator = createTileflowFamilyAnimator({
+      family,
+      initialTheme: style.theme!,
+      initialColors,
+      now: () => familyView?.performance?.now?.() ?? Date.now(),
+      requestFrame: familyView
+        ? (callback) => familyView.requestAnimationFrame(callback)
+        : undefined,
+      cancelFrame: familyView ? (id) => familyView.cancelAnimationFrame(id) : undefined,
+      writePaint(layer, property, value) {
+        (
+          options.map.setPaintProperty as (
+            layer: string,
+            property: string,
+            value: unknown,
+            options?: object,
+          ) => void
+        ).call(options.map, layer, property, emphasisValue(layer, property, value), {
+          validate: false,
+        });
+      },
+      onFrame() {
+        syncFamilyImages();
+        themeSun = undefined;
+        writeSunLight();
+        const sky = themeSky();
+        if (!sunShown && sky !== undefined && typeof options.map.setSky === 'function')
+          (options.map.setSky as (sky: unknown, options?: object) => void).call(options.map, sky, {
+            validate: false,
+          });
+        images?.invalidate();
+        const repaint = (options.map as {triggerRepaint?: () => void}).triggerRepaint;
+        repaint?.call(options.map);
+      },
+    });
+    syncFamilyImages();
+  }
+
+  function familySharesLayout(value: TileflowStyleFamily): boolean {
+    const varies = (node: unknown): boolean => {
+      if (!node || typeof node !== 'object') return false;
+      if ('$variant' in node) return true;
+      return Object.values(node).some(varies);
+    };
+    const template = expandTileflowFamilyTemplate(value) as unknown as MapLibreStyle;
+    // Raw families may still vary icon-image. Only the prepared atlas plan can retain layout.
+    return template.layers.every((layer) => !varies(layer.layout));
+  }
+
+  function imageContext() {
+    return {
+      theme: current.theme!,
+      blend:
+        familyActive && familyBlend
+          ? Object.freeze({
+              position: familyBlend.position,
+              themes: Object.freeze([...familyBlend.themes]),
+            })
+          : activeBlend
+            ? Object.freeze({
+                position: activeBlend.blender.position,
+                themes: Object.freeze(activeBlend.themes.map((theme) => theme.theme!)),
+              })
+            : undefined,
+      states: Object.freeze(
+        Object.fromEntries([...states].map(([name, state]) => [name, state.shown])),
+      ),
+    };
+  }
+
+  const controller: TileflowThemeController = {
+    dispose() {
+      options.map.off('styledata', syncFamilyImages);
+      familyCache.clear();
+      familyAnimator?.dispose();
+      disposed = true;
+      lifetime.abort();
+      parentSignal?.removeEventListener('abort', abort);
+      stopThemeMotion?.();
+      releaseMetadata();
+      images?.dispose();
+      requestId += 1;
+      activeBlend?.blender.dispose();
+      stopEmphasisMotion({status: 'superseded', theme: current.theme});
+      for (const state of states.values())
+        stopStateMotion(state, {status: 'superseded', theme: current.theme});
+      stopSunMotion({status: 'superseded', theme: current.theme});
+    },
+    getBlend() {
+      if (familyActive) return familyBlend;
+      if (!activeBlend) return undefined;
+      return {
+        held: activeBlend.blender.held,
+        position: activeBlend.blender.position,
+        relayoutAt: activeBlend.blender.relayoutAt,
+        themes: activeBlend.themes.map((theme) => theme.theme!),
+      };
+    },
+    registerImage(name, definition) {
+      if (disposed) throw new Error('Tileflow theme controller is disposed.');
+      if (
+        activeBlend?.plan.images.some((image) => image.names.includes(name)) ||
+        familyImagePlan.some((image) => image.names.includes(name))
+      ) {
+        throw new TypeError('Dynamic image names must remain identical across blended themes.');
+      }
+      images ??= createTileflowDynamicImageRegistry(options.map, imageContext, resetStates);
+      return images.register(name, definition);
+    },
+    getColors() {
+      return familyAnimator?.getColors() ?? {};
+    },
+    setColors(colors, changeOptions) {
+      if (disposed) return Promise.resolve(disposedResult(current.theme));
+      if (!familyActive || !familyAnimator)
+        return Promise.resolve({
+          status: 'failed',
+          error: new TypeError('Runtime colours require a prepared configurable family.'),
+        });
+      const duration = transitionOf(changeOptions, defaultThemeTransition);
+      if (duration instanceof TypeError)
+        return Promise.resolve({status: 'failed', error: duration});
+      const animator = familyAnimator;
+      const run = ++requestId;
+      return whenPaintWritable(options.map)
+        .then(() => {
+          if (disposed || run !== requestId || animator !== familyAnimator)
+            return {status: 'superseded'} as const;
+          return animator.setColors(colors, reducedMotion() ? 0 : duration);
+        })
+        .then((result) => {
+          if (disposed || run !== requestId || animator !== familyAnimator)
+            return {status: 'superseded'} as const;
+          if (result.status === 'applied') {
+            current = {
+              ...current,
+              theme: result.theme ?? current.theme,
+              style: animator.getStyle(result.theme ?? current.theme!),
+            };
+            shown = {style: current.style};
+            shownLayers = typeof current.style === 'string' ? undefined : current.style.layers;
+            resetEmphasis();
+          }
+          return result;
+        });
+    },
+    getCurrent() {
+      return current;
+    },
+    getEmphasis() {
+      return emphasis;
+    },
+    getRouteInks() {
+      const scheme = current.colorScheme === 'dark' ? 'dark' : 'light';
+      if (familyActive && familyAnimator) {
+        const {metadata, position} = familyAnimator.frame;
+        const inks = metadata.map((value) => tileflowStyleRouteInks({metadata: value}, scheme));
+        return tileflowRouteInksAt(inks, position) ?? inks[0]!;
+      }
+      const blended = activeBlend && blendRouteInks.get(activeBlend.plan);
+      if (activeBlend && blended)
+        return tileflowRouteInksAt(blended, activeBlend.blender.position) ?? blended[0]!;
+      return tileflowStyleRouteInks(
+        typeof current.style === 'string' ? shownStyleDocument() : current.style,
+        scheme,
+      );
+    },
+    getState(name) {
+      return typeof name === 'string' ? states.get(name.trim())?.value : undefined;
+    },
+    getThemeMetadata(key) {
+      const read = (metadata: unknown) =>
+        typeof metadata === 'object' && metadata !== null && !Array.isArray(metadata)
+          ? (metadata as Record<string, unknown>)[key]
+          : undefined;
+      if (familyActive && familyAnimator)
+        return {
+          values: familyAnimator.frame.metadata.map(read),
+          position: familyAnimator.frame.position,
+        };
+      const blended = activeBlend && blendMetadata.get(activeBlend.plan);
+      if (activeBlend && blended)
+        return {values: blended.map(read), position: activeBlend.blender.position};
+      const style =
+        typeof current.style === 'string'
+          ? (metadataStyle ??= shownStyleDocument())
+          : current.style;
+      return {values: [read(style?.metadata)], position: 0};
+    },
+    getSun() {
+      return sunNow();
+    },
+    setSun(request, changeOptions) {
+      if (disposed) return Promise.resolve(disposedResult(current.theme));
+      const target = sunDirectionOf(request);
+      if (target instanceof TypeError)
+        return Promise.resolve({error: target, status: 'failed', theme: current.theme});
+      const transition = transitionOf(changeOptions);
+      if (transition instanceof TypeError)
+        return Promise.resolve({error: transition, status: 'failed', theme: current.theme});
+      return changeSun(target, reducedMotion() ? 0 : transition);
+    },
+    setState(name, value, changeOptions) {
+      const invalid = validateStyleState(name, value);
+      if (invalid) return Promise.resolve({error: invalid, status: 'failed', theme: current.theme});
+      if (disposed) return Promise.resolve(disposedResult(current.theme));
+      if (typeof options.map.setGlobalStateProperty !== 'function') {
+        return Promise.resolve({
+          error: new TypeError('Style states need a MapLibre map with global state (GL JS 5.6+).'),
+          status: 'failed',
+          theme: current.theme,
+        });
+      }
+      const transition = transitionOf(changeOptions);
+      if (transition instanceof TypeError)
+        return Promise.resolve({error: transition, status: 'failed', theme: current.theme});
+      return changeState(name.trim(), value, reducedMotion() ? 0 : transition);
+    },
+    setEmphasis(request, changeOptions) {
+      if (request !== undefined) {
+        const invalid = validateTileflowEmphasis(request);
+        if (invalid)
+          return Promise.resolve({error: invalid, status: 'failed', theme: current.theme});
+      }
+      if (disposed) return Promise.resolve(disposedResult(current.theme));
+      const transition = transitionOf(changeOptions);
+      if (transition instanceof TypeError)
+        return Promise.resolve({error: transition, status: 'failed', theme: current.theme});
+      return changeEmphasis(request, reducedMotion() ? 0 : transition);
+    },
+    setBlend(request, changeOptions) {
+      if (request.themes.some((style) => style.familyUrl && !style.family)) {
+        const run = ++requestId;
+        return Promise.all(request.themes.map(resolveFamily)).then(
+          (themes) =>
+            run === requestId && !disposed
+              ? controller.setBlend({...request, themes}, changeOptions)
+              : ({status: 'superseded'} as const),
+          (error: unknown) => handlePreloadFailure(run, nearestTheme(request), error),
+        );
+      }
+      const targetTheme = nearestTheme(request);
+      const invalid = validateBlendRequest(request);
+      if (invalid) return Promise.resolve({error: invalid, status: 'failed', theme: targetTheme});
+      if (disposed) return Promise.resolve(disposedResult(targetTheme));
+      if (
+        familyActive &&
+        familyAnimator &&
+        request.themes.every((style) => style.family === family)
+      ) {
+        const run = ++requestId;
+        const animator = familyAnimator;
+        const result = whenPaintWritable(options.map).then(
+          (): Promise<TileflowThemeTransitionResult> | TileflowThemeTransitionResult =>
+            run !== requestId || disposed || animator !== familyAnimator
+              ? {status: 'superseded'}
+              : animator.setBlend(
+                  request.themes.map((style) => style.theme!),
+                  request.position,
+                ),
+        );
+        return result.then((result) => {
+          if (run !== requestId || disposed) return {status: 'superseded'} as const;
+          if (result.status !== 'applied') return result;
+          familyBlend = {
+            held: false,
+            position: request.position,
+            themes: request.themes.map((style) => style.theme!),
+            relayoutAt: [],
+          };
+          current = request.themes[Math.round(request.position)]!;
+          images?.invalidate();
+          return result;
+        });
+      }
+      const transition = transitionOf(changeOptions, defaultThemeTransition);
+      if (transition instanceof TypeError)
+        return Promise.resolve({error: transition, status: 'failed', theme: targetTheme});
+      stopThemeMotion?.();
+      familyAnimator?.dispose();
+      familyActive = false;
+      const key = blendKey(request.themes);
+      if (activeBlend?.key === key) {
+        // The same themes: only the position moves, at once, superseding older pending changes.
+        requestId += 1;
+        activeBlend.blender.set(request.position, {hold: request.hold === true});
+        current = activeBlend.themes[activeBlend.blender.dominant]!;
+        images?.invalidate();
+        return Promise.resolve({status: 'applied', theme: current.theme});
+      }
+      if (pendingBlend?.key === key) {
+        pendingBlend.position = request.position;
+        return pendingBlend.promise;
+      }
+      const runId = ++requestId;
+      options.onTransition?.({currentTheme: current.theme, phase: 'preloading', targetTheme});
+      const pending: PendingBlend = {key, position: request.position, promise: undefined!};
+      pending.promise = prepareBlend(request.themes)
+        .then(
+          (plan) =>
+            enqueue(runId, {
+              key,
+              kind: 'blend',
+              plan,
+              position: () => pending.position,
+              themes: request.themes,
+              transition,
+            }),
+          (error: unknown) => handlePreloadFailure(runId, targetTheme, error),
+        )
+        .finally(() => {
+          if (pendingBlend === pending) pendingBlend = undefined;
+        });
+      pendingBlend = pending;
+      return pending.promise;
+    },
+    setTheme(style, changeOptions) {
+      if (style.familyUrl && !style.family) {
+        const run = ++requestId;
+        return resolveFamily(style).then(
+          (resolved) =>
+            run === requestId && !disposed
+              ? controller.setTheme(resolved, changeOptions)
+              : ({status: 'superseded', theme: style.theme} as const),
+          (error: unknown) => handlePreloadFailure(run, style.theme, error),
+        );
+      }
+      const invalidTheme = validateConcreteRuntimeTheme(style, 'target');
+      if (invalidTheme) {
+        return Promise.resolve({error: invalidTheme, status: 'failed', theme: style.theme});
+      }
+      if (disposed) return Promise.resolve(disposedResult(style.theme));
+      const transition = transitionOf(changeOptions, defaultThemeTransition);
+      if (transition instanceof TypeError)
+        return Promise.resolve({error: transition, status: 'failed', theme: style.theme});
+      if (familyActive && familyAnimator && style.family === family && !changeOptions?.rebuild) {
+        familyBlend = undefined;
+        const run = ++requestId;
+        options.onTransition?.({
+          currentTheme: current.theme,
+          phase: 'applying',
+          targetTheme: style.theme,
+        });
+        return whenPaintWritable(options.map)
+          .then(() => {
+            if (run !== requestId || disposed)
+              return {status: 'superseded', theme: style.theme} as const;
+            return familyAnimator!.setTheme(style.theme!, reducedMotion() ? 0 : transition);
+          })
+          .then((result) => {
+            if (run !== requestId || disposed)
+              return {status: 'superseded', theme: style.theme} as const;
+            if (result.status === 'applied') {
+              current = {...style, style: familyAnimator!.getStyle(style.theme!)};
+              shown = {style: current.style};
+              shownLayers = typeof current.style === 'string' ? undefined : current.style.layers;
+              resetEmphasis();
+            }
+            options.onTransition?.({
+              currentTheme: current.theme,
+              phase: result.status === 'failed' ? 'error' : 'ready',
+              targetTheme: style.theme,
+              ...(result.status === 'failed' ? {error: result.error} : {}),
+            });
+            return result;
+          });
+      }
+      if (style.family === family && familyAnimator && changeOptions?.rebuild)
+        style = {...style, style: familyAnimator.getStyle(style.theme!)};
+      familyActive = false;
+      familyAnimator?.dispose();
+      stopThemeMotion?.();
+      const runId = ++requestId;
+      pendingBlend = undefined;
+      options.onTransition?.({
+        currentTheme: current.theme,
+        phase: 'preloading',
+        targetTheme: style.theme,
+      });
+      let preloaded: Promise<MapLibreStyle>;
+      try {
+        preloaded = prepareTheme(style);
+      } catch (error) {
+        return Promise.resolve(handlePreloadFailure(runId, style.theme, error));
+      }
+      return preloaded.then(
+        (prepared) => enqueue(runId, {kind: 'theme', style, prepared, transition}),
+        (error: unknown) => handlePreloadFailure(runId, style.theme, error),
+      );
+    },
+  };
+
+  if (options.initial.familyUrl && !options.initial.family) {
+    const initial = current;
+    void resolveFamily(initial)
+      .then((resolved) => {
+        if (!disposed && current === initial && requestId === 0) {
+          const actual = (
+            typeof current.style === 'string' ? shownStyleDocument() : current.style
+          ) as {layers?: {id?: string}[]} | undefined;
+          const prepared = typeof resolved.style === 'string' ? undefined : resolved.style;
+          // A controller attached to an already visible flat export must not start writing to
+          // prepared branches that have not been installed. Its first explicit switch installs them.
+          if (
+            !actual?.layers ||
+            !prepared ||
+            JSON.stringify(actual.layers.map((layer) => layer.id)) !==
+              JSON.stringify(prepared.layers.map((layer) => layer.id))
+          )
+            return;
+          current = resolved;
+          installFamily(resolved);
+        }
+      })
+      .catch(() => undefined);
+  }
+  return controller;
+
+  function transitionOf(
+    changeOptions: TileflowThemeChangeOptions | undefined,
+    defaultDuration = defaultTransition,
+  ): number | TypeError {
+    if (changeOptions?.transition === undefined) return defaultDuration;
+    try {
+      return normalizeThemeTransitionDuration(changeOptions.transition, defaultDuration);
+    } catch (error) {
+      return error as TypeError;
+    }
+  }
+
+  function blendKey(themes: readonly TileflowRuntimeStyle[]): string {
+    return JSON.stringify(
+      themes.map((theme) => {
+        if (typeof theme.style === 'string') return [theme.theme, theme.style];
+        let identity = styleIdentities.get(theme.style);
+        if (identity === undefined) {
+          nextStyleIdentity += 1;
+          identity = nextStyleIdentity;
+          styleIdentities.set(theme.style, identity);
+        }
+        return [theme.theme, identity];
+      }),
+    );
+  }
+
+  // The style document the map shows, for a theme given by URL.
+  function shownStyleDocument(): {metadata?: unknown} | undefined {
+    const getStyle = options.map.getStyle;
+    if (typeof getStyle !== 'function') return undefined;
+    try {
+      return (getStyle as () => {metadata?: unknown} | undefined).call(options.map);
+    } catch {
+      return undefined;
+    }
+  }
+
+  async function prepareBlend(
+    themes: readonly TileflowRuntimeStyle[],
+  ): Promise<TileflowThemeBlendPlan> {
+    if (!canBlendTileflowThemes(options.map)) {
+      throw new TypeError('Tileflow theme blends require a MapLibre GL JS map.');
+    }
+    const styles = await Promise.all(themes.map(prepareTheme));
+    const plan = planTileflowThemeBlend(styles);
+    images?.assertBlend(plan.images);
+    blendMetadata.set(
+      plan,
+      styles.map((style) => (style as {metadata?: unknown}).metadata),
+    );
+    blendRouteInks.set(
+      plan,
+      styles.map((style, index) =>
+        tileflowStyleRouteInks(style, themes[index]!.colorScheme === 'dark' ? 'dark' : 'light'),
+      ),
+    );
+    blendSuns.set(plan, {
+      presets: styles.map((style) => tileflowStyleSunPreset(style)),
+      published: styles.some((style) => readTileflowSunPreset(style.metadata) !== undefined),
+    });
+    return plan;
+  }
+
+  function enqueue(runId: number, target: Target): Promise<TileflowThemeTransitionResult> {
+    const operation = applyQueue.then(
+      () => applyTarget(runId, target),
+      () => applyTarget(runId, target),
+    );
+    applyQueue = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return operation;
+  }
+
+  function targetThemeOf(target: Target): string | undefined {
+    return target.kind === 'theme'
+      ? target.style.theme
+      : target.themes[Math.round(clampBlendPosition(target.position(), target.themes.length))]
+          ?.theme;
+  }
+
+  async function applyTarget(
+    runId: number,
+    target: Target,
+  ): Promise<TileflowThemeTransitionResult> {
+    const releaseRuntime = beginTileflowRuntimeStyleChange(options.map);
+    try {
+      return await applyTargetLocked(runId, target);
+    } finally {
+      releaseRuntime();
+    }
+  }
+
+  async function applyTargetLocked(
+    runId: number,
+    target: Target,
+  ): Promise<TileflowThemeTransitionResult> {
+    const targetTheme = targetThemeOf(target);
+    if (disposed || runId !== requestId) return {status: 'superseded', theme: targetTheme};
+    // A new style waits while the map's WebGL context is lost (see whenContextAvailable).
+    await whenContextAvailable(options.map);
+    if (disposed || runId !== requestId) return {status: 'superseded', theme: targetTheme};
+    const previous = {current, shown};
+    options.onTransition?.({currentTheme: previous.current.theme, phase: 'applying', targetTheme});
+    let cover: ReturnType<typeof beginTileflowStyleCrossfade>;
+    const styleInput =
+      target.kind === 'theme' ? target.prepared : target.plan.styleAt(target.position());
+
+    try {
+      let liveTransition = false;
+      // A photograph cannot follow a rotating globe or 3D scene. Use the existing
+      // blend renderer so both appearances are drawn with the current camera.
+      if (
+        target.kind === 'theme' &&
+        !activeBlend &&
+        target.transition > 0 &&
+        !reducedMotion() &&
+        tileflowThemeMotionView(options.map) &&
+        canBlendTileflowThemes(options.map)
+      ) {
+        const themes = [previous.current, target.style];
+        let plan: TileflowThemeBlendPlan | undefined;
+        try {
+          plan = await prepareBlend(themes);
+        } catch {
+          // Different sources, layers or artwork require a complete style switch.
+        }
+        if (disposed || runId !== requestId) return {status: 'superseded', theme: targetTheme};
+        if (plan) {
+          liveTransition = true;
+          // Our animation clock owns the interpolation; native paint transitions would lag
+          // behind it and jump when the final style replaces the temporary blend.
+          const style = {...plan.styleAt(0), transition: {duration: 0, delay: 0}};
+          const from =
+            typeof previous.shown.style === 'string'
+              ? await loadStyle(previous.shown.style)
+              : previous.shown.style;
+          if (!(await prepareGeometry(from, style, runId))) {
+            if (!disposed) await restore(previous);
+            return {status: 'superseded', theme: targetTheme};
+          }
+          await applyMapStyle(options.map, style, timeoutMs);
+          if (disposed) return {status: 'superseded', theme: targetTheme};
+          const blender = createBlender(plan, 0, true);
+          activeBlend = {blender, key: '', plan, themes};
+          shown = {blend: activeBlend, style};
+          shownLayers = style.layers;
+          resetEmphasis();
+          resetStates();
+          resetSun(undefined);
+          await animateTheme(blender, themes, target.transition, runId);
+          if (!disposed && runId === requestId) {
+            const destination =
+              typeof styleInput === 'string' ? await loadStyle(styleInput) : styleInput;
+            const finalBlendStyle = {...plan.styleAt(1), transition: {duration: 0, delay: 0}};
+            await prepareGeometry(finalBlendStyle, destination, runId);
+          }
+          blender.dispose();
+          activeBlend = undefined;
+          if (disposed) return {status: 'superseded', theme: targetTheme};
+          if (runId !== requestId) {
+            await restore(previous);
+            return {status: 'superseded', theme: targetTheme};
+          }
+          // Remove temporary blend layers after reaching the exact destination.
+          // The final style has the same appearance and keeps the native camera.
+        }
+      }
+      if (!liveTransition) {
+        cover = beginTileflowStyleCrossfade(options.map, target.transition);
+      }
+      activeBlend?.blender.dispose();
+      activeBlend = undefined;
+      if (target.kind === 'blend') images?.assertBlend(target.plan.images);
+      invalidateMetadata();
+      await applyMapStyle(options.map, styleInput, timeoutMs);
+      invalidateMetadata();
+      if (disposed) {
+        cover?.cancel();
+        return {status: 'superseded', theme: targetTheme};
+      }
+      if (runId !== requestId) {
+        // MapLibre cannot cancel an in-flight setStyle(). A newer request can therefore supersede
+        // this operation after the style has already reached `style.load`. Restore the last
+        // committed style before releasing the serialized queue; otherwise a newer request whose
+        // preload fails would leave this superseded style visible and make `current` lie.
+        cover?.cancel();
+        try {
+          await restore(previous);
+        } catch {
+          // A queued newer operation remains authoritative. If none exists, its own preload error
+          // already owns the public transition state and MapLibre owns the restoration diagnostic.
+        }
+        return {status: 'superseded', theme: targetTheme};
+      }
+      if (target.kind === 'theme') {
+        current = target.style;
+        shown = {style: styleInput};
+        installFamily(target.style);
+      } else {
+        const blender = createBlender(target.plan, target.position());
+        activeBlend = {blender, key: target.key, plan: target.plan, themes: target.themes};
+        shown = {blend: activeBlend, style: styleInput};
+        current = target.themes[blender.dominant]!;
+        if (pendingBlend?.key === target.key) pendingBlend = undefined;
+      }
+      // A new style shows the design; an emphasis returns at once, under the same cross-fade.
+      shownLayers = typeof styleInput === 'string' ? undefined : styleInput.layers;
+      resetEmphasis();
+      resetStates();
+      resetSun(target.kind === 'theme' ? styleInput : undefined);
+      images?.invalidate();
+      await cover?.finish({stop: () => disposed || runId !== requestId});
+      options.onTransition?.({
+        currentTheme: current.theme,
+        phase: 'ready',
+        targetTheme: current.theme,
+      });
+      return {status: 'applied', theme: current.theme};
+    } catch (error) {
+      cover?.cancel();
+      activeBlend?.blender.dispose();
+      activeBlend = undefined;
+      const normalized = normalizeThemeTransitionError(error, 'Tileflow theme change failed.');
+      try {
+        await restore(previous);
+      } catch {
+        // The original failure remains authoritative; the map owns any MapLibre diagnostics.
+      }
+      if (disposed || runId !== requestId) return {status: 'superseded', theme: targetTheme};
+      options.onTransition?.({
+        currentTheme: current.theme,
+        error: normalized,
+        phase: 'error',
+        targetTheme,
+      });
+      return {error: normalized, status: 'failed', theme: targetTheme};
+    }
+  }
+
+  async function prepareGeometry(from: MapLibreStyle, to: MapLibreStyle, runId: number) {
+    const getStyle = options.map.getStyle;
+    const displayed = typeof getStyle === 'function' ? getStyle.call(options.map) : undefined;
+    const preparation = prepareTileflowThemeGeometry(
+      stripTileflowRuntimeStyle(options.map, displayed ?? from),
+      to,
+    );
+    if (!preparation) return !disposed && runId === requestId;
+    await applyMapStyle(options.map, preparation.style, timeoutMs);
+    const ready = await waitForTileflowThemeGeometry(
+      options.map,
+      timeoutMs,
+      () => disposed || runId !== requestId,
+    );
+    if (ready) preparation.reveal(options.map);
+    return ready;
+  }
+
+  function animateTheme(
+    blender: TileflowThemeBlender,
+    themes: readonly TileflowRuntimeStyle[],
+    duration: number,
+    runId: number,
+  ): Promise<void> {
+    const view = tileflowThemeMotionView(options.map)!;
+    return new Promise((resolve, reject) => {
+      const now = () => view.performance?.now?.() ?? Date.now();
+      const started = now();
+      let frame: number | undefined;
+      let settled = false;
+      const finish = (error?: unknown) => {
+        if (settled) return;
+        settled = true;
+        if (frame !== undefined) {
+          view.cancelAnimationFrame?.(frame);
+          view.clearTimeout(frame);
+        }
+        if (stopThemeMotion === cancel) stopThemeMotion = undefined;
+        if (error) reject(error);
+        else resolve();
+      };
+      const cancel = () => finish();
+      const step = () => {
+        frame = undefined;
+        if (disposed || runId !== requestId) return finish();
+        try {
+          const t = Math.min(1, (now() - started) / duration);
+          blender.set(t * t * (3 - 2 * t));
+          current = themes[blender.dominant]!;
+          images?.invalidate();
+          if (t >= 1) finish();
+          else frame = view.requestAnimationFrame?.(step) ?? view.setTimeout(step, 16);
+        } catch (error) {
+          finish(error);
+        }
+      };
+      stopThemeMotion = cancel;
+      step();
+    });
+  }
+
+  function createBlender(
+    plan: TileflowThemeBlendPlan,
+    position: number,
+    liveTransition = false,
+  ): TileflowThemeBlender {
+    return createTileflowThemeBlender(options.map, plan, {
+      cover(change) {
+        if (liveTransition) return change();
+        // Values that read feature state switch with a re-layout; a snapshot covers it.
+        const fade = beginTileflowStyleCrossfade(options.map, blendLabelFadeMs);
+        change();
+        void fade?.finish();
+      },
+      labelFadeMs: liveTransition || reducedMotion() ? 0 : blendLabelFadeMs,
+      // The ground colour moves with the blend, and colours that recede follow it.
+      onPosition: () => {
+        if (emphasisShown) writeEmphasis(false);
+        // The blend wrote its own light and sky; the sun's take their place.
+        sunLightWritten = undefined;
+        sunSkyWritten = undefined;
+        writeSunLight();
+      },
+      position,
+      transform: (layer, property, value) => emphasisValue(layer, property, value),
+    });
+  }
+
+  async function restore(previous: {current: TileflowRuntimeStyle; shown: Shown}): Promise<void> {
+    await whenContextAvailable(options.map);
+    const blend = previous.shown.blend;
+    if (blend) {
+      const position = blend.blender.position;
+      const style = blend.plan.styleAt(position);
+      await applyMapStyle(options.map, style, timeoutMs);
+      activeBlend = {...blend, blender: createBlender(blend.plan, position)};
+      shown = {blend: activeBlend, style};
+      shownLayers = style.layers;
+    } else {
+      const style =
+        typeof previous.shown.style === 'string'
+          ? (await prepareStyle(previous.current)).style
+          : previous.shown.style;
+      await applyMapStyle(options.map, style, timeoutMs);
+      shown = {style};
+      shownLayers = style.layers;
+    }
+    current = previous.current;
+    installFamily(previous.current);
+    resetEmphasis();
+    resetStates();
+    resetSun(blend ? undefined : previous.shown.style);
+    images?.invalidate();
+  }
+
+  // --- Sun ---
+
+  /** The sun preset of the themes on screen, mixed at the blend's position. */
+  function themeSunPreset(): {preset: TileflowSunPreset; published: boolean} {
+    if (familyActive && familyAnimator) {
+      const frame = familyAnimator.frame;
+      const presets = frame.metadata.map((metadata) => tileflowStyleSunPreset({metadata}));
+      return {
+        preset: tileflowSunPresetAt(presets, frame.position) ?? presets[0]!,
+        published: frame.metadata.some((metadata) => readTileflowSunPreset(metadata) !== undefined),
+      };
+    }
+    const blended = activeBlend && blendSuns.get(activeBlend.plan);
+    if (activeBlend && blended) {
+      return {
+        preset:
+          tileflowSunPresetAt(blended.presets, activeBlend.blender.position) ?? blended.presets[0]!,
+        published: blended.published,
+      };
+    }
+    if (!themeSun) {
+      // A theme given by URL is read from the map once its style is on it.
+      const style = typeof current.style === 'string' ? shownStyleDocument() : current.style;
+      themeSun = {
+        preset: tileflowStyleSunPreset(style as {light?: unknown; metadata?: unknown} | undefined),
+        published: readTileflowSunPreset(style?.metadata) !== undefined,
+      };
+    }
+    return themeSun;
+  }
+
+  function sunNow(): TileflowSun {
+    const {preset} = themeSunPreset();
+    if (!sunShown) return resolveTileflowSun(preset);
+    return resolveTileflowSun(preset, sunShown, sunShown.source);
+  }
+
+  /** The sky the themes on screen compiled, mixed at the blend's position. */
+  function themeSky(): unknown {
+    if (familyActive && familyAnimator) {
+      const {skies, position} = familyAnimator.frame;
+      return skies.length < 2 ? skies[0] : mixTileflowFamilyValues(skies[0], skies[1], position);
+    }
+    if (activeBlend?.plan.sky !== undefined)
+      return fillTileflowThemeBlendTemplate(activeBlend.plan.sky, activeBlend.blender.position);
+    return typeof shown.style === 'string' ? urlStyleSky : shown.style.sky;
+  }
+
+  /**
+   * Publishes the sun on screen for the map's sky layer, and while an application places the sun,
+   * gives the sky the colours of its hour from the time-of-day skies the themes carry.
+   */
+  function writeSunSky(): void {
+    const sun = sunNow();
+    try {
+      (options.map as unknown as Record<symbol, unknown>)[tileflowSkySunKey] = {
+        altitude: sun.altitude,
+        azimuth: sun.azimuth,
+        direction: sun.direction,
+        source: sun.source,
+      };
+    } catch {
+      // A frozen map object keeps the themes' sun for its sky.
+    }
+    const setSky = options.map.setSky as ((sky: unknown, options?: object) => unknown) | undefined;
+    if (typeof setSky !== 'function') return;
+    const style = typeof shown.style === 'string' ? shownStyleDocument() : shown.style;
+    const times = readTileflowSky(
+      (style?.metadata as Record<string, unknown> | undefined)?.[tileflowSkyMetadataKey],
+    )?.timesOfDay;
+    const base = themeSky();
+    try {
+      if (sunShown && times && isPlainObject(base)) {
+        const at = tileflowSkyAtSun(times, sun);
+        const sky = {
+          ...base,
+          'sky-color': at.color,
+          'horizon-color': at.horizonColor,
+          'fog-color': at.horizonColor,
+          'sky-horizon-blend': at.horizonBlend,
+        };
+        const key = JSON.stringify(sky);
+        if (key === sunSkyWritten) return;
+        setSky.call(options.map, sky, {validate: false});
+        sunSkyWritten = key;
+      } else if (sunSkyWritten !== undefined) {
+        setSky.call(options.map, base, {validate: false});
+        sunSkyWritten = undefined;
+      }
+    } catch {
+      // MapLibre refuses while a style loads; resetSun() writes the sky after it.
+    }
+  }
+
+  /** The map's light points from the sun when the themes describe one or an application placed it. */
+  function writeSunLight(): void {
+    writeSunSky();
+    const {published} = themeSunPreset();
+    if (!published && !sunShown) return;
+    const setLight = options.map.setLight as
+      ((light: unknown, options?: object) => unknown) | undefined;
+    if (typeof setLight !== 'function') return;
+    const sun = sunNow();
+    const blendLight =
+      activeBlend?.plan.light !== undefined
+        ? fillTileflowThemeBlendTemplate(activeBlend.plan.light, activeBlend.blender.position)
+        : undefined;
+    const base = (blendLight ?? shownStyleLight()) as Parameters<typeof tileflowSunLight>[1];
+    const light = tileflowSunLight(sun, base);
+    const key = JSON.stringify(light);
+    if (key === sunLightWritten) return;
+    try {
+      setLight.call(options.map, light, {validate: false});
+      sunLightWritten = key;
+    } catch {
+      // MapLibre refuses while a style loads; resetSun() writes the light after it.
+    }
+  }
+
+  function shownStyleLight(): unknown {
+    if (familyActive && familyAnimator) {
+      const {lights, position} = familyAnimator.frame;
+      return lights.length < 2
+        ? lights[0]
+        : mixTileflowFamilyValues(lights[0], lights[1], position);
+    }
+    const style = typeof shown.style === 'string' ? undefined : shown.style;
+    return style?.light;
+  }
+
+  /** After a new style: the themes' sun is read again and the light follows the sun on screen. */
+  function resetSun(style: MapLibreStyle | string | undefined): void {
+    sunSkyWritten = undefined;
+    urlStyleSky =
+      typeof style === 'string'
+        ? (shownStyleDocument() as {sky?: unknown} | undefined)?.sky
+        : undefined;
+    themeSun =
+      style === undefined || typeof style === 'string'
+        ? undefined
+        : {
+            preset: tileflowStyleSunPreset(style),
+            published: readTileflowSunPreset(style.metadata) !== undefined,
+          };
+    sunLightWritten = undefined;
+    writeSunLight();
+  }
+
+  /** The direction a request asks for; undefined returns the sun to the themes. */
+  function sunDirectionOf(
+    request: TileflowSunRequest | undefined,
+  ): SunDirection | undefined | TypeError {
+    if (request === undefined) return undefined;
+    if (typeof request !== 'object' || request === null)
+      return new TypeError('Sun requests are objects with a direction or a date.');
+    if ('date' in request) {
+      const time = request.date instanceof Date ? request.date.getTime() : request.date;
+      if (typeof time !== 'number' || !Number.isFinite(time))
+        return new TypeError('A sun request date must be a valid Date or a time in milliseconds.');
+      const location = request.location ?? mapCentre();
+      if (!location)
+        return new TypeError('A sun request without a location needs a map with getCenter().');
+      try {
+        return {...tileflowSunPosition(time, location), source: 'date'};
+      } catch (error) {
+        return error as TypeError;
+      }
+    }
+    const {azimuth, altitude} = request as {altitude?: unknown; azimuth?: unknown};
+    if (typeof azimuth !== 'number' || !Number.isFinite(azimuth))
+      return new TypeError('A sun azimuth must be a finite number of degrees.');
+    if (typeof altitude !== 'number' || !Number.isFinite(altitude) || Math.abs(altitude) > 90)
+      return new TypeError('A sun altitude must be a number of degrees from -90 to 90.');
+    return {azimuth, altitude, source: 'direction'};
+  }
+
+  function mapCentre(): readonly [number, number] | undefined {
+    const getCenter = options.map.getCenter as (() => {lat?: unknown; lng?: unknown}) | undefined;
+    if (typeof getCenter !== 'function') return undefined;
+    const centre = getCenter.call(options.map);
+    return typeof centre?.lng === 'number' && typeof centre.lat === 'number'
+      ? [centre.lng, centre.lat]
+      : undefined;
+  }
+
+  function stopSunMotion(result?: TileflowThemeTransitionResult): void {
+    sunStop?.();
+    sunStop = undefined;
+    const settle = sunSettle;
+    sunSettle = undefined;
+    if (result) settle?.(result);
+  }
+
+  function changeSun(
+    target: SunDirection | undefined,
+    duration: number,
+  ): Promise<TileflowThemeTransitionResult> {
+    stopSunMotion({status: 'superseded', theme: current.theme});
+    const run = ++sunRun;
+    sunRequest = target;
+    const from: SunDirection = sunShown ?? {...themeSunPreset().preset, source: 'theme'};
+    const view = tileflowThemeMotionView(options.map);
+    const finish = () => {
+      sunShown = sunRequest;
+      sunLightWritten = undefined;
+      writeSunLight();
+      if (!sunShown) restoreThemeLight();
+    };
+    if (duration <= 0 || !view) {
+      finish();
+      return Promise.resolve({status: 'applied', theme: current.theme});
+    }
+    return new Promise((resolve) => {
+      sunSettle = resolve;
+      const now = () => view.performance?.now?.() ?? Date.now();
+      const start = now();
+      let cancelled = false;
+      let frame: number | undefined;
+      const step = () => {
+        frame = undefined;
+        if (cancelled || disposed || run !== sunRun) return;
+        const t = Math.min(1, (now() - start) / duration);
+        const eased = t * t * (3 - 2 * t);
+        // Returning to the themes follows their sun, which a blend may be moving.
+        const to = target ?? themeSunPreset().preset;
+        sunShown = {
+          ...mixTileflowSunDirections(from, to, eased),
+          source: target?.source ?? from.source,
+        };
+        writeSunLight();
+        if (t >= 1) {
+          sunStop = undefined;
+          sunSettle = undefined;
+          finish();
+          resolve({status: 'applied', theme: current.theme});
+          return;
+        }
+        frame = view.requestAnimationFrame?.(step) ?? view.setTimeout(step, 16);
+      };
+      sunStop = () => {
+        cancelled = true;
+        if (frame !== undefined) {
+          view.cancelAnimationFrame?.(frame);
+          view.clearTimeout(frame);
+        }
+      };
+      step();
+    });
+  }
+
+  /** Puts back the light the themes compiled, once the sun follows them again. */
+  function restoreThemeLight(): void {
+    if (themeSunPreset().published) return;
+    const setLight = options.map.setLight as
+      ((light: unknown, options?: object) => unknown) | undefined;
+    if (typeof setLight !== 'function') return;
+    const themeLight =
+      activeBlend?.plan.light !== undefined
+        ? fillTileflowThemeBlendTemplate(activeBlend.plan.light, activeBlend.blender.position)
+        : shownStyleLight();
+    // MapLibre changes only the values it is given, so the ones the theme leaves unset return to
+    // MapLibre's defaults.
+    const light = {...mapLibreDefaultLight, ...(isPlainObject(themeLight) ? themeLight : {})};
+    try {
+      setLight.call(options.map, light, {validate: false});
+    } catch {
+      // The next style brings its own light.
+    }
+  }
+
+  // --- Style states ---
+
+  /** Writes a state to the map; a style still loading takes it once it is applied. */
+  function writeState(name: string, value: TileflowStyleStateValue): void {
+    const set = options.map.setGlobalStateProperty as
+      ((name: string, value: unknown) => unknown) | undefined;
+    try {
+      set?.call(options.map, name, value);
+    } catch {
+      // MapLibre refuses while a style loads; resetStates() writes the state after it.
+    }
+    images?.invalidate(name);
+  }
+
+  /** After a new style: every state is written again, at the value it shows. */
+  function resetStates(): void {
+    for (const [name, state] of states) {
+      if (state.shown !== undefined) writeState(name, state.shown);
+    }
+  }
+
+  function stopStateMotion(state: StyleState, result?: TileflowThemeTransitionResult): void {
+    state.stop?.();
+    state.stop = undefined;
+    const settle = state.settle;
+    state.settle = undefined;
+    if (result) settle?.(result);
+  }
+
+  function changeState(
+    name: string,
+    value: TileflowStyleStateValue,
+    duration: number,
+  ): Promise<TileflowThemeTransitionResult> {
+    const state: StyleState = states.get(name) ?? {run: 0, shown: undefined, value};
+    states.set(name, state);
+    stopStateMotion(state, {status: 'superseded', theme: current.theme});
+    const run = ++state.run;
+    const from = state.shown;
+    state.value = value;
+    const view = tileflowThemeMotionView(options.map);
+    if (
+      duration <= 0 ||
+      !view ||
+      typeof from !== 'number' ||
+      typeof value !== 'number' ||
+      from === value
+    ) {
+      state.shown = value;
+      writeState(name, value);
+      return Promise.resolve({status: 'applied', theme: current.theme});
+    }
+
+    return new Promise((resolve) => {
+      state.settle = resolve;
+      const now = () => view.performance?.now?.() ?? Date.now();
+      const start = now();
+      // A hundredth of the change is below what the eye sees; skipping it saves writes.
+      const least = Math.abs(value - from) / 100;
+      let cancelled = false;
+      let frame: number | undefined;
+      const step = () => {
+        frame = undefined;
+        if (cancelled || disposed || run !== state.run) return;
+        const t = Math.min(1, (now() - start) / duration);
+        const eased = t * t * (3 - 2 * t);
+        const shown = t >= 1 ? value : from + (value - from) * eased;
+        if (t >= 1 || Math.abs(shown - (state.shown as number)) >= least) {
+          state.shown = shown;
+          writeState(name, shown);
+        }
+        if (t >= 1) {
+          state.stop = undefined;
+          state.settle = undefined;
+          resolve({status: 'applied', theme: current.theme});
+          return;
+        }
+        frame = view.requestAnimationFrame(step);
+      };
+      state.stop = () => {
+        cancelled = true;
+        if (frame !== undefined) view.cancelAnimationFrame(frame);
+      };
+      frame = view.requestAnimationFrame(step);
+    });
+  }
+
+  // --- Emphasis ---
+
+  function valueKey(layer: string, property: string): string {
+    return `${layer}\u0000${property}`;
+  }
+
+  /** The layers of the shown style, as applied: from the style document, or else from the map. */
+  function layersShown(): readonly unknown[] {
+    if (shownLayers) return shownLayers;
+    const getStyle = options.map.getStyle;
+    if (typeof getStyle !== 'function') return [];
+    const style = (getStyle as () => {layers?: unknown[]} | undefined).call(options.map);
+    shownLayers = Array.isArray(style?.layers) ? style.layers : [];
+    return shownLayers;
+  }
+
+  /**
+   * Plans the shown emphasis for the shown style. `onMap` holds the values on the map now; a value
+   * not in it shows the design.
+   */
+  function planEmphasis(onMap: ReadonlyMap<string, string> = new Map()): void {
+    const layers = layersShown();
+    const targets = emphasisShown ? planTileflowEmphasis(layers, emphasisShown) : [];
+    emphasisTargets = new Map(
+      targets.map((target) => [valueKey(target.layer, target.property), target]),
+    );
+    const paintOf = new Map<string, Record<string, unknown>>();
+    for (const layer of layers) {
+      if (layer && typeof layer === 'object' && typeof (layer as {id?: unknown}).id === 'string') {
+        const paint = (layer as {paint?: unknown}).paint;
+        paintOf.set(
+          (layer as {id: string}).id,
+          paint && typeof paint === 'object' ? (paint as Record<string, unknown>) : {},
+        );
+      }
+    }
+    emphasisBase = new Map(
+      targets.map((target) => [
+        valueKey(target.layer, target.property),
+        paintOf.get(target.layer)?.[target.property],
+      ]),
+    );
+    emphasisStaticGround = tileflowEmphasisGround(layers);
+    emphasisBlended = new Set(
+      activeBlend?.plan.paints.map((paint) => valueKey(paint.layer, paint.property)) ?? [],
+    );
+    const background = layers.find(
+      (layer) =>
+        layer && typeof layer === 'object' && (layer as {type?: unknown}).type === 'background',
+    ) as {id?: unknown} | undefined;
+    emphasisGroundTemplate = activeBlend?.plan.paints.find(
+      (paint) => paint.layer === background?.id && paint.property === 'background-color',
+    )?.template;
+    emphasisWritten.clear();
+    for (const [key, base] of emphasisBase) {
+      emphasisWritten.set(key, onMap.get(key) ?? JSON.stringify(base ?? null));
+    }
+  }
+
+  /** After a new style: its values show the design, so the emphasis is planned and written anew. */
+  function resetEmphasis(): void {
+    if (!emphasisShown) return;
+    planEmphasis();
+    writeEmphasis(true);
+  }
+
+  function emphasisGround(): string | undefined {
+    if (activeBlend && emphasisGroundTemplate !== undefined) {
+      return firstColour(
+        fillTileflowThemeBlendTemplate(emphasisGroundTemplate, activeBlend.blender.position),
+      );
+    }
+    return emphasisStaticGround;
+  }
+
+  /** A paint value as the emphasis shows it now. Values read per feature are already at the goal. */
+  function emphasisValue(layer: string, property: string, value: unknown): unknown {
+    const target = emphasisShown ? emphasisTargets.get(valueKey(layer, property)) : undefined;
+    if (!target) return value;
+    const strength = target.featureData ? emphasisGoal : emphasisStrength;
+    return emphasizeTileflowValue(target, value, {
+      ground: emphasisGround(),
+      keep: strength > 0 ? emphasisShown?.keep : undefined,
+      strength,
+    });
+  }
+
+  /** Writes every emphasised value that changed; `blended` also refreshes the blend's values. */
+  function writeEmphasis(blended: boolean): void {
+    if (blended && activeBlend && emphasisTargets.size > 0) {
+      activeBlend.blender.refresh((layer, property) =>
+        emphasisTargets.has(valueKey(layer, property)),
+      );
+    }
+    const setPaint = options.map.setPaintProperty as
+      ((layer: string, name: string, value: unknown, options?: object) => unknown) | undefined;
+    const getLayer = options.map.getLayer as ((layer: string) => unknown) | undefined;
+    if (typeof setPaint !== 'function') return;
+    for (const [key, target] of emphasisTargets) {
+      if (emphasisBlended.has(key)) continue;
+      const value = emphasisValue(target.layer, target.property, emphasisBase.get(key));
+      const serialized = JSON.stringify(value ?? null);
+      if (emphasisWritten.get(key) === serialized) continue;
+      if (typeof getLayer === 'function' && !getLayer.call(options.map, target.layer)) continue;
+      emphasisWritten.set(key, serialized);
+      setPaint.call(options.map, target.layer, target.property, value, {validate: false});
+    }
+  }
+
+  function stopEmphasisMotion(result?: TileflowThemeTransitionResult): void {
+    emphasisFrame?.();
+    emphasisFrame = undefined;
+    const settle = emphasisSettle;
+    emphasisSettle = undefined;
+    if (result) settle?.(result);
+  }
+
+  function changeEmphasis(
+    request: TileflowEmphasis | undefined,
+    duration: number,
+  ): Promise<TileflowThemeTransitionResult> {
+    stopEmphasisMotion({status: 'superseded', theme: current.theme});
+    const run = ++emphasisRun;
+    emphasis = request;
+    // Values the new request no longer changes go back to the design first.
+    const before = emphasisTargets;
+    if (request) {
+      const leaving = new Map(emphasisWritten);
+      const previous = emphasisShown;
+      emphasisShown = request;
+      planEmphasis(leaving);
+      if (previous) {
+        const setPaint = options.map.setPaintProperty as (
+          layer: string,
+          name: string,
+          value: unknown,
+          options?: object,
+        ) => unknown;
+        for (const [key, target] of before) {
+          if (emphasisTargets.has(key) || typeof setPaint !== 'function') continue;
+          const base = layerPaint(target.layer, target.property);
+          setPaint.call(options.map, target.layer, target.property, base, {validate: false});
+        }
+      }
+    }
+    if (!emphasisShown) return Promise.resolve({status: 'applied', theme: current.theme});
+
+    emphasisGoal = request ? 1 : 0;
+    const from = emphasisStrength;
+    const to = emphasisGoal;
+    // Values read per feature change once, at the start; a snapshot of the map covers them.
+    const switches = [...emphasisTargets.values()].some((target) => target.featureData);
+    const cover = switches ? beginTileflowStyleCrossfade(options.map, duration) : undefined;
+    const view = tileflowThemeMotionView(options.map);
+
+    return new Promise((resolve) => {
+      emphasisSettle = resolve;
+      const finish = () => {
+        emphasisFrame = undefined;
+        emphasisStrength = to;
+        writeEmphasis(true);
+        if (to === 0) {
+          // As designed again: nothing left to follow.
+          emphasisShown = undefined;
+          emphasisTargets = new Map();
+          emphasisWritten.clear();
+        }
+        emphasisSettle = undefined;
+        resolve({status: 'applied', theme: current.theme});
+      };
+      writeEmphasis(true);
+      void cover?.finish({stop: () => disposed || run !== emphasisRun});
+      if (duration <= 0 || !view || from === to) {
+        finish();
+        return;
+      }
+      const now = () => view.performance?.now?.() ?? Date.now();
+      const start = now();
+      let cancelled = false;
+      let frame: number | undefined;
+      const step = () => {
+        frame = undefined;
+        if (cancelled || disposed || run !== emphasisRun) return;
+        const t = Math.min(1, (now() - start) / duration);
+        const eased = t * t * (3 - 2 * t);
+        const strength = from + (to - from) * eased;
+        // A hundredth of the change is below what the eye sees; skipping it saves writes.
+        if (t >= 1) return finish();
+        if (Math.abs(strength - emphasisStrength) >= 0.01) {
+          emphasisStrength = strength;
+          writeEmphasis(true);
+        }
+        frame = view.requestAnimationFrame(step);
+      };
+      emphasisFrame = () => {
+        cancelled = true;
+        if (frame !== undefined) view.cancelAnimationFrame(frame);
+      };
+      frame = view.requestAnimationFrame(step);
+    });
+  }
+
+  /** A layer's paint value in the shown style, as designed. */
+  function layerPaint(layer: string, property: string): unknown {
+    const key = valueKey(layer, property);
+    if (activeBlend && emphasisBlended.has(key))
+      return activeBlend.blender.baseValue(layer, property);
+    for (const entry of layersShown()) {
+      if (entry && typeof entry === 'object' && (entry as {id?: unknown}).id === layer) {
+        const paint = (entry as {paint?: Record<string, unknown>}).paint;
+        return paint?.[property];
+      }
+    }
+    return undefined;
+  }
+
+  function reducedMotion(): boolean {
+    const view = tileflowThemeMotionView(options.map);
+    return view ? prefersReducedMotion(view) : false;
+  }
+
+  function handlePreloadFailure(
+    runId: number,
+    targetTheme: string | undefined,
+    error: unknown,
+  ): TileflowThemeTransitionResult {
+    if (disposed || runId !== requestId) return {status: 'superseded', theme: targetTheme};
+    const normalized = normalizeThemeTransitionError(error, 'Tileflow theme preload failed.');
+    options.onTransition?.({
+      currentTheme: current.theme,
+      error: normalized,
+      phase: 'error',
+      targetTheme,
+    });
+    return {error: normalized, status: 'failed', theme: targetTheme};
+  }
+}
+
+/** MapLibre's light where a style sets none. */
+const mapLibreDefaultLight = Object.freeze({
+  anchor: 'viewport',
+  color: '#ffffff',
+  intensity: 0.5,
+  position: [1.15, 210, 30],
+});
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function disposedResult(theme: string | undefined): TileflowThemeTransitionResult {
+  return {error: new Error('Tileflow theme controller is disposed.'), status: 'failed', theme};
+}
+
+function clampBlendPosition(position: number, themes: number): number {
+  return Math.min(themes - 1, Math.max(0, Number.isFinite(position) ? position : 0));
+}
+
+function nearestTheme(request: TileflowThemeBlendRequest): string | undefined {
+  if (!Array.isArray(request?.themes) || request.themes.length === 0) return undefined;
+  return request.themes[Math.round(clampBlendPosition(request.position, request.themes.length))]
+    ?.theme;
+}
+
+function validateBlendRequest(request: TileflowThemeBlendRequest): TypeError | undefined {
+  if (
+    !request ||
+    !Array.isArray(request.themes) ||
+    request.themes.length < 2 ||
+    request.themes.length > maximumBlendThemes
+  ) {
+    return new TypeError(
+      `A Tileflow theme blend requires two to ${maximumBlendThemes} concrete themes.`,
+    );
+  }
+  for (const theme of request.themes) {
+    const invalid = validateConcreteRuntimeTheme(theme, 'target');
+    if (invalid) return invalid;
+  }
+  if (
+    typeof request.position !== 'number' ||
+    !Number.isFinite(request.position) ||
+    request.position < 0 ||
+    request.position > request.themes.length - 1
+  ) {
+    return new TypeError(
+      `A Tileflow theme blend position must be a number from 0 to ${request.themes.length - 1}.`,
+    );
+  }
+  return undefined;
+}
+
+function normalizeThemeTransitionDuration(
+  transition: TileflowThemeTransitionOptions | undefined,
+  defaultDuration = 0,
+): number {
+  const duration = transition?.duration ?? defaultDuration;
+  if (
+    typeof duration !== 'number' ||
+    !Number.isFinite(duration) ||
+    duration < 0 ||
+    duration > maximumTransitionMs
+  ) {
+    throw new TypeError(
+      `A Tileflow theme transition duration must be a number of milliseconds from 0 to ${maximumTransitionMs}.`,
+    );
+  }
+  return Math.round(duration);
+}
+
+function assertConcreteRuntimeTheme(style: TileflowRuntimeStyle, role: 'initial' | 'target'): void {
+  const error = validateConcreteRuntimeTheme(style, role);
+  if (error) throw error;
+}
+
+function validateConcreteRuntimeTheme(
+  style: TileflowRuntimeStyle,
+  role: 'initial' | 'target',
+): TypeError | undefined {
+  if (isTileflowThemeName(style.theme)) return undefined;
+  return new TypeError(
+    `Tileflow theme controller ${role} style requires a concrete portable theme name; received ${JSON.stringify(style.theme)}.`,
+  );
+}
+
+/**
+ * Resolves once the map's WebGL context can draw. MapLibre GL JS 6.12 and 6.13 throw from the frame
+ * loop when `setStyle()` runs while the context is lost, so a style waits for
+ * `webglcontextrestored`. A map without a canvas, or one whose context cannot be read, is taken to
+ * be drawing.
+ */
+function whenContextAvailable(map: TileflowStyleSwitchMap): Promise<void> {
+  if (!isContextLost(map)) return Promise.resolve();
+  return new Promise((resolve) => {
+    const restored = () => {
+      map.off('webglcontextrestored', restored);
+      resolve();
+    };
+    map.on('webglcontextrestored', restored);
+  });
+}
+
+/**
+ * Resolves once paint can be written in place: the WebGL context is there and the style has
+ * loaded. MapLibre throws "Style is not done loading" before that, for example when a theme
+ * changes during the first load, or in a background tab where the first load waits for a frame.
+ */
+function whenPaintWritable(map: TileflowStyleSwitchMap): Promise<void> {
+  return whenContextAvailable(map).then(() => {
+    // MapLibre keeps no public flag for a parsed style: isStyleLoaded also waits for every tile.
+    const style = (map as {style?: {_loaded?: unknown}}).style;
+    if (style?._loaded !== false) return;
+    return new Promise<void>((resolve) => {
+      const settle = () => {
+        map.off('style.load', settle);
+        map.off('remove', settle);
+        resolve();
+      };
+      map.on('style.load', settle);
+      // A map taken down first settles the change, which then reports itself superseded.
+      map.on('remove', settle);
+    });
+  });
+}
+
+function isContextLost(map: TileflowStyleSwitchMap): boolean {
+  if (typeof map.getCanvas !== 'function') return false;
+  try {
+    const canvas = (map.getCanvas as () => HTMLCanvasElement | undefined).call(map);
+    // The context MapLibre made is returned again; the other kind is null on the same canvas.
+    const context = canvas?.getContext?.('webgl2') ?? canvas?.getContext?.('webgl');
+    return context?.isContextLost?.() === true;
+  } catch {
+    return false;
+  }
+}
+
+function applyMapStyle(
+  map: TileflowStyleSwitchMap,
+  style: MapLibreStyle | string,
+  timeoutMs: number,
+): Promise<void> {
+  const releaseRuntime = beginTileflowRuntimeStyleChange(map);
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let runtimeApplication: ReturnType<typeof prepareTileflowRuntimeStyleApplication> | undefined;
+    const cleanup = () => {
+      clearTimeout(timeout);
+      map.off('style.load', handleLoad);
+      map.off('render', handleRenderedStyle);
+      map.off('error', handleError);
+    };
+    const settle = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      try {
+        runtimeApplication?.finish();
+      } catch (failure) {
+        error ??= normalizeThemeTransitionError(failure, 'Application resource ownership changed.');
+      }
+      releaseRuntime();
+      if (error) reject(error);
+      else resolve();
+    };
+    const handleLoad = () => settle();
+    const handleRenderedStyle = () => {
+      const isStyleLoaded = map.isStyleLoaded;
+      if (typeof isStyleLoaded === 'function' && isStyleLoaded.call(map) === true) settle();
+    };
+    const handleError = (event?: unknown) =>
+      settle(
+        normalizeThemeTransitionError(
+          isRecordWithError(event) ? event.error : event,
+          'MapLibre rejected the Tileflow theme.',
+        ),
+      );
+    const timeout = setTimeout(
+      () => settle(new Error(`Tileflow theme change timed out after ${timeoutMs}ms.`)),
+      timeoutMs,
+    );
+
+    map.on('style.load', handleLoad);
+    map.on('render', handleRenderedStyle);
+    map.on('error', handleError);
+    try {
+      if (typeof map.setStyle !== 'function') {
+        throw new TypeError('Tileflow theme changes require MapLibre setStyle().');
+      }
+      const setStyle = map.setStyle as (
+        style: MapLibreStyle | string,
+        options?: {diff?: boolean; validate?: boolean},
+      ) => unknown;
+      // A theme's style is compiled, and validated, when its map is built.
+      runtimeApplication =
+        typeof style === 'string' ? undefined : prepareTileflowRuntimeStyleApplication(map, style);
+      setStyle.call(map, runtimeApplication?.style ?? style, {diff: true, validate: false});
+      // MapLibre emits no style.load for an empty diff. The live transition's
+      // first style may already match the map, even while camera tiles load.
+      handleRenderedStyle();
+    } catch (error) {
+      settle(normalizeThemeTransitionError(error, 'MapLibre rejected the Tileflow theme.'));
+    }
+  });
+}
+
+function normalizeThemeTransitionTimeout(value: number | undefined): number {
+  const resolved = value ?? 15_000;
+  if (!Number.isSafeInteger(resolved) || resolved < 100 || resolved > 60_000) {
+    throw new TypeError('Tileflow theme transition timeout must be an integer from 100 to 60000.');
+  }
+  return resolved;
+}
+
+function normalizeThemeTransitionError(error: unknown, fallback: string): Error {
+  return error instanceof Error ? error : new Error(fallback);
+}
+
+function isRecordWithError(value: unknown): value is {error: unknown} {
+  return Boolean(value && typeof value === 'object' && 'error' in value);
+}

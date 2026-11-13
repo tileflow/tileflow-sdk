@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {createTileflowAppearanceBinding} from '../src/browser';
+import {createTileflowAppearanceBinding} from '../src/browser-bundle';
 
 type Result = {status: 'applied'; theme: string} | {error: Error; status: 'failed'; theme: string};
 

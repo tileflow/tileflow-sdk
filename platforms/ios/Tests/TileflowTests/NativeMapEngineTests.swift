@@ -179,6 +179,48 @@ final class NativeMapEngineTests: XCTestCase {
     try await checkMixedFontFallback(offline: true)
   }
 
+  func testSharedFontStorageAcrossTwoRegions() async throws {
+    try await requireHostedFixture()
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("font-measurement-\(UUID().uuidString)")
+    let configuration = try fixtureConfiguration()
+    let store = offlineMapStore(root: root, client: { try OfflinePackClient(configuration: configuration) })
+    func snapshot() throws -> [String: Any] {
+      let files = try FileManager.default.contentsOfDirectory(at: root.appendingPathComponent("packs"), includingPropertiesForKeys: [.fileSizeKey]).filter { $0.pathExtension == "tfpack" }
+      var fontCount = 0, fontBytes = 0, officialBytes = 0, licenseBytes = 0, fontPackBytes = 0, allPackBytes = 0
+      var digests: [String] = []
+      for file in files {
+        let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        allPackBytes += size
+        let entries = try OfflinePackFormat.index(file).entries.values
+        let fonts = entries.filter { $0.contentType.hasPrefix("font/") }
+        if fonts.isEmpty { continue }
+        digests.append(file.lastPathComponent)
+        fontCount += fonts.count
+        fontBytes += fonts.reduce(0) { $0 + $1.length }
+        officialBytes += fonts.filter { $0.name.contains("/base/") }.reduce(0) { $0 + $1.length }
+        licenseBytes += entries.filter { $0.name.hasSuffix(".txt") }.reduce(0) { $0 + $1.length }
+        fontPackBytes += size
+      }
+      return ["fontFiles": fontCount, "fontBytes": fontBytes, "officialFontBytes": officialBytes,
+        "licenseBytes": licenseBytes, "fontPackBytes": fontPackBytes, "allPackBytes": allPackBytes, "fontPackDigests": digests.sorted()]
+    }
+    var snapshots: [[String: Any]] = []
+    for (index, west) in [-3.705, -3.695].enumerated() {
+      try await downloadRegion(store, id: "madrid-\(index)", options: .init(
+        geometry: .boundingBox(.init(west: west, south: 40.416, east: west + 0.01, north: 40.424)),
+        content: .hosted(mapID: Self.hostedFixtureMapID, themes: ["fallback"]), minZoom: 13, maxZoom: 15))
+      snapshots.append(try snapshot())
+    }
+    let data = try JSONSerialization.data(withJSONObject: ["platform": "ios", "regions": snapshots], options: [.sortedKeys])
+    print("OFFLINE_FONT_MEASUREMENT \(String(decoding: data, as: UTF8.self))")
+    XCTAssertEqual(snapshots[0]["fontFiles"] as? Int, 148)
+    XCTAssertGreaterThan(snapshots[0]["fontBytes"] as? Int ?? 0, 32 * 1024 * 1024)
+    XCTAssertEqual(snapshots[0]["fontPackBytes"] as? Int, snapshots[1]["fontPackBytes"] as? Int)
+    XCTAssertEqual(snapshots[0]["fontPackDigests"] as? [String], snapshots[1]["fontPackDigests"] as? [String])
+    try await store.removeRegion(id: "madrid-0")
+    XCTAssertEqual(try snapshot()["fontPackBytes"] as? Int, snapshots[1]["fontPackBytes"] as? Int)
+  }
+
   private func checkMixedFontFallback(offline: Bool) async throws {
     try await requireHostedFixture()
     await TileflowMapCache.clear()

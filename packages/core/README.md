@@ -4,8 +4,9 @@ Define and customize maps in TypeScript, then compile them to MapLibre Style JSO
 official Tileflow map or create your own, with typed settings for themes, roads, buildings,
 labels, and other map features.
 
-Use Core to author and validate the map, the Tileflow CLI to preview it, and a framework adapter
-to display it in your application.
+Use Core to author and validate the map and the Tileflow CLI to preview it. Display it with
+[`@tileflow/dom`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dom/README.md)
+or a framework adapter.
 
 ## Install
 

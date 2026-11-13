@@ -15,12 +15,40 @@ import {
   tileflowIconSetReferenceSchema,
   tileflowIconSetTeamIdSchema,
   tileflowIconSetVersionIdSchema,
-  tileflowIconSourceLimit,
   type TileflowIconSource,
+  tileflowIconSourceLimit,
 } from './icon-set';
 
 export const tileflowIconsLockfileName = 'tileflow.icons.lock.json';
 export const tileflowIconsLockfileMaximumBytes = 4 * 1024 * 1024;
+
+/** Shared transport validation for publication preflight and immutable icon pins. */
+export const tileflowIconSetSpriteUrlSchema = z
+  .string()
+  .max(2048)
+  .superRefine((value, context) => {
+    try {
+      const url = new URL(value);
+      const localHttp =
+        url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+      if (
+        (url.protocol !== 'https:' && !localHttp) ||
+        url.username ||
+        url.password ||
+        url.search ||
+        url.hash ||
+        url.href !== value
+      ) {
+        throw new Error('Invalid delivery URL');
+      }
+    } catch {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'Expected a canonical HTTPS or loopback HTTP sprite URL, without credentials, query or fragment',
+      });
+    }
+  });
 
 export const tileflowIconSetPinSchema = z
   .object({
@@ -31,29 +59,20 @@ export const tileflowIconSetPinSchema = z
     packageId: tileflowIconSetPackageIdSchema,
     contentHash: tileflowIconPackageContentHashSchema,
     manifest: tileflowIconPackageManifestSchema,
-    spriteUrl: z.string().max(2048),
+    spriteUrl: tileflowIconSetSpriteUrlSchema,
   })
   .strict()
   .superRefine((pin, context) => {
     try {
       const url = new URL(pin.spriteUrl);
-      if (
-        url.protocol !== 'https:' ||
-        url.username ||
-        url.password ||
-        url.search ||
-        url.hash ||
-        url.href !== pin.spriteUrl ||
-        !url.pathname.endsWith(`/sprites/${pin.packageId}/sprite`)
-      ) {
+      if (!url.pathname.endsWith(`/sprites/${pin.packageId}/sprite`)) {
         throw new Error('Invalid delivery URL');
       }
     } catch {
       context.addIssue({
         code: 'custom',
         path: ['spriteUrl'],
-        message:
-          'Expected a canonical HTTPS sprite URL for the exact package, without credentials, query or fragment',
+        message: 'Expected a sprite URL for the exact package',
       });
     }
   });

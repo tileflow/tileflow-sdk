@@ -243,6 +243,10 @@ Applications may explicitly configure trusted `deliveryOrigins`; locks cannot ad
 forbids all fetches and fails on missing or corrupt entries. Complete-map offline rendering still
 depends on unrelated tiles, glyphs, and other external resources.
 
+A local registry may use HTTP on `localhost`, `127.0.0.1` or `[::1]`. Add its exact origin,
+including the port, to `deliveryOrigins`; HTTP on other hosts remains invalid. The default
+continues to trust only hosted HTTPS delivery, and all downloads retain integrity verification.
+
 The cache lives under the OS user cache with `tileflow/icons/v1/<contentHash>`. `cacheRoot`, then
 `TILEFLOW_ICON_CACHE_DIR`, overrides its parent. Atomic directory installation and exact-entry
 retirement support concurrent writers and corruption repair. Symlink entries are rejected. This is

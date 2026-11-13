@@ -79,6 +79,17 @@ rejects pending edits from the previous one. Image mode rejects these operations
 Layer positions use `slot`, `slotIndex`, `aboveLayerId` or `belowLayerId`.
 React, Vue and Svelte expose these methods alongside `getMap` and `getThemeController`.
 
+Use `getMap()` or the map passed to `onLoad` for application-owned MapLibre sources, layers,
+controls and events. Tileflow owns the style; theme changes may replace it, so reinstall your
+own layers on `style.load`, or use `dataSources` and `dataOverlays`. Calling the MapLibre map's
+`remove()` also stops the Tileflow controller. Prefer `destroy()` for normal application cleanup.
+Destroying during loading rejects `ready` and prevents a late response from mounting a map.
+
+If optional interactions cannot start, the map remains mounted and reports an interaction
+diagnostic. Changing their inputs retries initialization. A failed theme change keeps the
+applied theme and its system-colour-scheme following; an unknown name does not cancel a valid
+pending change. `getStatus()` reports the failure until the requested selection changes.
+
 ## `getTileflowMapInitialStatus(options, controlledInteractionState?)`
 
 The status a map with these options has before it mounts: its declarative diagnostics, `error` or

@@ -375,11 +375,9 @@ test('an interrupted upload preserves the manifest and the same deploy resumes i
   api.failUploadsAfter = 3;
   const first = await deploy();
   assert.equal(first.code, 1);
-  assert.match(
-    first.stdout,
-    /upload of native style dawn failed \(503 TF_NATIVE_DOCUMENT_UNAVAILABLE\)/u,
-  );
-  assert.match(first.stdout, /Run the same deploy again: it resumes where this one stopped/u);
+  assert.match(first.stderr, /TF_NATIVE_DOCUMENT_UNAVAILABLE/u);
+  assert.match(first.stderr, /The upload of native style dawn failed:/u);
+  assert.match(first.stderr, /Run the same deploy again to resume/u);
   assert.equal(await readFile(fixture.manifestPath, 'utf8'), originalManifest);
   assert.equal(api.activeVersion(), undefined);
 
@@ -857,7 +855,8 @@ test('a failed icon upload makes no style request and does not rewrite the manif
 
   assert.equal(result.code, 1);
   assert.deepEqual(routes(api), ['PUT /v1/icon-packages']);
-  assert.match(result.stdout, /Icon package upload failed: 503/);
+  assert.match(result.stderr, /ICON_STORAGE_UNAVAILABLE/);
+  assert.match(result.stderr, /Icon package upload failed:/u);
   assert.equal(await readFile(fixture.manifestPath, 'utf8'), originalManifest);
 });
 
@@ -877,7 +876,7 @@ test('a style failure after icon upload also preserves the previous manifest', a
   });
 
   assert.equal(result.code, 1);
-  assert.match(result.stdout, /Deploy failed \(503 TF_STYLE_STORAGE_UNAVAILABLE\)/);
+  assert.match(result.stderr, /TF_STYLE_STORAGE_UNAVAILABLE/);
   assert(!result.stdout.includes(fakeApiKey));
   assert.deepEqual(routes(api), ['PUT /v1/icon-packages', 'POST /v1/styles']);
   assert.equal(await readFile(fixture.manifestPath, 'utf8'), originalManifest);
@@ -1036,7 +1035,7 @@ test('a Map-scoped key rejection preserves the explicit target after local prefl
 
   assert.equal(result.code, 1);
   assert.equal(api.requests.length, 1);
-  assert.match(result.stdout, /Deploy failed \(403 TF_MAP_FORBIDDEN\)/u);
+  assert.match(result.stderr, /TF_MAP_FORBIDDEN/u);
   assert.doesNotMatch(result.stdout, /resumes where this one stopped/u);
   assert.equal(await readFile(configMarkerPath, 'utf8'), 'imported');
 });
@@ -1475,4 +1474,114 @@ test('web-only CI publishes without native uploads and a new lockfile needs only
     requestJson(checks[0]!).builds[0].lockfile.sha256,
     requestJson(checks[1]!).builds[0].lockfile.sha256,
   );
+});
+
+for (const native of [false, true]) {
+  test(`deploy JSON preserves actionable failures with native=${native}`, async (t) => {
+    const fixture = await createFixture(t);
+    if (!native) await writeFile(fixture.configPath, mapFixture({id: 'madrid'}));
+    const api = await startFakePlatform(t, {
+      intercept: (request) =>
+        request.path === '/v1/styles'
+          ? {
+              status: 422,
+              headers: {'X-Request-ID': 'deploy-ref', 'Retry-After': '3'},
+              body: {
+                code: 'TF_STYLE_INVALID',
+                error: `The style is invalid for ${fakeApiKey}.`,
+                retryable: false,
+                messages: [
+                  {
+                    code: 'SOURCE_NOT_FOUND',
+                    path: 'layers[0].source',
+                    message: 'Choose a source defined by this map.',
+                    actual: 'missing',
+                    available: ['world'],
+                  },
+                ],
+              },
+            }
+          : undefined,
+    });
+    const result = await runCli(
+      fixture.directory,
+      [...deployArguments(fixture, api.url), '--json'],
+      {TILEFLOW_API_KEY: fakeApiKey},
+    );
+    assert.equal(result.code, 1);
+    assert.equal(result.stdout, '');
+    const document = JSON.parse(result.stderr);
+    assert.equal(document.schemaVersion, 1);
+    assert.equal(document.ok, false);
+    assert.equal(document.error.code, 'TF_STYLE_INVALID');
+    assert.equal(document.error.operation, 'Deploy for madrid');
+    assert.equal(document.error.requestId, 'deploy-ref');
+    assert.equal(document.error.retryable, false);
+    assert.equal(document.error.retryAfterMs, 3000);
+    assert.equal(document.error.messages[0].path, 'layers[0].source');
+    assert.doesNotMatch(result.stderr, new RegExp(fakeApiKey));
+    await assert.rejects(readFile(fixture.manifestPath), {code: 'ENOENT'});
+  });
+
+  test(`deploy JSON success includes the manifest with native=${native}`, async (t) => {
+    const fixture = await createFixture(t);
+    if (!native) await writeFile(fixture.configPath, mapFixture({id: 'madrid'}));
+    const api = await startFakePlatform(t);
+    api.teamModels = [{model: 'tower', version: 2, sources: 'differ'}];
+    const result = await runCli(
+      fixture.directory,
+      [...deployArguments(fixture, api.url), '--json'],
+      {TILEFLOW_API_KEY: fakeApiKey},
+    );
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(result.stderr, '');
+    const document = JSON.parse(result.stdout);
+    assert.equal(document.ok, true);
+    assert.equal(document.command, 'deploy');
+    assert.equal(document.maps.madrid.mapId, managedMapId);
+    assert.equal(document.manifestPath, fixture.manifestPath);
+    assert.ok(
+      document.warnings.some(
+        (warning: string) => warning.includes('tower') && warning.includes('version 2'),
+      ),
+    );
+  });
+}
+
+test('deploy JSON local preflight failure remains a single failure document', async (t) => {
+  const fixture = await createFixture(t);
+  const result = await runCli(
+    fixture.directory,
+    ['deploy', '--json', '--config', fixture.configPath, '--map-id', 'invalid-map'],
+    {TILEFLOW_API_KEY: fakeApiKey},
+  );
+  assert.equal(result.code, 1);
+  assert.equal(result.stdout, '');
+  const document = JSON.parse(result.stderr);
+  assert.equal(document.ok, false);
+  assert.match(document.error.message, /Map ID|map-id/u);
+});
+
+test('deploy JSON retains CI credential recovery steps', async (t) => {
+  const fixture = await createFixture(t);
+  const result = await runCli(
+    fixture.directory,
+    [
+      'deploy',
+      '--json',
+      '--config',
+      fixture.configPath,
+      '--api-url',
+      'http://127.0.0.1:9',
+      '--map-id',
+      managedMapId,
+    ],
+    {CI: 'true', HOME: fixture.directory, USERPROFILE: fixture.directory},
+  );
+  assert.equal(result.code, 1);
+  assert.equal(result.stdout, '');
+  const document = JSON.parse(result.stderr);
+  assert.equal(document.error.code, 'api_key_required');
+  assert.ok(document.error.nextSteps.some((step: string) => step.includes('TILEFLOW_API_KEY')));
+  assert.doesNotMatch(result.stderr, /tileflow login/u);
 });

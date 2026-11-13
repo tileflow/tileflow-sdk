@@ -178,6 +178,7 @@ export async function startFakePlatform(
           version,
           changed: true,
           deploymentId: `dep_web${version}`,
+          ...(platform.teamModels ? {teamModels: platform.teamModels} : {}),
           themes: Object.fromEntries(
             Object.keys(styles).map((theme) => [
               theme,

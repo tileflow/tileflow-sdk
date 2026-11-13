@@ -7,6 +7,8 @@ export type TileflowMapLibreConfiguration = Readonly<{workerUrl: string}>;
  */
 const bundlerWorkerUrlKey = Symbol.for('tileflow.maplibre.workerUrl');
 
+const importMapLibre = () => import('maplibre-gl') as Promise<TileflowMapLibre>;
+let loadMapLibreModule: () => Promise<TileflowMapLibre> = importMapLibre;
 let mapLibrePromise: Promise<TileflowMapLibre> | undefined;
 let mapLibre: TileflowMapLibre | undefined;
 let workerUrl: string | undefined;
@@ -36,7 +38,7 @@ export function configureTileflowMapLibre(configuration: TileflowMapLibreConfigu
 
 /** Load the interactive renderer only after a browser map requests it. */
 export function loadTileflowMapLibre(): Promise<TileflowMapLibre> {
-  mapLibrePromise ??= import('maplibre-gl')
+  mapLibrePromise ??= loadMapLibreModule()
     .then(resolveMapLibreModule)
     .then(configureTileflowMapLibreModule)
     .catch((error: unknown) => {
@@ -73,4 +75,16 @@ function readBundlerWorkerUrl(): string | undefined {
 
 function isWorkerUrl(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+/**
+ * Where the renderer comes from, for this package's tests; the package does not export it. Passing
+ * nothing restores `maplibre-gl` and forgets the module and worker loaded so far.
+ */
+export function setTileflowMapLibreModuleLoader(load?: () => Promise<TileflowMapLibre>): void {
+  loadMapLibreModule = load ?? importMapLibre;
+  mapLibrePromise = undefined;
+  mapLibre = undefined;
+  workerUrl = undefined;
+  appliedWorkerUrl = undefined;
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {createTileflowAppearanceBinding} from '../src/browser';
+import {createTileflowAppearanceBinding} from '../src/browser-bundle';
 
 /** A page the tests can restyle: its variables, its observers and its colour-scheme query. */
 function createPage(initial: Record<string, string>) {

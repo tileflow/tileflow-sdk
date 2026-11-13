@@ -212,11 +212,11 @@ extension XCTestCase {
 
   /// A store of its own, downloading in the foreground, whose regions every map may use.
   func offlineMapStore(
-    profile: OfflinePackProfile = .native, index: OfflineServingIndex = .shared,
+    root requestedRoot: URL? = nil, profile: OfflinePackProfile = .native, index: OfflineServingIndex = .shared,
     client: @escaping @Sendable () throws -> OfflinePackClient
   ) -> TileflowOfflineStore
   {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+    let root = requestedRoot ?? FileManager.default.temporaryDirectory.appendingPathComponent(
       "offline-map-\(UUID().uuidString)", isDirectory: true)
     let store = TileflowOfflineStore(
       dependencies: OfflineStoreCore.Dependencies(

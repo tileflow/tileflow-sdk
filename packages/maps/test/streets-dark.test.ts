@@ -142,7 +142,6 @@ const approvedLightStyleColors = new Set([
   '#C9C9C1',
   '#CCD6D9',
   '#D2DADC',
-  '#D5DAD7',
   '#D6239F',
   '#D6E8D2',
   '#D7D3CE',
@@ -1301,7 +1300,7 @@ test('Streets Dark recolors POI labels with shared artwork and identical ranked 
   }
 });
 
-test('Streets keeps ferries subordinate and limits attributed hillshade to regional zooms', () => {
+test('Streets keeps ferries subordinate and limits hosted Terrain hillshade to regional zooms', () => {
   for (const theme of ['light', 'dark'] as const) {
     const style = compile(theme);
     const relief = requireLayer(style, 'tileflow-terrain-hillshade');
@@ -1312,13 +1311,10 @@ test('Streets keeps ferries subordinate and limits attributed hillshade to regio
     const source = style.sources['tileflow-terrain'] as Record<string, unknown>;
     assert.equal(source.type, 'raster-dem');
     assert.equal(source.encoding, 'terrarium');
-    assert.equal(source.url, undefined);
-    assert.deepEqual(source.tiles, [
-      'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png',
-    ]);
-    assert.equal(source.maxzoom, 12);
-    assert.equal(source.tileSize, 256);
-    assert.equal(source.attribution, '<a href="https://tileflow.dev/copyright">© Tileflow</a>');
+    // Relief comes only from hosted Terrain; its TileJSON declares tile size, zoom and credit.
+    assert.match(String(source.url), /\/tiles\/terrain\/tiles\.json$/u);
+    for (const key of ['tiles', 'maxzoom', 'tileSize', 'attribution'])
+      assert.equal(source[key], undefined, key);
     assert.equal(style.terrain, undefined);
     const ferry = style.layers.find(({id}) => id.includes('ferry') && !id.includes('label'));
     assert.ok(ferry);

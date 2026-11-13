@@ -12,10 +12,12 @@ export default defineConfig(async () => {
     dts: false,
   });
   return {
-    entry: ['src/browser.ts', 'src/3d.ts'],
+    // One browser bundle serves both `./browser` and `./internal`, so Tileflow's packages and the
+    // application share a single module instance. Each subpath publishes its own types.
+    entry: {browser: 'src/browser-bundle.ts', '3d': 'src/3d.ts'},
     format: ['esm'],
     platform: 'browser',
-    dts: true,
+    dts: {entry: {browser: 'src/browser.ts', internal: 'src/internal.ts', '3d': 'src/3d.ts'}},
     splitting: false,
     noExternal: ['@maplibre/maplibre-gl-style-spec'],
     define: {

@@ -22,6 +22,7 @@ import {
   type ProjectIdentity,
   rejectedAccountSessionMessage,
 } from './account-session';
+import {formatHostedFailure, type HostedFailure, readHostedFailure} from './hosted-error';
 import {
   hostedFontBundleResponseSchema,
   hostedIconPackageResponseSchema,
@@ -105,6 +106,8 @@ export type HostedJsonResponse = {
   ok: boolean;
   status: number;
   retryAfterMs?: number;
+  requestId?: string;
+  failure?: HostedFailure;
 };
 
 export async function requestHostedJson(
@@ -113,10 +116,15 @@ export async function requestHostedJson(
   init: RequestInit = {},
   options: HostedRequestOptions = {},
 ): Promise<HostedJsonResponse> {
-  return withHostedResponse(apiUrl, path, init, options, readHostedJsonResponse);
+  return withHostedResponse(apiUrl, path, init, options, (response) =>
+    readHostedJsonResponse(response, init),
+  );
 }
 
-async function readHostedJsonResponse(response: Response): Promise<HostedJsonResponse> {
+async function readHostedJsonResponse(
+  response: Response,
+  init: RequestInit = {},
+): Promise<HostedJsonResponse> {
   const retryAfter = response.headers.get('retry-after');
   const retryAfterMs =
     retryAfter === null
@@ -127,19 +135,36 @@ async function readHostedJsonResponse(response: Response): Promise<HostedJsonRes
   const metadata = {
     ok: response.ok,
     status: response.status,
+    ...(response.headers.get('x-request-id')
+      ? {requestId: response.headers.get('x-request-id')!}
+      : {}),
     ...(Number.isFinite(retryAfterMs) ? {retryAfterMs} : {}),
   };
-  const source = await readBoundedResponseText(response, 'Hosted API');
-  if (!source) return {body: null, json: true, ...metadata};
+  let source = '';
+  let json = true;
   try {
-    return {
-      body: JSON.parse(source) as unknown,
-      json: true,
-      ...metadata,
-    };
-  } catch {
-    return {body: null, json: false, ...metadata};
+    source = await readBoundedResponseText(response, 'Hosted API');
+  } catch (error) {
+    if (response.ok) throw error;
+    json = false;
   }
+  let body: unknown = null;
+  try {
+    if (source) body = JSON.parse(source) as unknown;
+  } catch {
+    json = false;
+  }
+  const result: HostedJsonResponse = {body, json, ...metadata};
+  if (!response.ok) {
+    const authorization = new Headers(init.headers).get('authorization');
+    result.failure = readHostedFailure(
+      result,
+      authorization ? [authorization.replace(/^Bearer\s+/iu, '')] : [],
+    );
+    result.requestId = result.failure.requestId;
+    result.retryAfterMs = result.failure.retryAfterMs;
+  }
+  return result;
 }
 
 export async function startDeviceAuthorization(
@@ -248,7 +273,7 @@ export async function validateAccountSession(
   options: HostedRequestOptions = {},
 ): Promise<
   | {ok: true; value: {account: AccountIdentity; session: {expiresAt: string; id: string}}}
-  | {error: string; ok: false}
+  | {error: string; ok: false; failure?: HostedFailure}
 > {
   const response = await requestHostedJson(
     session.apiOrigin,
@@ -293,7 +318,7 @@ export async function validateApiKey(
   apiUrl: string,
   apiKey: string,
   options: HostedRequestOptions = {},
-): Promise<{ok: true; value: ApiProfile} | {error: string; ok: false}> {
+): Promise<{ok: true; value: ApiProfile} | {error: string; ok: false; failure?: HostedFailure}> {
   const response = await requestHostedJson(
     apiUrl,
     '/v1/me',
@@ -301,7 +326,7 @@ export async function validateApiKey(
     options,
   );
   if (!response.ok) {
-    return {error: `API key validation failed (${response.status}).`, ok: false};
+    return hostedOperationFailure('API key validation', response);
   }
   const body = asRecord(response.body);
   if (response.json && body.credentialType === 'team_api_key') {
@@ -382,7 +407,10 @@ export async function requestMapCapability(
   target: {mapId: string},
   scopes: HostedCapabilityScope[],
   options: HostedRequestOptions = {},
-): Promise<{capability: string; mapId: string; ok: true} | {error: string; ok: false}> {
+): Promise<
+  | {capability: string; mapId: string; ok: true}
+  | {error: string; ok: false; failure?: HostedFailure}
+> {
   let response: HostedJsonResponse;
   try {
     response = await requestHostedJson(
@@ -401,13 +429,9 @@ export async function requestMapCapability(
     return {error: safeTransportError(error, 'Map capability request failed.'), ok: false};
   }
   if (!response.ok) {
-    return {
-      error:
-        response.status === 401
-          ? rejectedAccountSessionMessage
-          : `Map capability request failed (${response.status}).`,
-      ok: false,
-    };
+    const result = hostedOperationFailure('Map authorization', response);
+    if (response.status === 401) result.error += `\n${rejectedAccountSessionMessage}`;
+    return result;
   }
   const body = asRecord(response.body);
   if (
@@ -434,7 +458,7 @@ export async function requestTeamCapability(
   options: HostedRequestOptions = {},
 ): Promise<
   | {capability: string; expiresAt: string; ok: true; team: ProjectIdentity}
-  | {error: string; ok: false}
+  | {error: string; ok: false; failure?: HostedFailure}
 > {
   let response: HostedJsonResponse;
   try {
@@ -454,7 +478,7 @@ export async function requestTeamCapability(
     return {error: safeTransportError(error, 'Team capability request failed.'), ok: false};
   }
   if (!response.ok) {
-    return {error: `Team capability request failed (${response.status}).`, ok: false};
+    return hostedOperationFailure('Team authorization', response);
   }
   const body = asRecord(response.body);
   if (
@@ -478,7 +502,9 @@ export async function requestTeamCapability(
 export async function listAccountTeams(
   session: CliAccountSession,
   options: HostedRequestOptions = {},
-): Promise<{ok: true; teams: ProjectIdentity[]} | {error: string; ok: false}> {
+): Promise<
+  {ok: true; teams: ProjectIdentity[]} | {error: string; ok: false; failure?: HostedFailure}
+> {
   const response = await requestHostedJson(
     session.apiOrigin,
     '/v1/cli/teams',
@@ -486,7 +512,7 @@ export async function listAccountTeams(
     options,
   );
   const body = asRecord(response.body);
-  if (!response.ok) return {error: `Team discovery failed (${response.status}).`, ok: false};
+  if (!response.ok) return hostedOperationFailure('Team discovery', response);
   if (
     !response.json ||
     body.schemaVersion !== 1 ||
@@ -533,7 +559,9 @@ export type MapSetupFailureCode =
 export async function listMapSetupTeams(
   session: CliAccountSession,
   options: HostedRequestOptions = {},
-): Promise<{ok: true; teams: MapSetupTeam[]} | {error: string; ok: false}> {
+): Promise<
+  {ok: true; teams: MapSetupTeam[]} | {error: string; ok: false; failure?: HostedFailure}
+> {
   let response: HostedJsonResponse;
   try {
     response = await requestHostedJson(
@@ -663,16 +691,26 @@ function isMapSetupTeam(value: unknown): value is MapSetupTeam {
 
 /** Why a Hosted renderer deployment stopped; `resumable` when the same deploy can continue it. */
 export class HostedDeploymentError extends Error {
+  readonly failure?: HostedFailure;
+  readonly operation?: string;
   readonly resumable: boolean;
   readonly status?: number;
   readonly code?: string;
   constructor(
     message: string,
-    options: {resumable?: boolean; status?: number; code?: string} = {},
+    options: {
+      resumable?: boolean;
+      status?: number;
+      code?: string;
+      failure?: HostedFailure;
+      operation?: string;
+    } = {},
   ) {
     super(message);
     this.name = 'HostedDeploymentError';
     this.resumable = options.resumable === true;
+    this.failure = options.failure;
+    this.operation = options.operation;
     if (options.status !== undefined) this.status = options.status;
     if (options.code !== undefined) this.code = options.code;
   }
@@ -783,6 +821,7 @@ async function checkHostedPublication(
 }
 
 const webPublicationResponse = z.object({
+  teamModels: tileflowRendererDeploymentResponseSchema.shape.teamModels,
   changed: z.boolean(),
   mapId: z.string(),
   deploymentId: z.string().min(1),
@@ -1090,7 +1129,7 @@ async function requestHostedPublication(
       requestId = [raw.headers.get('x-request-id'), raw.headers.get('cf-ray')].find(
         isPublicationRequestId,
       );
-      return readHostedJsonResponse(raw);
+      return readHostedJsonResponse(raw, init);
     });
   } catch {
     throw opaqueFailure();
@@ -1148,7 +1187,12 @@ function deploymentFailure(
       seconds > 0 ? `Retry in ${seconds} ${seconds === 1 ? 'second' : 'seconds'}.` : 'Retry later.';
     return new HostedDeploymentError(
       `${prefix} (429): ${teamQuota ? 'This Team reached its hourly limit for changed map publications.' : 'Hosted publication is rate limited.'} ${retry}`,
-      {resumable: true, status: 429},
+      {
+        resumable: true,
+        status: 429,
+        failure: readHostedFailure(response),
+        operation: prefix === 'Deploy failed' ? undefined : prefix.replace(/ failed$/u, ''),
+      },
     );
   }
 
@@ -1167,7 +1211,13 @@ function deploymentFailure(
       : undefined;
   return new HostedDeploymentError(
     `${prefix} (${response.status}${code ? ` ${code}` : ''})${detail ? `: ${detail}` : ''}${jobDetail}`,
-    {resumable, status: response.status, ...(code ? {code} : {})},
+    {
+      resumable,
+      status: response.status,
+      ...(code ? {code} : {}),
+      failure: readHostedFailure(response),
+      operation: prefix === 'Deploy failed' ? undefined : prefix.replace(/ failed$/u, ''),
+    },
   );
 }
 
@@ -1181,7 +1231,7 @@ export async function uploadHostedIconPackage(
   options: HostedRequestOptions = {},
   reuse = false,
 ): Promise<
-  {ok: false; status: number} | {ok: true; value: z.infer<typeof hostedIconPackageResponseSchema>}
+  ({ok: false} & HostedFailure) | {ok: true; value: z.infer<typeof hostedIconPackageResponseSchema>}
 > {
   const path = `/v1/icon-packages/${encodeURIComponent(iconPackage.contentHash)}`;
   const headers = authorizationHeaders(api.apiKey, api.mapId);
@@ -1208,7 +1258,7 @@ export async function uploadHostedIconPackage(
       options,
     );
   }
-  if (!response.ok) return {ok: false, status: response.status};
+  if (!response.ok) return {ok: false, ...readHostedFailure(response)};
   const value = parseResponse(
     response,
     hostedIconPackageResponseSchema,
@@ -1234,7 +1284,7 @@ export async function uploadHostedFontBundle(
   options: HostedRequestOptions = {},
   reuse = false,
 ): Promise<
-  {ok: false; status: number} | {ok: true; value: z.infer<typeof hostedFontBundleResponseSchema>}
+  ({ok: false} & HostedFailure) | {ok: true; value: z.infer<typeof hostedFontBundleResponseSchema>}
 > {
   const path = `/v1/font-bundles/${encodeURIComponent(bundle.contentHash)}`;
   const headers = authorizationHeaders(api.apiKey, api.mapId);
@@ -1266,7 +1316,7 @@ export async function uploadHostedFontBundle(
       options,
     );
   }
-  if (!response.ok) return {ok: false, status: response.status};
+  if (!response.ok) return {ok: false, ...readHostedFailure(response)};
   const value = parseResponse(
     response,
     hostedFontBundleResponseSchema,
@@ -1542,4 +1592,9 @@ function safeTransportError(error: unknown, fallback: string): string {
     return error.message;
   }
   return fallback;
+}
+
+function hostedOperationFailure(operation: string, response: HostedJsonResponse) {
+  const failure = readHostedFailure(response);
+  return {error: formatHostedFailure(operation, failure), ok: false as const, failure};
 }

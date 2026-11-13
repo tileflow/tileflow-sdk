@@ -9,10 +9,10 @@ import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {tileflowMapFixture} from './map-fixture';
 
-// Image extraction is a generic native capability. Its fixture must declare an
-// image explicitly instead of depending on Streets' optional climate artwork.
+// Image extraction and path-ground lowering are generic native capabilities. Declare
+// them explicitly rather than depending on Streets' current cartographic choices.
 const completeStreetsConfig = `
-import {defineMap, land} from '@tileflow/core';
+import {defineMap, fixed, land, refine, token} from '@tileflow/core';
 import {streets} from '@tileflow/maps';
 export default defineMap({
   id: 'main', version: 1, extends: streets,
@@ -20,6 +20,11 @@ export default defineMap({
     url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGP4DwQACfsD/fteaysAAAAASUVORK5CYII=',
     coordinates: [[-180, 85], [180, 85], [180, -85], [-180, -85]],
     attribution: 'Native image fixture',
+  }}), roads: refine({pathGround: {
+    greenColor: fixed('#FFFFFF', {reason: 'Native path-ground fallback fixture.'}),
+    groundColor: token.color('roads.path'),
+    opacity: 1,
+    widthScale: 0.92,
   }})},
 });
 `;

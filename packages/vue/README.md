@@ -201,8 +201,8 @@ Tileflow's styles are validated when they are compiled, so `validateStyle` defau
 The map canvas is multisampled by default (`canvasContextAttributes.antialias` is `true`) so the
 thin edges of 3D models stay continuous; other context attributes you pass are kept, and
 `canvasContextAttributes: {antialias: false}` trades that smoothing for lower GPU cost.
-The obsolete source fields `kind` and `style` are rejected. For a completely unmanaged map, use
-`maplibre-gl` directly rather than a Tileflow component.
+The obsolete source fields `kind` and `style` are rejected. Add your own layers, sources and
+controls to the MapLibre map from `getMap()`.
 
 Attribution stays visible during map interaction. The information button opens the full credits
 and links. Tileflow ignores `mapOptions.attributionControl: false` and `compact: true`.

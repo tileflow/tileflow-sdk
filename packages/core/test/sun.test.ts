@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {createStyle, defineMap, defineTheme, disable, reset, resolveTileflowTheme} from '../src';
-import {createTileflowThemeController} from '../src/browser';
+import {createTileflowThemeController} from '../src/browser-bundle';
 import type {TileflowRuntimeStyle} from '../src/runtime';
 import {
   mixTileflowAzimuths,

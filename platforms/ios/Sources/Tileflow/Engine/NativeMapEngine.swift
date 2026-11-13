@@ -166,7 +166,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
       self.attribution.view.frame = self.container.bounds
       self.attribution.onLink = { [weak self] url in self?.onExternalLink?(url) }
       self.container.addSubview(self.attribution.view)
-      self.brandingButton.frame = CGRect(x: 0, y: self.container.bounds.height - 44, width: 44, height: 44)
+      self.brandingButton.frame = CGRect(x: 0, y: self.container.bounds.height - 44, width: 90, height: 44)
       self.brandingButton.autoresizingMask = [.flexibleTopMargin, .flexibleRightMargin]
       self.brandingButton.addAction(UIAction { [weak self] _ in
         self?.onExternalLink?(URL(string: "https://tileflow.dev/")!)

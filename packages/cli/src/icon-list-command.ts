@@ -13,13 +13,13 @@ import {
   type TileflowIconCatalogContributor,
   type TileflowIconCatalogInspection,
   type TileflowIconCatalogMap,
-  type TileflowIconResolutionOptions,
 } from '@tileflow/dev/icons';
 import {
   createTileflowCommandFailureDocument,
   serializeTileflowCommandDocument,
 } from '@tileflow/dev/validation';
 import {withTileflowConfigSecretsHidden} from './config-execution';
+import {resolveIconOptions} from './icon-options';
 
 export type TileflowIconListJsonV3 = {
   schemaVersion: 3;
@@ -163,14 +163,11 @@ async function runIconList(options: IconListOptions): Promise<void> {
     );
   }
 
-  const icons: TileflowIconResolutionOptions = {
-    ...(options.cacheDir ? {cacheRoot: options.cacheDir} : {}),
-    ...(options.offline ? {offline: true} : {}),
-  };
+  const icons = resolveIconOptions(options);
   const inspection = await inspectTileflowIconCatalogs(project, {
     baseDirectory: dirname(loaded.configFile),
     cwd: process.cwd(),
-    ...(Object.keys(icons).length > 0 ? {icons} : {}),
+    ...(icons ? {icons} : {}),
     ...(options.map ? {mapNames: [options.map]} : {}),
   });
   process.stdout.write(serializeTileflowIconListJson(createTileflowIconListJson(inspection)));

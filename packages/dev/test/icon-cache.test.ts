@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {mkdir, readFile, readdir, rm, symlink, writeFile} from 'node:fs/promises';
+import {mkdir, readdir, readFile, rm, symlink, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import test from 'node:test';
 import {iconSet, serializeTileflowIconsLockfile} from '@tileflow/core';
@@ -77,6 +77,48 @@ test('missing offline pins, untrusted origins and malformed responses fail witho
     await assert.rejects(loadTileflowIconSetArtifact(pin, {cacheRoot, offline: true}), {
       code: 'ICON_CACHE_MISS',
     });
+  });
+});
+
+test('loopback HTTP hydration requires the exact origin in trusted configuration', async () => {
+  await withIconSetFixture(async (cacheRoot) => {
+    const {pin, artifact} = await setFixture(1, [renderedIcon('marker', [0, 20, 255, 210])]);
+    const origin = 'http://localhost:8787';
+    const localPin = {...pin, spriteUrl: `${origin}/sprites/${pin.packageId}/sprite`};
+    const calls: string[] = [];
+    const fetch: typeof globalThis.fetch = async (url, options) => {
+      calls.push(String(url));
+      assert.equal(new URL(String(url)).origin, origin);
+      assert.equal(options?.credentials, 'omit');
+      assert.equal(options?.redirect, 'error');
+      const file = artifact.files.find((file) => String(url).endsWith(`/${file.fileName}`))!;
+      return new Response(new Uint8Array(file.source).buffer, {
+        headers: {'Content-Type': file.contentType, 'Content-Length': String(file.source.length)},
+      });
+    };
+    for (const deliveryOrigins of [
+      undefined,
+      ['http://localhost:8788'],
+      ['https://localhost:8787'],
+    ]) {
+      await assert.rejects(
+        loadTileflowIconSetArtifact(localPin, {cacheRoot, deliveryOrigins, fetch}),
+        {code: 'ICON_DOWNLOAD_FAILED'},
+      );
+    }
+    assert.deepEqual(calls, []);
+    const result = await loadTileflowIconSetArtifact(localPin, {
+      cacheRoot,
+      deliveryOrigins: [origin],
+      fetch,
+    });
+    assert.equal(result.package.contentHash, artifact.contentHash);
+    assert.equal(calls.length, 4);
+    assert.deepEqual(
+      await loadTileflowIconSetArtifact(localPin, {cacheRoot, offline: true, fetch}),
+      result,
+    );
+    assert.equal(calls.length, 4);
   });
 });
 

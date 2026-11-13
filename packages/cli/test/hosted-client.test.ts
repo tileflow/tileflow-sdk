@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {compactTileflowDeploymentArtifact, tileflowDeploymentWebBytes} from '@tileflow/core/build';
+import type {CompiledTileflowFontBundle} from '@tileflow/dev/fonts';
 import type {CompiledTileflowIconPackage} from '@tileflow/dev/icons';
 import type {CliAccountSession} from '../src/account-session';
 import {
@@ -9,6 +11,7 @@ import {
   requestHostedJson,
   requestMapCapability,
   requestTeamCapability,
+  uploadHostedFontBundle,
   uploadHostedIconPackage,
   validateAccountSession,
   validateApiKey,
@@ -199,7 +202,7 @@ test('Hosted client rejects chunked responses above the byte limit', async () =>
   assert.equal(cancelled, true);
 });
 
-test('Hosted authentication failures never reflect an untrusted remote body', async () => {
+test('Hosted authentication failures preserve public diagnostics and redact the session credential', async () => {
   const session: CliAccountSession = {
     account: {email: 'ada@example.test', id: 'usr_ada', name: 'Ada'},
     accountSession: `tf_session_${'a'.repeat(64)}`,
@@ -208,15 +211,29 @@ test('Hosted authentication failures never reflect an untrusted remote body', as
     expiresAt: '2026-12-01T00:00:00.000Z',
     sessionId: 'cli_session_ada',
   };
-  const secret = 'REMOTE_INTERNAL_SECRET_SHOULD_NOT_BE_REFLECTED';
+  const secret = session.accountSession;
   const result = await requestMapCapability(
     session,
     {mapId: 'map_0123456789abcdef'},
     ['styles:write'],
-    {fetch: (async () => Response.json({error: secret}, {status: 403})) as typeof fetch},
+    {
+      fetch: (async () =>
+        Response.json(
+          {
+            code: 'TF_SCOPE_REQUIRED',
+            error: `The styles:write scope is required for ${secret}.`,
+            requestId: 'cap-ref',
+          },
+          {status: 403},
+        )) as typeof fetch,
+    },
   );
 
-  assert.deepEqual(result, {error: 'Map capability request failed (403).', ok: false});
+  assert.equal(result.ok, false);
+  if (result.ok) assert.fail('Expected authorization failure');
+  assert.equal(result.failure?.code, 'TF_SCOPE_REQUIRED');
+  assert.equal(result.failure?.requestId, 'cap-ref');
+  assert.match(result.error, /styles:write/u);
   assert.doesNotMatch(JSON.stringify(result), new RegExp(secret));
 });
 
@@ -245,7 +262,8 @@ test('a revoked account session reports the stable reauthentication action', asy
       'The saved Tileflow account session is no longer valid. Run tileflow login to authorize this machine again.',
     ok: false,
   });
-  assert.deepEqual(capability, account);
+  assert.equal(capability.ok, false);
+  if (!capability.ok) assert.match(capability.error, /Run tileflow login/u);
 });
 
 test('Team capability requests carry a Team selector and data-only scopes', async () => {
@@ -452,4 +470,85 @@ test('device polling respects the original deadline and never sends a request af
   );
   assert.equal(calls, 1);
   assert.equal(now, 2500);
+});
+
+test('icon and font uploads preserve safe API failures and header correlation', async () => {
+  const api = {apiUrl: 'https://api.example.test', apiKey: 'synthetic-secret'};
+  const fetch = (async () =>
+    Response.json(
+      {
+        code: 'TF_ASSET_INVALID',
+        error: 'The asset exceeds the size limit.',
+        retryable: false,
+        messages: [
+          {
+            code: 'SIZE_LIMIT',
+            message: 'Reduce the file size.',
+            path: 'files.sprite',
+            expected: 100,
+            actual: 200,
+          },
+        ],
+      },
+      {status: 422, headers: {'X-Request-ID': 'asset-ref', 'Retry-After': '5'}},
+    )) as typeof globalThis.fetch;
+  const fontName = `fonts/test-${'a'.repeat(64)}.ttf`;
+  const licenseName = `fonts/licenses/license-${'b'.repeat(64)}.txt`;
+  const font = {
+    contentHash: 'c'.repeat(64),
+    manifest: {
+      format: 'tileflow-font-bundle-v1',
+      files: [
+        {
+          name: licenseName,
+          byteLength: 1,
+          contentType: 'text/plain; charset=utf-8',
+          kind: 'license',
+          sha256: 'b'.repeat(64),
+        },
+        {
+          name: fontName,
+          byteLength: 1,
+          contentType: 'font/ttf',
+          kind: 'font',
+          sha256: 'a'.repeat(64),
+        },
+      ],
+      fontFaces: [
+        {family: 'Test', file: fontName, licenseFile: licenseName, style: 'normal', weight: '400'},
+      ],
+    },
+    files: [],
+  } as unknown as CompiledTileflowFontBundle;
+  for (const result of [
+    await uploadHostedIconPackage(api, compiledIconPackageFixture(), {fetch}),
+    await uploadHostedFontBundle(api, font, {fetch}),
+  ]) {
+    assert.equal(result.ok, false);
+    if (result.ok) assert.fail('Expected asset upload failure');
+    assert.equal(result.code, 'TF_ASSET_INVALID');
+    assert.equal(result.requestId, 'asset-ref');
+    assert.equal(result.retryable, false);
+    assert.equal(result.retryAfterMs, 5000);
+    assert.equal(result.messages?.[0]?.path, 'files.sprite');
+  }
+});
+
+test('non-JSON hosted errors retain only safe HTTP metadata', async () => {
+  const result = await requestHostedJson(
+    'https://api.example.test',
+    '/v1/styles',
+    {},
+    {
+      fetch: (async () =>
+        new Response('<html>private upstream error</html>', {
+          status: 503,
+          headers: {'X-Request-ID': 'proxy-ref'},
+        })) as typeof fetch,
+    },
+  );
+  assert.equal(result.json, false);
+  assert.equal(result.failure?.requestId, 'proxy-ref');
+  assert.equal(result.failure?.retryable, undefined);
+  assert.doesNotMatch(JSON.stringify(result.failure), /private upstream/u);
 });

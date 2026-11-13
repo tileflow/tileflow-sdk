@@ -111,9 +111,11 @@ test('imports the packaged browser entry without reading browser globals', async
         get() { throw new Error('browser global read during import: ' + name); },
       });
     }
-    const entry = await import('@tileflow/core/browser');
+    const entry = await import('@tileflow/core/internal');
     if (typeof entry.attachTileflowMapLifecycle !== 'function') process.exit(2);
     if (typeof entry.attachTileflowAtmosphere !== 'function') process.exit(3);
+    const browser = await import('@tileflow/core/browser');
+    if (browser.attachTileflowMapLifecycle !== entry.attachTileflowMapLifecycle) process.exit(5);
     const scene = await import('@tileflow/core/3d');
     if (typeof scene.createTileflowMap3D !== 'function') process.exit(4);
   `;

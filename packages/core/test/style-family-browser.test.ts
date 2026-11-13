@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {createTileflowThemeController} from '../src/browser';
+import {createTileflowThemeController} from '../src/browser-bundle';
 import {createTileflowStyleFamily, materializeTileflowStyleFamily} from '../src/style-family';
 import {createTileflowFamilyAnimator} from '../src/style-family-browser';
 import {prepareTileflowStyleFamilyForRendering} from '../src/style-family-render';

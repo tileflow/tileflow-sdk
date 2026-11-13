@@ -7,6 +7,7 @@ import {readFile, writeFile} from 'node:fs/promises';
 import {hostname} from 'node:os';
 import {dirname, isAbsolute, relative, resolve, sep} from 'node:path';
 import {createInterface} from 'node:readline/promises';
+import {stripVTControlCharacters} from 'node:util';
 import pc from 'picocolors';
 import {createLocalCoordinates, setupCoordinates} from '@tileflow/coordinates-runtime';
 import {
@@ -50,11 +51,7 @@ import {
   prepareTileflowStyleFonts,
   TileflowFontCompilationError,
 } from '@tileflow/dev/fonts';
-import {
-  compileTileflowIconPackages,
-  TileflowIconCompilationError,
-  type TileflowIconResolutionOptions,
-} from '@tileflow/dev/icons';
+import {compileTileflowIconPackages, TileflowIconCompilationError} from '@tileflow/dev/icons';
 import {resolveTileflowPreview} from '@tileflow/dev/preview';
 import {
   createTileflowComparisonRequestHandler,
@@ -113,6 +110,7 @@ import {
   validateAccountSession,
   validateApiKey,
 } from './hosted-client';
+import {type HostedFailure, HostedRequestError, safeHostedText} from './hosted-error';
 import {runHostedNativeDeploy} from './hosted-native-deploy';
 import {hostedApiKeyOption, hostedApiUrlOption, isHostedApiKey} from './hosted-options';
 import {
@@ -120,9 +118,11 @@ import {
   prepareTileflowHostedThemeFamily,
 } from './hosted-preflight';
 import type {HostedMapStatus} from './hosted-response';
+import {emitFailure, emitHostedFailure, emitJson} from './hosted-team';
 import {registerIconDiffCommand} from './icon-diff-command';
 import {registerIconListCommand} from './icon-list-command';
 import {registerIconLockCommands} from './icon-lock-command';
+import {resolveIconOptions} from './icon-options';
 import {registerIconSetCommands} from './icon-set-command';
 import {registerLanguageCommand} from './language-command';
 import {
@@ -154,6 +154,12 @@ import {registerVisualCommands} from './visual-command';
 import {createWorkbenchService, registerWorkbenchInspection} from './workbench-service';
 
 const program = createCliProgram();
+// Deploy's machine output is one document; shared human printers stay quiet in this mode.
+let deployJson = false;
+let deployFailureWritten = false;
+let deploySecrets: string[] = [];
+const deployErrors: string[] = [];
+const deployWarnings: string[] = [];
 const defaultApiUrl = defaultTileflowApiUrl;
 const defaultAppUrl = 'https://tileflow.dev';
 const defaultConfigPath = defaultTileflowConfigPath;
@@ -935,6 +941,7 @@ addMapSetupOptions(
   .addOption(hostedApiUrlOption())
   .addOption(hostedApiKeyOption('Tileflow API key'))
   .option('--map-id <id>', 'managed Map destination; omit it to create a new Map')
+  .option('--json', 'print deterministic schema-version-1 JSON')
   .option('--with-native', 'publish web and native-v1 together for the selected managed Map')
   .option('--map <name>', 'configured map to connect when the repository contains multiple maps')
   .option(
@@ -956,368 +963,186 @@ addMapSetupOptions(
         offline?: boolean;
         overwriteSelfHostedManifest?: boolean;
         withNative?: boolean;
+        json?: boolean;
       },
     ) => {
-      const source = resolveDeploySource(process.env);
-      if (!validateMapSetupTarget(options, source)) return;
-      const resolveApi = () =>
-        requireApiOptions(options, {
-          allowStoredCredential: allowsStoredDeployCredential(source),
-          assertExplicitKeyMap: true,
-          capabilityScopes: ['styles:write'],
-        });
-      const apiUrl = normalizeApiOrigin(options.apiUrl ?? defaultApiUrl);
-      // The config is executable repository code. Keep the captured bearer
-      // credential for the HTTP request, but do not expose it while Jiti
-      // imports tileflow.config.ts or anything that file imports.
-      delete process.env.TILEFLOW_API_KEY;
-
-      if (options.withNative) {
-        const result = await runHostedNativeDeploy(
-          {...options, apiUrl},
-          {
-            source,
-            resolveApi,
-            loadManifest: loadExistingDeployManifest,
-            writeManifest: writeDeployManifest,
-          },
-        );
-        if (result) {
-          logSuccess(
-            `${result.changed ? 'Published' : 'Unchanged'} ${pc.bold(result.mapName)} web + native-v1 (v${result.version}).`,
-          );
-          printKeyValue('Manifest', pathLabel(result.manifestPath));
-          printKeyValue('Native', link(result.nativeManifestUrl));
-        }
-        return;
-      }
-
-      logInfo(`Deploying ${pathLabel(options.config)}.`);
-      const loaded = await withTileflowConfigSecretsHidden(() =>
-        loadTileflowConfigWithInputs(options.config),
-      );
-      const project = loaded.project;
-      const baseDirectory = dirname(loaded.configFile);
-      assertValidTileflowConfig(project);
-
-      const configuredMapNames = getTileflowMapNames(project);
-      const mapNames = selectManagedDeployMaps(configuredMapNames, options);
-      if (!mapNames) return;
-      if (!validateDeployTarget(options)) return;
-      if (!validateDeployManifestMapNames(mapNames)) return;
-      const deploymentProject: TileflowBuildCatalog =
-        mapNames.length === configuredMapNames.length
-          ? project
-          : {
-              ...project,
-              maps: Object.fromEntries(
-                mapNames.map((mapName) => [mapName, project.maps[mapName]!]),
-              ),
-            };
-      const compiledIcons = await compileTileflowIconPackages(deploymentProject, {
-        baseDirectory,
-        cwd: process.cwd(),
-        icons: resolveIconOptions(options),
-        target: 'hosted',
-      });
-      const bindingsByMap = new Map(
-        compiledIcons.bindings.map((binding) => [binding.mapName, binding]),
-      );
-      const packagesByHash = new Map(
-        compiledIcons.packages.map((iconPackage) => [iconPackage.contentHash, iconPackage]),
-      );
-
-      // Validate the complete local style before the first remote write. Hosted
-      // sprite URLs are substituted after upload, but they do not change layer
-      // semantics.
-      const modelAssets = await prepareModelAssets(deploymentProject, {
-        baseDirectory,
-        target: 'hosted',
-      });
-      const preflightMapAssets = createCompiledMapAssets(
-        compiledIcons,
-        (binding) => `${apiUrl}/sprites/preflight/${binding.packageHash}/sprite`,
-        mapAssetsWithBuildingModels(modelAssets, {hosted: true}),
-      );
-      const compiledPreflightStyles = createTileflowStyles(deploymentProject, {
-        runtimeColors: true,
-        apiBaseUrl: apiUrl,
-        mapAssets: preflightMapAssets,
-      });
-      const preflightLocalTilesets = await prepareTileflowLocalTilesets(
-        deploymentProject,
-        compiledPreflightStyles,
-        {assetBaseUrl: apiUrl, baseDirectory, cwd: process.cwd()},
-      );
-      const preflightFonts = await prepareTileflowStyleFonts(
-        deploymentProject,
-        preflightLocalTilesets.styles,
-        {
-          assetBaseUrl: `${apiUrl}/fonts/preflight`,
-          baseDirectory,
-          cwd: process.cwd(),
-          target: 'hosted',
-        },
-      );
-
-      if (
-        !printHostedCompatibilityIssues(
-          inspectTileflowHostedCompatibility(deploymentProject, preflightFonts.styles),
-        )
-      ) {
-        return;
-      }
-      const mapsWithHostedFontBundles = Object.keys(preflightFonts.bundles).sort();
-      if (mapsWithHostedFontBundles.length > 0) {
-        logError('Hosted deploy does not yet support package-owned web fonts.');
-        printKeyValue('Maps', mapsWithHostedFontBundles.join(', '));
-        printNextSteps(['Use self-hosted delivery or an explicit public glyph provider.']);
-        process.exitCode = 1;
-        return;
-      }
-
-      // Count the complete compact web envelope before creating a Map or uploading resources.
-      // Preflight resource URLs are conservative; final confirmed URLs are checked again.
-      for (const mapName of mapNames) {
-        const map = deploymentProject.maps[mapName]!;
-        const family = prepareTileflowHostedThemeFamily(
-          mapName,
-          map,
-          preflightFonts.styles[mapName]!,
-        );
-        const binding = bindingsByMap.get(mapName);
-        const iconPackage = binding && packagesByHash.get(binding.packageHash);
-        const manifest = await createTileflowMapBuildManifest(
-          {
-            [mapName]: {
-              map,
-              lineage: deploymentProject.mapMetadata?.[mapName]?.lineage ?? [
-                {id: map.id, mapVersion: map.version},
-              ],
-              assets: (iconPackage?.files ?? []).map((file) => ({
-                contentType: file.contentType,
-                fileName: `icons/${mapName}/${file.fileName}`,
-                source: file.source,
-              })),
-              sourceAssets: {
-                fonts: preflightFonts.sourceIdentities[mapName] ?? [],
-                icons: compiledIcons.sourceIdentities[mapName] ?? [],
-                ...(compiledIcons.compositions[mapName]
-                  ? {iconComposition: compiledIcons.compositions[mapName]}
-                  : {}),
-                ...(hostedModelSourceIdentities(modelAssets, mapName)
-                  ? {models: hostedModelSourceIdentities(modelAssets, mapName)}
-                  : {}),
-              },
-              styles: family.styles,
-            },
-          },
-          {provenance: await createTileflowBuildProvenance(process.cwd())},
-        );
-        assertHostedStyleBudget({
-          artifact: compactTileflowDeploymentArtifact({
-            kind: 'tileflow-map-deployment',
-            schemaVersion: 1,
-            mapId: mapName,
-            buildManifest: manifest,
-            styles: family.styles,
-            teamSources: family.teamSources,
-          }),
-          environment: mapName,
-          managedMapId: options.mapId ?? 'map_preflight0000000',
-          usageMode: 'session',
-          source,
-          ...(iconPackage
-            ? {iconPackage: {contentHash: iconPackage.contentHash, label: binding!.label}}
-            : {}),
-          ...(compiledIcons.compositions[mapName]
-            ? {iconComposition: compiledIcons.compositions[mapName]}
-            : {}),
-          ...(teamModelSources(modelAssets, mapName)
-            ? {teamModelSources: teamModelSources(modelAssets, mapName)}
-            : {}),
-        });
-      }
-
-      let outputManifest: DeployedManifest | null = null;
+      deployJson = options.json === true;
+      deploySecrets = options.apiKey ? [options.apiKey] : [];
+      let mapCreation: {createdMapId: string; setupKey: string; nextSteps: string[]} | undefined;
       try {
-        outputManifest = await loadExistingDeployManifest(options.manifest, {
-          overwriteSelfHosted: options.overwriteSelfHostedManifest === true,
-        });
-      } catch (error) {
-        logError(error instanceof Error ? error.message : 'Existing manifest is invalid.');
-        process.exitCode = 1;
-        return;
-      }
-      const existingApiUrl = outputManifest
-        ? (outputManifest.apiUrl ?? Object.values(outputManifest.maps)[0]?.apiUrl)
-        : undefined;
-      if (existingApiUrl && normalizeUrl(existingApiUrl) !== apiUrl) {
-        logError('Existing manifest belongs to a different Tileflow API origin.');
-        process.exitCode = 1;
-        return;
-      }
-      const existingManifest = outputManifest;
+        const source = resolveDeploySource(process.env);
+        if (!validateMapSetupTarget(options, source)) return;
+        const resolveApi = () =>
+          requireApiOptions(options, {
+            allowStoredCredential: allowsStoredDeployCredential(source),
+            assertExplicitKeyMap: true,
+            capabilityScopes: ['styles:write'],
+            onFailure: (code, message, failure, steps = []) => {
+              const safeSteps = steps
+                .map((step) => safeHostedText(stripVTControlCharacters(step), deploySecrets))
+                .filter((step): step is string => step !== undefined);
+              if (failure) throw new HostedRequestError('Deploy authorization', failure, safeSteps);
+              const nextSteps = [...safeSteps, ...(mapCreation?.nextSteps ?? [])];
+              if (options.json) {
+                emitFailure(
+                  true,
+                  code,
+                  safeHostedText(message, deploySecrets) ?? 'Deploy authorization failed.',
+                  {
+                    ...(mapCreation ?? {}),
+                    ...(nextSteps.length ? {nextSteps} : {}),
+                  },
+                );
+              } else {
+                logError(message);
+                if (nextSteps.length) printNextSteps(nextSteps);
+              }
+              deployFailureWritten = true;
+            },
+          });
+        const apiUrl = normalizeApiOrigin(options.apiUrl ?? defaultApiUrl);
+        // The config is executable repository code. Keep the captured bearer
+        // credential for the HTTP request, but do not expose it while Jiti
+        // imports tileflow.config.ts or anything that file imports.
+        delete process.env.TILEFLOW_API_KEY;
 
-      // Authentication and account/project discovery may perform network
-      // requests. Keep them after every deterministic config, asset, style,
-      // font, compatibility, and existing-manifest check so invalid local
-      // input always fails without network access.
-      let createdMapId: string | null = null;
-      if (!options.mapId) {
-        const deployedMapId = existingManifest?.maps[mapNames[0]!]?.mapId;
-        if (deployedMapId) {
-          logError(`${pc.bold(mapNames[0]!)} is already deployed to ${deployedMapId}.`);
-          printNextSteps([
-            `Deploy it again with ${command(`tileflow deploy --map-id ${deployedMapId}`)}.`,
-          ]);
-          process.exitCode = 1;
+        if (options.withNative) {
+          const result = await runHostedNativeDeploy(
+            {...options, apiUrl},
+            {
+              source,
+              resolveApi,
+              loadManifest: loadExistingDeployManifest,
+              writeManifest: writeDeployManifest,
+            },
+          );
+          if (result) {
+            if (options.json)
+              emitJson({
+                command: 'deploy',
+                ok: true,
+                schemaVersion: 1,
+                ...result,
+                ...(deployWarnings.length ? {warnings: deployWarnings} : {}),
+              });
+            logSuccess(
+              `${result.changed ? 'Published' : 'Unchanged'} ${pc.bold(result.mapName)} web + native-v1 (v${result.version}).`,
+            );
+            printKeyValue('Manifest', pathLabel(result.manifestPath));
+            printKeyValue('Native', link(result.nativeManifestUrl));
+          }
           return;
         }
-        createdMapId = await createMapForDeploy(options, {defaultApiUrl, loadAuthConfig});
-        if (!createdMapId) return;
-        options.mapId = createdMapId;
-      }
-      const api = await resolveApi();
-      if (!api) return;
 
-      const hostedSpriteByPackageHash = new Map<string, string>();
-
-      for (const iconPackage of compiledIcons.packages) {
-        const binding = compiledIcons.bindings.find(
-          (candidate) => candidate.packageHash === iconPackage.contentHash,
+        logInfo(`Deploying ${pathLabel(options.config)}.`);
+        const loaded = await withTileflowConfigSecretsHidden(() =>
+          loadTileflowConfigWithInputs(options.config),
         );
-        const uploaded = await uploadHostedIconPackage(api, iconPackage);
+        const project = loaded.project;
+        const baseDirectory = dirname(loaded.configFile);
+        assertValidTileflowConfig(project);
 
-        if (!uploaded.ok) {
-          logError(`Icon package upload failed: ${uploaded.status}.`);
-          process.exitCode = 1;
-          return;
-        }
-        const totalBytes = iconPackage.manifest.files.reduce(
-          (total, file) => total + file.byteLength,
-          0,
-        );
-        const action = uploaded.value.changed === false ? 'Reused' : 'Uploaded';
-        logSuccess(
-          `${action} icon package ${pc.bold(binding?.label ?? 'Icons')} (${plural(iconPackage.manifest.iconNames.length, 'icon')}, ${formatBytes(totalBytes)}, ${iconPackage.contentHash.slice(0, 12)}).`,
-        );
-        hostedSpriteByPackageHash.set(iconPackage.contentHash, uploaded.value.spriteUrl);
-      }
-
-      const hostedMapAssets = createCompiledMapAssets(
-        compiledIcons,
-        (binding) => {
-          const sprite = hostedSpriteByPackageHash.get(binding.packageHash);
-          if (!sprite) throw new Error(`Missing hosted sprite URL for map ${binding.mapName}`);
-          return sprite;
-        },
-        mapAssetsWithBuildingModels(modelAssets, {hosted: true}),
-      );
-      const compiledHostedStyles = createTileflowStyles(deploymentProject, {
-        runtimeColors: true,
-        apiBaseUrl: api.apiUrl,
-        mapAssets: hostedMapAssets,
-      });
-      const hostedLocalTilesets = await prepareTileflowLocalTilesets(
-        deploymentProject,
-        compiledHostedStyles,
-        {assetBaseUrl: api.apiUrl, baseDirectory, cwd: process.cwd()},
-      );
-      const hostedFonts = await prepareTileflowStyleFonts(
-        deploymentProject,
-        hostedLocalTilesets.styles,
-        {
-          assetBaseUrl: `${api.apiUrl}/font-bundles/preflight`,
+        const configuredMapNames = getTileflowMapNames(project);
+        const mapNames = selectManagedDeployMaps(configuredMapNames, options);
+        if (!mapNames) return;
+        if (!validateDeployTarget(options)) return;
+        if (!validateDeployManifestMapNames(mapNames)) return;
+        const deploymentProject: TileflowBuildCatalog =
+          mapNames.length === configuredMapNames.length
+            ? project
+            : {
+                ...project,
+                maps: Object.fromEntries(
+                  mapNames.map((mapName) => [mapName, project.maps[mapName]!]),
+                ),
+              };
+        const compiledIcons = await compileTileflowIconPackages(deploymentProject, {
           baseDirectory,
           cwd: process.cwd(),
+          icons: resolveIconOptions(options),
           target: 'hosted',
-        },
-      );
-      for (const mapName of mapNames) {
-        if (
-          hostedFonts.bundles[mapName]?.contentHash !== preflightFonts.bundles[mapName]?.contentHash
-        ) {
-          throw new Error(`Font bundle changed after authentication for map ${mapName}.`);
-        }
-      }
+        });
+        const bindingsByMap = new Map(
+          compiledIcons.bindings.map((binding) => [binding.mapName, binding]),
+        );
+        const packagesByHash = new Map(
+          compiledIcons.packages.map((iconPackage) => [iconPackage.contentHash, iconPackage]),
+        );
 
-      const hostedFontBaseByHash = new Map<string, string>();
-      const uniqueFontBundles = [
-        ...new Map(
-          Object.values(hostedFonts.bundles).map((bundle) => [bundle.contentHash, bundle]),
-        ).values(),
-      ].sort((left, right) => left.contentHash.localeCompare(right.contentHash));
-      for (const bundle of uniqueFontBundles) {
-        const uploaded = await uploadHostedFontBundle(api, bundle);
-        if (!uploaded.ok) {
-          logError(`Font bundle upload failed: ${uploaded.status}.`);
+        // Validate the complete local style before the first remote write. Hosted
+        // sprite URLs are substituted after upload, but they do not change layer
+        // semantics.
+        const modelAssets = await prepareModelAssets(deploymentProject, {
+          baseDirectory,
+          target: 'hosted',
+        });
+        const preflightMapAssets = createCompiledMapAssets(
+          compiledIcons,
+          (binding) => `${apiUrl}/sprites/preflight/${binding.packageHash}/sprite`,
+          mapAssetsWithBuildingModels(modelAssets, {hosted: true}),
+        );
+        const compiledPreflightStyles = createTileflowStyles(deploymentProject, {
+          runtimeColors: true,
+          apiBaseUrl: apiUrl,
+          mapAssets: preflightMapAssets,
+        });
+        const preflightLocalTilesets = await prepareTileflowLocalTilesets(
+          deploymentProject,
+          compiledPreflightStyles,
+          {assetBaseUrl: apiUrl, baseDirectory, cwd: process.cwd()},
+        );
+        const preflightFonts = await prepareTileflowStyleFonts(
+          deploymentProject,
+          preflightLocalTilesets.styles,
+          {
+            assetBaseUrl: `${apiUrl}/fonts/preflight`,
+            baseDirectory,
+            cwd: process.cwd(),
+            target: 'hosted',
+          },
+        );
+
+        if (
+          !printHostedCompatibilityIssues(
+            inspectTileflowHostedCompatibility(deploymentProject, preflightFonts.styles),
+          )
+        ) {
+          return;
+        }
+        const mapsWithHostedFontBundles = Object.keys(preflightFonts.bundles).sort();
+        if (mapsWithHostedFontBundles.length > 0) {
+          logError('Hosted deploy does not yet support package-owned web fonts.');
+          printKeyValue('Maps', mapsWithHostedFontBundles.join(', '));
+          printNextSteps(['Use self-hosted delivery or an explicit public glyph provider.']);
           process.exitCode = 1;
           return;
         }
-        const action = uploaded.value.changed === false ? 'Reused' : 'Uploaded';
-        logSuccess(
-          `${action} font bundle (${plural(bundle.manifest.fontFaces.length, 'face')}, ${formatBytes(uploaded.value.totalBytes)}, ${bundle.contentHash.slice(0, 12)}).`,
-        );
-        hostedFontBaseByHash.set(bundle.contentHash, uploaded.value.baseUrl);
-      }
 
-      const fontBoundStyles = Object.fromEntries(
-        mapNames.map((mapName) => {
-          const themeStyles = hostedFonts.styles[mapName]!;
-          const bundle = hostedFonts.bundles[mapName];
-          if (!bundle) return [mapName, themeStyles];
-          const publicBaseUrl = hostedFontBaseByHash.get(bundle.contentHash);
-          if (!publicBaseUrl) throw new Error(`Missing hosted font bundle URL for map ${mapName}.`);
-          return [
+        // Count the complete compact web envelope before creating a Map or uploading resources.
+        // Preflight resource URLs are conservative; final confirmed URLs are checked again.
+        for (const mapName of mapNames) {
+          const map = deploymentProject.maps[mapName]!;
+          const family = prepareTileflowHostedThemeFamily(
             mapName,
-            Object.fromEntries(
-              Object.entries(themeStyles).map(([themeName, style]) => [
-                themeName,
-                bindTileflowStyleFontBundle(style, bundle, publicBaseUrl),
-              ]),
-            ),
-          ];
-        }),
-      );
-      const hostedThemeFamilies = Object.fromEntries(
-        mapNames.map((mapName) => [
-          mapName,
-          prepareTileflowHostedThemeFamily(
-            mapName,
-            deploymentProject.maps[mapName]!,
-            fontBoundStyles[mapName]!,
-          ),
-        ]),
-      );
-      const styles = Object.fromEntries(
-        Object.entries(hostedThemeFamilies).map(([mapName, family]) => [mapName, family.styles]),
-      );
-      const buildManifest = await createTileflowMapBuildManifest(
-        Object.fromEntries(
-          mapNames.map((mapName) => {
-            const map = deploymentProject.maps[mapName]!;
-            const iconBinding = bindingsByMap.get(mapName);
-            const iconPackage = iconBinding
-              ? packagesByHash.get(iconBinding.packageHash)
-              : undefined;
-            return [
-              mapName,
-              {
-                assets: [
-                  ...(iconPackage?.files ?? []).map((file) => ({
-                    contentType: file.contentType,
-                    fileName: `icons/${mapName}/${file.fileName}`,
-                    source: file.source,
-                  })),
-                  ...(hostedFonts.bundles[mapName]?.files ?? []),
-                ],
+            map,
+            preflightFonts.styles[mapName]!,
+          );
+          const binding = bindingsByMap.get(mapName);
+          const iconPackage = binding && packagesByHash.get(binding.packageHash);
+          const manifest = await createTileflowMapBuildManifest(
+            {
+              [mapName]: {
+                map,
                 lineage: deploymentProject.mapMetadata?.[mapName]?.lineage ?? [
                   {id: map.id, mapVersion: map.version},
                 ],
-                map,
+                assets: (iconPackage?.files ?? []).map((file) => ({
+                  contentType: file.contentType,
+                  fileName: `icons/${mapName}/${file.fileName}`,
+                  source: file.source,
+                })),
                 sourceAssets: {
-                  fonts: hostedFonts.sourceIdentities[mapName] ?? [],
+                  fonts: preflightFonts.sourceIdentities[mapName] ?? [],
                   icons: compiledIcons.sourceIdentities[mapName] ?? [],
                   ...(compiledIcons.compositions[mapName]
                     ? {iconComposition: compiledIcons.compositions[mapName]}
@@ -1326,187 +1151,453 @@ addMapSetupOptions(
                     ? {models: hostedModelSourceIdentities(modelAssets, mapName)}
                     : {}),
                 },
-                styles: styles[mapName]!,
+                styles: family.styles,
               },
+            },
+            {provenance: await createTileflowBuildProvenance(process.cwd())},
+          );
+          assertHostedStyleBudget({
+            artifact: compactTileflowDeploymentArtifact({
+              kind: 'tileflow-map-deployment',
+              schemaVersion: 1,
+              mapId: mapName,
+              buildManifest: manifest,
+              styles: family.styles,
+              teamSources: family.teamSources,
+            }),
+            environment: mapName,
+            managedMapId: options.mapId ?? 'map_preflight0000000',
+            usageMode: 'session',
+            source,
+            ...(iconPackage
+              ? {iconPackage: {contentHash: iconPackage.contentHash, label: binding!.label}}
+              : {}),
+            ...(compiledIcons.compositions[mapName]
+              ? {iconComposition: compiledIcons.compositions[mapName]}
+              : {}),
+            ...(teamModelSources(modelAssets, mapName)
+              ? {teamModelSources: teamModelSources(modelAssets, mapName)}
+              : {}),
+          });
+        }
+
+        let outputManifest: DeployedManifest | null = null;
+        try {
+          outputManifest = await loadExistingDeployManifest(options.manifest, {
+            overwriteSelfHosted: options.overwriteSelfHostedManifest === true,
+          });
+        } catch (error) {
+          logError(error instanceof Error ? error.message : 'Existing manifest is invalid.');
+          process.exitCode = 1;
+          return;
+        }
+        const existingApiUrl = outputManifest
+          ? (outputManifest.apiUrl ?? Object.values(outputManifest.maps)[0]?.apiUrl)
+          : undefined;
+        if (existingApiUrl && normalizeUrl(existingApiUrl) !== apiUrl) {
+          logError('Existing manifest belongs to a different Tileflow API origin.');
+          process.exitCode = 1;
+          return;
+        }
+        const existingManifest = outputManifest;
+
+        // Authentication and account/project discovery may perform network
+        // requests. Keep them after every deterministic config, asset, style,
+        // font, compatibility, and existing-manifest check so invalid local
+        // input always fails without network access.
+        let createdMapId: string | null = null;
+        if (!options.mapId) {
+          const deployedMapId = existingManifest?.maps[mapNames[0]!]?.mapId;
+          if (deployedMapId) {
+            logError(`${pc.bold(mapNames[0]!)} is already deployed to ${deployedMapId}.`);
+            printNextSteps([
+              `Deploy it again with ${command(`tileflow deploy --map-id ${deployedMapId}`)}.`,
+            ]);
+            process.exitCode = 1;
+            return;
+          }
+          createdMapId = await createMapForDeploy(options, {
+            defaultApiUrl,
+            loadAuthConfig,
+            onCreated: (createdMapId, setupKey) => {
+              mapCreation = {
+                createdMapId,
+                setupKey,
+                nextSteps: [
+                  `Run your original deploy command again with --map-id ${createdMapId}. Keep its --config, --map, --manifest and --api-url options, and omit Map creation flags (--team, --origin, --any-website and --setup-key).`,
+                ],
+              };
+            },
+          });
+          if (!createdMapId) {
+            deployFailureWritten = true;
+            return;
+          }
+          options.mapId = createdMapId;
+        }
+        const api = await resolveApi();
+        if (!api) return;
+
+        const hostedSpriteByPackageHash = new Map<string, string>();
+
+        for (const iconPackage of compiledIcons.packages) {
+          const binding = compiledIcons.bindings.find(
+            (candidate) => candidate.packageHash === iconPackage.contentHash,
+          );
+          const uploaded = await uploadHostedIconPackage(api, iconPackage);
+
+          if (!uploaded.ok) throw new HostedRequestError('Icon package upload', uploaded);
+          const totalBytes = iconPackage.manifest.files.reduce(
+            (total, file) => total + file.byteLength,
+            0,
+          );
+          const action = uploaded.value.changed === false ? 'Reused' : 'Uploaded';
+          logSuccess(
+            `${action} icon package ${pc.bold(binding?.label ?? 'Icons')} (${plural(iconPackage.manifest.iconNames.length, 'icon')}, ${formatBytes(totalBytes)}, ${iconPackage.contentHash.slice(0, 12)}).`,
+          );
+          hostedSpriteByPackageHash.set(iconPackage.contentHash, uploaded.value.spriteUrl);
+        }
+
+        const hostedMapAssets = createCompiledMapAssets(
+          compiledIcons,
+          (binding) => {
+            const sprite = hostedSpriteByPackageHash.get(binding.packageHash);
+            if (!sprite) throw new Error(`Missing hosted sprite URL for map ${binding.mapName}`);
+            return sprite;
+          },
+          mapAssetsWithBuildingModels(modelAssets, {hosted: true}),
+        );
+        const compiledHostedStyles = createTileflowStyles(deploymentProject, {
+          runtimeColors: true,
+          apiBaseUrl: api.apiUrl,
+          mapAssets: hostedMapAssets,
+        });
+        const hostedLocalTilesets = await prepareTileflowLocalTilesets(
+          deploymentProject,
+          compiledHostedStyles,
+          {assetBaseUrl: api.apiUrl, baseDirectory, cwd: process.cwd()},
+        );
+        const hostedFonts = await prepareTileflowStyleFonts(
+          deploymentProject,
+          hostedLocalTilesets.styles,
+          {
+            assetBaseUrl: `${api.apiUrl}/font-bundles/preflight`,
+            baseDirectory,
+            cwd: process.cwd(),
+            target: 'hosted',
+          },
+        );
+        for (const mapName of mapNames) {
+          if (
+            hostedFonts.bundles[mapName]?.contentHash !==
+            preflightFonts.bundles[mapName]?.contentHash
+          ) {
+            throw new Error(`Font bundle changed after authentication for map ${mapName}.`);
+          }
+        }
+
+        const hostedFontBaseByHash = new Map<string, string>();
+        const uniqueFontBundles = [
+          ...new Map(
+            Object.values(hostedFonts.bundles).map((bundle) => [bundle.contentHash, bundle]),
+          ).values(),
+        ].sort((left, right) => left.contentHash.localeCompare(right.contentHash));
+        for (const bundle of uniqueFontBundles) {
+          const uploaded = await uploadHostedFontBundle(api, bundle);
+          if (!uploaded.ok) throw new HostedRequestError('Font bundle upload', uploaded);
+          const action = uploaded.value.changed === false ? 'Reused' : 'Uploaded';
+          logSuccess(
+            `${action} font bundle (${plural(bundle.manifest.fontFaces.length, 'face')}, ${formatBytes(uploaded.value.totalBytes)}, ${bundle.contentHash.slice(0, 12)}).`,
+          );
+          hostedFontBaseByHash.set(bundle.contentHash, uploaded.value.baseUrl);
+        }
+
+        const fontBoundStyles = Object.fromEntries(
+          mapNames.map((mapName) => {
+            const themeStyles = hostedFonts.styles[mapName]!;
+            const bundle = hostedFonts.bundles[mapName];
+            if (!bundle) return [mapName, themeStyles];
+            const publicBaseUrl = hostedFontBaseByHash.get(bundle.contentHash);
+            if (!publicBaseUrl)
+              throw new Error(`Missing hosted font bundle URL for map ${mapName}.`);
+            return [
+              mapName,
+              Object.fromEntries(
+                Object.entries(themeStyles).map(([themeName, style]) => [
+                  themeName,
+                  bindTileflowStyleFontBundle(style, bundle, publicBaseUrl),
+                ]),
+              ),
             ];
           }),
-        ),
-        {provenance: await createTileflowBuildProvenance(process.cwd())},
-      );
-      const deployments = mapNames.map((mapName) => {
-        const iconBinding = bindingsByMap.get(mapName);
-        const iconPackage = iconBinding ? packagesByHash.get(iconBinding.packageHash) : undefined;
-        const fontBundle = hostedFonts.bundles[mapName];
-        const modelSources = teamModelSources(modelAssets, mapName);
-        return {
-          iconBinding,
-          iconComposition: compiledIcons.compositions[mapName],
-          iconPackage,
-          fontBundle,
-          modelSources,
-          mapName,
-          teamSources: hostedThemeFamilies[mapName]!.teamSources,
-          buildManifest: {
-            maps: {[mapName]: buildManifest.maps[mapName]!},
-            ...(buildManifest.provenance ? {provenance: buildManifest.provenance} : {}),
-            schemaVersion: buildManifest.schemaVersion,
-          },
-          styles: styles[mapName]!,
-        };
-      });
-
-      const deployedMaps: Record<string, DeployedManifestMap> = {};
-
-      for (const deployment of deployments) {
-        const {
-          buildManifest,
-          fontBundle,
-          iconBinding,
-          iconComposition,
-          iconPackage,
-          mapName,
-          modelSources,
-          teamSources,
-          styles: themeStyles,
-        } = deployment;
-        // The composition receipt must bind the exact effective package this deploy uploaded.
-        if (iconComposition && iconComposition.packageHash !== iconPackage?.contentHash) {
-          logError(`Icon composition does not match the effective package for ${mapName}.`);
-          process.exitCode = 1;
-          return;
-        }
-        const themeNames = Object.keys(themeStyles).sort();
-        logInfo(
-          `Deploying compiled map ${pc.bold(mapName)} (${plural(themeNames.length, 'theme')}).`,
         );
-        const response = await publishHostedStyle(
-          api,
-          {
-            artifact: {
-              buildManifest,
-              kind: 'tileflow-map-deployment',
-              mapId: mapName,
-              schemaVersion: 1,
-              styles: themeStyles,
-              teamSources,
-            },
-            environment: mapName,
-            managedMapId: options.mapId,
-            usageMode: 'session',
-            ...(iconBinding && iconPackage
-              ? {
-                  iconPackage: {
-                    contentHash: iconPackage.contentHash,
-                    label: iconBinding.label,
-                  },
-                }
-              : {}),
-            ...(iconComposition ? {iconComposition} : {}),
-            ...(fontBundle ? {fontBundle: {contentHash: fontBundle.contentHash}} : {}),
-            ...(modelSources ? {teamModelSources: modelSources} : {}),
-            source,
-          },
-          `Deploy response for ${mapName}`,
+        const hostedThemeFamilies = Object.fromEntries(
+          mapNames.map((mapName) => [
+            mapName,
+            prepareTileflowHostedThemeFamily(
+              mapName,
+              deploymentProject.maps[mapName]!,
+              fontBoundStyles[mapName]!,
+            ),
+          ]),
         );
-
-        if (!response.ok) {
-          logError(`Deploy failed for ${mapName}: ${response.status}.`);
-          if (Object.keys(deployedMaps).length > 0) {
-            logWarning(
-              `Remote publication partially succeeded for ${Object.keys(deployedMaps).join(', ')}; ` +
-                'the local manifest was preserved. Retry the same deploy to converge.',
-            );
-          }
-          process.exitCode = 1;
-          return;
-        }
-
-        const body = response.value;
-        const expectedMapId = options.mapId ?? api.mapId;
-        if (expectedMapId && body.mapId !== expectedMapId) {
-          logError(`Deploy response did not confirm the requested Map for ${mapName}.`);
-          process.exitCode = 1;
-          return;
-        }
-        const deployedThemeNames = Object.keys(body.themes).sort();
-        if (
-          themeNames.length !== deployedThemeNames.length ||
-          themeNames.some((themeName, index) => themeName !== deployedThemeNames[index])
-        ) {
-          logError(`Deploy response did not return the exact theme family for ${mapName}.`);
-          process.exitCode = 1;
-          return;
-        }
-        const resolvedMap = parseResolvedTileflowMap(deploymentProject.maps[mapName]!);
-        const mapBuild = buildManifest.maps[mapName]!;
-        deployedMaps[mapName] = {
-          defaultTheme: resolvedMap.defaultTheme,
-          environment: mapName,
-          mapId: body.mapId,
-          ...(resolvedMap.systemThemes ? {systemThemes: resolvedMap.systemThemes} : {}),
-          ...(body.familyUrl ? {familyUrl: body.familyUrl} : {}),
-          ...(resolvedMap.timeOfDay && Object.keys(resolvedMap.timeOfDay).length
-            ? {timeOfDay: resolvedMap.timeOfDay}
-            : {}),
-          themes: Object.fromEntries(
-            themeNames.map((themeName) => {
-              const deployedTheme = body.themes[themeName]!;
-              const fontFaces = getTileflowStyleFontFaces(themeStyles[themeName]!);
+        const styles = Object.fromEntries(
+          Object.entries(hostedThemeFamilies).map(([mapName, family]) => [mapName, family.styles]),
+        );
+        const buildManifest = await createTileflowMapBuildManifest(
+          Object.fromEntries(
+            mapNames.map((mapName) => {
+              const map = deploymentProject.maps[mapName]!;
+              const iconBinding = bindingsByMap.get(mapName);
+              const iconPackage = iconBinding
+                ? packagesByHash.get(iconBinding.packageHash)
+                : undefined;
               return [
-                themeName,
+                mapName,
                 {
-                  colorScheme: resolvedMap.themes[themeName]!.colorScheme,
-                  fontFaces,
-                  revision: mapBuild.themes[themeName]!.styleSha256,
-                  ...(deployedTheme.styleId ? {styleId: deployedTheme.styleId} : {}),
-                  styleUrl: deployedTheme.styleUrl,
+                  assets: [
+                    ...(iconPackage?.files ?? []).map((file) => ({
+                      contentType: file.contentType,
+                      fileName: `icons/${mapName}/${file.fileName}`,
+                      source: file.source,
+                    })),
+                    ...(hostedFonts.bundles[mapName]?.files ?? []),
+                  ],
+                  lineage: deploymentProject.mapMetadata?.[mapName]?.lineage ?? [
+                    {id: map.id, mapVersion: map.version},
+                  ],
+                  map,
+                  sourceAssets: {
+                    fonts: hostedFonts.sourceIdentities[mapName] ?? [],
+                    icons: compiledIcons.sourceIdentities[mapName] ?? [],
+                    ...(compiledIcons.compositions[mapName]
+                      ? {iconComposition: compiledIcons.compositions[mapName]}
+                      : {}),
+                    ...(hostedModelSourceIdentities(modelAssets, mapName)
+                      ? {models: hostedModelSourceIdentities(modelAssets, mapName)}
+                      : {}),
+                  },
+                  styles: styles[mapName]!,
                 },
               ];
             }),
           ),
-          ...(resolvedMap.view ? {view: resolvedMap.view} : {}),
-          usageMode: 'session' as const,
-          worldGeneration: 'v1' as const,
-        };
-        const versionLabel = Number.isInteger(body.version) ? ` (v${body.version})` : '';
+          {provenance: await createTileflowBuildProvenance(process.cwd())},
+        );
+        const deployments = mapNames.map((mapName) => {
+          const iconBinding = bindingsByMap.get(mapName);
+          const iconPackage = iconBinding ? packagesByHash.get(iconBinding.packageHash) : undefined;
+          const fontBundle = hostedFonts.bundles[mapName];
+          const modelSources = teamModelSources(modelAssets, mapName);
+          return {
+            iconBinding,
+            iconComposition: compiledIcons.compositions[mapName],
+            iconPackage,
+            fontBundle,
+            modelSources,
+            mapName,
+            teamSources: hostedThemeFamilies[mapName]!.teamSources,
+            buildManifest: {
+              maps: {[mapName]: buildManifest.maps[mapName]!},
+              ...(buildManifest.provenance ? {provenance: buildManifest.provenance} : {}),
+              schemaVersion: buildManifest.schemaVersion,
+            },
+            styles: styles[mapName]!,
+          };
+        });
 
-        if (body.changed === false) {
-          logSuccess(`Unchanged ${pc.bold(mapName)}${versionLabel}.`);
-        } else {
-          logSuccess(`Published ${pc.bold(mapName)}${versionLabel}.`);
-        }
-        // Hosted maps draw a Team 3D model's published current version, not the project's files.
-        for (const teamModel of body.teamModels ?? []) {
-          if (teamModel.sources !== 'differ') continue;
-          logWarning(
-            `3D model ${pc.bold(teamModel.model)} draws its published version ${teamModel.version}, which was not prepared from this project's files. Run \`tileflow models publish\` to publish them.`,
+        const deployedMaps: Record<string, DeployedManifestMap> = {};
+
+        for (const deployment of deployments) {
+          const {
+            buildManifest,
+            fontBundle,
+            iconBinding,
+            iconComposition,
+            iconPackage,
+            mapName,
+            modelSources,
+            teamSources,
+            styles: themeStyles,
+          } = deployment;
+          // The composition receipt must bind the exact effective package this deploy uploaded.
+          if (iconComposition && iconComposition.packageHash !== iconPackage?.contentHash) {
+            logError(`Icon composition does not match the effective package for ${mapName}.`);
+            process.exitCode = 1;
+            return;
+          }
+          const themeNames = Object.keys(themeStyles).sort();
+          logInfo(
+            `Deploying compiled map ${pc.bold(mapName)} (${plural(themeNames.length, 'theme')}).`,
           );
+          const response = await publishHostedStyle(
+            api,
+            {
+              artifact: {
+                buildManifest,
+                kind: 'tileflow-map-deployment',
+                mapId: mapName,
+                schemaVersion: 1,
+                styles: themeStyles,
+                teamSources,
+              },
+              environment: mapName,
+              managedMapId: options.mapId,
+              usageMode: 'session',
+              ...(iconBinding && iconPackage
+                ? {
+                    iconPackage: {
+                      contentHash: iconPackage.contentHash,
+                      label: iconBinding.label,
+                    },
+                  }
+                : {}),
+              ...(iconComposition ? {iconComposition} : {}),
+              ...(fontBundle ? {fontBundle: {contentHash: fontBundle.contentHash}} : {}),
+              ...(modelSources ? {teamModelSources: modelSources} : {}),
+              source,
+            },
+            `Deploy response for ${mapName}`,
+          );
+
+          if (!response.ok) {
+            if (Object.keys(deployedMaps).length > 0) {
+              logWarning(
+                `Remote publication partially succeeded for ${Object.keys(deployedMaps).join(', ')}; ` +
+                  'the local manifest was preserved. Resolve this failure before deploying again.',
+              );
+            }
+            throw new HostedRequestError(`Deploy for ${mapName}`, response);
+          }
+
+          const body = response.value;
+          const expectedMapId = options.mapId ?? api.mapId;
+          if (expectedMapId && body.mapId !== expectedMapId) {
+            logError(`Deploy response did not confirm the requested Map for ${mapName}.`);
+            process.exitCode = 1;
+            return;
+          }
+          const deployedThemeNames = Object.keys(body.themes).sort();
+          if (
+            themeNames.length !== deployedThemeNames.length ||
+            themeNames.some((themeName, index) => themeName !== deployedThemeNames[index])
+          ) {
+            logError(`Deploy response did not return the exact theme family for ${mapName}.`);
+            process.exitCode = 1;
+            return;
+          }
+          const resolvedMap = parseResolvedTileflowMap(deploymentProject.maps[mapName]!);
+          const mapBuild = buildManifest.maps[mapName]!;
+          deployedMaps[mapName] = {
+            defaultTheme: resolvedMap.defaultTheme,
+            environment: mapName,
+            mapId: body.mapId,
+            ...(resolvedMap.systemThemes ? {systemThemes: resolvedMap.systemThemes} : {}),
+            ...(body.familyUrl ? {familyUrl: body.familyUrl} : {}),
+            ...(resolvedMap.timeOfDay && Object.keys(resolvedMap.timeOfDay).length
+              ? {timeOfDay: resolvedMap.timeOfDay}
+              : {}),
+            themes: Object.fromEntries(
+              themeNames.map((themeName) => {
+                const deployedTheme = body.themes[themeName]!;
+                const fontFaces = getTileflowStyleFontFaces(themeStyles[themeName]!);
+                return [
+                  themeName,
+                  {
+                    colorScheme: resolvedMap.themes[themeName]!.colorScheme,
+                    fontFaces,
+                    revision: mapBuild.themes[themeName]!.styleSha256,
+                    ...(deployedTheme.styleId ? {styleId: deployedTheme.styleId} : {}),
+                    styleUrl: deployedTheme.styleUrl,
+                  },
+                ];
+              }),
+            ),
+            ...(resolvedMap.view ? {view: resolvedMap.view} : {}),
+            usageMode: 'session' as const,
+            worldGeneration: 'v1' as const,
+          };
+          const versionLabel = Number.isInteger(body.version) ? ` (v${body.version})` : '';
+
+          if (body.changed === false) {
+            logSuccess(`Unchanged ${pc.bold(mapName)}${versionLabel}.`);
+          } else {
+            logSuccess(`Published ${pc.bold(mapName)}${versionLabel}.`);
+          }
+          // Hosted maps draw a Team 3D model's published current version, not the project's files.
+          for (const teamModel of body.teamModels ?? []) {
+            if (teamModel.sources !== 'differ') continue;
+            logWarning(
+              `3D model ${pc.bold(teamModel.model)} draws its published version ${teamModel.version}, which was not prepared from this project's files. Run \`tileflow models publish\` to publish them.`,
+            );
+          }
         }
-      }
 
-      const manifestPath = await writeDeployManifest(options.manifest, {
-        apiUrl: api.apiUrl,
-        maps: {...(existingManifest?.maps ?? {}), ...deployedMaps},
-        version: Object.values({...existingManifest?.maps, ...deployedMaps}).some(
-          (map) => map.familyUrl,
-        )
-          ? 3
-          : Object.values({...existingManifest?.maps, ...deployedMaps}).some((map) => map.timeOfDay)
-            ? 2
-            : 1,
-      });
+        const manifestPath = await writeDeployManifest(options.manifest, {
+          apiUrl: api.apiUrl,
+          maps: {...(existingManifest?.maps ?? {}), ...deployedMaps},
+          version: Object.values({...existingManifest?.maps, ...deployedMaps}).some(
+            (map) => map.familyUrl,
+          )
+            ? 3
+            : Object.values({...existingManifest?.maps, ...deployedMaps}).some(
+                  (map) => map.timeOfDay,
+                )
+              ? 2
+              : 1,
+        });
 
-      logSuccess('Deployed Tileflow maps.');
-      printKeyValue('Manifest', pathLabel(manifestPath));
-      printDeployedMaps(deployedMaps);
-      const deployedMapId = Object.values(deployedMaps)[0]?.mapId;
-      if (deployedMapId) {
-        printNextSteps([
-          ...(createdMapId
-            ? [`Deploy later changes with ${command(`tileflow deploy --map-id ${createdMapId}`)}.`]
-            : []),
-          `Check hosted state with ${command(`tileflow status --map-id ${deployedMapId}`)}.`,
-        ]);
+        if (options.json)
+          emitJson({
+            command: 'deploy',
+            ok: true,
+            schemaVersion: 1,
+            manifestPath,
+            maps: deployedMaps,
+            ...(mapCreation ?? {}),
+            ...(deployWarnings.length ? {warnings: deployWarnings} : {}),
+          });
+        logSuccess('Deployed Tileflow maps.');
+        printKeyValue('Manifest', pathLabel(manifestPath));
+        printDeployedMaps(deployedMaps);
+        const deployedMapId = Object.values(deployedMaps)[0]?.mapId;
+        if (deployedMapId) {
+          printNextSteps([
+            ...(createdMapId
+              ? [
+                  `Deploy later changes with ${command(`tileflow deploy --map-id ${createdMapId}`)}.`,
+                ]
+              : []),
+            `Check hosted state with ${command(`tileflow status --map-id ${deployedMapId}`)}.`,
+          ]);
+        }
+      } catch (error) {
+        if (error instanceof HostedRequestError) {
+          emitHostedFailure(options.json, error.operation, error.failure, {
+            ...(mapCreation ?? {}),
+            ...(error.nextSteps.length
+              ? {nextSteps: [...error.nextSteps, ...(mapCreation?.nextSteps ?? [])]}
+              : {}),
+            ...(deployWarnings.length ? {warnings: deployWarnings} : {}),
+          });
+          deployFailureWritten = true;
+        } else if (options.json) {
+          printCliError(error);
+          process.exitCode = 1;
+        } else {
+          throw error;
+        }
+      } finally {
+        if (options.json && process.exitCode && !deployFailureWritten) {
+          emitFailure(true, 'deploy_failed', deployErrors[0] ?? 'Deploy failed.', {
+            ...(mapCreation ?? {}),
+            ...(deployErrors.length > 1
+              ? {messages: deployErrors.slice(0, 16).map((message) => ({message}))}
+              : {}),
+            ...(deployWarnings.length ? {warnings: deployWarnings} : {}),
+          });
+        }
+        deployJson = false;
       }
     },
   );
@@ -1562,7 +1653,7 @@ program
     }
 
     if (options.json) {
-      console.log(JSON.stringify(status, null, 2));
+      printHumanLine(JSON.stringify(status, null, 2));
       return;
     }
 
@@ -1650,8 +1741,18 @@ if (isRootCliVersionRequest(process.argv.slice(2))) {
       'semantic-diff',
       'language',
     ].includes(structuredCommand);
-  if (structuredErrors) configureJsonErrors(program);
+  const deployStructured = structuredCommand === 'deploy' && process.argv.includes('--json');
+  if (structuredErrors || deployStructured) configureJsonErrors(program);
   program.parseAsync().catch((error: unknown) => {
+    if (deployStructured) {
+      if (error && typeof error === 'object' && 'exitCode' in error && error.exitCode === 0) return;
+      emitFailure(
+        true,
+        'deploy_failed',
+        safeHostedText(error instanceof Error ? error.message : undefined) ?? 'Deploy failed.',
+      );
+      return;
+    }
     if (structuredErrors) {
       if (
         typeof error === 'object' &&
@@ -2092,23 +2193,6 @@ async function writeDeployManifest(manifestPath: string, manifest: DeployedManif
   return manifestPath;
 }
 
-/**
- * Build the explicit shared Icon Set resolution settings for one command invocation.
- *
- * Only these options select a cache root or offline behavior. No command resolves a catalog head
- * during validation, build, preview or deploy.
- */
-function resolveIconOptions(options: {
-  cacheDir?: string;
-  offline?: boolean;
-}): TileflowIconResolutionOptions | undefined {
-  const icons: TileflowIconResolutionOptions = {
-    ...(options.cacheDir ? {cacheRoot: options.cacheDir} : {}),
-    ...(options.offline ? {offline: true} : {}),
-  };
-  return Object.keys(icons).length > 0 ? icons : undefined;
-}
-
 type CompiledProjectIcons = Awaited<ReturnType<typeof compileTileflowIconPackages>>;
 
 function createCompiledMapAssets(
@@ -2267,11 +2351,18 @@ async function requireApiOptions(
     assertExplicitKeyMap?: boolean;
     capabilityScopes?: Array<'static:write' | 'status:read' | 'styles:write'>;
     silent?: boolean;
-    onFailure?: ((code: string, message: string) => void) | undefined;
+    onFailure?:
+      | ((
+          code: string,
+          message: string,
+          failure?: HostedFailure,
+          steps?: readonly string[],
+        ) => void)
+      | undefined;
   } = {},
 ): Promise<{apiUrl: string; apiKey: string; mapId: string} | null> {
-  const refuse = (code: string, message: string, steps: string[] = []) => {
-    if (behavior.onFailure) behavior.onFailure(code, message);
+  const refuse = (code: string, message: string, steps: string[] = [], failure?: HostedFailure) => {
+    if (behavior.onFailure) behavior.onFailure(code, message, failure, steps);
     else if (!behavior.silent) {
       logError(message);
       if (steps.length) printNextSteps(steps);
@@ -2294,7 +2385,7 @@ async function requireApiOptions(
     if (behavior.assertExplicitKeyMap) {
       const profile = await validateApiKey(apiUrl, options.apiKey);
       if (!profile.ok) {
-        return refuse('api_key_validation_failed', profile.error);
+        return refuse('api_key_validation_failed', profile.error, [], profile.failure);
       }
       if (!apiProfileCanTargetMap(profile.value, requestedMapId)) {
         return refuse('api_key_map_mismatch', 'This API key belongs to another Map.');
@@ -2340,7 +2431,14 @@ async function requireApiOptions(
     behavior.capabilityScopes ?? ['status:read'],
   );
   if (!capability.ok) {
-    return refuse('map_capability_failed', capability.error);
+    return refuse(
+      'map_capability_failed',
+      capability.error,
+      capability.failure?.status === 401
+        ? ['Run tileflow login to authorize this machine again.']
+        : [],
+      capability.failure,
+    );
   }
   return {apiKey: capability.capability, apiUrl, mapId: capability.mapId};
 }
@@ -2406,49 +2504,60 @@ function printCliError(error: unknown) {
   }
 }
 
+function printHumanLine(message: string) {
+  if (!deployJson) console.log(message);
+}
+
 function logSuccess(message: string) {
-  console.log(`${pc.green('✓')} ${message}`);
+  printHumanLine(`${pc.green('✓')} ${message}`);
 }
 
 function logError(message: string) {
-  console.log(`${pc.red('✕')} ${message}`);
+  if (deployJson)
+    deployErrors.push(
+      safeHostedText(stripVTControlCharacters(message), deploySecrets) ??
+        'Deploy failed. Check the local configuration and connection.',
+    );
+  printHumanLine(`${pc.red('✕')} ${message}`);
 }
 
 function logWarning(message: string) {
-  console.log(`${pc.yellow('!')} ${message}`);
+  const warning = safeHostedText(stripVTControlCharacters(message), deploySecrets);
+  if (warning) deployWarnings.push(warning);
+  printHumanLine(`${pc.yellow('!')} ${message}`);
 }
 
 function logInfo(message: string) {
-  console.log(`${pc.cyan('i')} ${message}`);
+  printHumanLine(`${pc.cyan('i')} ${message}`);
 }
 
 function logMuted(message: string) {
-  console.log(pc.gray(message));
+  printHumanLine(pc.gray(message));
 }
 
 function printTitle(title: string, subtitle?: string) {
-  console.log(pc.bold(title));
+  printHumanLine(pc.bold(title));
   if (subtitle) {
-    console.log(pc.gray(subtitle));
+    printHumanLine(pc.gray(subtitle));
   }
 }
 
 function printKeyValue(label: string, value: string) {
-  console.log(`${pc.gray(`${label}:`.padEnd(13))} ${value}`);
+  printHumanLine(`${pc.gray(`${label}:`.padEnd(13))} ${value}`);
 }
 
 function printChecks(items: readonly string[]) {
   for (const item of items) {
-    console.log(`  ${pc.green('✓')} ${item}`);
+    printHumanLine(`  ${pc.green('✓')} ${item}`);
   }
 }
 
 function printNextSteps(steps: readonly string[]) {
   if (steps.length === 0) return;
 
-  console.log(`\n${pc.bold('Next steps')}`);
+  printHumanLine(`\n${pc.bold('Next steps')}`);
   for (const step of steps) {
-    console.log(`  ${pc.cyan('•')} ${step}`);
+    printHumanLine(`  ${pc.cyan('•')} ${step}`);
   }
 }
 
@@ -2456,7 +2565,8 @@ function printValidationErrors(messages: readonly {message: string; path: string
   logError('Tileflow config has errors.');
   for (const message of messages) {
     const path = message.path ? pc.cyan(message.path) : pc.cyan('(root)');
-    console.log(`  ${pc.red('✕')} ${path} ${pc.gray('-')} ${message.message}`);
+    if (deployJson) logError(`${message.path || '(root)'}: ${message.message}`);
+    else printHumanLine(`  ${pc.red('✕')} ${path} ${pc.gray('-')} ${message.message}`);
   }
 }
 
@@ -2495,11 +2605,11 @@ function printDeployedMaps(maps: Record<string, DeployedManifestMap>) {
   const entries = Object.entries(maps);
   if (entries.length === 0) return;
 
-  console.log(`\n${pc.bold('Maps')}`);
+  printHumanLine(`\n${pc.bold('Maps')}`);
   for (const [name, map] of entries) {
     for (const [themeName, theme] of Object.entries(map.themes)) {
       const label = `${name}/${themeName}`;
-      console.log(`  ${pc.green('✓')} ${label.padEnd(24)} ${link(theme.styleUrl)}`);
+      printHumanLine(`  ${pc.green('✓')} ${label.padEnd(24)} ${link(theme.styleUrl)}`);
     }
   }
 }
@@ -2584,12 +2694,12 @@ function printMapStatus(status: HostedMapStatus, apiUrl: string) {
   printTitle('Tileflow status');
   printKeyValue('Map', pc.bold(status.mapId));
 
-  console.log(`\n${pc.bold('Styles')}`);
+  printHumanLine(`\n${pc.bold('Styles')}`);
   if (status.styles.length === 0) {
     logMuted('  No styles deployed.');
   }
   for (const style of status.styles) {
-    console.log(
+    printHumanLine(
       `  ${pc.green('✓')} ${style.environment.padEnd(16)} ${link(`${apiUrl}/maps/${style.mapId}/style.json`).padEnd(36)} ${formatBytes(style.size).padStart(10)}  ${pc.gray(formatDate(style.uploaded))}`,
     );
   }

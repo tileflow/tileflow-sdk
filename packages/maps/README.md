@@ -113,12 +113,11 @@ at junctions. Links remain narrower and draw before receiving roads. Tunnel casi
 surface and bridge casings are continuous. Construction fills and marks draw below roads in
 service. Crosswalks and compact blue-gray arrows fade in from z16.5.
 
-Surface footpaths and cycleways share geometry across appearances, at 92% of their authored
-width and without casings. Day uses white over mapped green ground and gray-earth elsewhere.
-The shared `roads.pathGround` compiler and browser protocol clip the green portions from the
-same vector tiles; a complete ground-colored path remains visible if context cannot load.
-Road carriageway outlines draw above these paths. This treatment belongs to the Streets
-definition and survives normal artifact regeneration in every palette and time preset.
+Footpaths use a light fill and a subtle casing from the ordinary road source, on both urban
+and green ground. Cycleways retain their own ink, and steps, bridges and tunnels retain their
+distinct treatments. Paths stay below road carriageway fills. Streets needs no
+derived path source or extra path protocol; its shared geometry and theme colors survive
+normal artifact regeneration in every palette and time preset.
 Road palettes, width profiles, building outlines and the overview backgrounds are authored here
 in Maps; consumers inherit them without installing a separately edited style snapshot.
 

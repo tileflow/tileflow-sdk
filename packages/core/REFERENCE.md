@@ -52,6 +52,10 @@ later-wins icon precedence apply to all contributors.
 keys, stale references, mixed Teams, invalid IDs, floating versions, unsafe URLs and manifest/hash
 mismatches. Serialization is canonical; hashes are internal integrity details.
 
+Delivery URLs require HTTPS, except canonical HTTP URLs on `localhost`, `127.0.0.1` or `[::1]`
+for a local registry. A lock does not authorize downloads: the caller must explicitly trust that
+exact origin through the development tooling's `deliveryOrigins` setting.
+
 Shared identity follows published artwork, not source-only SVG edits yielding identical artifacts.
 Git retains original artwork history. Shared packages contain no original-source hash, format or
 filesystem path; local/package originals retain source identity. Shared winners use `rendered-icon`

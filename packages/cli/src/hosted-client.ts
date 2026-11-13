@@ -10,6 +10,7 @@ import {
   type ProjectIdentity,
   rejectedAccountSessionMessage,
 } from './account-session';
+import {formatHostedFailure, type HostedFailure, readHostedFailure} from './hosted-error';
 import {
   hostedFontBundleResponseSchema,
   hostedIconPackageResponseSchema,
@@ -94,6 +95,8 @@ export type HostedJsonResponse = {
   ok: boolean;
   status: number;
   retryAfterMs?: number;
+  requestId?: string;
+  failure?: HostedFailure;
 };
 
 export async function requestHostedJson(
@@ -113,19 +116,36 @@ export async function requestHostedJson(
     const metadata = {
       ok: response.ok,
       status: response.status,
+      ...(response.headers.get('x-request-id')
+        ? {requestId: response.headers.get('x-request-id')!}
+        : {}),
       ...(Number.isFinite(retryAfterMs) ? {retryAfterMs} : {}),
     };
-    const source = await readBoundedResponseText(response, 'Hosted API');
-    if (!source) return {body: null, json: true, ...metadata};
+    let source = '';
+    let json = true;
     try {
-      return {
-        body: JSON.parse(source) as unknown,
-        json: true,
-        ...metadata,
-      };
-    } catch {
-      return {body: null, json: false, ...metadata};
+      source = await readBoundedResponseText(response, 'Hosted API');
+    } catch (error) {
+      if (response.ok) throw error;
+      json = false;
     }
+    let body: unknown = null;
+    try {
+      if (source) body = JSON.parse(source) as unknown;
+    } catch {
+      json = false;
+    }
+    const result: HostedJsonResponse = {body, json, ...metadata};
+    if (!response.ok) {
+      const authorization = new Headers(init.headers).get('authorization');
+      result.failure = readHostedFailure(
+        result,
+        authorization ? [authorization.replace(/^Bearer\s+/iu, '')] : [],
+      );
+      result.requestId = result.failure.requestId;
+      result.retryAfterMs = result.failure.retryAfterMs;
+    }
+    return result;
   });
 }
 
@@ -235,7 +255,7 @@ export async function validateAccountSession(
   options: HostedRequestOptions = {},
 ): Promise<
   | {ok: true; value: {account: AccountIdentity; session: {expiresAt: string; id: string}}}
-  | {error: string; ok: false}
+  | {error: string; ok: false; failure?: HostedFailure}
 > {
   const response = await requestHostedJson(
     session.apiOrigin,
@@ -280,7 +300,7 @@ export async function validateApiKey(
   apiUrl: string,
   apiKey: string,
   options: HostedRequestOptions = {},
-): Promise<{ok: true; value: ApiProfile} | {error: string; ok: false}> {
+): Promise<{ok: true; value: ApiProfile} | {error: string; ok: false; failure?: HostedFailure}> {
   const response = await requestHostedJson(
     apiUrl,
     '/v1/me',
@@ -288,7 +308,7 @@ export async function validateApiKey(
     options,
   );
   if (!response.ok) {
-    return {error: `API key validation failed (${response.status}).`, ok: false};
+    return hostedOperationFailure('API key validation', response);
   }
   const body = asRecord(response.body);
   if (response.json && body.credentialType === 'team_api_key') {
@@ -369,7 +389,10 @@ export async function requestMapCapability(
   target: {mapId: string},
   scopes: HostedCapabilityScope[],
   options: HostedRequestOptions = {},
-): Promise<{capability: string; mapId: string; ok: true} | {error: string; ok: false}> {
+): Promise<
+  | {capability: string; mapId: string; ok: true}
+  | {error: string; ok: false; failure?: HostedFailure}
+> {
   let response: HostedJsonResponse;
   try {
     response = await requestHostedJson(
@@ -388,13 +411,9 @@ export async function requestMapCapability(
     return {error: safeTransportError(error, 'Map capability request failed.'), ok: false};
   }
   if (!response.ok) {
-    return {
-      error:
-        response.status === 401
-          ? rejectedAccountSessionMessage
-          : `Map capability request failed (${response.status}).`,
-      ok: false,
-    };
+    const result = hostedOperationFailure('Map authorization', response);
+    if (response.status === 401) result.error += `\n${rejectedAccountSessionMessage}`;
+    return result;
   }
   const body = asRecord(response.body);
   if (
@@ -421,7 +440,7 @@ export async function requestTeamCapability(
   options: HostedRequestOptions = {},
 ): Promise<
   | {capability: string; expiresAt: string; ok: true; team: ProjectIdentity}
-  | {error: string; ok: false}
+  | {error: string; ok: false; failure?: HostedFailure}
 > {
   let response: HostedJsonResponse;
   try {
@@ -441,7 +460,7 @@ export async function requestTeamCapability(
     return {error: safeTransportError(error, 'Team capability request failed.'), ok: false};
   }
   if (!response.ok) {
-    return {error: `Team capability request failed (${response.status}).`, ok: false};
+    return hostedOperationFailure('Team authorization', response);
   }
   const body = asRecord(response.body);
   if (
@@ -465,7 +484,9 @@ export async function requestTeamCapability(
 export async function listAccountTeams(
   session: CliAccountSession,
   options: HostedRequestOptions = {},
-): Promise<{ok: true; teams: ProjectIdentity[]} | {error: string; ok: false}> {
+): Promise<
+  {ok: true; teams: ProjectIdentity[]} | {error: string; ok: false; failure?: HostedFailure}
+> {
   const response = await requestHostedJson(
     session.apiOrigin,
     '/v1/cli/teams',
@@ -473,7 +494,7 @@ export async function listAccountTeams(
     options,
   );
   const body = asRecord(response.body);
-  if (!response.ok) return {error: `Team discovery failed (${response.status}).`, ok: false};
+  if (!response.ok) return hostedOperationFailure('Team discovery', response);
   if (
     !response.json ||
     body.schemaVersion !== 1 ||
@@ -520,7 +541,9 @@ export type MapSetupFailureCode =
 export async function listMapSetupTeams(
   session: CliAccountSession,
   options: HostedRequestOptions = {},
-): Promise<{ok: true; teams: MapSetupTeam[]} | {error: string; ok: false}> {
+): Promise<
+  {ok: true; teams: MapSetupTeam[]} | {error: string; ok: false; failure?: HostedFailure}
+> {
   let response: HostedJsonResponse;
   try {
     response = await requestHostedJson(
@@ -654,7 +677,7 @@ export async function publishHostedStyle(
   responseLabel: string,
   options: HostedRequestOptions = {},
 ): Promise<
-  | {ok: false; status: number}
+  | ({ok: false} & HostedFailure)
   | {ok: true; value: z.infer<typeof hostedStyleDeploymentResponseSchema>}
 > {
   const input = body as Record<string, unknown>;
@@ -669,7 +692,7 @@ export async function publishHostedStyle(
     },
     options,
   );
-  if (!response.ok) return {ok: false, status: response.status};
+  if (!response.ok) return {ok: false, ...readHostedFailure(response)};
   return {
     ok: true,
     value: parseResponse(response, hostedStyleDeploymentResponseSchema, responseLabel),
@@ -691,7 +714,7 @@ export async function uploadHostedIconPackage(
   iconPackage: CompiledTileflowIconPackage,
   options: HostedRequestOptions = {},
 ): Promise<
-  {ok: false; status: number} | {ok: true; value: z.infer<typeof hostedIconPackageResponseSchema>}
+  ({ok: false} & HostedFailure) | {ok: true; value: z.infer<typeof hostedIconPackageResponseSchema>}
 > {
   const formData = new FormData();
   const fieldNames: Record<string, string> = {
@@ -713,7 +736,7 @@ export async function uploadHostedIconPackage(
     {body: formData, headers: authorizationHeaders(api.apiKey, api.mapId), method: 'PUT'},
     options,
   );
-  if (!response.ok) return {ok: false, status: response.status};
+  if (!response.ok) return {ok: false, ...readHostedFailure(response)};
   const value = parseResponse(
     response,
     hostedIconPackageResponseSchema,
@@ -738,7 +761,7 @@ export async function uploadHostedFontBundle(
   bundle: CompiledTileflowFontBundle,
   options: HostedRequestOptions = {},
 ): Promise<
-  {ok: false; status: number} | {ok: true; value: z.infer<typeof hostedFontBundleResponseSchema>}
+  ({ok: false} & HostedFailure) | {ok: true; value: z.infer<typeof hostedFontBundleResponseSchema>}
 > {
   const formData = new FormData();
   formData.append(
@@ -765,7 +788,7 @@ export async function uploadHostedFontBundle(
     {body: formData, headers: authorizationHeaders(api.apiKey, api.mapId), method: 'PUT'},
     options,
   );
-  if (!response.ok) return {ok: false, status: response.status};
+  if (!response.ok) return {ok: false, ...readHostedFailure(response)};
   const value = parseResponse(
     response,
     hostedFontBundleResponseSchema,
@@ -1041,4 +1064,9 @@ function safeTransportError(error: unknown, fallback: string): string {
     return error.message;
   }
   return fallback;
+}
+
+function hostedOperationFailure(operation: string, response: HostedJsonResponse) {
+  const failure = readHostedFailure(response);
+  return {error: formatHostedFailure(operation, failure), ok: false as const, failure};
 }

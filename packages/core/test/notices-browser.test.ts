@@ -145,8 +145,13 @@ test('waits for an unloaded style and releases everything when the map is remove
   f.emit('style.load');
   assert.equal(f.controls[0]?.position, 'bottom-left');
   f.emit('styledata');
+  // MapLibre removes its controls before it fires `remove`; the notice is not removed again.
+  const removed = f.controls.splice(0);
+  for (const {control} of removed) control.onRemove(f.map);
+  let removedAgain = 0;
+  f.map.removeControl = () => void (removedAgain += 1);
   f.emit('remove');
-  assert.equal(f.controls.length, 0);
+  assert.equal(removedAgain, 0);
   assert.equal(f.timers.size, 0);
   for (const listeners of f.events.values()) assert.equal(listeners.size, 0);
 });

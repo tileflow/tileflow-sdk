@@ -44,7 +44,8 @@ test('Streets construction roads have square transverse marks over a faint conti
     assert.ok(path);
     const footpath = {class: 'construction', type: 'footway'};
     assert.deepEqual(paint(path, 'line-dasharray', 18, footpath), [1.5, 1]);
-    assert.equal(paint(path, 'line-opacity', 18, footpath), 1);
+    // Unlike carriageways, construction footpaths retain their own visible dashed fill.
+    assert.ok(paint(path, 'line-opacity', 18, footpath) > 0);
     const marks = style.layers.filter(
       (layer): layer is LineLayerSpecification =>
         layer.type === 'line' &&

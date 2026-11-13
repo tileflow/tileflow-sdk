@@ -41,7 +41,6 @@ function referenceRole(role: string): string {
   if (role.startsWith('roads.overview.'))
     return role.includes('casing') ? 'roads.detail.casing' : 'roads.motorway';
   if (role === 'roads.accessOverview') return 'roads.default';
-  if (role === 'roads.path.ground' || role === 'roads.path.green') return 'roads.path';
   if (role === 'surface.background.transition') return 'surface.background';
   if (role === 'landcover.orchard' || role === 'landcover.nursery') return 'landcover.greenspace';
   return role;

@@ -67,3 +67,30 @@ test('keeps one control in step with the setting and removes it on dispose', () 
     'remove 3',
   ]);
 });
+
+test('leaves the control to a map that removed it while being taken down', () => {
+  const removeListeners = new Set<() => void>();
+  let removed = 0;
+  const map = {
+    addControl: () => undefined,
+    off: (_type: 'remove', listener: () => void) => removeListeners.delete(listener),
+    on: (_type: 'remove', listener: () => void) => removeListeners.add(listener),
+    removeControl: () => void (removed += 1),
+  };
+  const binding = createTileflowNavigationControlBinding({
+    createControl: () => ({}),
+    map: map as never,
+  });
+  binding.update(true);
+  // MapLibre's remove() takes its controls down, then fires `remove`.
+  for (const listener of [...removeListeners]) listener();
+  binding.dispose();
+  binding.update(true);
+  assert.equal(removed, 0);
+
+  const kept = createTileflowNavigationControlBinding({createControl: () => ({}), map});
+  kept.update(true);
+  kept.dispose();
+  assert.equal(removed, 1);
+  assert.equal(removeListeners.size, 0);
+});

@@ -56,8 +56,6 @@ export function streetsCartographyThemes(base: Record<string, TileflowTheme>) {
             ...colors(name),
             ...(name === 'light' ? streetsDayColors : {}),
             'roads.accessOverview': colors(name)['buildings.flat.neutral'],
-            'roads.path.ground': token.color('roads.path'),
-            'roads.path.green': '#FFFFFF',
             'surface.background.transition': token.color(
               name === 'light' ? 'surface.background' : 'surface.background.overview',
             ),
@@ -84,7 +82,6 @@ export function streetsCartographyThemes(base: Record<string, TileflowTheme>) {
                   'buildings.modelWood': '#C6B493',
                   'buildings.flat.neutralOutline': '#B9BFBA',
                   'buildings.flat.activeOutline': '#B9BFBA',
-                  'roads.path.ground': '#D5DAD7',
                   'landcover.global.crop': 'rgba(0, 0, 0, 0)',
                 }
               : {}),
@@ -92,7 +89,6 @@ export function streetsCartographyThemes(base: Record<string, TileflowTheme>) {
           font: base.light!.tokens.font,
           image: {...theme.tokens.image, ...(name === 'light' ? streetsDayImages : {})},
           number: Object.fromEntries([
-            ['roads.path.groundOpacity', 1],
             ['labels.shield.spacing11', 420],
             ['labels.shield.spacing13', 480],
             // Only daylight shows the climate; the other appearances keep the same layer clear,

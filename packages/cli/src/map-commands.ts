@@ -94,19 +94,28 @@ export function hasMapSetupOptions(options: MapSetupOptions) {
  * hosted write. Returns the new Map ID, or null after printing why it could not be created.
  */
 export async function createMapForDeploy(
-  options: MapSetupOptions & {apiUrl?: string},
-  dependencies: MapCommandDependencies & {prompts?: MapSetupPrompts | null},
+  options: MapSetupOptions & {apiUrl?: string; json?: boolean},
+  dependencies: MapCommandDependencies & {
+    prompts?: MapSetupPrompts | null;
+    onCreated?: (mapId: string, setupKey: string) => void;
+  },
 ): Promise<string | null> {
   const session = await loadSession(options, dependencies);
   if (!session) return null;
-  console.log(`${pc.cyan('i')} No --map-id given; creating a managed Map for this deploy.`);
+  if (!options.json)
+    console.log(`${pc.cyan('i')} No --map-id given; creating a managed Map for this deploy.`);
   const result = await setUpManagedMap(session, options, {
-    prompts: dependencies.prompts === undefined ? createTerminalPrompts() : dependencies.prompts,
+    prompts:
+      dependencies.prompts === undefined
+        ? createTerminalPrompts(options.json)
+        : dependencies.prompts,
   });
   if (!result.ok) {
-    emitFailure(false, result.code, result.error);
+    emitFailure(options.json, result.code, result.error);
     return null;
   }
+  dependencies.onCreated?.(result.value.map.id, result.setupKey);
+  if (options.json) return result.value.map.id;
   printCreatedMap(result.value);
   console.log(
     pc.gray(

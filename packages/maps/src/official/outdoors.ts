@@ -96,7 +96,7 @@ const landformName = {
   },
 } satisfies TileflowSymbolStyle;
 
-/** Streets recolors paths for urban parks; these classes keep their trail ink everywhere. */
+/** Streets uses urban path styling; these classes keep their own trail ink and patterns. */
 const urbanPathRefinement = /^(?:footway|pathway|steps)-(?:bridge|surface)-(?:casing|fill)$/u;
 
 function serviceRoadsOnly(pass: TileflowRenderStackOperation): TileflowRenderStackOperation {
@@ -344,7 +344,6 @@ export const outdoors = bindOfficialMapTheme(
               // Streets draws unpaved and restricted ways as solid carriageways; a trail stays a trail.
               modifiers: {unpaved: {enabled: false}},
               mountainBike: reset(),
-              pathGround: {opacity: 0},
               restrictions: {access: {enabled: false}},
             },
           ),

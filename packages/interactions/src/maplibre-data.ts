@@ -476,12 +476,18 @@ export function createTileflowMapLibreDataRuntime<
     }
   };
 
-  const stops = [
-    on('style.load', syncStyle),
-    on('styledata', syncStyle),
-    on('click', handleClick),
-    on('zoom', handleZoom),
-  ];
+  // A subscription that fails releases the ones made before it, so a runtime that cannot start
+  // leaves nothing on the map.
+  const stops: (() => void)[] = [];
+  try {
+    stops.push(on('style.load', syncStyle));
+    stops.push(on('styledata', syncStyle));
+    stops.push(on('click', handleClick));
+    stops.push(on('zoom', handleZoom));
+  } catch (error) {
+    for (const stop of stops) stop();
+    throw error;
+  }
 
   return Object.freeze({
     dispose() {

@@ -105,14 +105,19 @@ export function attachTileflowNotices(
     cancelPending();
     map.off('style.load', onStyleLoad);
     map.off('styledata', scheduleSync);
-    map.off('remove', dispose);
+    map.off('remove', forgetControl);
     if (added) map.removeControl(control);
     added = false;
   }
 
   map.on('style.load', onStyleLoad);
   map.on('styledata', scheduleSync);
-  map.on('remove', dispose);
+  // A map taken down removes its controls itself; removing the notice again would fail.
+  const forgetControl = () => {
+    added = false;
+    dispose();
+  };
+  map.on('remove', forgetControl);
   sync();
   return dispose;
 }

@@ -56,7 +56,7 @@ const coreSourceEntries = {
         args.path.endsWith('/maplibre') ? 'maplibre-entry.ts' : 'index.ts',
       ),
     }));
-    build.onResolve({filter: /^@tileflow\/core\/(?:native|browser|runtime)$/}, (args) => {
+    build.onResolve({filter: /^@tileflow\/core\/(?:native|browser|internal|runtime)$/}, (args) => {
       const entry = args.path.slice('@tileflow/core/'.length);
       substituted.add(entry);
       return {path: resolve(coreSource, entry + '.ts')};
@@ -94,7 +94,7 @@ const result = await build({
   plugins: [coreSourceEntries],
 });
 if (
-  !['native', 'browser', 'runtime', 'parser', 'web-style-loader'].every((entry) =>
+  !['native', 'browser', 'internal', 'runtime', 'parser', 'web-style-loader'].every((entry) =>
     substituted.has(entry),
   )
 )

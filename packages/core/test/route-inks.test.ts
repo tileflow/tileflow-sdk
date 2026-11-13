@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {createStyle, defineMap, defineTheme, disable} from '../src';
-import {createTileflowThemeController} from '../src/browser';
+import {createTileflowThemeController} from '../src/browser-bundle';
 import {
   mixTileflowRouteInks,
   readTileflowRouteInks,

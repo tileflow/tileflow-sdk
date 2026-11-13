@@ -1,30 +1,32 @@
 import * as maplibregl from 'maplibre-gl';
 import type {Map as MapLibreMap, StyleSpecification} from 'maplibre-gl';
 import {
-  attachTileflowAtmosphere,
   attachTileflowBranding,
+  createBoundaryFeatureState,
+  createTileflowDepthMarkers,
+  createTileflowMap3D,
+  playTileflowShot,
+  type TileflowMap3DAttachment,
+  tileflowMaxPitch,
+  type TileflowThemeController,
+  type TileflowThemeTransition,
+} from '@tileflow/core/browser';
+import {
+  attachTileflowAtmosphere,
   attachTileflowFairUseNotice,
   attachTileflowHorizonQueries,
   attachTileflowLabelPlacement,
   attachTileflowMap3D,
   attachTileflowNauticalLights,
   attachTileflowNotices,
-  createBoundaryFeatureState,
-  createTileflowDepthMarkers,
-  createTileflowMap3D,
   createTileflowThemeController,
   loadTileflowStyleFonts,
-  playTileflowShot,
   registerTileflowContourProtocol,
   registerTileflowPathGroundProtocol,
   registerTileflowPmtilesProtocol,
   registerTileflowWorldRequestBridge,
   tileflowCanvasContextAttributes,
-  type TileflowMap3DAttachment,
-  tileflowMaxPitch,
-  type TileflowThemeController,
-  type TileflowThemeTransition,
-} from '@tileflow/core/browser';
+} from '@tileflow/core/internal';
 import {
   resolveTileflowManifestMap,
   resolveTileflowRuntimeStyle,

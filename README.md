@@ -85,8 +85,8 @@ for a walkthrough and troubleshooting.
   [themes](https://tileflow.dev/docs/map-design/themes-and-tokens), and style
   [roads, buildings, and labels](https://tileflow.dev/docs/map-design/modules).
 - **Add it to an app:** follow the [React](https://tileflow.dev/docs/integrations/react),
-  [Vue](https://tileflow.dev/docs/integrations/vue), [Svelte](https://tileflow.dev/docs/integrations/svelte),
-  or [MapLibre](https://tileflow.dev/docs/integrations/maplibre-gl-js) guide.
+  [Vue](https://tileflow.dev/docs/integrations/vue) or [Svelte](https://tileflow.dev/docs/integrations/svelte)
+  guide, or mount it in any element with [`@tileflow/dom`](packages/dom/README.md).
 - **Create images:** capture maps and compare designs with the [Capture package](packages/capture/README.md).
 - **Review map changes:** see before and after renders in pull requests with the [visual review action](packages/visual-review-action/README.md).
 - **Ship your map:** [build production assets](https://tileflow.dev/docs/development-and-deployment/production-builds),

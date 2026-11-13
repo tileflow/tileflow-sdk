@@ -165,7 +165,7 @@ try {
     get() { throw new Error('browser global read during import: ' + name); },
   });
 }
-const entry = await import('@tileflow/core/browser');
+const entry = await import('@tileflow/core/internal');
 if (typeof entry.attachTileflowMapLifecycle !== 'function') process.exit(2);
 `,
   );

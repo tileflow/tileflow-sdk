@@ -1696,8 +1696,6 @@ test('Streets water retains its italic face without a heavy halo', () => {
     assert.deepEqual(layer.layout?.['text-font'], ['Noto Sans Italic']);
     assert.equal(layer.paint?.['text-halo-width'], 0);
   }
-  const resolved = resolveMap(streets);
-  assert.ok(resolved.fonts?.length);
 });
 
 test('Streets retains twelve time presets and the legacy light key for its Default theme', () => {

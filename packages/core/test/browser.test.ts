@@ -21,12 +21,12 @@ import {
   tileflowPmtilesMaximumDirectoryDepth,
   type TileflowWorldProtocolHandler,
 } from '../src/browser';
+import {createTileflowSessionController} from '../src/runtime';
 import {
   createTileflowContourProtocolUrl,
   parseTileflowContourSourceUrl,
   type TileflowContourProtocolConfig,
 } from '../src/terrain/contour-protocol';
-import {createTileflowSessionController} from '../src/runtime';
 import type {MapLibreStyle} from '../src/types';
 
 test('registers only the Tileflow-owned PMTiles protocol once per MapLibre registry', () => {
@@ -1515,6 +1515,32 @@ test('Terrain tiles are catalog tiles by release path and render without relief 
   }
   response = new Response(null, {status: 500});
   await assert.rejects(protocolHandler(request, new AbortController()), /failed: 500/u);
+  bridge.dispose();
+});
+
+test('anonymous edge Terrain and Trails tiles carry their digests and render empty when withheld', async () => {
+  let response = new Response(new Uint8Array([7]));
+  const {bridge, protocolHandler} = registerTestWorldBridge({fetch: async () => response});
+  const digest = 'a'.repeat(64);
+  const terrain = `https://world.tileflow.dev/tiles/terrain/terrain-release-a/9/267/181.webp?terrainDescriptorSha256=${digest}`;
+  const trails = `https://world.tileflow.dev/tiles/trails/trails-release-a/12/2134/1456.pbf?trailsManifestSha256=${digest}`;
+  for (const url of [terrain, trails]) {
+    assert.match(bridge.rewriteUrl(url), /^tileflow-world:\/\/request\//u);
+  }
+  for (const url of [
+    `${trails}&key=private`,
+    trails.replace('.pbf', '.webp'),
+    `https://world.tileflow.dev/tiles/trails/trails-release-a/12/2134/1456.pbf?terrainDescriptorSha256=${digest}`,
+    'https://world.tileflow.dev/tiles/trails/../12/2134/1456.pbf',
+  ]) {
+    assert.equal(bridge.rewriteUrl(url), url);
+  }
+  const request = {type: 'arrayBuffer', url: bridge.rewriteUrl(trails)};
+  assert.equal((await protocolHandler(request, new AbortController())).data.byteLength, 1);
+  for (const status of [429, 503]) {
+    response = new Response(null, {status});
+    assert.equal((await protocolHandler(request, new AbortController())).data.byteLength, 0);
+  }
   bridge.dispose();
 });
 

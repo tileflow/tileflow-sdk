@@ -261,8 +261,9 @@ async function loadTileflowWorldRequest(
   if (
     response.status === 404 ||
     (response.status === 429 && (fairUse === 'GRACE' || fairUse === 'MANAGED_REQUIRED')) ||
-    // Relief is optional: a guarded Terrain tile renders without elevation instead of failing.
-    (kind === 'terrain' && (response.status === 429 || response.status === 503))
+    // Relief and trails are optional: a guarded tile renders empty instead of failing the map.
+    ((kind === 'terrain' || kind === 'trails') &&
+      (response.status === 429 || response.status === 503))
   ) {
     await cancelResponseBody(response.body);
     return Object.freeze({
@@ -476,7 +477,7 @@ function parseHelpUrl(value: string | null): string {
   }
 }
 
-type CatalogTileKind = 'terrain' | 'world';
+type CatalogTileKind = 'terrain' | 'trails' | 'world';
 
 const sharedCatalogQueryKeys = [
   'grant',
@@ -487,16 +488,19 @@ const sharedCatalogQueryKeys = [
   'styleId',
 ];
 const worldQueryKeys = new Set([...sharedCatalogQueryKeys, 'worldDescriptorSha256']);
-const terrainQueryKeys = new Set(sharedCatalogQueryKeys);
+const terrainQueryKeys = new Set([...sharedCatalogQueryKeys, 'terrainDescriptorSha256']);
+const trailsQueryKeys = new Set([...sharedCatalogQueryKeys, 'trailsManifestSha256']);
 const worldTilePath =
   /^\/tiles\/world\/([^/]+)\/(?:0|[1-9]\d*)\/(?:0|[1-9]\d*)\/(?:0|[1-9]\d*)\.pbf$/u;
 const terrainTilePath =
   /^\/tiles\/terrain\/([a-z0-9][a-z0-9._-]{0,126}[a-z0-9])\/(?:0|[1-9]\d*)\/(?:0|[1-9]\d*)\/(?:0|[1-9]\d*)\.(?:png|webp)$/u;
+const trailsTilePath =
+  /^\/tiles\/trails\/([a-z0-9][a-z0-9._-]{0,126}[a-z0-9])\/(?:0|[1-9]\d*)\/(?:0|[1-9]\d*)\/(?:0|[1-9]\d*)\.pbf$/u;
 
 /**
  * Catalog tiles carry fair-use headers. World tiles are recognised on Tileflow hosts with their
- * exact descriptor digest; Terrain tiles by their release path alone, so a dedicated Terrain host
- * is recognised too. Either way, only Tileflow request parameters may appear in the query.
+ * exact descriptor digest; Terrain and Trails tiles by their release path alone, so any catalog
+ * host is recognised. Either way, only Tileflow request parameters may appear in the query.
  */
 function catalogTileKind(value: string): CatalogTileKind | null {
   let url: URL;
@@ -514,6 +518,13 @@ function catalogTileKind(value: string): CatalogTileKind | null {
     const release = terrainPath[1]!;
     return !release.includes('..') && keys.every((key) => terrainQueryKeys.has(key))
       ? 'terrain'
+      : null;
+  }
+  const trailsPath = trailsTilePath.exec(url.pathname);
+  if (trailsPath) {
+    const release = trailsPath[1]!;
+    return !release.includes('..') && keys.every((key) => trailsQueryKeys.has(key))
+      ? 'trails'
       : null;
   }
   const worldPath = worldTilePath.exec(url.pathname);

@@ -631,3 +631,70 @@ test('every operation shares the transport: credentials, errors, redirects, size
     await assert.rejects(pending, (error) => error === reason);
   }
 });
+
+test('a 503 with Retry-After is sent again until Routing serves, within the wait budget', async () => {
+  const starting = () =>
+    Response.json(
+      {code: 'ROUTING_UNAVAILABLE', error: 'Routing is starting. Retry in 1 seconds.'},
+      {status: 503, headers: {'Retry-After': '1'}},
+    );
+  let answers = 0;
+  const {calls, fetcher} = fakeFetch(() =>
+    answers++ === 0 ? starting() : Response.json(routeAnswer),
+  );
+  const started = Date.now();
+  const answer = await route(routeRequest, {apiKey: 'k', fetch: fetcher});
+  assert.equal(answer.routes[0]!.distance, 13023);
+  assert.equal(calls.length, 2);
+  assert.ok(Date.now() - started >= 1000);
+  assert.equal(calls[1]!.init.body, calls[0]!.init.body);
+
+  // Beyond the budget, or with retries turned off, the 503 reaches the caller with its wait.
+  for (const maxRetryWaitMs of [0, 999]) {
+    const once = fakeFetch(starting);
+    const error = await route(routeRequest, {
+      apiKey: 'k',
+      fetch: once.fetcher,
+      maxRetryWaitMs,
+    }).catch((e) => e);
+    assert.ok(error instanceof RoutingError);
+    assert.deepEqual(
+      [error.code, error.status, error.retryAfterSeconds],
+      ['ROUTING_UNAVAILABLE', 503, 1],
+    );
+    assert.equal(once.calls.length, 1);
+  }
+  await assert.rejects(route(routeRequest, {apiKey: 'k', fetch: fetcher, maxRetryWaitMs: -1}));
+});
+
+test('other failures are never retried, and aborting stops the wait', async () => {
+  for (const respond of [
+    () =>
+      Response.json({code: 'ROUTING_UNAVAILABLE', error: 'Routing is unavailable.'}, {status: 503}),
+    () =>
+      Response.json(
+        {code: 'ROUTING_RATE_LIMITED', error: 'Too many Routing requests.'},
+        {status: 429, headers: {'Retry-After': '1'}},
+      ),
+    () => new Response('busy', {status: 503, headers: {'Retry-After': '1'}}),
+  ]) {
+    const {calls, fetcher} = fakeFetch(respond);
+    await assert.rejects(route(routeRequest, {apiKey: 'k', fetch: fetcher}), RoutingError);
+    assert.equal(calls.length, 1);
+  }
+
+  const controller = new AbortController();
+  const {calls, fetcher} = fakeFetch(() =>
+    Response.json(
+      {code: 'ROUTING_UNAVAILABLE', error: 'Routing is starting. Retry in 30 seconds.'},
+      {status: 503, headers: {'Retry-After': '30'}},
+    ),
+  );
+  const pending = route(routeRequest, {apiKey: 'k', fetch: fetcher, signal: controller.signal});
+  while (calls.length === 0) await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  const reason = new Error('user left');
+  controller.abort(reason);
+  await assert.rejects(pending, (error) => error === reason);
+  assert.equal(calls.length, 1);
+});

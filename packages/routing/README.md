@@ -353,11 +353,17 @@ Failures throw `RoutingError` with:
 - `code`, from `routingErrorCodes`, when the service sent one with its documented status;
 - `status`;
 - `requestId`;
-- `retryAfterSeconds` on rate limits.
+- `retryAfterSeconds` on rate limits and while Routing starts.
 
 `ROUTING_NO_ROUTE` means that no road the mode can use is near a position, or that no route
 connects the positions in that mode. In a matrix answer, a pair that no route connects is a `null`
-cell. The client never retries; repeat an operation only after an explicit user action.
+cell.
+
+After a quiet period, the first request can take up to about 25 seconds while Routing starts. If it
+is still starting, the service answers `503 ROUTING_UNAVAILABLE` with `Retry-After`, charges
+nothing, and the client sends the same request again after that many seconds, for up to
+`maxRetryWaitMs` (default 120,000; `0` turns it off). Abort with `signal` to stop waiting. The
+client retries nothing else; repeat any other failed operation only after an explicit user action.
 
 Invalid requests are rejected before any network call. Each answer must match its request: the
 requested number of legs, isochrone times, matrix rows and columns, and matched trace points.

@@ -39,7 +39,15 @@ export type RoutingOptions = Readonly<{
   app?: Readonly<{id: string; certificateSha256?: string}>;
   fetch?: typeof fetch;
   signal?: AbortSignal;
+  /**
+   * How long, in milliseconds, to keep sending the request again while the service answers
+   * `503` with `Retry-After`, which it does while Routing starts after a quiet period. Defaults to
+   * 120,000; `0` never retries.
+   */
+  maxRetryWaitMs?: number;
 }>;
+
+const defaultMaxRetryWaitMs = 120_000;
 
 export class RoutingError extends Error {
   readonly code: RoutingErrorCode | null;
@@ -210,9 +218,37 @@ async function requestRouting<T>(
   const app = normalizeApp(options.app);
   const apiUrl = normalizeApiUrl(options.apiUrl ?? 'https://api.tileflow.dev');
   const fetcher = options.fetch ?? fetch;
+  const maxRetryWaitMs = normalizeMaxRetryWaitMs(options.maxRetryWaitMs);
+  const started = Date.now();
+  while (true) {
+    const response = await sendRouting(fetcher, `${apiUrl}${path}`, bodyText, apiKey, app, options);
+    if (response.ok)
+      return readRoutingAnswer(response, responseSchema, isExpectedResponse, options.signal);
+    const error = await readRoutingError(response, options.signal);
+    // Only a 503 that states when to retry is retried: Routing is starting and charged nothing.
+    const waitMs = Math.max(1, error.retryAfterSeconds ?? 0) * 1000;
+    if (
+      error.status !== 503 ||
+      error.code !== 'ROUTING_UNAVAILABLE' ||
+      error.retryAfterSeconds === null ||
+      Date.now() - started + waitMs > maxRetryWaitMs
+    )
+      throw error;
+    await wait(waitMs, options.signal);
+  }
+}
+
+async function sendRouting(
+  fetcher: typeof fetch,
+  url: string,
+  bodyText: string,
+  apiKey: string,
+  app: ReturnType<typeof normalizeApp>,
+  options: RoutingOptions,
+): Promise<Response> {
   let response: Response;
   try {
-    response = await fetcher(`${apiUrl}${path}`, {
+    response = await fetcher(url, {
       body: bodyText,
       headers: {
         Accept: 'application/json',
@@ -233,12 +269,20 @@ async function requestRouting<T>(
     void response.body?.cancel().catch(() => undefined);
     throw new RoutingError('Tileflow Routing request failed', {status: response.status});
   }
-  if (!response.ok) throw await readRoutingError(response, options.signal);
+  return response;
+}
+
+async function readRoutingAnswer<T>(
+  response: Response,
+  responseSchema: z.ZodType<T>,
+  isExpectedResponse: (response: T) => boolean,
+  signal?: AbortSignal,
+): Promise<T> {
   let body: unknown;
   try {
-    body = await readBoundedJson(response, routingLimits.maximumResponseBytes, options.signal);
+    body = await readBoundedJson(response, routingLimits.maximumResponseBytes, signal);
   } catch (error) {
-    if (options.signal?.aborted) throw options.signal.reason ?? error;
+    if (signal?.aborted) throw signal.reason ?? error;
     throw new RoutingError('Tileflow Routing returned an invalid response', {
       status: response.status,
     });
@@ -249,6 +293,30 @@ async function requestRouting<T>(
       status: response.status,
     });
   return parsed.data;
+}
+
+function normalizeMaxRetryWaitMs(value: number | undefined) {
+  if (value === undefined) return defaultMaxRetryWaitMs;
+  if (!Number.isFinite(value) || value < 0) throw new Error('Invalid Tileflow maxRetryWaitMs');
+  return value;
+}
+
+function wait(milliseconds: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', abort);
+      resolve();
+    }, milliseconds);
+    const abort = () => {
+      clearTimeout(timer);
+      reject(signal!.reason);
+    };
+    signal?.addEventListener('abort', abort, {once: true});
+  });
 }
 
 function normalizeApp(value: RoutingOptions['app']) {

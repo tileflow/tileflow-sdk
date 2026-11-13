@@ -6,6 +6,7 @@ import {pathToFileURL} from 'node:url';
 /** The official maps that preview and capture can open without a project config. */
 export const tileflowOfficialMapNames = Object.freeze([
   'outdoors',
+  'nautical',
   'soundings',
   'streets',
 ] as const);

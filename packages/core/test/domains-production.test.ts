@@ -651,6 +651,24 @@ function evaluate(value: unknown, properties: Record<string, unknown>): unknown 
   }
 }
 
+test('hidden extrusions retain flat footprints without declaring a 3D scene', () => {
+  const style = createStyle(
+    extendStreets({
+      modules: {poi: disable(), buildings: buildings({mode: 'flat', extrusion: {visible: false}})},
+    }),
+  );
+  assert.ok(style.layers.some((layer) => layer.id === 'tileflow-buildings-fill'));
+  assert.equal(
+    style.layers.some((layer) => layer.type === 'fill-extrusion'),
+    false,
+  );
+  assert.equal(style.metadata?.['tileflow:buildings'], undefined);
+  const ordinary = createStyle(
+    extendStreets({modules: {poi: disable(), buildings: buildings({mode: 'flat'})}}),
+  );
+  assert.ok(ordinary.metadata?.['tileflow:buildings']);
+});
+
 test('compiled buildings inherit the shared finish and retain independent overrides', () => {
   const layers = [
     {

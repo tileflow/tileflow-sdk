@@ -16,8 +16,8 @@ import {
   TileflowStyleValidationError,
   validateTileflowStyle,
 } from '../src/validation';
-import {fixtureThemeFields} from './theme-fixture';
 import {readStreetsIconIds} from './streets-icon-ids';
+import {fixtureThemeFields} from './theme-fixture';
 
 const fixtureGlyphs = {
   kind: 'url',
@@ -255,7 +255,7 @@ export default soundings;
     cwd,
     styleBaseUrl: 'http://127.0.0.1:3333',
   });
-  const style = artifacts.styles.soundings?.light;
+  const style = artifacts.styles.nautical?.light;
   assert.ok(style);
   assert.equal(style.sources.tileflow?.url, 'http://127.0.0.1:4888/tiles/world/tiles.json');
   assert.equal(
@@ -286,7 +286,7 @@ export default soundings;
     style.layers.some((layer) => layer.id.startsWith('tileflow-poi')),
     false,
   );
-  assert.match(style.sprite ?? '', /\/icons\/soundings\/sprite$/u);
+  assert.match(style.sprite ?? '', /\/icons\/nautical\/sprite$/u);
 });
 
 async function createFixture(t: TestContext, prefix: string): Promise<string> {

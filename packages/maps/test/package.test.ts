@@ -163,7 +163,7 @@ test('publishes every official icon and font directory with provenance', async (
 });
 
 test('keeps the Soundings standalone source independent from Streets', async () => {
-  const source = await readFile(new URL('../src/official/soundings.ts', import.meta.url), 'utf8');
+  const source = await readFile(new URL('../src/official/nautical.ts', import.meta.url), 'utf8');
   assert.match(source, /\bdefineMap\s*\(/u);
   assert.doesNotMatch(source, /from\s+['"]\.\/streets['"]/u);
   assert.doesNotMatch(source, /\bextends\s*:\s*streets\b/u);
@@ -181,13 +181,14 @@ test('imports and compiles the three packaged official maps against public Core 
   const script = `const assert = (await import('node:assert/strict')).default;
     const core = await import('@tileflow/core'); const maps = await import('@tileflow/maps');
     const names = Object.entries(maps).filter(([,v])=>v && typeof v === 'object' && typeof v.id === 'string').map(([k])=>k).sort();
-    assert.deepEqual(names, ['outdoors', 'soundings', 'streets']);
+    assert.deepEqual(names, ['nautical', 'outdoors', 'soundings', 'streets']);
+    assert.equal(maps.soundings, maps.nautical);
     for (const name of ['baedeker','blueprint','civica','map1777','siegfried','baedekerFonts','blueprintIcons','civicaFonts','map1777Fonts','siegfriedThemes']) assert.equal(name in maps, false);
     for (const name of names) {
       assert.equal(maps[name].extends, undefined);
       assert.equal(Object.isFrozen(maps[name]), true);
       const style = core.createStyle(maps[name], {preparedAssets:{models: ${JSON.stringify(streetsPreparedModels)},icons:{ids:${JSON.stringify(ids)},sprite:'/test/sprite'}}});
-      assert.equal(style.metadata['tileflow:map'], name);
+      assert.equal(style.metadata['tileflow:map'], name === 'soundings' ? 'nautical' : name);
       assert.ok(style.layers.length > 50);
     }
     for (const name of ['streets','outdoors']) {

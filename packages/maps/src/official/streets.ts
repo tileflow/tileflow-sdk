@@ -1,4 +1,3 @@
-import {streetsColorKnobs} from './streets-color-knobs';
 import {
   addresses,
   boundaries,
@@ -34,6 +33,7 @@ import {
 import {streetsGlyphs, streetsIcons, streetsModels} from '../assets';
 import {mapboxRailTransitStyle} from './mapbox-rail';
 import {withStreetsCartography} from './streets-cartography';
+import {streetsColorKnobs} from './streets-color-knobs';
 import {withStreetsConstruction} from './streets-construction';
 import {streetsPoiImage} from './streets-poi';
 import {streetsThemes, streetsVisual} from './streets-themes';
@@ -2401,7 +2401,7 @@ const streetsBase = bindOfficialMapTheme(
       labels: withRenderStack(
         labels({
           collisionPriority: 'navigation',
-          language: 'local', // 'auto' | 'local' | 'en' | another language field suffix.
+          language: 'en', // Explicit language; 'auto' follows the viewer and 'local' preserves source names.
           places: 'all', // 'none' | 'major' | 'all'.
           // Preserve whole names around the 3D scene and remove occluded/distant instances.
           // Destination labels still win collisions; letters never intersect building faces.
@@ -2950,8 +2950,8 @@ const streetsBase = bindOfficialMapTheme(
         streetsLabelRenderStack(),
       ),
       poi: poi({
-        // Keep World's importance order while reserving room for navigation and landmarks.
-        // Everyday businesses enter progressively; tilted views also limit distant labels.
+        // Open the same category/zoom tiers as the Standard reference. World's native z15
+        // tiles retain rank-5 businesses: overzoom must let those destinations compete for room.
         categories: [
           'transport',
           'food-drink',
@@ -2971,30 +2971,57 @@ const streetsBase = bindOfficialMapTheme(
         // A uniform grey treatment suppresses a meaningful amount of chroma
         // and makes the whole light map read as if a pale overlay sat above it.
         color: 'category',
-        density: 2,
+        density: 3,
         detailZoom: 18,
         // World also calls botanical collections gardens. Keep only the main destinations;
         // zooming in must not turn individual planting sections into named POIs.
         // Generic airport POIs can describe travel businesses or misplaced listings.
         // Keep only the highest rank; mapped airports use labels.aerodrome.
         maxRankByType: {airport: 0, garden: 1},
+        minZoomByType: {
+          bus_station: 17,
+          bus_stop: 17,
+          ferry_terminal: 12,
+          public_restroom: 17,
+          public_transit_facility: 12,
+          train_station: 12,
+          tram_stop: 12,
+        },
+        labelMinZoomByType: {
+          bus_station: 18,
+          bus_stop: 18,
+          ferry_terminal: 14,
+          public_transit_facility: 13,
+          train_station: 13,
+          tram_stop: 14,
+        },
         densityByCategory: {
-          lodging: 1,
-          'park-nature': 3,
-          religion: 1,
-          transport: 3,
+          lodging: 2,
+          'park-nature': 5,
+          retail: 4,
+          // Transit stations have their own hierarchy in the source. Stops are gated by type.
+          transport: 5,
         },
         icons: true,
         labels: true,
         placement: {
-          // One collision unit: a POI shows its disc and its name, or nothing. Parking and
-          // toilets, whose pictogram says what they are, show the disc alone.
+          // Names and discs collide together once the name's zoom threshold is reached.
+          // Parking and toilets always use only the pictogram.
           coupleIconAndLabel: true,
+          unnamedIconTypes: [
+            'bus_station',
+            'bus_stop',
+            'ferry_terminal',
+            'public_transit_facility',
+            'train_station',
+            'tram_stop',
+          ],
           iconPadding: 3,
           order: 'importance',
           // Landmarks retain their priority. Ground street names yield to destinations;
           // the navigation policy keeps the city and district hierarchy above them.
           prominentRank: 1,
+          prominentImportance: 3,
           textPadding: 3,
         },
         styles: {

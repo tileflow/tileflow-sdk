@@ -10,7 +10,7 @@ import {
   vectorTiles,
 } from '@tileflow/core';
 import {createStyleWithInspection} from '@tileflow/core/build';
-import {soundings, soundingsIcons} from '../src';
+import {nautical, soundings, soundingsIcons} from '../src';
 
 const soundingsIconIds = [
   'soundings-boat-hoist',
@@ -47,12 +47,13 @@ const preparedAssets = {
 } as const;
 
 test('Soundings is a frozen independent map with only its own asset directory', async () => {
-  assert.equal(Object.isFrozen(soundings), true);
+  assert.equal(soundings, nautical, 'the former export remains a compatible alias');
+  assert.equal(Object.isFrozen(nautical), true);
   assert.equal('root' in soundings, false);
   assert.equal('extends' in soundings, false);
   assert.deepEqual(resolveMap(soundings).icons, [soundingsIcons]);
 
-  const source = await readFile(new URL('../src/official/soundings.ts', import.meta.url), 'utf8');
+  const source = await readFile(new URL('../src/official/nautical.ts', import.meta.url), 'utf8');
   assert.match(source, /\bdefineMap\s*\(/u);
   assert.doesNotMatch(source, /from\s+['"]\.\/streets['"]/u);
   assert.doesNotMatch(source, /\bextends\s*:\s*streets\b/u);
@@ -68,7 +69,7 @@ test('Soundings compiles a focused bathymetric chart from World and Bathymetry',
   const {style} = compiled;
   const byId = new Map(style.layers.map((layer) => [layer.id, layer]));
 
-  assert.equal(style.metadata?.['tileflow:map'], 'soundings');
+  assert.equal(style.metadata?.['tileflow:map'], 'nautical');
   assert.equal(style.metadata?.['tileflow:extends'], undefined);
   assert.equal(style.metadata?.['tileflow:compiler'], 'tileflow-semantic');
   assert.deepEqual(soundings.view, {
@@ -107,7 +108,7 @@ test('Soundings compiles a focused bathymetric chart from World and Bathymetry',
     byId.get('tileflow-background')?.paint?.['background-pattern'],
     'soundings-paper-grain',
   );
-  assert.equal(byId.get('tileflow-water')?.paint?.['fill-color'], '#F7FBF8');
+  assert.equal(byId.get('tileflow-water')?.paint?.['fill-color'], '#F2F8FB');
 
   for (const pattern of [
     /^tileflow-road-/u,
@@ -129,9 +130,10 @@ test('Soundings compiles a focused bathymetric chart from World and Bathymetry',
   const bathymetryContours = byId.get('tileflow-bathymetry-contours');
   const bathymetryLabels = byId.get('tileflow-bathymetry-labels');
   assert.ok(bathymetry);
+  assert.equal(bathymetry.maxzoom, 24, 'depth bands remain visible above the source max zoom');
   assert.equal(bathymetry['source-layer'], 'bathymetry');
-  assert.match(JSON.stringify(bathymetry.paint?.['fill-color']), /#BBDDDC/u);
-  assert.match(JSON.stringify(bathymetry.paint?.['fill-color']), /#F8FAF5/u);
+  assert.match(JSON.stringify(bathymetry.paint?.['fill-color']), /#B9DCEB/u);
+  assert.match(JSON.stringify(bathymetry.paint?.['fill-color']), /#F7FAFC/u);
   const bathymetryDepthStops = (bathymetry.paint?.['fill-color'] as unknown[])
     .slice(3)
     .filter((_, index) => index % 2 === 0);
@@ -158,26 +160,31 @@ test('Soundings compiles a focused bathymetric chart from World and Bathymetry',
       style.layers.findIndex(({id}) => id === 'tileflow-bathymetry-labels'),
   );
   assert.ok(bathymetryContours);
-  assert.equal(bathymetryContours['source-layer'], 'bathymetry');
-  assert.equal(bathymetryContours.paint?.['line-color'], '#466F73');
+  assert.equal(bathymetryContours.minzoom, 8);
+  assert.equal(bathymetryContours.maxzoom, 24);
+  assert.ok(byId.has('tileflow-bathymetry-landforms'));
+  assert.ok(byId.has('tileflow-bathymetry-water-names'));
+  assert.equal(bathymetryContours['source-layer'], 'bathymetry_contour');
+  assert.equal(bathymetryContours.paint?.['line-color'], '#466B7A');
   assert.deepEqual(bathymetryContours.paint?.['line-dasharray'], [4, 2]);
-  assert.match(JSON.stringify(bathymetryContours.filter), /min_depth/u);
+  assert.match(JSON.stringify(bathymetryContours.filter), /depth/u);
   assert.match(JSON.stringify(bathymetryContours.filter), /"<"/u);
   assert.ok(bathymetryLabels);
-  assert.equal(bathymetryLabels['source-layer'], 'bathymetry');
+  assert.equal(bathymetryLabels.maxzoom, 24);
+  assert.equal(bathymetryLabels['source-layer'], 'bathymetry_contour');
   assert.equal(bathymetryLabels.layout?.['symbol-placement'], 'line');
   assert.equal(bathymetryLabels.layout?.['symbol-spacing'], 320);
   const bathymetryLabelExpression = bathymetryLabels.layout?.['text-field'];
   assert.deepEqual(bathymetryLabelExpression, [
     'concat',
-    ['to-string', ['abs', ['to-number', ['get', 'min_depth'], 0]]],
+    ['to-string', ['abs', ['to-number', ['get', 'depth'], 0]]],
     ' m',
   ]);
   for (const depth of [
     -11_000, -8_000, -6_000, -4_000, -2_000, -1_000, -500, -200, -100, -50, -20, -10, 0,
   ]) {
     assert.equal(
-      evaluateBathymetryLabel(bathymetryLabelExpression, {min_depth: depth}),
+      evaluateBathymetryLabel(bathymetryLabelExpression, {depth}),
       `${Math.abs(depth)} m`,
       `unlabelled Bathymetry stop ${depth}`,
     );
@@ -229,7 +236,7 @@ test('Soundings compiles a focused bathymetric chart from World and Bathymetry',
   ]) {
     assert.equal(byId.get(id)?.paint?.['line-color'], '#B12A73', `${id} lost technical magenta`);
   }
-  assert.equal(byId.get('tileflow-transit-ferry')?.paint?.['line-color'], '#466F73');
+  assert.equal(byId.get('tileflow-transit-ferry')?.paint?.['line-color'], '#466B7A');
   assert.deepEqual(byId.get('tileflow-transit-ferry')?.paint?.['line-dasharray'], [7, 2, 1, 2]);
 
   assert.equal(

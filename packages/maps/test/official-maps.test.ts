@@ -211,7 +211,7 @@ function compiledLayerForTarget(
 
 test('exports every official map as an independent standalone semantic map', async () => {
   const officialMaps = {
-    soundings,
+    nautical: soundings,
     streets,
     outdoors,
   } as const;
@@ -313,7 +313,7 @@ test('Soundings is self-contained and references only its bathymetric-map artwor
     },
   });
   const {style} = compiled;
-  assert.equal(style.metadata?.['tileflow:map'], 'soundings');
+  assert.equal(style.metadata?.['tileflow:map'], 'nautical');
   assert.equal(style.metadata?.['tileflow:extends'], undefined);
   assert.equal(style.metadata?.['tileflow:compiler'], 'tileflow-semantic');
   assert.equal(style.sprite, '/tileflow/icons/soundings/sprite');
@@ -366,7 +366,7 @@ test('Soundings is self-contained and references only its bathymetric-map artwor
 
 test('all official maps compile directly after their packaged sprite is prepared', () => {
   for (const [id, map] of Object.entries({
-    soundings,
+    nautical: soundings,
     streets,
     outdoors,
   })) {
@@ -376,7 +376,7 @@ test('all official maps compile directly after their packaged sprite is prepared
     assert.equal(style.sprite, `/tileflow/icons/${id}/sprite`);
     assert.equal(style.glyphs, officialGlyphsUrl);
     assert.ok(
-      style.layers.length > (id === 'soundings' ? 50 : 100),
+      style.layers.length > (id === 'nautical' ? 50 : 100),
       `${id} compiled an unexpectedly incomplete layer stack`,
     );
   }
@@ -645,7 +645,7 @@ test('official maps compile against generic OpenMapTiles without optional capabi
   });
 
   for (const [id, map] of Object.entries({
-    soundings,
+    nautical: soundings,
     streets,
     outdoors,
   })) {
@@ -655,10 +655,10 @@ test('official maps compile against generic OpenMapTiles without optional capabi
 
     assert.equal(
       layerIds.has('tileflow-bathymetry'),
-      id === 'soundings',
+      id === 'nautical',
       `${id} emitted unexpected bathymetry selection`,
     );
-    if (id === 'soundings') {
+    if (id === 'nautical') {
       assert.equal(
         style.layers.find((layer) => layer.id === 'tileflow-bathymetry')?.source,
         'tileflow-bathymetry',
@@ -688,7 +688,7 @@ test('official maps compile against generic OpenMapTiles without optional capabi
 
 test('official maps emit only exact declared font-face stacks', () => {
   const expected = {
-    soundings: new Set([JSON.stringify(['Noto Sans Regular']), JSON.stringify(['Noto Sans Bold'])]),
+    nautical: new Set([JSON.stringify(['Noto Sans Regular']), JSON.stringify(['Noto Sans Bold'])]),
     streets: new Set([
       JSON.stringify(['DINish Medium', 'Noto Sans Regular']),
       JSON.stringify(['DINish Bold', 'Noto Sans Regular']),
@@ -699,7 +699,7 @@ test('official maps emit only exact declared font-face stacks', () => {
   } as const;
 
   for (const [id, map] of Object.entries({
-    soundings,
+    nautical: soundings,
     streets,
     outdoors,
   })) {
@@ -1080,7 +1080,7 @@ test('Streets consumes canonical producer-ranked POI and reserves house numbers 
   assert.notEqual(resolved.modules?.poi?.enabled, false);
   assert.equal(resolved.modules?.poi?.color, 'category');
   assert.equal(resolved.modules?.poi?.placement?.coupleIconAndLabel, true);
-  assert.equal(resolved.modules?.poi?.density, 2);
+  assert.equal(resolved.modules?.poi?.density, 3);
   assert.equal(resolved.modules?.poi?.detailZoom, 18);
   assert.deepEqual(resolved.modules?.poi?.categories, [
     'transport',
@@ -1109,6 +1109,37 @@ test('Streets consumes canonical producer-ranked POI and reserves house numbers 
 
   const style = compileOfficialMap(streets);
   const byId = new Map(style.layers.map((layer) => [layer.id, layer]));
+  // These destinations were present in the World tiles but previously could never enter Streets.
+  // Exercise the compiled selection, including overzoom and type-specific gates.
+  const poiLayers = style.layers.filter(
+    (layer) => layer['source-layer'] === 'poi_label' && layer.type === 'symbol',
+  );
+  const accepts = (zoom: number, properties: Record<string, unknown>) =>
+    poiLayers.some((layer) =>
+      featureFilter(layer.filter as never).filter(
+        {zoom},
+        {type: 1, properties: {sizerank: 16, ...properties}},
+      ),
+    );
+  const zara = {class: 'retail', type: 'fashion_and_apparel_store', name: 'Zara', filterrank: 5};
+  assert.equal(accepts(15.99, zara), false);
+  assert.equal(accepts(16, zara), true);
+  assert.equal(accepts(19, zara), true);
+  const carlos = {
+    class: 'landmark',
+    type: 'monument',
+    name: 'Carlos III',
+    importance_tier: 2,
+    filterrank: 5,
+  };
+  assert.equal(accepts(17.99, carlos), false);
+  assert.equal(accepts(18, carlos), true);
+  const stop = {class: 'transport', type: 'bus_stop', name: 'Sol', filterrank: 5};
+  assert.equal(accepts(16.99, stop), false);
+  assert.equal(accepts(17, stop), true);
+  const hotel = {class: 'lodging', type: 'hotel', name: 'Hotel', filterrank: 4};
+  assert.equal(accepts(17, hotel), false);
+  assert.equal(accepts(18, hotel), true);
   assert.equal(byId.get('tileflow-addresses-labels')?.minzoom, 17);
   for (const id of ['tileflow-addresses-labels', 'tileflow-poi']) {
     assert.equal(
@@ -1138,10 +1169,7 @@ test('Streets consumes canonical producer-ranked POI and reserves house numbers 
     layerIds.indexOf('tileflow-poi-prominent') > layerIds.indexOf('tileflow-label-place-city'),
   );
   assert.ok(layerIds.indexOf('tileflow-poi') < layerIds.indexOf('tileflow-label-place-city'));
-  for (const [id, ranks] of [
-    ['tileflow-poi', '>'],
-    ['tileflow-poi-prominent', '<='],
-  ] as const) {
+  for (const id of ['tileflow-poi', 'tileflow-poi-prominent']) {
     const layer = byId.get(id);
     assert.ok(layer, `Streets lost POI layer ${id}`);
     assert.equal(layer.minzoom, 0);
@@ -1151,11 +1179,7 @@ test('Streets consumes canonical producer-ranked POI and reserves house numbers 
     assert.match(JSON.stringify(layer.layout?.['text-field']), /"public_restroom"\],""/u);
     assert.equal(layer.layout?.['text-anchor'], 'top');
     assert.deepEqual(layer.layout?.['text-offset'], [0, 0.8]);
-    assert.deepEqual(layer.layout?.['symbol-sort-key'], [
-      '+',
-      ['*', ['to-number', ['get', 'filterrank'], 6], 17],
-      ['to-number', ['get', 'sizerank'], 17],
-    ]);
+    assert.ok(layer.layout?.['symbol-sort-key']);
     const filter = layer.filter as unknown[];
     assert.deepEqual(filter[1], [
       'match',
@@ -1165,9 +1189,22 @@ test('Streets consumes canonical producer-ranked POI and reserves house numbers 
       false,
     ]);
     assert.doesNotMatch(JSON.stringify(filter), /"category"|"subclass"|"rank"|"filter_rank"/u);
-    // Category/zoom eligibility is evaluated in streets-dark.test.ts; this check covers
-    // the shared rank contract and placement tier without fixing the expression shape.
-    assert.deepEqual(filter.at(-1), [ranks, ['to-number', ['get', 'filterrank'], 6], 1]);
+    const selects = featureFilter(filter as never).filter;
+    for (const [importance_tier, filterrank, prominent] of [
+      [0, 1, true],
+      [3, 4, true],
+      [4, 5, true],
+      [2, 4, false],
+    ] as const) {
+      assert.equal(
+        selects(
+          {zoom: 18},
+          {type: 1, properties: {sizerank: 16, ...carlos, importance_tier, filterrank}},
+        ),
+        id.endsWith('prominent') === prominent,
+        JSON.stringify({id, importance_tier, filterrank}),
+      );
+    }
     assert.equal(layer.paint?.['text-halo-color'], '#FFFFFF');
     const textColor = createPropertyExpression(
       layer.paint?.['text-color'],

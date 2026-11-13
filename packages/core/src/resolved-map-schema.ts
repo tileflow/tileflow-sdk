@@ -1,7 +1,6 @@
 import {Color} from '@maplibre/maplibre-gl-style-spec';
 import {z} from 'zod';
 import {tileflowMaxPitch} from './camera-limits';
-import {tileflowColorKnobNamePattern, validateTileflowColorKnobs} from './color-knobs';
 import {
   type TileflowBandPlacement,
   tileflowBandPlacements,
@@ -23,6 +22,7 @@ import {
   tileflowSemanticLayerNames,
 } from './cartography/semantic-bindings';
 import {tileflowThemeTokenCategories} from './cartography/values';
+import {tileflowColorKnobNamePattern, validateTileflowColorKnobs} from './color-knobs';
 import {
   canonicalOpenMapTilesFields,
   canonicalOpenMapTilesLayers,
@@ -1628,7 +1628,14 @@ const labelsModuleSchema = z
     collisionPriority: z.enum(['balanced', 'navigation']).optional(),
     enabled: z.boolean().optional(),
     junctions: z.boolean().optional(),
-    language: z.string().trim().min(1).optional(),
+    language: z
+      .string()
+      .trim()
+      .min(1)
+      .describe(
+        'BCP 47 language, English by default; auto uses the renderer locale and local preserves source names. Missing translations fall back to the local name.',
+      )
+      .optional(),
     places: z.enum(['none', 'major', 'all']).optional(),
     roadClasses: z.array(roadClassSchema).min(1).optional(),
     roadGrouping: z
@@ -1698,6 +1705,20 @@ const poiModuleSchema = z
       )
       .describe('Fixed maximum World filter rank per POI type, independent of zoom detail.')
       .optional(),
+    minZoomByType: z
+      .record(
+        z.string().regex(/^[a-z0-9]+(?:_[a-z0-9]+)*$/u, 'Expected a World POI type'),
+        zoomNumberSchema,
+      )
+      .describe('Earliest display zoom per World POI type, after density selection.')
+      .optional(),
+    labelMinZoomByType: z
+      .record(
+        z.string().regex(/^[a-z0-9]+(?:_[a-z0-9]+)*$/u, 'Expected a World POI type'),
+        zoomNumberSchema,
+      )
+      .describe('Earliest name zoom per World POI type; eligible pictograms may appear earlier.')
+      .optional(),
     color: z.enum(['uniform', 'category']).optional(),
     density: z
       .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)])
@@ -1727,9 +1748,17 @@ const poiModuleSchema = z
           .array(z.string().regex(/^[a-z0-9]+(?:_[a-z0-9]+)*$/u, 'Expected a World POI type'))
           .max(64)
           .optional(),
+        unnamedIconTypes: z
+          .array(z.string().regex(/^[a-z0-9]+(?:_[a-z0-9]+)*$/u, 'Expected a World POI type'))
+          .max(64)
+          .describe('Types allowed to show an unnamed pictogram; available names are still drawn.')
+          .optional(),
         iconPadding: z.number().finite().min(0).optional(),
         order: z.enum(['categories', 'importance']).optional(),
         prominentRank: z.number().int().min(0).max(5).optional(),
+        prominentImportance: z
+          .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)])
+          .optional(),
         textPadding: z.number().finite().min(0).optional(),
       })
       .strict()

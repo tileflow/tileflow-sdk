@@ -24,7 +24,7 @@ import type {
   TileflowFontDirectory,
   TileflowFontFallback,
   TileflowGlyphs,
-  TileflowModelDirectory,
+  TileflowModelSource,
 } from './assets';
 import type {TileflowAuthoringModules} from './operations';
 
@@ -90,9 +90,10 @@ export type TileflowMapDesign = TileflowMapTextAssets & {
   marine?: TileflowMarine;
   /**
    * Directories of the map's own 3D models, glTF binaries (`.glb`) named by id, such as the trees a
-   * vegetation form draws. Omission inherits; declaration replaces; [] means no models.
+   * vegetation form draws, and sets of tree models published as files. A directory's model wins
+   * over a set's model of the same id. Omission inherits; declaration replaces; [] means no models.
    */
-  models?: readonly TileflowModelDirectory[];
+  models?: readonly TileflowModelSource[];
   /** Semantic domains, expressed directly or with explicit refine/disable operations. */
   modules?: TileflowAuthoringModules;
   /** Keyed MapLibre overlay units. Omission inherits; entries replace atomically. */

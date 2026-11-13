@@ -1,9 +1,10 @@
 // A map's own 3D tree models. Tileflow's Node tooling prepares each glTF binary (.glb) a map
 // declares into this compact form: an indexed unit tree, standing from z 0 to 1 with its crown one
 // unit wide, whose vertices each carry their part (bark, leaves, fronds or stem), a shade and their
-// occlusion. The compiler carries it in the style's tree description as text, so a model travels
-// with the style and needs no file of its own, and the renderer expands it into the vertices of
-// Core's own trees. It has no DOM dependency.
+// occlusion. A published model set serves each level as a file of these bytes, which the style
+// names by URL and the renderer downloads the first time trees that draw it come into view; a
+// map's own directories still carry each level in the style as base64 text. The renderer expands
+// either into the vertices of Core's own trees. It has no DOM dependency.
 import {tileflowTreeParts} from './trees-3d-mesh';
 
 /** What a map's tree models may hold. */
@@ -38,8 +39,22 @@ export type TileflowTreeModelMesh = Readonly<{
   indices: readonly number[];
 }>;
 
+/**
+ * One level of a prepared model as the style's tree description carries it: the URL of its file,
+ * or its bytes as base64 text inside the style.
+ */
+export type TileflowTreeModelLevel = string | Readonly<{url: string}>;
+
 /** A prepared model, near and optionally far, as the style's tree description carries it. */
-export type TileflowTreeModel = Readonly<{near: string; far?: string}>;
+export type TileflowTreeModel = Readonly<{
+  near: TileflowTreeModelLevel;
+  far?: TileflowTreeModelLevel;
+}>;
+
+/** The media type of a tree model file. */
+export const tileflowTreeModelContentType = 'application/vnd.tileflow.tree-model';
+/** The largest tree model file a renderer reads. */
+export const tileflowTreeModelMaxBytes = 128 * 1024;
 
 const magic = [0x54, 0x46, 0x54, 0x4d]; // "TFTM"
 const version = 1;
@@ -55,6 +70,18 @@ export function encodeTileflowTreeModel(
   mesh: TileflowTreeModelMesh,
   level: 'near' | 'far',
 ): string {
+  const bytes = encodeTileflowTreeModelBytes(mesh, level);
+  let text = '';
+  for (let at = 0; at < bytes.length; at += 0x8000)
+    text += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
+  return btoa(text);
+}
+
+/** Encodes a model as the bytes of its file. Throws when it breaks `tileflowTreeModelLimits`. */
+export function encodeTileflowTreeModelBytes(
+  mesh: TileflowTreeModelMesh,
+  level: 'near' | 'far',
+): Uint8Array {
   const count = mesh.positions.length / 3;
   const triangles = mesh.indices.length / 3;
   const limit =
@@ -95,10 +122,7 @@ export function encodeTileflowTreeModel(
       throw new RangeError(`Index ${index} names no vertex.`);
     view.setUint16(indexAt + index * 2, vertex, true);
   });
-  let text = '';
-  for (let at = 0; at < bytes.length; at += 0x8000)
-    text += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
-  return btoa(text);
+  return bytes;
 }
 
 /**
@@ -118,9 +142,25 @@ export function decodeTileflowTreeModel(
   } catch {
     return undefined;
   }
-  if (bytes.length < headerBytes || magic.some((byte, index) => bytes[index] !== byte))
+  return decodeTileflowTreeModelBytes(bytes, level);
+}
+
+/**
+ * Decodes the bytes of a model file, or undefined when they are not a tree model of this version
+ * or break `tileflowTreeModelLimits`.
+ */
+export function decodeTileflowTreeModelBytes(
+  bytes: Uint8Array,
+  level: 'near' | 'far',
+): TileflowTreeModelMesh | undefined {
+  if (
+    !(bytes instanceof Uint8Array) ||
+    bytes.length < headerBytes ||
+    bytes.length > tileflowTreeModelMaxBytes ||
+    magic.some((byte, index) => bytes[index] !== byte)
+  )
     return undefined;
-  const view = new DataView(bytes.buffer);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const count = view.getUint16(6, true);
   const indexCount = view.getUint32(8, true);
   const proportion = view.getUint16(12, true) / 1000;

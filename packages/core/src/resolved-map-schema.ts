@@ -44,6 +44,7 @@ import {
   isTileflowLocalDirectory,
   tileflowLocalDirectoryMaximumLength,
   tileflowLocalDirectoryMessage,
+  tileflowModelSetLimit,
 } from './maps/assets';
 import {
   type ResolvedTileflowMap as TileflowCompilerConfig,
@@ -2363,7 +2364,37 @@ const iconDirectoriesSchema = z
     }
   });
 const fontDirectoriesSchema = z.array(assetDirectorySchema).max(16);
-const modelDirectoriesSchema = z.array(assetDirectorySchema).max(16);
+const modelSetSchema = z
+  .object({
+    kind: z.literal('url'),
+    url: z
+      .string()
+      .min(1)
+      .max(2048)
+      .refine(
+        (value) =>
+          value.includes('{model}') &&
+          value.includes('{level}') &&
+          !/[\p{Cc}\s\\]/u.test(value) &&
+          (/^https:\/\//u.test(value) || !/^[a-z][a-z\d+.-]*:/iu.test(value)),
+        'Expected an HTTPS or relative URL naming {model} and {level}',
+      ),
+    models: z
+      .array(
+        z
+          .string()
+          .max(64)
+          .regex(
+            /^[a-z0-9]+(?:-[a-z0-9]+)*$/u,
+            'Expected a model id of lowercase letters, digits and hyphens',
+          ),
+      )
+      .min(1)
+      .max(tileflowModelSetLimit)
+      .refine((ids) => new Set(ids).size === ids.length, 'Model ids must be unique'),
+  })
+  .strict();
+const modelDirectoriesSchema = z.array(z.union([assetDirectorySchema, modelSetSchema])).max(16);
 const fontStacksSchema = z
   .array(
     z

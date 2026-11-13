@@ -15,7 +15,12 @@ import {
   resolveTileflowVegetationRepresentation,
 } from '@tileflow/core';
 import {buildStreetsTrees} from '../assets/streets/build-trees.mjs';
-import {streets, streetsModels} from '../src';
+import {
+  buildStreetsTreeModelFiles,
+  streetsTreeModelDirectory,
+  streetsTreeModelManifest,
+} from '../scripts/streets-tree-models';
+import {officialTreeModelsUrl, streets, streetsTreeModels} from '../src';
 import {streetsPreparedModels, streetsTreeForms} from './streets-assets';
 
 // Use the package's image IDs: these tests exercise the real GLB preparation, while
@@ -27,10 +32,7 @@ const iconIds = readdirSync(new URL('../assets/streets/icons/', import.meta.url)
 const compile = (theme = 'light', map = streets) =>
   createStyle(map, {
     theme,
-    preparedAssets: {
-      icons: {ids: iconIds, sprite: '/test/sprite'},
-      models: streetsPreparedModels,
-    },
+    preparedAssets: {icons: {ids: iconIds, sprite: '/test/sprite'}},
   });
 
 test('Streets tree artwork is reproducible and bounded for near and far rendering', async () => {
@@ -57,8 +59,54 @@ test('Streets tree artwork is reproducible and bounded for near and far renderin
   assert.ok(Buffer.byteLength(JSON.stringify(streetsPreparedModels)) < 64 * 1024);
 });
 
+test('Streets tree model files are its artwork prepared, published as the set its URL names', async () => {
+  const files = await buildStreetsTreeModelFiles();
+  assert.equal(files.size, 14);
+  for (const [path, bytes] of files) {
+    assert.deepEqual(
+      await readFile(`${streetsTreeModelDirectory}/${path}`),
+      Buffer.from(bytes),
+      `${path} is stale: run scripts/streets-tree-models.ts`,
+    );
+    const [id, level] = [
+      path.slice(7, path.lastIndexOf('-')),
+      path.slice(path.lastIndexOf('-') + 1),
+    ];
+    assert.equal(
+      Buffer.from(bytes).toString('base64'),
+      streetsPreparedModels[id]![level as 'near' | 'far'],
+    );
+  }
+  const {sha256} = streetsTreeModelManifest(files);
+  assert.equal(
+    officialTreeModelsUrl,
+    `https://api.tileflow.dev/base/${sha256}/models/{model}-{level}`,
+  );
+  assert.deepEqual([...streetsTreeModels.models], Object.keys(streetsPreparedModels).sort());
+});
+
+test('Streets names its tree models by URL, so its style carries no model bytes', () => {
+  const description = readTileflowVegetation3D(compile().metadata);
+  assert.ok(description);
+  for (const [id, model] of Object.entries(description.models)) {
+    assert.deepEqual(model, {
+      near: {url: officialTreeModelsUrl.replace('{model}', id).replace('{level}', 'near')},
+      far: {url: officialTreeModelsUrl.replace('{model}', id).replace('{level}', 'far')},
+    });
+  }
+  // A map's own directory of the same models still carries them in its style.
+  const inline = createStyle(streets, {
+    theme: 'light',
+    preparedAssets: {icons: {ids: iconIds, sprite: '/test/sprite'}, models: streetsPreparedModels},
+  });
+  assert.equal(
+    readTileflowVegetation3D(inline.metadata)?.models['streets-tree-round']?.near,
+    streetsPreparedModels['streets-tree-round']!.near,
+  );
+});
+
 test('Streets owns both tree representations and an extension can disable both', () => {
-  assert.deepEqual(resolveMap(streets).models, [streetsModels]);
+  assert.deepEqual(resolveMap(streets).models, [streetsTreeModels]);
   for (const theme of ['light', 'dark']) {
     const style = compile(theme);
     const description = readTileflowVegetation3D(style.metadata);

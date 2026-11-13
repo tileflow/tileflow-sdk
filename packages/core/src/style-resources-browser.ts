@@ -150,6 +150,23 @@ async function prepareRuntimeStyle(
             ? {...model, url: resolve(model.url)}
             : model,
         );
+      // Tree models are keyed by id, each level a file URL or text inside the style.
+      else if (isRecord(descriptor.models))
+        resolved.models = Object.fromEntries(
+          Object.entries(descriptor.models).map(([id, model]) => [
+            id,
+            isRecord(model)
+              ? Object.fromEntries(
+                  Object.entries(model).map(([level, value]) => [
+                    level,
+                    isRecord(value) && typeof value.url === 'string'
+                      ? {...value, url: resolve(value.url)}
+                      : value,
+                  ]),
+                )
+              : model,
+          ]),
+        );
       if (isRecord(descriptor.landmarks) && typeof descriptor.landmarks.url === 'string')
         resolved.landmarks = {...descriptor.landmarks, url: resolve(descriptor.landmarks.url)};
       style.metadata[key] = resolved;

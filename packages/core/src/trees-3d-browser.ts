@@ -37,7 +37,13 @@ import {
   tileflowTreeModelMeshOf,
   tileflowTreeVertexBytes,
 } from './trees-3d-mesh';
-import {decodeTileflowTreeModel} from './trees-3d-model';
+import {
+  decodeTileflowTreeModel,
+  decodeTileflowTreeModelBytes,
+  type TileflowTreeModelLevel,
+  tileflowTreeModelMaxBytes,
+  type TileflowTreeModelMesh,
+} from './trees-3d-model';
 import {
   tileflowTreeAttributes,
   tileflowTreeDepthFragment,
@@ -203,6 +209,11 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
   let meshes: Record<TileflowTreeForm, Record<TileflowTreeLevel, Mesh>> | undefined;
   // The map's own models, uploaded once each, by level and prepared text, with their proportion.
   const modelMeshes = new Map<string, (Mesh & {proportion: number}) | undefined>();
+  // Model files by URL, each downloaded once, the first time trees come into view at a zoom where
+  // they stand. A file that fails leaves Core's own tree standing in for it.
+  const modelFiles = new Map<string, {bytes?: Uint8Array; failed?: true}>();
+  const modelDownloads = new AbortController();
+  let modelsLoading = 0;
   let ground: {vao: WebGLVertexArrayObject; vbo: WebGLBuffer} | undefined;
   let disposed = false;
   let drawnLast = 0;
@@ -365,6 +376,8 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       for (const {value: tile} of set.ready()) {
         if (tile.gl || (tile.placement.trees.length === 0 && tile.placement.hedges.length === 0))
           continue;
+        // A tile stands once its models' files are in, so no tree changes shape after it shows.
+        if (tileWaitsForModels(tile.placement)) continue;
         if (budget-- <= 0) {
           map.triggerRepaint();
           return;
@@ -426,13 +439,12 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
     model: number,
     level: TileflowTreeLevel,
   ): (Mesh & {proportion: number}) | undefined {
-    const described = vegetation();
-    const id = described?.forms[form]?.models?.[model];
-    const text = id === undefined ? undefined : described?.models[id]?.[level];
-    if (text === undefined) return undefined;
-    const key = `${level}:${text}`;
+    const source = modelLevel(form, model, level);
+    if (source === undefined) return undefined;
+    const key = typeof source === 'string' ? `${level}:${source}` : `${level}:url:${source.url}`;
     if (!modelMeshes.has(key)) {
-      const decoded = decodeTileflowTreeModel(text, level);
+      if (typeof source !== 'string' && !modelFiles.get(source.url)?.bytes) return undefined;
+      const decoded = decodedLevel(source, level);
       let mesh: (Mesh & {proportion: number}) | undefined;
       if (decoded) {
         const built = tileflowTreeModelMeshOf(decoded);
@@ -444,6 +456,100 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       modelMeshes.set(key, mesh);
     }
     return modelMeshes.get(key);
+  }
+
+  /** A form's model level as the style describes it, or undefined where Core's own tree stands. */
+  function modelLevel(
+    form: TileflowTreeForm,
+    model: number,
+    level: TileflowTreeLevel,
+  ): TileflowTreeModelLevel | undefined {
+    const described = vegetation();
+    const id = described?.forms[form]?.models?.[model];
+    return id === undefined ? undefined : described?.models[id]?.[level];
+  }
+
+  /** A model level's mesh: text decoded from the style, or a downloaded file's bytes. */
+  function decodedLevel(
+    source: TileflowTreeModelLevel,
+    level: TileflowTreeLevel,
+  ): TileflowTreeModelMesh | undefined {
+    if (typeof source === 'string') return decodeTileflowTreeModel(source, level);
+    const bytes = modelFiles.get(source.url)?.bytes;
+    return bytes ? decodeTileflowTreeModelBytes(bytes, level) : undefined;
+  }
+
+  /** The stored size of a model level: its file, or the bytes its base64 text holds. */
+  function modelLevelBytes(source: TileflowTreeModelLevel): number {
+    return typeof source === 'string'
+      ? Math.floor((source.length * 3) / 4)
+      : (modelFiles.get(source.url)?.bytes?.byteLength ?? 0);
+  }
+
+  /** Starts the download of a model file once; true while it has not arrived or failed. */
+  function modelWaiting(source: TileflowTreeModelLevel | undefined): boolean {
+    if (source === undefined || typeof source === 'string') return false;
+    const known = modelFiles.get(source.url);
+    if (known) return !known.bytes && !known.failed;
+    const file: {bytes?: Uint8Array; failed?: true} = {};
+    modelFiles.set(source.url, file);
+    modelsLoading += 1;
+    void downloadModel(source.url)
+      .then(
+        (bytes) => {
+          file.bytes = bytes;
+        },
+        () => {
+          file.failed = true;
+        },
+      )
+      .finally(() => {
+        modelsLoading -= 1;
+        if (disposed) return;
+        generation += 1;
+        map.triggerRepaint();
+      });
+    return true;
+  }
+
+  async function downloadModel(url: string): Promise<Uint8Array> {
+    const signal = modelDownloads.signal;
+    const request = (await options.transformRequest?.(url, 'Tile')) ?? {url};
+    signal.throwIfAborted();
+    const response = await fetch(request.url, {
+      signal,
+      ...(request.headers ? {headers: request.headers} : {}),
+      ...(request.credentials ? {credentials: request.credentials} : {}),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength > tileflowTreeModelMaxBytes) throw new RangeError('Tree model too large');
+    return bytes;
+  }
+
+  /**
+   * Starts downloading every model file the described forms draw once trees are shown and begin
+   * to fade in above `minzoom`, together with the tiles of trees round the camera: the files are a
+   * few kilobytes and arrive before those tiles are placed, so no tree waits on them in view.
+   */
+  function requestModels(): void {
+    const described = vegetation();
+    if (!described || (target <= 0 && scale <= 0) || fadeIn() <= 0) return;
+    for (const form of tileflowTreeForms)
+      for (const id of described.forms[form]?.models ?? [])
+        for (const level of ['near', 'far'] as const) modelWaiting(described.models[id]?.[level]);
+  }
+
+  /** Whether a tile's trees draw a model whose file has not arrived yet. */
+  function tileWaitsForModels(placement: TileflowTreePlacement): boolean {
+    let waiting = false;
+    for (const form of tileflowTreeForms)
+      placement.forms[form].variants.forEach((range, model) => {
+        if (range.count === 0) return;
+        for (const level of ['near', 'far'] as const)
+          if (modelWaiting(modelLevel(form, model, level))) waiting = true;
+      });
+    return waiting;
   }
 
   function bindMesh(
@@ -1095,6 +1201,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
     prerender(context: WebGLRenderingContext | WebGL2RenderingContext) {
       if (!isWebGL2(context)) return;
       ensureTiles();
+      requestModels();
       if (!programs.depth) return;
       if (!registered) unregister = scene.register(caster);
       registered = true;
@@ -1269,7 +1376,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
         const owned = described.forms[form]?.models;
         for (const [variant, id] of (owned?.length ? owned : [form]).entries()) {
           const model = described.models[id];
-          const decoded = model ? decodeTileflowTreeModel(model.near, 'near') : undefined;
+          const decoded = model ? decodedLevel(model.near, 'near') : undefined;
           const mesh = decoded ? tileflowTreeModelMeshOf(decoded) : built[form].near;
           const view = new DataView(
             mesh.vertices.buffer,
@@ -1300,7 +1407,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
             bytes:
               mesh.vertices.byteLength +
               (model
-                ? Math.floor(((model.far ?? model.near).length * 3) / 4)
+                ? modelLevelBytes(model.far ?? model.near)
                 : built[form].far.vertices.byteLength),
             lods: 2,
             instances: counts[variant] ?? 0,
@@ -1321,6 +1428,8 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       if (disposed || (target <= 0 && scale <= 0)) return {tiles: 0, transition: false};
       let count = 0;
       for (const set of tiles) count += set.pending();
+      // A tile whose model files are still downloading is not drawn yet.
+      if (modelsLoading > 0) count += modelsLoading;
       return {tiles: count, transition: motion !== undefined || scale !== target};
     },
     get stats() {
@@ -1363,6 +1472,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       }
       for (const set of tiles) set.dispose();
       tiles = [];
+      modelDownloads.abort();
       builder.dispose();
     },
   };

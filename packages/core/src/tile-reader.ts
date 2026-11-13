@@ -176,10 +176,13 @@ export type TileflowTileBytes = TileflowTileAddress & Readonly<{url: string; byt
  * Reads tiles one request per tile, however many readers wait for it, taking the lowest priority
  * first beyond the concurrency limit. A request every reader stopped waiting for is dropped before
  * it starts; once started, it finishes for the cache, or stops when there is no cache to keep it.
+ * A tile whose bytes `held` already has, such as one the map has loaded, is read from those bytes
+ * without a request.
  */
 export function createTileLoader<T>(
   options: TileflowTileReaderOptions,
   open: (bytes: Uint8Array, address: TileflowTileAddress, url: string) => T,
+  held?: (address: TileflowTileAddress) => ArrayBuffer | undefined,
 ): {
   read(
     address: TileflowTileAddress,
@@ -252,6 +255,9 @@ export function createTileLoader<T>(
           if (started !== generation) return undefined;
           controller.signal.throwIfAborted();
           const url = request?.url ?? template;
+          // A copy: the holder keeps using its own bytes.
+          const kept = held?.(address);
+          if (kept) return open(new Uint8Array(kept.slice(0)), address, url);
           const response = await settings.fetch(url, {
             ...(request?.headers ? {headers: request.headers} : {}),
             ...(request?.credentials ? {credentials: request.credentials} : {}),

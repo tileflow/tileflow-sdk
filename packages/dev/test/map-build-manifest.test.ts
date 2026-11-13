@@ -6,7 +6,7 @@ import test from 'node:test';
 import {serializeCanonicalJson} from '@tileflow/core';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {createTileflowBuildArtifacts, writeTileflowBuildArtifacts} from '../src/artifacts';
-import {streetsFontFixtures} from './streets-font-fixture';
+import {copyStreetsFontFixture, streetsFontFixtures} from './streets-font-fixture';
 
 const svg = (color: string) =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path fill="${color}" d="M2 20h20L12 2z"/></svg>`;
@@ -54,11 +54,12 @@ test('build manifest hashes only the winning icon source and is checkout-path in
   assert.notEqual(effectiveChange.buildManifest.maps.main?.mapRevisionSha256, initialRevision);
 });
 
-test('build manifest records effective package fonts and is emitted as canonical JSON', async (t) => {
+test('build manifest records effective local fonts and is emitted as canonical JSON', async (t) => {
   const cwd = await fixture(t, 'tileflow-map-revision-fonts-');
+  await copyStreetsFontFixture(cwd);
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
-    "import {defineMap} from '@tileflow/core'; import {streets} from '@tileflow/maps'; export default defineMap({id:'night',version:1,extends:streets});\n",
+    "import {defineMap} from '@tileflow/core'; import {streets} from '@tileflow/maps'; export default defineMap({id:'night',version:1,extends:streets,fonts:['./fonts']});\n",
   );
 
   const plan = await writeTileflowBuildArtifacts({cwd, outDir: 'dist/tileflow'});

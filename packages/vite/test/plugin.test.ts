@@ -6,6 +6,7 @@ import {test} from 'node:test';
 import {createServer as createViteServer} from 'vite';
 import {streetsThemes} from '@tileflow/maps';
 import {createTileflowIconSetProject} from '../../../test-support/icon-set-project';
+import {copyStreetsFontFixture} from '../../dev/test/streets-font-fixture';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {tileflow, tileflowMapLibreWorker} from '../src/index';
 
@@ -238,13 +239,14 @@ test('rejects traversal in the Vite output and route base', () => {
   }
 });
 
-test('emits Streets web fonts from Maps with immutable runtime URLs', async (t) => {
+test("emits a map's own web fonts with immutable runtime URLs", async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), 'tileflow-vite-fonts-'));
   await linkWorkspacePackages(cwd);
   t.after(() => rm(cwd, {force: true, recursive: true}));
+  await copyStreetsFontFixture(cwd);
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
-    "import {defineMap} from '@tileflow/core'; import {streets} from '@tileflow/maps'; export default defineMap({id:'night',version:1,extends:streets});\n",
+    "import {defineMap} from '@tileflow/core'; import {streets} from '@tileflow/maps'; export default defineMap({id:'night',version:1,extends:streets,fonts:['./fonts']});\n",
   );
   const [plugin] = tileflow({base: '/maps'});
   (plugin.configResolved as (config: unknown) => void)({

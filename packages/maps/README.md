@@ -1,6 +1,6 @@
 # @tileflow/maps
 
-Official Tileflow maps with their icon, pattern, and font assets. Extend a map with
+Official Tileflow maps with their icon, pattern, and model assets. Extend a map with
 `@tileflow/core`; render its prepared output with a framework adapter or MapLibre.
 
 > Related packages and guides: [documentation index](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/llms.txt).
@@ -95,9 +95,9 @@ suspends duplicate flat building footprints in 3D so roads remain visible under 
 2D mode restores ordinary footprints. Normal 3D buildings keep a small neutral/active tone difference. Authored models use
 the neutral building color and independently configurable window shading.
 
-Streets packages DINish Medium for roads, house numbers and POIs, and Bold for shields, approximating
-the reference's DIN Pro lettering. Other roles retain Noto Sans Regular, Bold and Italic. All
-five faces ship with their licenses; DIN Pro is not bundled.
+Streets letters roads, house numbers and POIs in DINish Medium, and shields in Bold, approximating
+the reference's DIN Pro lettering. Other roles retain Noto Sans Regular, Bold and Italic; DINish
+falls back to Noto Sans Regular for other scripts. DIN Pro is not used.
 POI discs use vivid category colors, 20px containers, and fixed native icon scale at every zoom.
 Maki's 15px artwork is composed into a centered 12px box, leaving room inside the 17px colored
 interior. Their 1x and 2x atlases rasterize these SVG compositions separately; the map displays
@@ -209,8 +209,7 @@ a 1 px halo; administrative regions use bold lettering and water names use itali
 Road spacing grows from 250 px at z13 to 300 at z15, 400 at z17 and 450 at z19 to curb repetition.
 House numbers start at z17 with wide padding. Labels default to the local language.
 
-The map uses Tileflow data and assets, including packaged DINish and Noto Sans fonts. The
-reference uses DIN Pro Medium, so font shapes and stroke weight
+The map uses Tileflow data and assets. The reference uses DIN Pro Medium, so font shapes and stroke weight
 remain an approximation. Available POIs, abbreviated names,
 proprietary landmark models, transit branding, and building detail can differ from the reference.
 
@@ -250,8 +249,9 @@ and optional `timeOfDay` mappings. `system` belongs to browser selection; captur
 
 The package exports `streetsIcons`, `soundingsIcons` and `outdoorsIcons`. These are installed
 resource directories, not sprite URLs. Outdoors composes Streets' artwork with its own summit
-symbols. Streets and Outdoors share `streetsFonts` (DINish and Noto Sans) and `streetsModels`.
-Soundings declares a Noto Sans URL glyph provider from an immutable Hosted base-asset set.
+symbols. Streets and Outdoors share `streetsModels` and `streetsGlyphs`, Tileflow's immutable
+official glyph set of those five fonts; it composites a comma-joined stack of them per code point.
+Soundings uses the same set.
 The CLI and build integrations prepare the selected directories into runtime assets.
 
 Omitting `icons` inherits the parent's directory list. Declaring a list replaces it; `[]` removes
@@ -281,14 +281,15 @@ Use the CLI or a build integration to prepare a map's complete asset set. Copyin
 can leave missing sprites, font files, or browser protocols. Keep the generated manifest and its
 referenced files together.
 
-Hosted deployment currently requires Tileflow World and rejects local/package font bundles before
-uploading a style. Maps with packaged fonts therefore need self-hosted delivery or an explicitly
-replaced, compatible public glyph provider. Check with `tileflow validate --target hosted` before
-planning a hosted deployment.
+Official maps and maps extending them read glyphs from the official set, hosted or self-hosted. A
+map declaring its own `fonts` replaces them: hosted deploy uploads the used faces and licenses as a
+font bundle; self-hosted output copies them. Hosted deployment requires Tileflow World. Check with
+`tileflow validate --target hosted` before planning a hosted deployment.
 
 Tileflow-owned designs and artwork use Apache-2.0. Historical inspiration does not mean the package
-redistributes historical scans, source cartography, or data. Third-party fonts and the pinned Maki
-icon subset retain their own terms. Preserve
+redistributes historical scans, source cartography, or data. Third-party fonts (each glyph font's
+license is served beside it as `LICENSE.md`) and the pinned Maki icon subset retain their own
+terms. Preserve
 [THIRD_PARTY_NOTICES.md](https://github.com/tileflow/tileflow-sdk/blob/main/packages/maps/THIRD_PARTY_NOTICES.md)
 and the notices next to packaged assets. Map data and terrain services have separate attribution
 and usage requirements.

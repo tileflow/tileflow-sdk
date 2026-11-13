@@ -382,21 +382,6 @@ export function validateTileflowWorldTilejson(
   field(poi, 'poiLabel', ['class', 'icon', 'type'], ['String']);
   field(poi, 'poiLabel', ['filterrank', 'minZoom', 'sizerank'], ['Number']);
 
-  const circularFeature = require('circularFeature');
-  zooms(circularFeature, 'circularFeature', 15, 15);
-  field(circularFeature, 'circularFeature', ['class', 'circularKind'], ['String']);
-  field(
-    circularFeature,
-    'circularFeature',
-    [
-      'circularRadiusAtZoom15',
-      'circularRadiusMeters',
-      'circularOuterRadiusMeters',
-      'circularInnerRadiusMeters',
-    ],
-    ['Number'],
-  );
-
   const sidewalk = require('sidewalk');
   zooms(sidewalk, 'sidewalk', 15, 15);
   field(sidewalk, 'sidewalk', ['class', 'type'], ['String']);

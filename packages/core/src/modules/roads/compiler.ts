@@ -29,7 +29,6 @@ import type {
 } from '../../types';
 import type {TileflowResolvedModuleConfig} from '../resolved';
 import {resolveRoads, roadStyleMetrics, visibleRoadClasses} from './index';
-import {compileRoundabouts, type RoundaboutSurface} from './roundabouts';
 import {
   isTileflowPathRoadClass,
   tileflowPathRoadClasses,
@@ -116,7 +115,6 @@ export function compileRoads(
 
   const defaults = defaultClassStyles(context, metrics, semantics);
   const contributions: TileflowLayerContribution[] = [];
-  const roundaboutSurfaces: RoundaboutSurface[] = [];
   const {sourceId: source, schema} = context.data;
 
   for (const [classIndex, roadClass] of roadClassOrder.entries()) {
@@ -133,8 +131,6 @@ export function compileRoads(
     );
     const treatments = resolveRoadTreatments(request, schema.fields, roadClass);
     const drawn: DrawnRoads = {fields: schema.fields, kinds: tileflowRoadKinds(roadClass)};
-    const roundaboutSurface: RoundaboutSurface = {roadClass};
-    roundaboutSurfaces.push(roundaboutSurface);
 
     for (const structure of ['tunnel', 'surface', 'bridge'] as const) {
       const structureConfig = classConfig[structure];
@@ -195,9 +191,6 @@ export function compileRoads(
           slot: structureSlots[structure][phase],
           target: `roads.classes.${roadClass}.${structure}.${phase}`,
         };
-        if (structure === 'surface' && phase !== 'shadow') {
-          roundaboutSurface[phase] = treatedStyle;
-        }
         if (
           phase === 'fill' &&
           !isTileflowPathRoadClass(roadClass) &&
@@ -423,7 +416,6 @@ export function compileRoads(
   }
 
   compileSidewalks(request?.sidewalks, areaStyles.pedestrian?.fill?.color, context, contributions);
-  compileRoundabouts(request?.roundabouts, roundaboutSurfaces, context, contributions);
   compileCrossings(request?.crossings, context, contributions);
 
   if (semantics.oneWayMarkers && visible.size > 0) {

@@ -391,12 +391,6 @@ const numberValueSchema = z.union([
   numberExpressionSchema,
   numberZoomValueSchema,
 ]);
-const nonnegativeNumberLiteralSchema = terrainNumberValueSchema(z.number().finite().min(0));
-const nonnegativeNumberValueSchema = z.union([
-  nonnegativeNumberLiteralSchema,
-  numberExpressionSchema,
-  zoomValueSchemaFor(nonnegativeNumberLiteralSchema),
-]);
 const structuralNumberValueSchema = z.union([
   z.number().finite(),
   structuralExpressionSchema,
@@ -1551,23 +1545,6 @@ const roadsModuleSchema = z
       .strict()
       .optional(),
     renderStack: renderStackSchema.optional(),
-    roundabouts: z
-      .object({
-        borderWidth: nonnegativeNumberValueSchema
-          .describe(
-            'Extra casing width in pixels, split across both edges. Defaults to the effective road border width.',
-          )
-          .optional(),
-        casing: circleStyleSchema.optional(),
-        fallbackWidth: nonnegativeNumberValueSchema
-          .describe(
-            'Road width in pixels used only when metric radii are absent. Defaults to the effective surface fill width.',
-          )
-          .optional(),
-        fill: circleStyleSchema.optional(),
-      })
-      .strict()
-      .optional(),
     serviceTypes: z
       .object({
         alley: roadTreatmentStyleSchema.optional(),

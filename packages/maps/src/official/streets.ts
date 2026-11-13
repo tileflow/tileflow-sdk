@@ -292,10 +292,8 @@ function cityRoadCasingColorStops(minZoom: number): ColorStops {
 // Standard's surface casings start at street detail; an overview casing
 // overwhelms subpixel carriageways and turns the regional network into a mesh.
 const roadBorderZoom = 15;
-const roadBorderTotalWidth = 1;
 const roadWidthInterpolationBase = 1.5;
 const roadSurfaceColor = mapboxRoadPalette.road;
-const roadCasingColor = mapboxRoadPalette.detailCasing;
 const primaryRoadSurfaceColor = streetsVisual.road.primary;
 const secondaryRoadSurfaceColor = mapboxRoadPalette.road;
 const tertiaryRoadSurfaceColor = mapboxRoadPalette.road;
@@ -361,33 +359,6 @@ const pathLineJoin = zoom.step<TileflowLineJoin>([
   [12, 'miter'],
   [16, 'round'],
 ]);
-const circularRoadBaseWidth = expr.match<string, number>(
-  expr.coalesce(expr.get(field('class')), 'street'),
-  [
-    {labels: 'motorway', value: 6},
-    {labels: 'trunk', value: 5.5},
-    {labels: 'primary', value: 5},
-    {labels: 'secondary', value: 4.5},
-    {labels: 'tertiary', value: 4},
-    {labels: 'service', value: 2.5},
-    {labels: 'track', value: 2},
-  ],
-  3,
-);
-// Only Streets' fallback width profile is authored here. Core owns the physical
-// ring geometry, fractional-zoom scaling and its relationship to the road casing.
-const circularRoadFallbackWidth = expr.interpolate<number>(
-  {kind: 'exponential', base: 2},
-  expr.zoom(),
-  [
-    [15, circularRoadBaseWidth],
-    ...Array.from({length: 9}, (_, index) => {
-      const level = 16 + index;
-      const scale = 1 + ((1.35 ** (level - 15) - 1) / (1.35 ** 7 - 1)) * 1.2;
-      return [level, expr.multiply(circularRoadBaseWidth, scale)] as const;
-    }),
-  ],
-);
 const expresswayWidthScale = 1;
 const tunnelBorderDash = [3, 3] as const;
 const tunnelBorderWidth = 1;
@@ -1907,26 +1878,6 @@ const streetsBase = bindOfficialMapTheme(
               [16.5, 0],
               [17, 1],
             ]),
-          },
-          roundabouts: {
-            fallbackWidth: circularRoadFallbackWidth,
-            borderWidth: roadBorderTotalWidth,
-            casing: {
-              color: fixed('rgba(0, 0, 0, 0)', {reason: 'Invisible circular-road underlay'}),
-              minZoom: 15,
-              pitchAlignment: 'map',
-              pitchScale: 'map',
-              strokeColor: roadCasingColor,
-              strokeOpacity: 1,
-            },
-            fill: {
-              color: fixed('rgba(0, 0, 0, 0)', {reason: 'Invisible circular-road underlay'}),
-              minZoom: 15,
-              pitchAlignment: 'map',
-              pitchScale: 'map',
-              strokeColor: roadSurfaceColor,
-              strokeOpacity: 1,
-            },
           },
           sidewalks: {
             pattern: {

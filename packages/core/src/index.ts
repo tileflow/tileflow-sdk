@@ -207,7 +207,6 @@ export type {
   TileflowRoadModifier,
   TileflowMountainBikeScale,
   TileflowRoadRestriction,
-  TileflowRoadRoundaboutStyle,
   TileflowRoadServiceType,
   TileflowRoadSidewalkStyle,
   TileflowRoadStreetLightStyle,

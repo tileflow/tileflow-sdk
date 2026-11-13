@@ -109,7 +109,6 @@ test('binds closed semantic keys to the existing physical ID contract only at lo
     'roads.classes.primary.bridge.casing': 'tileflow-road-bridge-primary-casing',
     'roads.cohorts.surface.hatch': 'tileflow-road-surface-hatch',
     'roads.cohorts.surface.major.fill': 'tileflow-road-surface-highzoom-major-fill',
-    'roads.roundabouts.fill': 'tileflow-road-circular-fill',
     'terrain.contours.labels': 'tileflow-terrain-contour-labels',
     'transit.service-rail.bridge': 'tileflow-transit-service-rail-bridge',
     'vegetation.trees': 'tileflow-vegetation-trees',

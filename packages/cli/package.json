@@ -55,7 +55,7 @@
     "@tileflow/maps": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
     "commander": "^15.0.0",
     "fflate": "0.8.3",
-    "hono": "4.13.14",
+    "hono": "4.13.16",
     "picocolors": "^1.1.1",
     "pmtiles": "4.5.0",
     "proj4": "2.22.0",

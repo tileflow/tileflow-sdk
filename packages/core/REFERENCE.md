@@ -399,8 +399,9 @@ Text requires exactly one provider. Streets, Outdoors and Soundings use URL glyp
 official glyph set, whose URL composites a comma-joined stack of its fonts per code point; Blueprint
 also uses URL glyphs; the community Baedeker, 1777 and Siegfried maps package Cormorant. A map that
 declares `fonts` replaces inherited glyphs: Hosted deploy uploads its used faces and licenses as a
-font bundle before publishing the style, and `--with-native` deployments still require glyphs. Tile
-and font URLs do not grant redistribution rights.
+font bundle before publishing the style. With `platforms: ['web', 'native']`, native styles use
+the same TTF/OTF files through `font-faces`; WOFF2 is supported only for web. Tile and font URLs
+do not grant redistribution rights.
 
 `labels.roadPlacement: 'readable'` draws complete street names above the 3D scene, below foreground
 destinations. `attachTileflowLabelPlacement(map)` from `@tileflow/core/browser` adds per-instance

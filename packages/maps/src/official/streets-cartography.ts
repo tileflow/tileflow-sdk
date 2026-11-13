@@ -77,13 +77,10 @@ export function withStreetsCartography(base: TileflowMap) {
     ...base,
     modules: {
       ...source.modules,
-      roads: withRenderStack(
-        overviewRoads,
-        {
-          ...roadsStack,
-          accessOverview: streetsAccessOverview,
-        },
-      ),
+      roads: withRenderStack(overviewRoads, {
+        ...roadsStack,
+        accessOverview: streetsAccessOverview,
+      }),
       land: withRenderStack(
         {
           ...withoutStack(land),

@@ -63,10 +63,7 @@ test('paths keep ordinary road hierarchy and structure ordering', () => {
 });
 
 test('derived Streets maps can disable cycleways or omit their tunnel casing', () => {
-  for (const cycleway of [
-    {enabled: false},
-    {tunnel: {casing: {visible: false}}},
-  ]) {
+  for (const cycleway of [{enabled: false}, {tunnel: {casing: {visible: false}}}]) {
     const map = defineMap({
       id: 'custom-paths',
       version: 1,
@@ -76,7 +73,9 @@ test('derived Streets maps can disable cycleways or omit their tunnel casing', (
     const style = createStyle(map, {theme: 'light', preparedAssets});
     assert.equal(style.sources['tileflow-path-ground'], undefined);
     const fill = style.layers.find((layer) => layer.id === 'tileflow-road-tunnel-cycleway-fill');
-    const casing = style.layers.find((layer) => layer.id === 'tileflow-road-tunnel-cycleway-casing');
+    const casing = style.layers.find(
+      (layer) => layer.id === 'tileflow-road-tunnel-cycleway-casing',
+    );
     if (cycleway.enabled === false) assert.equal(fill, undefined);
     else assert.ok(fill?.type === 'line');
     assert.equal(casing, undefined);

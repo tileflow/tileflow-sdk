@@ -5,7 +5,7 @@
 // (`traffic_control` with `type=hedge`). A tree keeps its form, size, turn and shade wherever
 // and whenever it is read. It has no DOM dependency.
 import {placeTileflowHedges} from './hedges-3d';
-import type {TileflowTreeModel} from './trees-3d-model';
+import type {TileflowTreeModel, TileflowTreeModelLevel} from './trees-3d-model';
 import type {TileflowTileLayer} from './vector-tile-decode';
 
 /** The forms a 3D tree takes. */
@@ -712,6 +712,19 @@ export type TileflowVegetation3D = Readonly<{
   flatLayers: readonly string[];
 }>;
 
+/** A model level as the style carries it: its file's URL, or its bytes as base64 text. */
+function treeModelLevel(value: unknown): TileflowTreeModelLevel | undefined {
+  if (typeof value === 'string') return value;
+  if (
+    isRecord(value) &&
+    typeof value.url === 'string' &&
+    value.url.length > 0 &&
+    value.url.length <= 2048
+  )
+    return {url: value.url};
+  return undefined;
+}
+
 /** The metadata a compiled style publishes for its 3D trees. */
 export function tileflowVegetationMetadata(
   vegetation: TileflowVegetation3D,
@@ -749,12 +762,13 @@ export function readTileflowVegetation3D(metadata: unknown): TileflowVegetation3
         ([id, model]) =>
           tileflowTreeModelIdPattern.test(id) &&
           isRecord(model) &&
-          typeof model.near === 'string' &&
-          (model.far === undefined || typeof model.far === 'string'),
+          treeModelLevel(model.near) !== undefined &&
+          (model.far === undefined || treeModelLevel(model.far) !== undefined),
       )
       .slice(0, 16)
       .map(([id, model]) => {
-        const {near, far} = model as {near: string; far?: string};
+        const near = treeModelLevel((model as {near: unknown}).near)!;
+        const far = treeModelLevel((model as {far?: unknown}).far);
         return [id, far === undefined ? {near} : {near, far}];
       }),
   ) as Record<string, TileflowTreeModel>;

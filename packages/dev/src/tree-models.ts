@@ -15,6 +15,7 @@ import {
   compareCodeUnits,
   encodeTileflowModels,
   encodeTileflowTreeModel,
+  isTileflowModelSet,
   readTileflowLandmarkTileFootprints,
   serializeTileflowLandmarkRegion,
   type TileflowLandmarkFootprint,
@@ -24,6 +25,7 @@ import {
   type TileflowModelEntry,
   tileflowModelFileName,
   type TileflowModelMesh,
+  type TileflowModelSource,
   type TileflowTreeModel,
   tileflowTreeModelLimits,
 } from '@tileflow/core';
@@ -229,9 +231,13 @@ const modelId = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 
 /** Reads, checks and prepares one map's model directories. */
 export async function prepareTileflowMapTreeModels(
-  directories: readonly TileflowModelDirectory[],
+  sources: readonly TileflowModelSource[],
   options: {baseDirectory: string; configPath: string; cwd: string; target: 'hosted' | 'local'},
 ): Promise<PreparedTileflowTreeModels> {
+  // A published model set is named by URL in the style; only directories are prepared here.
+  const directories = sources.filter(
+    (source): source is TileflowModelDirectory => !isTileflowModelSet(source),
+  );
   const resolved = await resolveTileflowAssetDirectories(directories, {
     baseDirectory: options.baseDirectory,
     configPath: options.configPath,

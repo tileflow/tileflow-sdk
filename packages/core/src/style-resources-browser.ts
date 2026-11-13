@@ -1,5 +1,5 @@
-import {readBoundedTileflowBrowserResource} from './browser-resource';
 import {bindTileflowBrandingSources, rememberTileflowBrandingSources} from './branding';
+import {readBoundedTileflowBrowserResource} from './browser-resource';
 import type {TileflowRuntimeStyle} from './runtime';
 import {
   createTileflowStyleFamily,
@@ -141,6 +141,23 @@ async function prepareRuntimeStyle(
           isRecord(model) && typeof model.url === 'string'
             ? {...model, url: resolve(model.url)}
             : model,
+        );
+      // Tree models are keyed by id, each level a file URL or text inside the style.
+      else if (isRecord(descriptor.models))
+        resolved.models = Object.fromEntries(
+          Object.entries(descriptor.models).map(([id, model]) => [
+            id,
+            isRecord(model)
+              ? Object.fromEntries(
+                  Object.entries(model).map(([level, value]) => [
+                    level,
+                    isRecord(value) && typeof value.url === 'string'
+                      ? {...value, url: resolve(value.url)}
+                      : value,
+                  ]),
+                )
+              : model,
+          ]),
         );
       if (isRecord(descriptor.landmarks) && typeof descriptor.landmarks.url === 'string')
         resolved.landmarks = {...descriptor.landmarks, url: resolve(descriptor.landmarks.url)};

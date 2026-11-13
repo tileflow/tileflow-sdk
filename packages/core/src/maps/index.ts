@@ -17,7 +17,12 @@ export {
   type TileflowIconDirectory,
   type TileflowLocalDirectory,
   type TileflowModelDirectory,
+  type TileflowModelSet,
+  type TileflowModelSource,
   type TileflowPackageDirectory,
+  isTileflowModelSet,
+  tileflowModelSetLimit,
+  tileflowModelSetUrl,
 } from './assets';
 export {resolveMap, TileflowMapResolutionError, tileflowMapDefaultMaxDepth} from './resolve';
 export {

@@ -32,6 +32,7 @@
   "files": [
     "assets",
     "!assets/streets/climate/streets-climate-v1.png",
+    "!assets/streets/tree-models",
     "dist",
     "THIRD_PARTY_NOTICES.md",
     "LICENSE",

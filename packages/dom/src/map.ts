@@ -28,7 +28,6 @@ import {
   type TileflowMap3DAttachment,
   type TileflowMapError,
   type TileflowMapErrorCode,
-  type TileflowMapLifecycleAttachment,
   tileflowMaxPitch,
   type TileflowNavigationControlBinding,
   type TileflowNavigationControlInput,
@@ -58,6 +57,7 @@ import {
   registerTileflowPmtilesProtocol,
   registerTileflowWorldRequestBridge,
   tileflowCanvasContextAttributes,
+  type TileflowMapLifecycleAttachment,
 } from '@tileflow/core/internal';
 import {
   createTileflowSessionController,

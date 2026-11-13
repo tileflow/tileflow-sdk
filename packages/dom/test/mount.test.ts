@@ -68,6 +68,32 @@ test('mounts a map, reaches idle, and two maps keep their own resources', async 
   assert.equal(errors.mock.callCount(), 0);
 });
 
+test('a theme is not idle until the renderer paints the applied style', async (t) => {
+  const base = site();
+  const tileflow = tileflowSite(base);
+  const browser = useFakeBrowser(t, (url) => tileflow.respond(url));
+  const map = createTileflowMap(browser.container(), {
+    source: {manifestUrl: `${base}/manifest.json`, map: 'madrid'},
+    themeTransition: {duration: 0},
+  });
+  await map.ready;
+  await until(() => map.getStatus().readiness === 'idle');
+  const fake = browser.maps[0]!;
+  // The style can be applied while the final paint is still pending. Only the renderer knows
+  // when that paint (including native transitions) is finished.
+  const repaint = t.mock.method(fake, 'triggerRepaint', () => undefined);
+  map.setTheme('dark');
+  await until(() => repaint.mock.callCount() > 0);
+  assert.equal(map.getThemeController()?.getCurrent().theme, 'dark');
+  assert.equal(map.getStatus().readiness, 'loading');
+  fake.fire('render');
+  await settle();
+  assert.equal(map.getStatus().readiness, 'loading');
+  fake.fire('idle');
+  await until(() => map.getStatus().readiness === 'idle');
+  map.destroy();
+});
+
 test('a map destroyed while its style loads is never created', async (t) => {
   const base = site();
   const tileflow = tileflowSite(base);
@@ -328,12 +354,14 @@ test('an unknown theme name keeps a valid change that is on its way', async (t) 
   assert.equal(map.getStatus().theme, 'dark');
   assert.equal(map.getStatus().readiness, 'error');
   assert.deepEqual(codes, ['theme']);
-  // The system selection it fell back to is still followed.
+  // The system selection it fell back to is still followed without reporting the unchanged
+  // invalid request a second time.
   browser.colorScheme.set(false);
   await until(
     () => shownTheme(fake.getStyle()) === 'light',
     () => shownTheme(fake.getStyle()),
   );
+  assert.deepEqual(codes, ['theme']);
   map.destroy();
 });
 

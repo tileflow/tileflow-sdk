@@ -354,7 +354,13 @@ export function createFakeMapLibre() {
     resize() {
       return this;
     }
-    triggerRepaint() {}
+    triggerRepaint() {
+      setTimeout(() => {
+        if (this.removed || !this.isStyleLoaded()) return;
+        this.fire('render');
+        this.fire('idle');
+      }, 0);
+    }
     project() {
       return {x: 0, y: 0};
     }

@@ -9,11 +9,28 @@ import type {
 } from 'maplibre-gl';
 import type {TileflowGeoJsonSource, TileflowMapLibreOverlay} from '@tileflow/core';
 import {
+  attachTileflowAtmosphere,
   attachTileflowBranding,
+  attachTileflowFairUseNotice,
+  attachTileflowHorizonQueries,
+  attachTileflowLabelPlacement,
+  attachTileflowMap3D,
+  attachTileflowMapLifecycle,
+  attachTileflowNauticalLights,
+  attachTileflowNotices,
   createTileflowAppearanceBinding,
   createTileflowContourRequestScope,
   createTileflowNavigationControlBinding,
+  createTileflowSessionStarter,
+  createTileflowThemeController,
+  createTileflowTransformRequest,
   getTileflowSystemColorScheme,
+  loadTileflowRuntimeStyle,
+  loadTileflowStyleFonts,
+  registerTileflowContourProtocol,
+  registerTileflowPathGroundProtocol,
+  registerTileflowPmtilesProtocol,
+  registerTileflowWorldRequestBridge,
   reportTileflowMapError,
   resolveTileflowCameraFit,
   subscribeTileflowSystemColorScheme,
@@ -21,6 +38,7 @@ import {
   type TileflowBounds,
   type TileflowBrowserThemeBlendSelection,
   type TileflowCameraFit,
+  tileflowCanvasContextAttributes,
   type TileflowColorOverrides,
   type TileflowEmphasis,
   type TileflowFitBoundsOptions,
@@ -28,6 +46,7 @@ import {
   type TileflowMap3DAttachment,
   type TileflowMapError,
   type TileflowMapErrorCode,
+  type TileflowMapLifecycleAttachment,
   tileflowMaxPitch,
   type TileflowNavigationControlBinding,
   type TileflowNavigationControlInput,
@@ -36,24 +55,6 @@ import {
   type TileflowThemeTransition,
   type TileflowThemeTransitionOptions,
   type TileflowViewMode,
-  attachTileflowAtmosphere,
-  attachTileflowFairUseNotice,
-  attachTileflowHorizonQueries,
-  attachTileflowLabelPlacement,
-  attachTileflowMap3D,
-  attachTileflowMapLifecycle,
-  attachTileflowNauticalLights,
-  attachTileflowNotices,
-  createTileflowSessionStarter,
-  createTileflowThemeController,
-  createTileflowTransformRequest,
-  loadTileflowRuntimeStyle,
-  loadTileflowStyleFonts,
-  registerTileflowContourProtocol,
-  registerTileflowPathGroundProtocol,
-  registerTileflowPmtilesProtocol,
-  registerTileflowWorldRequestBridge,
-  tileflowCanvasContextAttributes,
 } from '@tileflow/core/browser';
 import {normalizeTileflowCaptureId} from '@tileflow/core/capture';
 import {
@@ -539,7 +540,14 @@ export function createTileflowMap<TAnnotation extends TileflowAnnotation = Tilef
     };
     const themeResolution = memo(
       'themeResolution',
-      [blendThemeName, manifestMap, systemColorScheme, theme, themeBlendKey, timeOfDay],
+      [
+        blendThemeName,
+        manifestMap,
+        (blendThemeName ?? theme) === 'system' ? systemColorScheme : undefined,
+        theme,
+        themeBlendKey,
+        timeOfDay,
+      ],
       () => resolveSelection(blendThemeName ?? theme),
     );
     // What the map follows. A request it could not show leaves it on the theme applied before;
@@ -1344,6 +1352,7 @@ export function createTileflowMap<TAnnotation extends TileflowAnnotation = Tilef
     scope.add(attachTileflowLabelPlacement(mapLibreMap));
     // Feature queries and taps keep working once a steep pitch shows the horizon.
     scope.add(attachTileflowHorizonQueries(mapLibreMap));
+    let lifecycle: TileflowMapLifecycleAttachment | undefined;
     const controller =
       initialRuntimeStyle.theme === undefined
         ? undefined
@@ -1354,6 +1363,13 @@ export function createTileflowMap<TAnnotation extends TileflowAnnotation = Tilef
             map: mapLibreMap,
             onTransition(transition) {
               if (themeController !== controller) return;
+              if (transition.phase === 'ready') {
+                // An in-place paint change may emit no loading event. Its style can already be
+                // applied while MapLibre is still painting transitions: require a fresh renderer
+                // idle before capture or an application treats the new appearance as settled.
+                lifecycle?.invalidate('loading');
+                mapLibreMap.triggerRepaint();
+              }
               options.onThemeChange?.(transition);
               themeTransitionState =
                 transition.phase === 'preloading' || transition.phase === 'applying'
@@ -1443,7 +1459,7 @@ export function createTileflowMap<TAnnotation extends TileflowAnnotation = Tilef
     scope.add(() => resizeObserver.disconnect());
     resizeObserver.observe(container);
 
-    const lifecycle = attachTileflowMapLifecycle({
+    const mapLifecycle = attachTileflowMapLifecycle({
       getSession: () => {
         const analyticsForLoad = current.resolvedAnalytics;
         return {
@@ -1475,7 +1491,11 @@ export function createTileflowMap<TAnnotation extends TileflowAnnotation = Tilef
         return () => subscription.unsubscribe();
       },
     });
-    scope.add(() => lifecycle.dispose());
+    lifecycle = mapLifecycle;
+    scope.add(() => {
+      lifecycle = undefined;
+      mapLifecycle.dispose();
+    });
 
     // A theme or blend chosen while the map loaded follows now.
     const latestRuntimeStyle = current.runtimeStyle;

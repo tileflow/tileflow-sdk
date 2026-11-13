@@ -324,9 +324,11 @@ before loading a style.
 
 ### Catalog branding
 
-The React, Vue, Svelte, React Native and embedded mobile maps manage the Tileflow symbol
-in the lower-left corner automatically. Preview and capture include it too. The symbol links to
-https://tileflow.dev and follows the active catalog sources, independently of data attribution.
+The React, Vue, Svelte, React Native and embedded mobile maps manage the Tileflow logo in the
+lower-left corner automatically. Preview and capture include it too. The logo is the wordmark with
+the symbol, in white with a soft dark halo and no background; browser maps 250 px wide or narrower
+show the symbol alone. It links to https://tileflow.dev and follows the active catalog sources,
+independently of data attribution.
 Own and third-party tiles do not require the Tileflow mark. Public Tileflow catalog delivery shows
 it; catalog delivery bound to a Map ID reads the owner's current branding entitlement. A paid map
 never inserts a provisional mark. While a managed decision is unavailable, the surface remains

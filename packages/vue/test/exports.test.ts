@@ -1,10 +1,6 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
-import {
-  configureTileflowMapLibre as configureSharedMapLibre,
-  loadTileflowMapLibre as loadSharedMapLibre,
-} from '@tileflow/core/maplibre';
 import {configureTileflowMapLibre, loadTileflowMapLibre} from '../src/maplibre.js';
 
 test('publishes one ESM entry with matching default and named components', async () => {
@@ -28,17 +24,15 @@ test('publishes one ESM entry with matching default and named components', async
   assert.match(source, /export default TileflowMap/u);
 });
 
-test('keeps MapLibre behind the interactive runtime boundary', async () => {
+test('mounts the map through the framework-free core and keeps MapLibre out of its bundle', async () => {
   const output = await readFile(new URL('../dist/index.js', import.meta.url), 'utf8');
 
-  assert.match(output, /from ["']@tileflow\/core\/maplibre["']/u);
-  assert.match(output, /mountTileflowMap/u);
-  assert.doesNotMatch(output, /^import .*?["']maplibre-gl["'];?$/mu);
-});
-
-test('shares the renderer and worker configuration with every Tileflow adapter', () => {
-  assert.equal(configureTileflowMapLibre, configureSharedMapLibre);
-  assert.equal(loadTileflowMapLibre, loadSharedMapLibre);
+  assert.match(output, /from ["']@tileflow\/dom["']/u);
+  assert.match(output, /createTileflowMap/u);
+  assert.doesNotMatch(
+    output,
+    /maplibre-gl|new maplibregl\.Map|registerTileflowWorldRequestBridge/u,
+  );
 });
 
 test('imports delivery helpers from responsibility-specific subpaths', async () => {
@@ -67,12 +61,4 @@ test('configures the MapLibre worker before an interactive map uses it', async (
 
   const maplibregl = await loadTileflowMapLibre();
   assert.equal(maplibregl.getWorkerUrl(), '/assets/maplibre-gl-worker.mjs');
-});
-
-test('initial renderer loading converges on a theme selected while it is in flight', async () => {
-  const source = await readFile(new URL('../src/index.ts', import.meta.url), 'utf8');
-
-  assert.doesNotMatch(source, /runtimeStyle\.value\s*!==\s*runtime\s*\|\|/u);
-  assert.match(source, /runtimeStyle\.value\s*&&\s*runtimeStyle\.value\s*!==\s*runtime/u);
-  assert.match(source, /themeController\.setTheme\(runtimeStyle\.value[,)]/u);
 });

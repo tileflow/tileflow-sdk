@@ -41,6 +41,90 @@ publication, lock installation, validation, build, preview, capture and icon ins
 Production icon delivery remains trusted by default. A lock or server response cannot add
 another trusted origin, and downloads send no credentials and follow no redirects.
 
+## capture
+
+### Explore without committing a scene
+
+`--map` captures one map at a camera given by flags. In a directory without a config,
+`--map streets`, `--map soundings` and `--map outdoors` open the official map that this CLI ships
+with, so nothing needs installing:
+
+```sh
+npx tileflow capture --map streets --theme dusk --center 2.295,48.8565 --zoom 16.4 --pitch 64 --bearing -30 --out eiffel.png
+```
+
+The generated config is written to `.tileflow/cache/official-maps/` and can be deleted. With a
+project config, `--map` names one of its maps. `--theme` takes one concrete theme, or a
+comma-separated list that captures each theme as `<map>-<theme>.png`.
+
+### Batch captures
+
+`--batch <file.json>` renders many exploratory captures with one browser and one compiled build,
+instead of starting both for each image. The file holds an array of captures, or
+`{"captures": [...]}`:
+
+```json
+[
+  {
+    "name": "eiffel-dusk",
+    "theme": "dusk",
+    "camera": {"center": [2.295, 48.8565], "zoom": 16.4, "pitch": 64, "bearing": -30}
+  },
+  {"name": "madrid-overview", "theme": "light,dark", "bounds": [-3.8, 40.3, -3.6, 40.5]}
+]
+```
+
+Each entry may set `name`, `map`, `theme`, `center` with `zoom` or `bounds` with `padding`,
+`bearing`, `pitch`, `width`, `height` and `dpr`, directly or inside `camera`. Flags given with
+`--batch` (`--map`, `--theme`, `--width`, `--bearing`, ...) fill what an entry leaves out; an
+entry's own `center` or `bounds` replaces the flags' position and zoom. Names default to the map
+name, must be unique and become `<name>.png` in `--out-dir` (default `.tileflow/captures/`). One
+command captures at most 200 images.
+
+`--contact-sheet <file.png>` also writes every capture of the command into one labelled grid, for
+choosing between candidates.
+
+### Complete images
+
+A map whose style declares a 3D scene (buildings with landmarks and Team models, trees, street
+lights) is captured with that scene mounted, as Inspector and applications show it. The capture
+waits until MapLibre's tiles have loaded and the scene has nothing pending: building and tree tiles
+read, built and uploaded, models downloaded and faded in. When the budget runs out first, the image
+is still written and a warning names what was pending, for example
+`23 building tiles, 2 models, 19 tree tiles pending`.
+
+`--timeout <seconds>` sets the budget per capture (default 30, from 5 to 600). The pinned browser
+renders WebGL in software so committed images compare across machines; a dense 3D street view then
+takes minutes. `--gpu` renders exploratory `--map` and `--batch` captures with this machine's
+graphics hardware instead, typically settling such a view in a few seconds. Its pixels depend on
+the hardware and driver, so committed scenes, shots and baselines do not accept it. When no GPU is
+available, a warning says the capture fell back to software.
+
+### Warnings
+
+Warnings are part of the result: `warnings` in `--json` output, and `Warning (<scene>): ...` lines
+on stderr otherwise. Besides an unsettled 3D scene, they report:
+
+- a dataset the capture is not entitled to read. HTTP 401 and 403 responses name the Tileflow
+  dataset, for example `Tileflow dataset "bathymetry" returned HTTP 403`; the rest of the map is
+  captured without its layers. Glyphs and sprites that fail still fail the capture.
+- a 3D model file that is missing; the buildings under it are captured instead.
+- a 3D renderer that failed to draw; the flat map is captured instead.
+
+### Capture from any browser tool
+
+Inspector's map page takes the camera and theme in its URL and can hide its controls:
+
+```text
+http://127.0.0.1:3333/map/?theme=dusk&lng=2.295&lat=48.8565&zoom=16.4&pitch=64&bearing=-30&chrome=off
+```
+
+All five camera parameters are required for the camera to apply. `chrome=off` leaves only the map.
+The root element carries `data-tileflow-ready="true"` once the map and its 3D scene have settled,
+and returns to `false` when the camera moves or data loads, so a browser tool can wait for
+`html[data-tileflow-ready=true]` before taking its screenshot. Datasets the session cannot read
+appear in a warning panel and as JSON in `data-tileflow-warnings`.
+
 ## tileset build
 
 `tileflow tileset build <input>` turns local vector data into a PMTiles archive ready for

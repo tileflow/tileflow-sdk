@@ -1,4 +1,2 @@
-/** @typedef {typeof import('maplibre-gl')} TileflowMapLibre */
-/** @typedef {import('@tileflow/core/maplibre').TileflowMapLibreConfiguration} TileflowMapLibreConfiguration */
-
-export {configureTileflowMapLibre, loadTileflowMapLibre} from '@tileflow/core/maplibre';
+// One MapLibre loader and worker configuration serves every Tileflow map on the page.
+export {configureTileflowMapLibre, loadTileflowMapLibre} from '@tileflow/dom';

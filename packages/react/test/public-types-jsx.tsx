@@ -1,8 +1,8 @@
-import type {TileflowMapError, TileflowThemeController} from '@tileflow/core/browser';
+import {type ComponentProps, createRef, lazy} from 'react';
 import type {Map as MapLibreMap} from 'maplibre-gl';
-import {createRef} from 'react';
+import type {TileflowMapError, TileflowThemeController} from '@tileflow/core/browser';
 import type {TileflowAnnotation} from '@tileflow/interactions';
-import {Map, type MapAnnotationProps, type TileflowMapHandle} from '../src/index';
+import {Map, type MapAnnotationProps, type MapProps, type TileflowMapHandle} from '../src/index';
 
 type Property = Readonly<{
   price: number;
@@ -150,3 +150,14 @@ void [
   reportedImage,
   unknownCode,
 ];
+
+// Tools that read a component's props, such as `lazy` and `ComponentProps`, see every prop shape.
+const LazyMap = lazy(() => import('../src/index').then((module) => ({default: module.Map})));
+const lazyMap = <LazyMap source={{map: 'main'}} theme="dawn" zoom={15} onLoad={() => {}} />;
+const lazyImage = <LazyMap mode="image" source={{map: 'main'}} />;
+const lazyInteractions = <LazyMap interactions={[]} ref={handle} source={{map: 'main'}} />;
+const readProps = (props: MapProps): ComponentProps<typeof Map> => props;
+// @ts-expect-error image mode takes no interactions, through `lazy` too.
+const lazyImageInteractions = <LazyMap interactions={[]} mode="image" source={{map: 'main'}} />;
+
+void [lazyMap, lazyImage, lazyInteractions, readProps, lazyImageInteractions];

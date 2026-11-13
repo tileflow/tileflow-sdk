@@ -2,10 +2,6 @@ import assert from 'node:assert/strict';
 import {access, readFile} from 'node:fs/promises';
 import test from 'node:test';
 import {configureTileflowMapLibre, loadTileflowMapLibre} from '../src/maplibre.js';
-import {
-  configureTileflowMapLibre as configureSharedMapLibre,
-  loadTileflowMapLibre as loadSharedMapLibre,
-} from '@tileflow/core/maplibre';
 
 test('publishes resolvable Svelte and declaration entry points', async () => {
   const packageJson = JSON.parse(
@@ -27,9 +23,14 @@ test('publishes resolvable Svelte and declaration entry points', async () => {
   }
 });
 
-test('shares the browser renderer and worker configuration with Core', () => {
-  assert.equal(loadTileflowMapLibre, loadSharedMapLibre);
-  assert.equal(configureTileflowMapLibre, configureSharedMapLibre);
+test('mounts the map through the framework-free core and keeps MapLibre out of the component', async () => {
+  const component = await readFile(new URL('../src/TileflowMap.svelte', import.meta.url), 'utf8');
+  const loader = await readFile(new URL('../src/maplibre.js', import.meta.url), 'utf8');
+
+  assert.match(component, /from ["']@tileflow\/dom["']/u);
+  assert.match(component, /createTileflowMap\(/u);
+  assert.doesNotMatch(component, /^\s*import (?!type).*["']maplibre-gl["']/mu);
+  assert.match(loader, /from ["']@tileflow\/dom["']/u);
 });
 
 test('imports delivery helpers from responsibility-specific subpaths', async () => {
@@ -60,14 +61,6 @@ test('configures the MapLibre worker before an interactive map uses it', async (
 
   const maplibregl = await loadTileflowMapLibre();
   assert.equal(maplibregl.getWorkerUrl(), '/assets/maplibre-gl-worker.mjs');
-});
-
-test('initial renderer loading converges on a theme selected while it is in flight', async () => {
-  const source = await readFile(new URL('../src/TileflowMap.svelte', import.meta.url), 'utf8');
-
-  assert.doesNotMatch(source, /runtimeStyle\s*!==\s*runtime\s*\|\|/u);
-  assert.match(source, /runtimeStyle\s*&&\s*runtimeStyle\s*!==\s*runtime/u);
-  assert.match(source, /themeController\.setTheme\(runtimeStyle[,)]/u);
 });
 
 test('keeps component exports aligned with the public props declaration', async () => {

@@ -1,74 +1,29 @@
 <script lang="ts">
-  import type {
-    LngLatLike,
-    Map as MapLibreMap,
-    Marker as MapLibreMarker,
-    PointLike,
-    Popup as MapLibrePopup,
-  } from 'maplibre-gl';
+  import type {Map as MapLibreMap} from 'maplibre-gl';
   import {createEventDispatcher, onMount, tick} from 'svelte';
+  import type {TileflowThemeController} from '@tileflow/core/browser';
   import {normalizeTileflowCaptureId} from '@tileflow/core/capture';
+  import {resolveTileflowMapMode} from '@tileflow/core/runtime';
   import {
-    defaultTileflowManifestUrl,
-    defaultTileflowRuntimeView,
-    loadTileflowManifest,
-    mergeTileflowAnalytics,
-    nearestTileflowBlendTheme,
-    normalizeTileflowRuntimeCenter,
-    normalizeTileflowStaticImageSize,
-    resolveTileflowManifestMap,
-    resolveTileflowMapMode,
-    resolveTileflowRuntimeStyle,
-    resolveTileflowRuntimeTheme,
-    resolveTileflowRuntimeThemeBlend,
-    resolveTileflowRuntimeView,
-    resolveTileflowStaticImageUrl,
-    type TileflowRuntimeManifestMap,
-    type TileflowRuntimeStyle,
-  } from '@tileflow/core/runtime';
-  import {
-    type TileflowMap3DAttachment,
-    getTileflowSystemColorScheme,
-    subscribeTileflowSystemColorScheme,
-    type TileflowAppearanceBinding,
-    reportTileflowMapError,
-    resolveTileflowCameraFit,
-    type TileflowCameraFit,
-    type TileflowMapErrorCode,
-    type TileflowNavigationControlBinding,
-    type TileflowThemeController,
-  } from '@tileflow/core/browser';
-  import {
-    initialTileflowInteractionState,
-    tileflowInteractionStateSchema,
-    unusedTileflowRendererDiagnostics,
-    validateTileflowAnnotations,
-    validateTileflowInteractionBindings,
-    type TileflowAnnotation,
-    type TileflowAnnotationViewContext,
-    type TileflowInteractionBinding,
-    type TileflowInteractionContent,
-    type TileflowInteractionDiagnostic,
-    type TileflowInteractionDiagnosticCode,
-    type TileflowInteractionState,
-    type TileflowInteractionViewContext,
+    createTileflowMap,
+    getTileflowMapInitialStatus,
+    type TileflowMapController,
+    type TileflowMapControllerOptions,
+    type TileflowMapRenderTargetList,
+    type TileflowMapStatus,
+  } from '@tileflow/dom';
+  import type {
+    TileflowAnnotation,
+    TileflowAnnotationViewContext,
+    TileflowInteractionContent,
+    TileflowInteractionDiagnostic,
+    TileflowInteractionViewContext,
   } from '@tileflow/interactions';
-  import {
-    createTileflowMapLibreDataRuntime,
-    createTileflowMapLibreDomRuntime,
-    createTileflowMapLibreInteractionCoordinator,
-    createTileflowMapLibreSemanticDomRuntime,
-    type TileflowMapLibreDataRuntime,
-    type TileflowMapLibreDomRenderTarget,
-    type TileflowMapLibreDomRuntime,
-    type TileflowMapLibreInteractionCoordinator,
-    type TileflowMapLibrePoiMap,
-    type TileflowMapLibreSemanticDomRenderTarget,
-    type TileflowMapLibreSemanticDomRuntime,
+  import type {
+    TileflowMapLibreDomRenderTarget,
+    TileflowMapLibreSemanticDomRenderTarget,
   } from '@tileflow/interactions/maplibre';
-  import {mountTileflowMap, type TileflowMountedMap} from '@tileflow/core/maplibre';
   import type {TileflowMapProps} from './index.js';
-  import {loadTileflowMapLibre} from './maplibre.js';
   import {assertTileflowMapStyleInputs} from './style-source.js';
 
   export let alt: NonNullable<TileflowMapProps['alt']> = '';
@@ -114,1102 +69,150 @@
   export let zoom: TileflowMapProps['zoom'] = undefined;
 
   let container: HTMLDivElement;
-  let mapCaptureState: 'error' | 'idle' | 'loading' = 'loading';
-  let imageSize: {height: number; width: number} | null = null;
-  let imageResizeObserver: ResizeObserver | null = null;
-  let mapInstance: MapLibreMap | null = null;
-  let activeRuntimeResource: unknown = undefined;
-  let annotationRuntime: TileflowMapLibreDomRuntime<TileflowAnnotation> | null = null;
-  let dataRuntime: TileflowMapLibreDataRuntime<TileflowAnnotation> | null = null;
-  let annotationRuntimeDiagnosticsUnsubscribe: (() => void) | null = null;
-  let annotationRuntimeEventsUnsubscribe: (() => void) | null = null;
-  let annotationRuntimeTargetsUnsubscribe: (() => void) | null = null;
-  let annotationRenderTargets: readonly TileflowMapLibreDomRenderTarget<TileflowAnnotation>[] = [];
-  let annotationRuntimeCoordinatorDetach: (() => void) | null = null;
-  let annotationRuntimeDiagnostics: readonly TileflowInteractionDiagnostic[] = [];
-  let semanticRuntime: TileflowMapLibreSemanticDomRuntime | null = null;
-  let semanticRuntimeCoordinatorDetach: (() => void) | null = null;
-  let semanticRuntimeDiagnosticsUnsubscribe: (() => void) | null = null;
-  let semanticRuntimeEventsUnsubscribe: (() => void) | null = null;
-  let semanticRuntimeTargetsUnsubscribe: (() => void) | null = null;
-  let semanticRenderTargets: readonly TileflowMapLibreSemanticDomRenderTarget[] = [];
-  let semanticRuntimeDiagnostics: readonly TileflowInteractionDiagnostic[] = [];
-  let initializeSemanticRuntime: (() => void) | null = null;
-  let bridgeInteractionDiagnostics: Partial<
-    Record<BridgeInteractionDiagnosticSource, TileflowInteractionDiagnostic>
-  > = {};
-  let activeInteractionDiagnosticKeys = new Set<string>();
-  let interactionCaptureState: 'idle' | 'loading' = 'idle';
-  let themeTransitionState: 'error' | 'idle' | 'loading' = 'idle';
-  let effectiveInteractionCaptureState: 'error' | 'idle' | 'loading' = 'idle';
-  let captureState: 'error' | 'idle' | 'loading' = 'loading';
-  let hasInteractionErrors = false;
-  let interactionReadinessRunId = 0;
-  let interactionReadinessTargetKeys: readonly string[] = [];
-  let hadInteractionErrors = false;
-  let interactionRuntimesDisposing = false;
-  let navigationBinding: TileflowNavigationControlBinding | null = null;
-  let appliedCameraFitKey: string | undefined;
-  let sceneAttachment: TileflowMap3DAttachment | null = null;
-  $: sceneAttachment?.setVegetation(vegetation);
-  $: sceneAttachment?.setViewMode(viewMode);
-  let themeController: TileflowThemeController | null = null;
-  let appearanceBinding: TileflowAppearanceBinding | null = null;
-  let systemColorScheme: 'dark' | 'light' = 'light';
-  let unsubscribeSystemColorScheme: (() => void) | null = null;
-  let loadedManifestMap: TileflowRuntimeManifestMap | null = null;
-  let manifestMap: TileflowRuntimeManifestMap | null = null;
-  let manifestLoadId = 0;
-  let manifestResolutionKey = '';
-  let manifestResolutionState: 'error' | 'loading' | 'ready' = 'loading';
-  let mapLoadId = 0;
-  let resourceLifetime: AbortController | undefined;
-  let mountedMap: TileflowMountedMap | null = null;
-  let mounted = false;
-  let refreshRunId = 0;
-  let readinessRunId = 0;
+  let imageElement: HTMLImageElement | null = null;
+  let controller: TileflowMapController<TileflowAnnotation> | null = null;
+  let mapStatus: TileflowMapStatus | null = null;
+  let renderTargets: TileflowMapRenderTargetList<TileflowAnnotation> = {
+    annotations: [],
+    semantic: [],
+  };
+  let viewsSettled = true;
+  let portalDiagnostic: TileflowInteractionDiagnostic | null = null;
 
   const dispatch = createEventDispatcher<{load: MapLibreMap}>();
+  const controlledInteractionOwnership = interactionState !== undefined;
 
   /** The MapLibre map, or `null` until the map has loaded, in image mode and after it is taken down. */
   export function getMap(): MapLibreMap | null {
-    return mapInstance;
+    return controller?.getMap() ?? null;
   }
 
   /** Changes the map's theme, colours and emphasis; `null` when the map's style has no themes. */
   export function getThemeController(): TileflowThemeController | null {
-    return themeController;
+    return controller?.getThemeController() ?? null;
   }
 
-  /** Without `onError` a failure goes to the console. */
-  function reportError(code: TileflowMapErrorCode, cause: unknown) {
-    reportTileflowMapError(onError, code, cause);
-  }
-  const controlledInteractionOwnership = interactionState !== undefined;
-  const initialInteractionState =
-    validateInteractionStateInput(interactionState, defaultInteractionState).length === 0
-      ? (interactionState ?? defaultInteractionState ?? initialTileflowInteractionState)
-      : initialTileflowInteractionState;
-  const interactionCoordinator: TileflowMapLibreInteractionCoordinator =
-    createTileflowMapLibreInteractionCoordinator({
-      onInteractionStateChange(nextState) {
-        if (interactionRuntimesDisposing) return;
-        onInteractionStateChange?.(nextState);
-      },
-      ...(controlledInteractionOwnership
-        ? {interactionState: initialInteractionState}
-        : {defaultInteractionState: initialInteractionState}),
-    });
-  $: resolvedMode = resolveTileflowMapMode({mode});
   $: assertTileflowMapStyleInputs({source, theme, timeOfDay, themeBlend, themeTransition});
-  $: resolvedCaptureId = normalizeTileflowCaptureId(captureId);
+  $: resolvedMode = resolveTileflowMapMode({mode});
   $: isImageMode = resolvedMode === 'image';
-  $: mapName = source.map;
-  $: manifestUrl = source.manifestUrl ?? defaultTileflowManifestUrl;
-  $: manifestRequestKey = JSON.stringify([manifestUrl, mapName]);
-  $: currentManifestResolutionState =
-    manifestResolutionKey === manifestRequestKey ? manifestResolutionState : 'loading';
-  $: manifestMap =
-    manifestResolutionKey === manifestRequestKey && manifestResolutionState === 'ready'
-      ? loadedManifestMap
-      : null;
-  $: themeResolution = resolveThemeSelection({
-    colorScheme: systemColorScheme,
-    manifestMap,
-    theme,
-    timeOfDay,
-    themeBlend,
-  });
-  $: themeBlendKey = themeBlend ? JSON.stringify(themeBlend.themes) : undefined;
-  $: themeBlendPosition = themeBlend?.position;
-  $: themeBlendHold = themeBlend?.hold === true;
-  $: resolvedThemeName = themeResolution.name;
-  $: manifestView = resolveTileflowRuntimeView({manifestMap});
-  $: manifestCenter = normalizeTileflowRuntimeCenter(manifestView.center);
-  $: imageCenter = normalizeTileflowRuntimeCenter(center ?? mapOptions?.center, manifestCenter);
-  $: imageZoom = zoom ?? mapOptions?.zoom ?? manifestView.zoom ?? defaultTileflowRuntimeView.zoom;
-  $: resolvedCenter = center ?? mapOptions?.center ?? manifestCenter;
-  $: resolvedZoom =
-    zoom ?? mapOptions?.zoom ?? manifestView.zoom ?? defaultTileflowRuntimeView.zoom;
-  $: resolvedBearing = mapOptions?.bearing ?? manifestView.bearing;
-  $: resolvedPitch = mapOptions?.pitch ?? manifestView.pitch;
-  $: resolvedInteractive = interactive ?? mapOptions?.interactive ?? true;
-  $: runtimeStyle =
-    isImageMode || themeResolution.error
-      ? null
-      : resolveTileflowRuntimeStyle({
-          colorScheme: systemColorScheme,
-          manifestMap,
-          source,
-          theme: themeResolution.name,
-        });
-  $: blendResolution = resolveBlendStyles({
-    isImageMode,
-    key: themeBlendKey,
-    manifestMap,
-    source,
-  });
-  $: blendStyles = blendResolution.styles;
-  $: resolvedAnalytics = mergeTileflowAnalytics(analytics, runtimeStyle?.analytics);
-  $: runtimeImageUrl =
-    imageUrl ??
-    (isImageMode && !themeResolution.error
-      ? resolveTileflowStaticImageUrl({
-          center: imageCenter,
-          colorScheme: systemColorScheme,
-          imageSize,
-          manifestMap,
-          theme: themeResolution.name,
-          zoom: imageZoom,
-        })
-      : undefined);
-  $: runtimeResolutionState = resolveRuntimeResolutionState({
-    currentManifestResolutionState,
-    imageSize,
-    imageUrl,
-    isImageMode,
-    runtimeImageUrl,
-    runtimeStyle,
-    themeResolutionError: themeResolution.error,
-  });
-  $: currentMapCaptureState =
-    activeRuntimeResource === (isImageMode ? runtimeImageUrl : runtimeStyle)
-      ? mapCaptureState
-      : 'loading';
+  $: resolvedCaptureId = normalizeTileflowCaptureId(captureId);
   $: frameStyle = `height: ${formatHeight(height)}; min-height: 240px; overflow: hidden; position: relative; width: 100%;`;
-  $: annotationResolution = resolveAnnotationInput(annotations);
-  $: interactionBindingResolution = resolveInteractionBindingInput(interactions);
-  $: interactionStateDiagnostics = validateInteractionStateInput(
-    interactionState,
-    defaultInteractionState,
-  );
-  $: hasInteractionConfiguration =
-    annotationClusters !== undefined ||
-    annotations !== undefined ||
-    dataOverlays !== undefined ||
-    dataSources !== undefined ||
-    interactions !== undefined ||
-    interactionState !== undefined ||
-    defaultInteractionState !== undefined ||
-    onInteractionDiagnostic !== undefined ||
-    onInteractionEvent !== undefined ||
-    onInteractionStateChange !== undefined ||
-    marker !== undefined ||
-    tooltip !== undefined ||
-    popup !== undefined;
-  $: declarativeInteractionDiagnostics = [
-    ...annotationResolution.diagnostics,
-    ...interactionBindingResolution.diagnostics,
-    ...interactionStateDiagnostics,
-    ...(isImageMode
-      ? []
-      : unusedTileflowRendererDiagnostics({
-          annotations: annotationResolution.ok ? annotationResolution.annotations : [],
-          bindings: interactions ?? [],
-          hasPopupRenderer: popup !== undefined,
-          hasTooltipRenderer: tooltip !== undefined,
-        })),
-    ...(isImageMode && hasInteractionConfiguration
-      ? [
-          createInteractionDiagnostic(
-            'UNSUPPORTED_MODE',
-            'Annotations, semantic interactions, and interaction state are unavailable in image mode.',
-          ),
-        ]
-      : []),
-  ];
-  $: interactionDiagnostics = [
-    ...declarativeInteractionDiagnostics,
-    ...annotationRuntimeDiagnostics,
-    ...semanticRuntimeDiagnostics,
-    ...Object.values(bridgeInteractionDiagnostics),
-  ];
-  $: hasInteractionErrors = interactionDiagnostics.some(({level}) => level === 'error');
-  $: effectiveInteractionCaptureState = hasInteractionErrors ? 'error' : interactionCaptureState;
-  $: captureState = combineCaptureStates(
-    combineCaptureStates(
-      combineCaptureStates(currentMapCaptureState, effectiveInteractionCaptureState),
-      runtimeResolutionState,
-    ),
-    themeTransitionState,
-  );
-  $: if (mounted && hasInteractionErrors !== hadInteractionErrors) {
-    handleInteractionErrorState(hasInteractionErrors);
-  }
-  $: if (mounted) publishNewInteractionDiagnostics(interactionDiagnostics);
 
-  $: if (mounted) {
-    imageUrl;
-    interactive;
-    mapOptions;
-    mode;
-    source;
-    void refresh();
-  }
+  // An option changed in place reaches the map as a new value, as each assignment did before.
+  $: annotationsValue = shallowCopy(annotations);
+  $: annotationClustersValue = shallowCopy(annotationClusters);
+  $: colorsValue = shallowCopy(colors);
+  $: dataOverlaysValue = shallowCopy(dataOverlays);
+  $: dataSourcesValue = shallowCopy(dataSources);
+  $: emphasisValue = shallowCopy(emphasis);
+  $: interactionsValue = shallowCopy(interactions);
+  $: interactionStateValue = shallowCopy(interactionState);
+  $: navigationControlValue = shallowCopy(navigationControl);
 
-  $: if (mounted) {
-    theme;
-    syncSystemColorSchemeSubscription();
-  }
-
-  // A resolution that fails the same way again is reported once; a new object does not repeat it.
-  let reportedThemeFailure: string | undefined;
-  $: {
-    const failure = themeResolution.error ? String(themeResolution.cause) : undefined;
-    if (mounted && failure !== reportedThemeFailure && failure !== undefined) {
-      reportError('theme', themeResolution.cause);
-    }
-    if (mounted || failure === undefined) reportedThemeFailure = failure;
-  }
-  let reportedBlendFailure: string | undefined;
-  $: {
-    const failure = blendResolution.cause === undefined ? undefined : String(blendResolution.cause);
-    if (mounted && failure !== reportedBlendFailure && failure !== undefined) {
-      reportError('blend', blendResolution.cause);
-    }
-    if (mounted || failure === undefined) reportedBlendFailure = failure;
-  }
-
-  $: if (mounted) {
-    blendStyles;
-    themeBlendPosition;
-    themeBlendHold;
-    void switchBlend();
-  }
-
-  $: if (mounted) {
-    runtimeStyle;
-    themeBlendKey;
-    void switchTheme();
-  }
-
-  $: if (mounted) {
-    center;
-    manifestMap;
-    zoom;
-    mapOptions?.bearing;
-    mapOptions?.center;
-    mapOptions?.pitch;
-    mapOptions?.zoom;
-    syncView();
-  }
-
-  $: if (mounted) {
-    annotations;
-    syncAnnotations();
-  }
-
-  $: if (mounted) {
-    annotationClusters;
-    annotationResolution;
-    dataOverlays;
-    dataSources;
-    syncDataLayers();
-  }
-
-  $: if (mounted) {
-    interactions;
-    syncSemanticInteractions();
-  }
-
-  $: if (mounted) {
-    appearanceBinding?.update({colors, emphasis}, {transition: themeTransition});
-  }
-
-  $: if (mounted) {
-    defaultInteractionState;
-    interactionState;
-    interactionStateDiagnostics;
-    syncInteractionState();
-  }
-
-  $: if (mounted) {
-    marker;
-    popup;
-    tooltip;
-    syncCustomRenderers();
-  }
-
-  $: if (mounted) {
-    navigationBinding?.update(resolvedInteractive ? navigationControl : false);
-  }
-
-  $: cameraFit = resolveTileflowCameraFit({
-    annotations: annotationResolution.ok ? annotationResolution.annotations : [],
+  $: controllerOptions = {
+    alt,
+    analytics,
+    annotationClusters: annotationClustersValue,
+    annotations: annotationsValue,
     bounds,
+    center,
+    colors: colorsValue,
+    dataOverlays: dataOverlaysValue,
+    dataSources: dataSourcesValue,
+    emphasis: emphasisValue,
     fitAnnotations,
     fitBoundsOptions,
-  });
-  $: if (mounted && mapInstance && appliedCameraFitKey !== cameraFit.key) {
-    appliedCameraFitKey = cameraFit.key;
-    if (cameraFit.error) reportError('camera', new Error(cameraFit.error));
-    if (cameraFit.fit) fitCamera(mapInstance, cameraFit.fit);
-  }
+    // The image this component renders, so it is there on the server too.
+    image: isImageMode ? imageElement : undefined,
+    imageLoading,
+    imageUrl,
+    interactions: interactionsValue,
+    interactive,
+    mapOptions,
+    mode: resolvedMode,
+    navigationControl: navigationControlValue,
+    onError,
+    onInteractionDiagnostic,
+    onInteractionEvent,
+    onInteractionStateChange,
+    onLoad: (map: MapLibreMap) => dispatch('load', map),
+    onStatusChange: (nextStatus: TileflowMapStatus) => {
+      mapStatus = nextStatus;
+    },
+    onThemeChange,
+    renderTargets: {
+      marker: marker !== undefined,
+      onChange: (targets: TileflowMapRenderTargetList<TileflowAnnotation>) => {
+        renderTargets = targets;
+      },
+      popup: popup !== undefined,
+      tooltip: tooltip !== undefined,
+    },
+    source,
+    theme: theme as TileflowMapControllerOptions['theme'],
+    themeBlend,
+    themeTransition,
+    timeOfDay,
+    vegetation,
+    viewMode,
+    zoom,
+    ...({defaultInteractionState, interactionState: interactionStateValue} as Pick<
+      TileflowMapControllerOptions,
+      'interactionState'
+    >),
+  } satisfies TileflowMapControllerOptions<TileflowAnnotation>;
 
-  $: if (mounted && isImageMode) {
-    runtimeImageUrl;
-    void markImageLoading();
+  // Each change hands the options over; the map does only the work a change asks for.
+  $: controller?.update(controllerOptions);
+
+  // Before the map mounts, and on the server, the frame shows what the options already say.
+  $: status =
+    mapStatus ?? getTileflowMapInitialStatus(controllerOptions, controlledInteractionOwnership);
+  $: captureState =
+    portalDiagnostic !== null
+      ? 'error'
+      : status.readiness === 'idle' && !viewsSettled
+        ? 'loading'
+        : status.readiness;
+
+  // Snippet views settle once Svelte has committed them and two frames have drawn them.
+  let viewSignature = '[]';
+  let viewRun = 0;
+  $: settleViews(renderTargets);
+
+  function settleViews(targets: TileflowMapRenderTargetList<TileflowAnnotation>) {
+    const signature = JSON.stringify([
+      ...targets.annotations.map(({key}) => `annotation:${key}`),
+      ...targets.semantic.map(({key}) => `semantic:${key}`),
+    ]);
+    if (signature === viewSignature) return;
+    viewSignature = signature;
+    const run = ++viewRun;
+    viewsSettled = false;
+    void (async () => {
+      await tick();
+      if (run !== viewRun) return;
+      await nextAnimationFrame();
+      if (run !== viewRun) return;
+      await nextAnimationFrame();
+      if (run === viewRun) viewsSettled = true;
+    })();
   }
 
   onMount(() => {
-    mounted = true;
-    syncSystemColorSchemeSubscription();
+    controller = createTileflowMap(container, controllerOptions, {
+      sessionSource: 'svelte',
+      // The frame this component renders carries the capture attributes.
+      statusElement: null,
+    });
+    mapStatus = controller.getStatus();
 
     return () => {
-      mounted = false;
-      refreshRunId += 1;
-      manifestLoadId += 1;
-      unsubscribeSystemColorScheme?.();
-      imageResizeObserver?.disconnect();
-      try {
-        destroyMap();
-      } finally {
-        interactionCoordinator.dispose();
-      }
+      viewRun += 1;
+      controller?.destroy();
+      controller = null;
     };
   });
-
-  async function refresh() {
-    const runId = ++refreshRunId;
-    await refreshManifest();
-
-    if (!mounted || runId !== refreshRunId) {
-      return;
-    }
-    updateImageResizeObserver();
-    await recreateMap(runId);
-  }
-
-  async function refreshManifest() {
-    const requestKey = manifestRequestKey;
-    const loadId = ++manifestLoadId;
-    loadedManifestMap = null;
-    manifestResolutionKey = requestKey;
-    manifestResolutionState = 'loading';
-
-    try {
-      const manifest = await loadTileflowManifest(manifestUrl);
-
-      if (mounted && loadId === manifestLoadId) {
-        const resolvedMap =
-          manifest && mapName ? resolveTileflowManifestMap(manifest, mapName) : null;
-        loadedManifestMap = resolvedMap;
-        manifestResolutionState = resolvedMap ? 'ready' : 'error';
-        if (!resolvedMap) {
-          reportError(
-            'manifest',
-            new Error(
-              manifest
-                ? `The Tileflow manifest at ${manifestUrl} has no map named "${mapName}".`
-                : `No Tileflow manifest was found at ${manifestUrl}.`,
-            ),
-          );
-        }
-      }
-    } catch (error) {
-      if (mounted && loadId === manifestLoadId) {
-        reportError('manifest', error);
-        loadedManifestMap = null;
-        manifestResolutionState = 'error';
-      }
-    }
-  }
-
-  function updateImageResizeObserver() {
-    imageResizeObserver?.disconnect();
-    imageResizeObserver = null;
-    imageSize = null;
-
-    if (!isImageMode || imageUrl || !container) {
-      return;
-    }
-
-    const updateImageSize = () => {
-      imageSize = normalizeTileflowStaticImageSize({
-        height: container.clientHeight,
-        width: container.clientWidth,
-      });
-    };
-
-    imageResizeObserver = new ResizeObserver(updateImageSize);
-    imageResizeObserver.observe(container);
-    updateImageSize();
-  }
-
-  function takeAnnotationRuntimeCleanups() {
-    const runtime = annotationRuntime;
-    const data = dataRuntime;
-    const cleanups = [
-      annotationRuntimeTargetsUnsubscribe,
-      annotationRuntimeDiagnosticsUnsubscribe,
-      annotationRuntimeEventsUnsubscribe,
-      annotationRuntimeCoordinatorDetach,
-      () => data?.dispose(),
-      () => runtime?.dispose(),
-    ];
-    dataRuntime = null;
-    annotationRuntime = null;
-    annotationRuntimeCoordinatorDetach = null;
-    annotationRuntimeDiagnosticsUnsubscribe = null;
-    annotationRuntimeEventsUnsubscribe = null;
-    annotationRuntimeTargetsUnsubscribe = null;
-    annotationRenderTargets = [];
-    annotationRuntimeDiagnostics = [];
-    return cleanups;
-  }
-
-  function takeSemanticRuntimeCleanups() {
-    const runtime = semanticRuntime;
-    const cleanups = [
-      semanticRuntimeTargetsUnsubscribe,
-      semanticRuntimeDiagnosticsUnsubscribe,
-      semanticRuntimeEventsUnsubscribe,
-      semanticRuntimeCoordinatorDetach,
-      () => runtime?.dispose(),
-    ];
-    semanticRuntime = null;
-    semanticRuntimeCoordinatorDetach = null;
-    semanticRuntimeDiagnosticsUnsubscribe = null;
-    semanticRuntimeEventsUnsubscribe = null;
-    semanticRuntimeTargetsUnsubscribe = null;
-    semanticRenderTargets = [];
-    semanticRuntimeDiagnostics = [];
-    return cleanups;
-  }
-
-  function runCleanups(cleanups: readonly ((() => void) | null)[]) {
-    const errors: unknown[] = [];
-    const wasDisposing = interactionRuntimesDisposing;
-    interactionRuntimesDisposing = true;
-    for (const cleanup of cleanups) {
-      if (!cleanup) continue;
-      try {
-        cleanup();
-      } catch (error) {
-        errors.push(error);
-      }
-    }
-    interactionRuntimesDisposing = wasDisposing;
-    if (errors.length > 0) {
-      reportError('runtime', errors.length === 1 ? errors[0] : new AggregateError(errors));
-    }
-  }
-
-  function destroyMap() {
-    mapLoadId += 1;
-    const lifetime = resourceLifetime;
-    resourceLifetime = undefined;
-    const currentMountedMap = mountedMap;
-    mountedMap = null;
-    readinessRunId += 1;
-    mapInstance = null;
-    appearanceBinding = null;
-    sceneAttachment = null;
-    navigationBinding = null;
-    themeController = null;
-    initializeSemanticRuntime = null;
-    interactionReadinessTargetKeys = [];
-    interactionReadinessRunId += 1;
-    interactionCaptureState = 'idle';
-    bridgeInteractionDiagnostics = {};
-    runCleanups([
-      ...takeAnnotationRuntimeCleanups(),
-      ...takeSemanticRuntimeCleanups(),
-      // Interactions release their map resources before the shared runtime removes the map.
-      () => currentMountedMap?.dispose(),
-      () => lifetime?.abort(),
-    ]);
-  }
-
-  async function recreateMap(runId: number) {
-    destroyMap();
-    mapCaptureState = 'loading';
-    themeTransitionState = 'idle';
-
-    if (isImageMode) {
-      await markImageLoading();
-      return;
-    }
-
-    activeRuntimeResource = runtimeStyle;
-    if (!container || !runtimeStyle) {
-      return;
-    }
-
-    const loadId = mapLoadId;
-    const targetContainer = container;
-    const runtime = runtimeStyle;
-    const lifetime = new AbortController();
-    resourceLifetime = lifetime;
-    const isCurrent = () =>
-      mounted &&
-      runId === refreshRunId &&
-      loadId === mapLoadId &&
-      container === targetContainer &&
-      !isImageMode &&
-      !lifetime.signal.aborted;
-    let runtimeForMap: TileflowMountedMap | undefined;
-    try {
-      runtimeForMap = await mountTileflowMap({
-        container: targetContainer,
-        runtimeStyle: runtime,
-        mapName,
-        source: 'svelte',
-        loadMapLibre: loadTileflowMapLibre,
-        loadScene: () => import('@tileflow/core/3d'),
-        signal: lifetime.signal,
-        getAnalytics: () => resolvedAnalytics,
-        settings: () => ({
-          mapOptions: {
-            ...mapOptions,
-            bearing: resolvedBearing,
-            center: resolvedCenter as LngLatLike,
-            interactive: resolvedInteractive,
-            pitch: resolvedPitch,
-            zoom: resolvedZoom,
-          },
-          appearance: {colors, emphasis},
-          vegetation,
-          viewMode,
-          navigationControl: resolvedInteractive ? navigationControl : false,
-        }),
-        onThemeChange(transition) {
-          if (!isCurrent()) return;
-          onThemeChange?.(transition);
-          if (transition.phase === 'preloading' || transition.phase === 'applying') {
-            themeTransitionState = 'loading';
-          } else if (transition.phase === 'error') {
-            themeTransitionState = 'error';
-          } else {
-            themeTransitionState = 'idle';
-          }
-        },
-        onError: (event) => reportError(event.code, event.error),
-        onLoad: (map) => {
-          if (isCurrent()) dispatch('load', map);
-        },
-        onState: (state) => {
-          if (isCurrent()) mapCaptureState = state;
-        },
-      });
-      if (!isCurrent()) {
-        runtimeForMap.dispose();
-        lifetime.abort();
-        return;
-      }
-      mountedMap = runtimeForMap;
-      const {map: maplibreMap, maplibre: maplibregl} = runtimeForMap;
-      mapInstance = maplibreMap;
-      themeController = runtimeForMap.themeController ?? null;
-      appearanceBinding = runtimeForMap.appearance ?? null;
-      sceneAttachment = runtimeForMap.scene;
-      navigationBinding = runtimeForMap.navigation;
-
-      setBridgeInteractionDiagnostic('annotation-runtime', null);
-      try {
-        const annotationInteractionsForMap = createTileflowMapLibreDomRuntime<
-          MapLibreMap,
-          MapLibreMarker,
-          MapLibrePopup,
-          TileflowAnnotation
-        >({
-          createMarker({annotation, element}) {
-            element.title = annotation.ariaLabel;
-            return new maplibregl.Marker({element});
-          },
-          createOverlay({container: overlayContainer, kind}) {
-            return new maplibregl.Popup({
-              closeButton: false,
-              closeOnClick: false,
-              closeOnMove: false,
-              focusAfterOpen: false,
-              offset: kind === 'popup' ? 24 : 18,
-            }).setDOMContent(overlayContainer);
-          },
-          customMarker: marker !== undefined,
-          customPopup: popup !== undefined,
-          customTooltip: tooltip !== undefined,
-          document: targetContainer.ownerDocument,
-          interactionState: interactionCoordinator.getInteractionState(),
-          map: maplibreMap,
-          onInteractionStateChange: interactionCoordinator.requestInteractionState,
-          updateMarker(_markerInstance, {annotation, element}) {
-            element.title = annotation.ariaLabel;
-          },
-        });
-        annotationRuntime = annotationInteractionsForMap;
-        annotationRuntimeCoordinatorDetach = interactionCoordinator.attach(
-          'annotation',
-          annotationInteractionsForMap,
-        );
-        annotationRuntimeDiagnosticsUnsubscribe = annotationInteractionsForMap.subscribeDiagnostics(
-          (diagnostics) => {
-            annotationRuntimeDiagnostics = diagnostics;
-          },
-        );
-        annotationRuntimeEventsUnsubscribe = annotationInteractionsForMap.subscribeEvents(
-          (event) => {
-            if (!interactionRuntimesDisposing) onInteractionEvent?.(event);
-          },
-        );
-        annotationRuntimeTargetsUnsubscribe = annotationInteractionsForMap.subscribeRenderTargets(
-          (targets) => {
-            syncAnnotationRenderTargets(targets);
-          },
-        );
-        annotationRuntimeDiagnostics = annotationInteractionsForMap.getDiagnostics();
-        syncAnnotationRenderTargets(annotationInteractionsForMap.getRenderTargets());
-        syncAnnotations();
-        // Created ahead of semantic POIs: a click on a cluster belongs to the cluster.
-        dataRuntime = createTileflowMapLibreDataRuntime<
-          MapLibreMap,
-          MapLibreMarker,
-          TileflowAnnotation
-        >({
-          createMarker: ({element}) => new maplibregl.Marker({element}),
-          document: targetContainer.ownerDocument,
-          map: maplibreMap,
-          onDiagnostic: (diagnostic) => onInteractionDiagnostic?.(diagnostic),
-          onInteractionEvent(event) {
-            if (!interactionRuntimesDisposing) onInteractionEvent?.(event);
-          },
-          setHiddenAnnotations: annotationInteractionsForMap.setHiddenAnnotations,
-        });
-        syncDataLayers();
-      } catch (error) {
-        runCleanups(takeAnnotationRuntimeCleanups());
-        console.error('Failed to initialize Tileflow annotations', error);
-        setBridgeInteractionDiagnostic(
-          'annotation-runtime',
-          'Unable to initialize the Tileflow annotation runtime.',
-        );
-      }
-
-      initializeSemanticRuntime = () => {
-        if (semanticRuntime || interactionRuntimesDisposing || mapInstance !== maplibreMap) return;
-        const browserWindow = targetContainer.ownerDocument.defaultView;
-        if (!browserWindow) {
-          setBridgeInteractionDiagnostic(
-            'semantic-runtime',
-            'Semantic interactions require a browser document.',
-          );
-          return;
-        }
-
-        setBridgeInteractionDiagnostic('semantic-runtime', null);
-        try {
-          const semanticInteractionsForMap = createTileflowMapLibreSemanticDomRuntime<
-            MapLibreMap,
-            MapLibrePopup
-          >({
-            cancelFrame: (frame) => browserWindow.cancelAnimationFrame(frame),
-            createOverlay({container: overlayContainer, kind}) {
-              return new maplibregl.Popup({
-                closeButton: false,
-                closeOnClick: false,
-                closeOnMove: false,
-                focusAfterOpen: false,
-                offset: kind === 'popup' ? 24 : 18,
-              }).setDOMContent(overlayContainer);
-            },
-            customPopup: popup !== undefined,
-            customTooltip: tooltip !== undefined,
-            document: targetContainer.ownerDocument,
-            interactionState: interactionCoordinator.getInteractionState(),
-            map: maplibreMap,
-            onInteractionStateChange: interactionCoordinator.requestInteractionState,
-            poiMap: createTileflowMapLibrePoiMap(maplibreMap),
-            requestFrame: (callback) => browserWindow.requestAnimationFrame(() => callback()),
-          });
-          semanticRuntime = semanticInteractionsForMap;
-          semanticRuntimeCoordinatorDetach = interactionCoordinator.attach(
-            'semantic',
-            semanticInteractionsForMap,
-          );
-          semanticRuntimeDiagnosticsUnsubscribe = semanticInteractionsForMap.subscribeDiagnostics(
-            (diagnostics) => {
-              semanticRuntimeDiagnostics = diagnostics;
-            },
-          );
-          semanticRuntimeEventsUnsubscribe = semanticInteractionsForMap.subscribeEvents((event) => {
-            if (!interactionRuntimesDisposing) onInteractionEvent?.(event);
-          });
-          semanticRuntimeTargetsUnsubscribe = semanticInteractionsForMap.subscribeRenderTargets(
-            (targets) => {
-              syncSemanticRenderTargets(targets);
-            },
-          );
-          semanticRuntimeDiagnostics = semanticInteractionsForMap.getDiagnostics();
-          syncSemanticRenderTargets(semanticInteractionsForMap.getRenderTargets());
-        } catch (error) {
-          runCleanups(takeSemanticRuntimeCleanups());
-          console.error('Failed to initialize Tileflow semantic interactions', error);
-          setBridgeInteractionDiagnostic(
-            'semantic-runtime',
-            'Unable to initialize the Tileflow semantic interaction runtime.',
-          );
-        }
-      };
-      syncSemanticInteractions();
-
-      // The first view is set without moving; later changes to the request move the camera.
-      appliedCameraFitKey = cameraFit.key;
-      if (cameraFit.error) reportError('camera', new Error(cameraFit.error));
-      if (cameraFit.fit) fitCamera(maplibreMap, cameraFit.fit, 0);
-
-      if (themeController && blendStyles && themeBlend) {
-        void switchBlend();
-      } else if (themeController && runtimeStyle && runtimeStyle !== runtime) {
-        activeRuntimeResource = runtimeStyle;
-        void themeController.setTheme(runtimeStyle, {transition: themeTransition});
-      }
-    } catch (error) {
-      if (isCurrent()) {
-        // Any failure after mounting also releases partially installed Svelte interactions.
-        destroyMap();
-        mapCaptureState = 'error';
-        reportError('runtime', error);
-      } else {
-        runtimeForMap?.dispose();
-        lifetime.abort();
-      }
-    }
-  }
-
-  async function switchBlend() {
-    const position = themeBlendPosition;
-    if (!themeController || !blendStyles || position === undefined) return;
-    if (runtimeStyle) activeRuntimeResource = runtimeStyle;
-    const result = await themeController.setBlend(
-      {hold: themeBlendHold, position, themes: blendStyles},
-      {transition: themeTransition},
-    );
-    if (result.status === 'failed') {
-      reportError('blend', result.error ?? new Error('The map themes could not be blended.'));
-    }
-  }
-
-  async function switchTheme() {
-    if (!themeController) return;
-    if (themeBlend) {
-      // The blend names its nearest theme; the blend itself is applied by switchBlend.
-      if (runtimeStyle) activeRuntimeResource = runtimeStyle;
-      return;
-    }
-    if (themeResolution.error) {
-      await themeController.setTheme(themeController.getCurrent());
-      return;
-    }
-    const next = runtimeStyle;
-    if (!next) return;
-    activeRuntimeResource = next;
-    const result = await themeController.setTheme(next, {transition: themeTransition});
-    if (result.status === 'failed') {
-      reportError('theme', result.error ?? new Error('The map theme could not be changed.'));
-    }
-  }
-
-  function syncSystemColorSchemeSubscription() {
-    unsubscribeSystemColorScheme?.();
-    unsubscribeSystemColorScheme = null;
-    if (theme !== 'system') return;
-    systemColorScheme = getTileflowSystemColorScheme();
-    unsubscribeSystemColorScheme = subscribeTileflowSystemColorScheme((scheme) => {
-      systemColorScheme = scheme;
-    });
-  }
-
-  function syncView() {
-    mapInstance?.jumpTo({
-      bearing: resolvedBearing,
-      center: resolvedCenter as LngLatLike,
-      pitch: resolvedPitch,
-      zoom: resolvedZoom,
-    });
-  }
-
-  function syncAnnotations() {
-    if (!annotationRuntime) return;
-
-    try {
-      annotationRuntime.reconcile(
-        annotationResolution.ok && !isImageMode ? annotationResolution.annotations : [],
-      );
-      void settleInteractionReadiness();
-      setBridgeInteractionDiagnostic('annotation-runtime', null);
-    } catch (error) {
-      console.error('Failed to reconcile Tileflow annotations', error);
-      setBridgeInteractionDiagnostic(
-        'annotation-runtime',
-        'Unable to reconcile the Tileflow annotation runtime.',
-      );
-    }
-  }
-
-  function syncDataLayers() {
-    dataRuntime?.reconcile({
-      annotationClusters,
-      annotations: annotationResolution.ok && !isImageMode ? annotationResolution.annotations : [],
-      dataOverlays,
-      dataSources,
-    });
-  }
-
-  function syncSemanticInteractions() {
-    const bindings =
-      interactionBindingResolution.ok && !isImageMode ? interactionBindingResolution.bindings : [];
-    if (bindings.length > 0 && !semanticRuntime) initializeSemanticRuntime?.();
-    if (!semanticRuntime) return;
-
-    try {
-      semanticRuntime.reconcile(bindings);
-      void settleInteractionReadiness();
-      setBridgeInteractionDiagnostic('semantic-runtime', null);
-    } catch (error) {
-      console.error('Failed to reconcile Tileflow semantic interactions', error);
-      setBridgeInteractionDiagnostic(
-        'semantic-runtime',
-        'Unable to reconcile the Tileflow semantic interaction runtime.',
-      );
-    }
-  }
-
-  function syncInteractionState() {
-    if (
-      !controlledInteractionOwnership ||
-      interactionState === undefined ||
-      interactionStateDiagnostics.length > 0
-    ) {
-      return;
-    }
-    try {
-      interactionCoordinator.setInteractionState(interactionState);
-      setBridgeInteractionDiagnostic('state', null);
-    } catch (error) {
-      console.error('Failed to synchronize Tileflow interaction state', error);
-      setBridgeInteractionDiagnostic('state', 'Unable to synchronize Tileflow interaction state.');
-    }
-  }
-
-  function syncCustomRenderers() {
-    if (!annotationRuntime && !semanticRuntime) return;
-    try {
-      annotationRuntime?.setCustomRenderers({
-        marker: marker !== undefined,
-        popup: popup !== undefined,
-        tooltip: tooltip !== undefined,
-      });
-      semanticRuntime?.setCustomRenderers({
-        popup: popup !== undefined,
-        tooltip: tooltip !== undefined,
-      });
-      void settleInteractionReadiness();
-      setBridgeInteractionDiagnostic('renderers', null);
-    } catch (error) {
-      console.error('Failed to synchronize Tileflow interaction snippets', error);
-      setBridgeInteractionDiagnostic(
-        'renderers',
-        'Unable to synchronize Tileflow interaction snippets.',
-      );
-    }
-  }
-
-  async function handleImageLoad(event: Event) {
-    await markImageReady(event.currentTarget as HTMLImageElement);
-  }
-
-  async function markImageReady(image: HTMLImageElement) {
-    const runId = ++readinessRunId;
-    try {
-      if (typeof image.decode === 'function') await image.decode();
-    } catch {
-      if (!image.complete || image.naturalWidth === 0) {
-        if (runId === readinessRunId) mapCaptureState = 'error';
-        return;
-      }
-    }
-    if (runId === readinessRunId) mapCaptureState = 'idle';
-  }
-
-  async function markImageLoading() {
-    const runId = ++readinessRunId;
-    activeRuntimeResource = runtimeImageUrl;
-    mapCaptureState = hasInteractionConfiguration ? 'error' : 'loading';
-    if (hasInteractionConfiguration) return;
-    await tick();
-    if (!mounted || runId !== readinessRunId) return;
-    const image = container?.querySelector('img');
-    if (!image?.complete) return;
-    if (image.naturalWidth === 0) {
-      mapCaptureState = 'error';
-      return;
-    }
-    await markImageReady(image);
-  }
-
-  function handleImageError() {
-    readinessRunId += 1;
-    mapCaptureState = 'error';
-  }
-
-  type AnnotationResolution = Readonly<{
-    annotations: readonly TileflowAnnotation[];
-    diagnostics: readonly TileflowInteractionDiagnostic[];
-    ok: boolean;
-  }>;
-
-  type InteractionBindingResolution = Readonly<{
-    bindings: readonly TileflowInteractionBinding[];
-    diagnostics: readonly TileflowInteractionDiagnostic[];
-    ok: boolean;
-  }>;
-
-  function resolveAnnotationInput(
-    nextAnnotations: readonly TileflowAnnotation[] | undefined,
-  ): AnnotationResolution {
-    const candidates = nextAnnotations ?? [];
-    const validation = validateTileflowAnnotations(candidates);
-    if (!validation.ok) {
-      return {
-        annotations: [],
-        diagnostics: validation.diagnostics,
-        ok: false,
-      };
-    }
-
-    return {annotations: candidates, diagnostics: [], ok: true};
-  }
-
-  function resolveInteractionBindingInput(
-    nextInteractions: readonly TileflowInteractionBinding[] | undefined,
-  ): InteractionBindingResolution {
-    const candidates = nextInteractions ?? [];
-    const validation = validateTileflowInteractionBindings(candidates);
-    if (!validation.ok) {
-      return {bindings: [], diagnostics: validation.diagnostics, ok: false};
-    }
-    return {bindings: candidates, diagnostics: [], ok: true};
-  }
-
-  function validateInteractionStateInput(
-    controlledState: TileflowInteractionState | undefined,
-    defaultState: TileflowInteractionState | undefined,
-  ): readonly TileflowInteractionDiagnostic[] {
-    if (controlledState !== undefined && defaultState !== undefined) {
-      return [
-        createInteractionDiagnostic(
-          'INVALID_DOCUMENT',
-          'interactionState and defaultInteractionState are mutually exclusive.',
-        ),
-      ];
-    }
-
-    if ((controlledState !== undefined) !== controlledInteractionOwnership) {
-      return [
-        createInteractionDiagnostic(
-          'INVALID_DOCUMENT',
-          'Tileflow interaction state ownership cannot switch between controlled and uncontrolled.',
-        ),
-      ];
-    }
-
-    const candidate = controlledState ?? defaultState;
-    if (candidate === undefined) return [];
-    const parsed = tileflowInteractionStateSchema.safeParse(candidate);
-    if (parsed.success) return [];
-    const root = controlledState === undefined ? '/defaultInteractionState' : '/interactionState';
-    return parsed.error.issues.map((issue) =>
-      createInteractionDiagnostic(
-        'INVALID_DOCUMENT',
-        issue.message,
-        `${root}${jsonPointer(issue.path)}`,
-      ),
-    );
-  }
-
-  function createInteractionDiagnostic(
-    code: TileflowInteractionDiagnosticCode,
-    message: string,
-    path?: string,
-  ): TileflowInteractionDiagnostic {
-    return {
-      code,
-      level: 'error',
-      message,
-      ...(path === undefined ? {} : {path}),
-    };
-  }
-
-  type BridgeInteractionDiagnosticSource =
-    'annotation-runtime' | 'portal' | 'renderers' | 'semantic-runtime' | 'state';
-
-  function setBridgeInteractionDiagnostic(
-    source: BridgeInteractionDiagnosticSource,
-    message: string | null,
-  ) {
-    const current = bridgeInteractionDiagnostics[source];
-    if (message === null ? current === undefined : current?.message === message) return;
-    const next = {...bridgeInteractionDiagnostics};
-    if (message === null) delete next[source];
-    else next[source] = createInteractionDiagnostic('OVERLAY_FAILURE', message);
-    bridgeInteractionDiagnostics = next;
-  }
-
-  function publishNewInteractionDiagnostics(diagnostics: readonly TileflowInteractionDiagnostic[]) {
-    const nextKeys = new Set(diagnostics.map(interactionDiagnosticKey));
-    for (const diagnostic of diagnostics) {
-      if (!activeInteractionDiagnosticKeys.has(interactionDiagnosticKey(diagnostic))) {
-        onInteractionDiagnostic?.(diagnostic);
-      }
-    }
-    activeInteractionDiagnosticKeys = nextKeys;
-  }
-
-  function syncAnnotationRenderTargets(
-    targets: readonly TileflowMapLibreDomRenderTarget<TileflowAnnotation>[],
-  ) {
-    annotationRenderTargets = targets;
-    syncInteractionRenderTargetReadiness();
-  }
-
-  function syncSemanticRenderTargets(targets: readonly TileflowMapLibreSemanticDomRenderTarget[]) {
-    semanticRenderTargets = targets;
-    syncInteractionRenderTargetReadiness();
-  }
-
-  function syncInteractionRenderTargetReadiness() {
-    const nextKeys = [
-      ...annotationRenderTargets.map(({key}) => `annotation:${key}`),
-      ...semanticRenderTargets.map(({key}) => `semantic:${key}`),
-    ];
-    if (
-      nextKeys.length === interactionReadinessTargetKeys.length &&
-      nextKeys.every((key, index) => key === interactionReadinessTargetKeys[index])
-    ) {
-      return;
-    }
-    interactionReadinessTargetKeys = nextKeys;
-    void settleInteractionReadiness();
-  }
-
-  async function settleInteractionReadiness() {
-    const runId = ++interactionReadinessRunId;
-    if (!mounted || hasInteractionErrors) return;
-    interactionCaptureState = 'loading';
-    await tick();
-    if (!mounted || runId !== interactionReadinessRunId || hasInteractionErrors) return;
-    await nextAnimationFrame();
-    if (!mounted || runId !== interactionReadinessRunId || hasInteractionErrors) return;
-    await nextAnimationFrame();
-    if (!mounted || runId !== interactionReadinessRunId || hasInteractionErrors) return;
-    interactionCaptureState = 'idle';
-  }
-
-  function handleInteractionErrorState(hasErrors: boolean) {
-    hadInteractionErrors = hasErrors;
-    interactionReadinessRunId += 1;
-    if (!hasErrors) void settleInteractionReadiness();
-  }
 
   function nextAnimationFrame(): Promise<void> {
     const view = container?.ownerDocument.defaultView;
@@ -1217,47 +220,22 @@
     return new Promise((resolve) => view.requestAnimationFrame(() => resolve()));
   }
 
-  function combineCaptureStates(
-    mapState: 'error' | 'idle' | 'loading',
-    interactionStateForCapture: 'error' | 'idle' | 'loading',
-  ): 'error' | 'idle' | 'loading' {
-    if (mapState === 'error' || interactionStateForCapture === 'error') return 'error';
-    return mapState === 'idle' && interactionStateForCapture === 'idle' ? 'idle' : 'loading';
-  }
-
-  function interactionDiagnosticKey(diagnostic: TileflowInteractionDiagnostic): string {
-    return JSON.stringify([
-      diagnostic.code,
-      diagnostic.message,
-      diagnostic.path,
-      diagnostic.target,
-    ]);
-  }
-
-  function jsonPointer(path: readonly PropertyKey[]): string {
-    return path
-      .map((segment) => String(segment).replaceAll('~', '~0').replaceAll('/', '~1'))
-      .map((segment) => `/${segment}`)
-      .join('');
-  }
-
-  function fitCamera(map: MapLibreMap, fit: TileflowCameraFit, duration?: number) {
-    map.fitBounds(fit.bounds, {
-      ...(fit.options.maxZoom === undefined ? {} : {maxZoom: fit.options.maxZoom}),
-      ...(fit.options.padding === undefined ? {} : {padding: fit.options.padding}),
-      ...(duration !== undefined
-        ? {duration}
-        : fit.options.duration === undefined
-          ? {}
-          : {duration: fit.options.duration}),
-    });
+  function reportPortalFailure(error: unknown) {
+    console.error('Failed to mount a Tileflow interaction snippet', error);
+    if (portalDiagnostic) return;
+    portalDiagnostic = {
+      code: 'OVERLAY_FAILURE',
+      level: 'error',
+      message: 'Unable to mount a Tileflow interaction snippet.',
+    };
+    onInteractionDiagnostic?.(portalDiagnostic);
   }
 
   type MarkerPointerState = {focused: boolean; hovered: boolean};
   let markerPointer: Record<string, MarkerPointerState> = {};
   // A marker is selected while its popup is open: the popup has a render target of its own.
   $: openPopupAnnotationIds = new Set(
-    annotationRenderTargets
+    renderTargets.annotations
       .filter((renderTarget) => renderTarget.kind === 'popup')
       .map((renderTarget) => renderTarget.annotation.id),
   );
@@ -1303,33 +281,21 @@
   function portal(node: HTMLElement, target: HTMLElement) {
     let currentTarget = target;
     const move = (nextTarget: HTMLElement) => {
-      currentTarget = nextTarget;
-      currentTarget.append(node);
-      setBridgeInteractionDiagnostic('portal', null);
+      try {
+        nextTarget.append(node);
+        currentTarget = nextTarget;
+      } catch (error) {
+        reportPortalFailure(error);
+      }
     };
-
-    try {
-      move(target);
-    } catch (error) {
-      console.error('Failed to mount a Tileflow interaction snippet', error);
-      setBridgeInteractionDiagnostic('portal', 'Unable to mount a Tileflow interaction snippet.');
-    }
+    move(target);
 
     return {
       destroy() {
         node.remove();
       },
       update(nextTarget: HTMLElement) {
-        if (nextTarget === currentTarget) return;
-        try {
-          move(nextTarget);
-        } catch (error) {
-          console.error('Failed to move a Tileflow interaction snippet', error);
-          setBridgeInteractionDiagnostic(
-            'portal',
-            'Unable to mount a Tileflow interaction snippet.',
-          );
-        }
+        if (nextTarget !== currentTarget) move(nextTarget);
       },
     };
   }
@@ -1386,102 +352,14 @@
     };
   }
 
-  function createTileflowMapLibrePoiMap(map: MapLibreMap): TileflowMapLibrePoiMap {
-    const poiMap = map as unknown as TileflowMapLibrePoiMap;
-
-    return {
-      getStyle: () => map.getStyle(),
-      on: (event, listener) => poiMap.on(event, listener),
-      queryRenderedFeatures(point, options) {
-        return map
-          .queryRenderedFeatures(point as PointLike, {layers: [...options.layers]})
-          .map((feature) => ({
-            ...(feature.id === undefined ? {} : {id: feature.id}),
-            layer: {id: feature.layer.id},
-            ...(feature.properties === null ? {} : {properties: feature.properties}),
-            ...(feature.source === undefined ? {} : {source: feature.source}),
-            ...(feature.sourceLayer === undefined ? {} : {sourceLayer: feature.sourceLayer}),
-          }));
-      },
-    };
+  function shallowCopy<T>(value: T): T {
+    if (Array.isArray(value)) return [...value] as T;
+    if (value !== null && typeof value === 'object') return {...value};
+    return value;
   }
 
   function formatHeight(value: number | string): string {
     return typeof value === 'number' ? `${value}px` : value;
-  }
-
-  function resolveThemeSelection(input: {
-    colorScheme: 'dark' | 'light';
-    manifestMap: TileflowRuntimeManifestMap | null;
-    theme: TileflowMapProps['theme'];
-    timeOfDay: TileflowMapProps['timeOfDay'];
-    themeBlend: TileflowMapProps['themeBlend'];
-  }): Readonly<{cause?: unknown; error: boolean; name: string | undefined}> {
-    // A blend shows its nearest theme until the blend style is ready, and names it while blending.
-    const selection = input.themeBlend ? nearestTileflowBlendTheme(input.themeBlend) : input.theme;
-    if (!input.manifestMap) {
-      return {
-        error: false,
-        name: selection && selection !== 'system' ? selection : undefined,
-      };
-    }
-
-    try {
-      for (const name of input.themeBlend?.themes ?? []) {
-        resolveTileflowRuntimeTheme(input.manifestMap, name);
-      }
-      return {
-        error: false,
-        name: resolveTileflowRuntimeTheme(
-          input.manifestMap,
-          selection,
-          input.colorScheme,
-          input.themeBlend ? undefined : input.timeOfDay,
-        ).name,
-      };
-    } catch (cause) {
-      return {cause, error: true, name: undefined};
-    }
-  }
-
-  function resolveBlendStyles(input: {
-    isImageMode: boolean;
-    key: string | undefined;
-    manifestMap: TileflowRuntimeManifestMap | null;
-    source: TileflowMapProps['source'];
-  }): Readonly<{cause?: unknown; styles: TileflowRuntimeStyle[] | null}> {
-    if (input.isImageMode || !input.manifestMap || !input.key) return {styles: null};
-    try {
-      return {
-        styles: resolveTileflowRuntimeThemeBlend({
-          blend: {position: 0, themes: JSON.parse(input.key) as string[]},
-          manifestMap: input.manifestMap,
-          source: input.source,
-        }),
-      };
-    } catch (cause) {
-      return {cause, styles: null};
-    }
-  }
-
-  function resolveRuntimeResolutionState(input: {
-    currentManifestResolutionState: 'error' | 'loading' | 'ready';
-    imageSize: {height: number; width: number} | null;
-    imageUrl: string | undefined;
-    isImageMode: boolean;
-    runtimeImageUrl: string | undefined;
-    runtimeStyle: ReturnType<typeof resolveTileflowRuntimeStyle>;
-    themeResolutionError: boolean;
-  }): 'error' | 'idle' | 'loading' {
-    if (input.currentManifestResolutionState !== 'ready') {
-      return input.currentManifestResolutionState === 'error' ? 'error' : 'loading';
-    }
-    if (input.themeResolutionError) return 'error';
-    if (input.isImageMode) {
-      if (input.runtimeImageUrl) return 'idle';
-      return input.imageUrl === undefined && input.imageSize === null ? 'loading' : 'error';
-    }
-    return input.runtimeStyle ? 'idle' : 'error';
   }
 </script>
 
@@ -1489,23 +367,23 @@
   bind:this={container}
   class={className}
   data-tileflow-capture-id={resolvedCaptureId}
-  data-tileflow-map={mapName}
-  data-tileflow-theme={resolvedThemeName}
+  data-tileflow-map={source.map}
+  data-tileflow-theme={status.theme}
   data-tileflow-state={captureState}
   style={frameStyle}
 >
-  {#if isImageMode && runtimeImageUrl}
+  {#if isImageMode && status.imageUrl}
+    <!-- The map tracks the image's load and decode for capture readiness. -->
     <img
+      bind:this={imageElement}
       {alt}
       decoding="async"
       loading={imageLoading}
-      on:error={handleImageError}
-      on:load={handleImageLoad}
-      src={runtimeImageUrl}
+      src={status.imageUrl}
       style="display: block; height: 100%; object-fit: cover; width: 100%;"
     />
   {/if}
-  {#each annotationRenderTargets as renderTarget (renderTarget.key)}
+  {#each renderTargets.annotations as renderTarget (renderTarget.key)}
     {#if renderTarget.kind === 'marker' && marker}
       <div
         style="display: contents;"
@@ -1530,7 +408,7 @@
       </div>
     {/if}
   {/each}
-  {#each semanticRenderTargets as renderTarget (renderTarget.key)}
+  {#each renderTargets.semantic as renderTarget (renderTarget.key)}
     {#if renderTarget.kind === 'tooltip' && tooltip}
       <div style="display: contents;" use:portal={renderTarget.container}>
         {@render tooltip(createSemanticViewContext(renderTarget))}

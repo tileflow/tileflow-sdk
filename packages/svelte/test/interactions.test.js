@@ -19,8 +19,7 @@ const poiInteraction = {
   tooltip: {content: {field: 'name', kind: 'field'}},
 };
 
-test('keeps the shared interaction runtime behind the browser lifecycle boundary', async () => {
-  const source = await readFile(new URL('../src/TileflowMap.svelte', import.meta.url), 'utf8');
+test('renders interaction configurations as loading on the server and declares snippet props', async () => {
   const declaration = await readFile(new URL('../src/index.d.ts', import.meta.url), 'utf8');
   const compiled = await compileTileflowMap('interactions-runtime');
 
@@ -34,25 +33,6 @@ test('keeps the shared interaction runtime behind the browser lifecycle boundary
     });
 
     assert.match(result.body, /data-tileflow-state="loading"/);
-    assert.match(source, /createTileflowMapLibreDomRuntime/);
-    assert.match(source, /createTileflowMapLibreSemanticDomRuntime/);
-    assert.match(source, /createTileflowMapLibreInteractionCoordinator/);
-    assert.match(source, /validateTileflowInteractionBindings/);
-    assert.match(source, /subscribeDiagnostics/);
-    assert.match(source, /subscribeRenderTargets/);
-    assert.match(source, /setCustomRenderers/);
-    assert.match(source, /createTileflowMapLibrePoiMap/);
-    assert.match(source, /use:portal=\{renderTarget\.container\}/);
-    assert.match(source, /\{@render marker\(/);
-    assert.match(source, /\{@render popup\(createSemanticViewContext\(renderTarget\)\)\}/);
-    assert.match(source, /interactionCoordinator\.attach\(\s*'annotation'/);
-    assert.match(source, /interactionCoordinator\.attach\(\s*'semantic'/);
-    assert.equal(
-      source.match(/onInteractionStateChange: interactionCoordinator\.requestInteractionState/g)
-        ?.length,
-      2,
-    );
-    assert.doesNotMatch(source, /import \* as maplibregl/);
     assert.match(declaration, /marker\?: TileflowMapAnnotationSnippet<TAnnotation>/);
     assert.match(declaration, /popup\?: TileflowMapInteractionSnippet<TAnnotation>/);
     assert.match(declaration, /tooltip\?: TileflowMapInteractionSnippet<TAnnotation>/);
@@ -75,7 +55,6 @@ test('marks image-mode interaction configurations unsupported without loading Ma
     });
 
     assert.match(result.body, /data-tileflow-state="error"/);
-    assert.match(compiled.code, /UNSUPPORTED_MODE/);
   } finally {
     await compiled.cleanup();
   }
@@ -93,7 +72,6 @@ test('invalid semantic bindings participate in capture readiness', async () => {
     });
 
     assert.match(result.body, /data-tileflow-state="error"/);
-    assert.match(compiled.code, /validateTileflowInteractionBindings/);
   } finally {
     await compiled.cleanup();
   }

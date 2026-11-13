@@ -4,10 +4,10 @@ import {
   validateTileflowBrowserThemeBlendSelection,
 } from '@tileflow/core/browser';
 import {
+  isTileflowTimeOfDay,
   type TileflowRuntimeSource,
   type TileflowThemeSelection,
   type TileflowTimeOfDay,
-  isTileflowTimeOfDay,
   validateTileflowRuntimeSource,
   validateTileflowThemeSelection,
 } from '@tileflow/core/runtime';

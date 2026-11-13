@@ -20,42 +20,22 @@ for (const entry of ['index.js', 'static.js']) {
   });
 }
 
-test('shares renderer configuration with the managed browser runtime', async () => {
-  const shared = await import('@tileflow/core/maplibre');
-  assert.equal(configureTileflowMapLibre, shared.configureTileflowMapLibre);
-  assert.equal(loadTileflowMapLibre, shared.loadTileflowMapLibre);
-});
-
-test('interactive React build uses the shared MapLibre DOM runtime and React portals', async () => {
+test('interactive React build mounts the map through the framework-free core', async () => {
   const output = await readFile(new URL('../dist/index.js', import.meta.url), 'utf8');
-  assert.match(output, /createTileflowMapLibreDomRuntime/u);
-  assert.match(output, /createTileflowMapLibreInteractionCoordinator/u);
-  assert.match(output, /createTileflowMapLibreSemanticDomRuntime/u);
+  assert.match(output, /from ["']@tileflow\/dom["']/u);
+  assert.match(output, /createTileflowMap/u);
   assert.match(output, /createPortal/u);
-  assert.match(output, /getDiagnostics/u);
-  assert.match(output, /setCustomRenderers/u);
-  assert.match(output, /subscribeDiagnostics/u);
-  assert.match(output, /subscribeRenderTargets/u);
-  assert.match(output, /subscribeEvents/u);
-  assert.match(output, /validateTileflowInteractionBindings/u);
-  assert.match(output, /queryRenderedFeatures/u);
-  assert.match(output, /requestAnimationFrame/u);
+  // MapLibre, the World notice bridge and the interaction runtimes come with the core.
+  assert.doesNotMatch(output, /new maplibregl\.Map|registerTileflowWorldRequestBridge/u);
+  assert.doesNotMatch(output, /createTileflowMapLibreDomRuntime/u);
 });
 
 test('keeps MapLibre behind the interactive runtime boundary', async () => {
   const interactiveOutput = await readFile(new URL('../dist/index.js', import.meta.url), 'utf8');
   const imageOutput = await readFile(new URL('../dist/static.js', import.meta.url), 'utf8');
 
-  assert.match(interactiveOutput, /@tileflow\/core\/maplibre/u);
-  const sharedOutput = await readFile(
-    new URL('../../core/dist/maplibre.js', import.meta.url),
-    'utf8',
-  );
-  assert.match(sharedOutput, /import\(["']maplibre-gl["']\)/u);
-  assert.match(sharedOutput, /import\(["']\.\/3d\.js["']\)/u);
-  assert.doesNotMatch(sharedOutput, /^import .*?["']maplibre-gl["'];?$/mu);
   assert.doesNotMatch(interactiveOutput, /^import .*?["']maplibre-gl["'];?$/mu);
-  assert.doesNotMatch(imageOutput, /maplibre-gl/u);
+  assert.doesNotMatch(imageOutput, /maplibre-gl|@tileflow\/dom/u);
 });
 
 test('imports delivery helpers from responsibility-specific subpaths', async () => {
@@ -68,7 +48,7 @@ test('imports delivery helpers from responsibility-specific subpaths', async () 
 
   assert.match(mapSource, /from ["']@tileflow\/core\/runtime["']/u);
   assert.match(mapSource, /from ["']@tileflow\/core\/capture["']/u);
-  assert.match(mapSource, /from ["']@tileflow\/interactions\/maplibre["']/u);
+  assert.match(mapSource, /from ["']@tileflow\/dom["']/u);
   assert.doesNotMatch(mapSource, /createStyle|TileflowConfig|TileflowThemeRegistry/u);
   assert.match(staticMapSource, /from ["']@tileflow\/static\/client["']/u);
   assert.match(staticMapSource, /from ["']@tileflow\/static\/scene["']/u);

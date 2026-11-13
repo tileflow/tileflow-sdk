@@ -18,6 +18,6 @@
   "devDependencies": {
     "esbuild": "0.28.1",
     "playwright": "1.62.1",
-    "terser": "5.48.0"
+    "terser": "5.51.2"
   }
 }

@@ -1029,7 +1029,7 @@ export function createTileflowThemeController(options: {
         return Promise.resolve({status: 'failed', error: duration});
       const animator = familyAnimator;
       const run = ++requestId;
-      return whenContextAvailable(options.map)
+      return whenPaintWritable(options.map)
         .then(() => {
           if (disposed || run !== requestId || animator !== familyAnimator)
             return {status: 'superseded'} as const;
@@ -1156,9 +1156,15 @@ export function createTileflowThemeController(options: {
         request.themes.every((style) => style.family === family)
       ) {
         const run = ++requestId;
-        const result = familyAnimator.setBlend(
-          request.themes.map((style) => style.theme!),
-          request.position,
+        const animator = familyAnimator;
+        const result = whenPaintWritable(options.map).then(
+          (): Promise<TileflowThemeTransitionResult> | TileflowThemeTransitionResult =>
+            run !== requestId || disposed || animator !== familyAnimator
+              ? {status: 'superseded'}
+              : animator.setBlend(
+                  request.themes.map((style) => style.theme!),
+                  request.position,
+                ),
         );
         return result.then((result) => {
           if (run !== requestId || disposed) return {status: 'superseded'} as const;
@@ -1242,7 +1248,7 @@ export function createTileflowThemeController(options: {
           phase: 'applying',
           targetTheme: style.theme,
         });
-        return whenContextAvailable(options.map)
+        return whenPaintWritable(options.map)
           .then(() => {
             if (run !== requestId || disposed)
               return {status: 'superseded', theme: style.theme} as const;
@@ -2358,6 +2364,29 @@ function whenContextAvailable(map: TileflowStyleSwitchMap): Promise<void> {
   });
 }
 
+/**
+ * Resolves once paint can be written in place: the WebGL context is there and the style has
+ * loaded. MapLibre throws "Style is not done loading" before that, for example when a theme
+ * changes during the first load, or in a background tab where the first load waits for a frame.
+ */
+function whenPaintWritable(map: TileflowStyleSwitchMap): Promise<void> {
+  return whenContextAvailable(map).then(() => {
+    // MapLibre keeps no public flag for a parsed style: isStyleLoaded also waits for every tile.
+    const style = (map as {style?: {_loaded?: unknown}}).style;
+    if (style?._loaded !== false) return;
+    return new Promise<void>((resolve) => {
+      const settle = () => {
+        map.off('style.load', settle);
+        map.off('remove', settle);
+        resolve();
+      };
+      map.on('style.load', settle);
+      // A map taken down first settles the change, which then reports itself superseded.
+      map.on('remove', settle);
+    });
+  });
+}
+
 function isContextLost(map: TileflowStyleSwitchMap): boolean {
   if (typeof map.getCanvas !== 'function') return false;
   try {
@@ -2966,6 +2995,7 @@ export {
   type TileflowMap3D,
   type TileflowMap3DMap,
   type TileflowMap3DOptions,
+  type TileflowMap3DPending,
 } from './map-3d-browser';
 
 export {

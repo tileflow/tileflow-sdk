@@ -167,8 +167,13 @@ test('page frames move the blend, jump the camera, and wait for idle and two ani
 
   const calls: string[] = [];
   let idle: (() => void) | undefined;
+  let pitch = 0;
   const map = {
-    jumpTo: (options: unknown) => calls.push(`jumpTo ${JSON.stringify(options)}`),
+    getPitch: () => pitch,
+    jumpTo: (options: {pitch: number}) => {
+      pitch = options.pitch;
+      calls.push(`jumpTo ${JSON.stringify(options)}`);
+    },
     off: () => undefined,
     on: () => undefined,
     once: (event: string, listener: () => void) => {
@@ -225,7 +230,7 @@ test('page frames move the blend, jump the camera, and wait for idle and two ani
   await new Promise((resolve) => setImmediate(resolve));
   assert.ok(idle);
   idle();
-  assert.deepEqual(await frame, {status: 'ok'});
+  assert.deepEqual(await frame, {status: 'ok', warnings: []});
   assert.deepEqual(calls, [
     'controller light',
     'blend 0.25 light,dark',

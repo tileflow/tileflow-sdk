@@ -77,6 +77,8 @@ export function createTileflowNavigationControlBinding(options: {
   }) => unknown;
   map: {
     addControl(control: never, position: TileflowControlPosition): unknown;
+    off?(type: 'remove', listener: () => void): unknown;
+    on?(type: 'remove', listener: () => void): unknown;
     removeControl(control: never): unknown;
   };
 }): TileflowNavigationControlBinding {
@@ -88,10 +90,20 @@ export function createTileflowNavigationControlBinding(options: {
     options.map.removeControl(control as never);
     control = undefined;
   };
+  // A map taken down removes its controls itself; removing one again would fail.
+  const forget = () => {
+    control = undefined;
+    disposed = true;
+    key = undefined;
+    options.map.off?.('remove', forget);
+  };
+  options.map.on?.('remove', forget);
   return {
     dispose() {
+      if (disposed) return;
       disposed = true;
       key = undefined;
+      options.map.off?.('remove', forget);
       remove();
     },
     update(input) {

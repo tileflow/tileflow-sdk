@@ -12,6 +12,7 @@ type AppWindow = typeof window & {
 const app = `<script setup>
 import {ref} from 'vue';
 import {TileflowMap} from '@tileflow/vue';
+import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 const handle = ref(null);
@@ -27,16 +28,16 @@ window.__setBindings = (id) => {
   }];
 };
 window.__unmount = () => { shown.value = false; };
+// Fail the first optional POI attachment, which the shared DOM runtime starts with the map.
+const on = maplibregl.Map.prototype.on;
+maplibregl.Map.prototype.on = function(event, ...args) {
+  if (event === 'mousemove' && ++proof.attempts === 1) {
+    throw new Error('The first POI listener could not be installed');
+  }
+  return on.call(this, event, ...args);
+};
 const onLoad = (map) => {
-  const on = map.on;
   map.on('remove', () => { proof.removed += 1; });
-  // A failed optional interaction attachment must leave the already rendered map available.
-  map.on = function(event, ...args) {
-    if (event === 'mousemove' && ++proof.attempts === 1) {
-      throw new Error('The first POI listener could not be installed');
-    }
-    return on.call(this, event, ...args);
-  };
   window.__sameMap = () => handle.value?.getMap() === map;
   proof.loaded = true;
 };
@@ -55,7 +56,6 @@ test(
     withMapApp('vue', app, async (open) => {
       const {page, pageErrors} = await open();
       await page.waitForFunction(() => (window as AppWindow).__proof.loaded);
-      await page.evaluate(() => (window as AppWindow).__setBindings('first-attempt'));
       await page.waitForFunction(() =>
         (window as AppWindow).__proof.diagnostics.includes('OVERLAY_FAILURE'),
       );

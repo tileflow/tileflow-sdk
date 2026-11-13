@@ -162,6 +162,8 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
       ...(options.renderer === undefined ? {} : {renderer: options.renderer}),
       styleBaseUrl: options.styleBaseUrl,
       target: options.target,
+      ...(options.inlineTileJson ? {inlineTileJson: true} : {}),
+      ...(options.tileJsonFetch ? {tileJsonFetch: options.tileJsonFetch} : {}),
     };
   }
 

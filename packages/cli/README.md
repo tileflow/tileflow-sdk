@@ -48,6 +48,12 @@ World and publishes a map's own fonts as a Hosted font bundle. Production builds
 PMTiles inputs rather than silently copying or publishing user datasets. Publish managed data
 explicitly or supply an application-owned production source.
 
+`--inline-tilejson` writes the TileJSON of each source that pins an exact Tileflow World release
+(`tileflowWorld({release})`) into the styles in place of its `url`, read once at build time, so the
+map requests its first tiles right after the style. An exact release never changes, so the copy
+cannot go stale; sources that follow the current World release, a Map or any other TileJSON keep
+their `url`. The build fails if a pinned TileJSON cannot be read or describes another release.
+
 To work on another map, use `--config <path>`. An ordinary config exports one map. Multi-map
 workspaces are advanced repository orchestration, not a second application authoring model.
 

@@ -540,6 +540,62 @@ export default {maps:{${mapNames
     .join(',')}}};\n`;
 }
 
+test('production output can carry an exact World release TileJSON in place of its url', async (t) => {
+  const cwd = await fixture(t, 'tileflow-artifact-inline-tilejson-');
+  const releaseId = 'world-v1-a3dea8b5-43fa-425f-ae4b-798be8c166e4';
+  const descriptorSha256 = 'b'.repeat(64);
+  await writeFile(
+    join(cwd, 'tileflow.config.ts'),
+    `import {defineMap, tileflowWorld} from '@tileflow/core'; import {streets} from '@tileflow/maps'; export default defineMap({id:'main',name:'Main',version:1,extends:streets,data:tileflowWorld({release:{releaseId:'${releaseId}',descriptorSha256:'${descriptorSha256}'}}),glyphs:${fixtureGlyphsSource}});\n`,
+  );
+  const requested: string[] = [];
+  const tiles = `https://world.tileflow.dev/tiles/world/${releaseId}/{z}/{x}/{y}.pbf?worldDescriptorSha256=${descriptorSha256}`;
+  const tileJsonFetch = (async (url: string) => {
+    requested.push(url);
+    return new Response(
+      JSON.stringify({
+        tiles: [tiles],
+        minzoom: 0,
+        maxzoom: 15,
+        tileflow: {world: {releaseId, descriptorSha256}},
+      }),
+    );
+  }) as typeof globalThis.fetch;
+  const worldSources = (styles: Record<string, Record<string, {sources: object}>>) =>
+    Object.values(styles.main!).flatMap((style) =>
+      Object.values(style.sources as Record<string, {url?: string; tiles?: string[]}>).filter(
+        (source) => source.url?.includes(releaseId) || source.tiles?.[0] === tiles,
+      ),
+    );
+
+  const published = await createTileflowBuildArtifacts({
+    cwd,
+    target: 'production',
+    inlineTileJson: true,
+    tileJsonFetch,
+  });
+  assert.equal(new Set(requested).size, requested.length, 'each TileJSON is read once');
+  assert.ok(requested.length > 0);
+  const inlined = worldSources(published.styles);
+  assert.ok(inlined.length > 0);
+  for (const source of inlined) {
+    assert.equal(source.url, undefined);
+    assert.deepEqual(source.tiles, [tiles]);
+  }
+
+  // Without the option, and in local output, sources keep their TileJSON reference.
+  for (const options of [
+    {target: 'production' as const},
+    {target: 'local' as const, inlineTileJson: true},
+  ]) {
+    const kept = worldSources(
+      (await createTileflowBuildArtifacts({cwd, tileJsonFetch, ...options})).styles,
+    );
+    assert.ok(kept.length > 0);
+    for (const source of kept) assert.match(source.url ?? '', /worldReleaseId=/u);
+  }
+});
+
 const fixtureGlyphsSource = `{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold','Noto Sans Italic','DINish Medium,Noto Sans Regular','DINish Bold,Noto Sans Regular']}`;
 
 async function fixture(t: {after(callback: () => Promise<void>): void}, prefix: string) {

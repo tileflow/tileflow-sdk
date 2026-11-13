@@ -73,8 +73,11 @@ export function tileflowBrandingSource(
     return undefined;
   }
   const apiOrigin = parseUrl(options.apiUrl ?? 'https://api.tileflow.dev').origin;
+  // Official tiles may also come from Tileflow's tile host or, for World and Terrain without a
+  // Map, its public catalog edge, as a style that carries World's TileJSON names them.
   const officialTiles =
-    apiOrigin === 'https://api.tileflow.dev' && url.origin === 'https://tiles.tileflow.dev';
+    apiOrigin === 'https://api.tileflow.dev' &&
+    (url.origin === 'https://tiles.tileflow.dev' || url.origin === 'https://world.tileflow.dev');
   if ((!officialTiles && url.origin !== apiOrigin) || !['http:', 'https:'].includes(url.protocol))
     return undefined;
   const match = /^\/(?:v1\/)?tiles\/([^/]+)(?:\/|$)/u.exec(url.pathname);

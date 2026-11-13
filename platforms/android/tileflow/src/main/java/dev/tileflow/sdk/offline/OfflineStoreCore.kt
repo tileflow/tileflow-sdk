@@ -85,6 +85,7 @@ internal class OfflineStoreCore(
     /** Packs transferred at once. */
     private val packConcurrency: Int = 4,
     private val now: () -> Long = System::currentTimeMillis,
+    private val monotonicNow: () -> Long = android.os.SystemClock::elapsedRealtime,
     private val sleep: suspend (Long) -> Unit = { delay(it) },
     /** Asks the system to run automatic updates in the background; null for none. */
     private val scheduler: OfflineUpdateScheduler? = null,
@@ -127,12 +128,12 @@ internal class OfflineStoreCore(
     private fun openLocked() {
         if (isOpen) return
         isOpen = true
+        layout.prepare()
         settings = OfflineSettings.read(layout.settings)
         for (directory in layout.regions.listFiles().orEmpty()) {
             val record = OfflineRegionRecord.read(File(directory, "region.json"))
             if (record == null) {
-                // A region whose record was never written stored nothing.
-                directory.deleteRecursively()
+                // An unreadable record may still own durable packs and recovery data.
                 continue
             }
             records[record.id] = record
@@ -446,14 +447,16 @@ internal class OfflineStoreCore(
                 val documents = selfHostedDocuments(manifest, content.map)
                 plan =
                     OfflineVersionPlan.selfHosted(
-                        documents,
+                        documents.first,
                         content.sources,
                         options.geometry.packRegions(),
                         options.zooms,
+                        documents.second,
                     )
                 OfflineLayout.write(
                     JSONObject()
-                        .put("documents", JSONArray(documents.map { it.toASCIIString() }))
+                        .put("documents", JSONArray(documents.first.map { it.toASCIIString() }))
+                        .put("optionalDocuments", JSONArray(documents.second.map { it.toASCIIString() }.sorted()))
                         .toString()
                         .toByteArray(),
                     layout.plan(id, number),
@@ -467,6 +470,12 @@ internal class OfflineStoreCore(
         return lock.withLock {
             if (automaticOffer != null && !canUseAutomaticOffer(records[id], automaticOffer)) {
                 throw TileflowOfflineException(TileflowOfflineErrorCode.GRANT_REJECTED)
+            }
+            // Check and reserve under the same lock, after the previous transfer settles.
+            try { checkDeviceLimit(id, plan) }
+            catch (error: Exception) {
+                records[id]?.pending?.let { start(id, it) }
+                throw error
             }
             if (records[id]?.pending != null) discardPending(id)
             val time = now()
@@ -615,6 +624,7 @@ internal class OfflineStoreCore(
      */
     suspend fun checkForUpdates() {
         open()
+        lock.withLock { refreshExpiry() }
         try {
             revalidate()
         } finally {
@@ -645,6 +655,7 @@ internal class OfflineStoreCore(
             }
         for ((record, plan) in due) {
             val id = record.id
+            val checkedAt = now()
             val states = ArrayList<OfflinePackRevalidation>()
             for (download in plan.downloads) {
                 states.add(
@@ -671,7 +682,7 @@ internal class OfflineStoreCore(
                 OfflineCheckRecord(
                     if (upgrade) "update_available" else "current",
                     null,
-                    now(),
+                    checkedAt,
                     86_400_000,
                 )
             for (state in states) {
@@ -679,7 +690,6 @@ internal class OfflineStoreCore(
                     when (state) {
                         is OfflinePackRevalidation.Current ->
                             check.copy(
-                                checkedAt = state.checkedAtMillis,
                                 intervalMillis = minOf(check.intervalMillis, state.intervalMillis),
                             )
                         is OfflinePackRevalidation.UpdateAvailable ->
@@ -687,14 +697,12 @@ internal class OfflineStoreCore(
                                 state =
                                     if (check.state == "current") "update_available"
                                     else check.state,
-                                checkedAt = state.checkedAtMillis,
                                 intervalMillis = minOf(check.intervalMillis, state.intervalMillis),
                             )
                         is OfflinePackRevalidation.NotUpdatable ->
                             check.copy(
                                 state = "not_updatable",
                                 reason = check.reason ?: state.reason,
-                                checkedAt = state.checkedAtMillis,
                             )
                     }
             }
@@ -929,8 +937,8 @@ internal class OfflineStoreCore(
         val renewals = HashMap<Int, RenewalAttempt>()
 
         fun renewalCount(index: Int, plan: OfflineVersionPlan): Int {
-            val time = now()
-            val expires = plan.downloads[index].manifest.downloadExpiresAtMillis
+            val time = monotonicNow()
+            val expires = plan.downloads[index].grantDeadline
             val previous = renewals[index]
             // A replacement that had time to be used and aged into expiry gets a new retry budget.
             val aged = previous != null &&
@@ -1007,17 +1015,17 @@ internal class OfflineStoreCore(
                 }
                 return OfflineDriveResult.Settled
             }
-            val time = now()
+            val time = monotonicNow()
             val expiring =
                 plan.downloads.indices.firstOrNull { index ->
-                    plan.downloads[index].manifest.downloadExpiresAtMillis - time <
+                    plan.downloads[index].grantDeadline - time <
                         RENEWAL_MARGIN && remainingPacks.any { it.download == index }
                 }
             if (expiring != null) {
                 val count = renewalCount(expiring, plan)
                 when (renew(id, pending, expiring, count)) {
                     RenewalResult.STOPPED -> return OfflineDriveResult.Settled
-                    RenewalResult.REPLACED -> renewals[expiring] = RenewalAttempt(now(), count)
+                    RenewalResult.REPLACED -> renewals[expiring] = RenewalAttempt(monotonicNow(), count)
                     RenewalResult.WAITING -> Unit
                 }
                 continue
@@ -1056,6 +1064,7 @@ internal class OfflineStoreCore(
                             concurrency,
                             now,
                             packConcurrency,
+                            monotonicNow,
                         )
                         .run(job, log) { entries -> didStore(id, entries) }
                 } finally {
@@ -1068,7 +1077,7 @@ internal class OfflineStoreCore(
                     val count = renewalCount(outcome.download, plan)
                     when (renew(id, pending, outcome.download, count, outcome.error)) {
                         RenewalResult.STOPPED -> return OfflineDriveResult.Settled
-                        RenewalResult.REPLACED -> renewals[outcome.download] = RenewalAttempt(now(), count)
+                        RenewalResult.REPLACED -> renewals[outcome.download] = RenewalAttempt(monotonicNow(), count)
                         RenewalResult.WAITING -> Unit
                     }
                 }
@@ -1420,7 +1429,7 @@ internal class OfflineStoreCore(
                     val candidate = if (consuming) created.remove(key) else created[key]
                     candidate?.takeIf {
                         !requiresFreshGrant &&
-                            it.manifest.downloadExpiresAtMillis - now() > REUSE_WINDOW
+                            it.grantDeadline - monotonicNow() > REUSE_WINDOW
                     }
                 }
             val download =
@@ -1434,13 +1443,16 @@ internal class OfflineStoreCore(
     }
 
     /** The manifest, then each theme's style and what it references, without duplicates. */
-    private suspend fun selfHostedDocuments(url: URI, map: String): List<URI> {
+    private suspend fun selfHostedDocuments(url: URI, map: String): Pair<List<URI>, Set<URI>> {
         val manifest = OfflineSelfHosted.manifest(url, document(url), map)
         val documents = manifest.second.toMutableList()
-        for (style in manifest.first)
-            documents += OfflineSelfHosted.documents(style, document(style))
-        val seen = HashSet<String>()
-        return documents.filter { seen.add(it.toASCIIString()) }
+        val required = manifest.second.toMutableSet()
+        for (style in manifest.first) {
+            val data = document(style)
+            documents += OfflineSelfHosted.documents(style, data)
+            required += OfflineSelfHosted.documents(style, data, includeGlyphRanges = false)
+        }
+        return documents.distinct() to (documents.toSet() - required)
     }
 
     private suspend fun document(url: URI): ByteArray {
@@ -1500,13 +1512,15 @@ internal class OfflineStoreCore(
                 val content =
                     options.content as? TileflowOfflineContent.Manifest
                         ?: throw TileflowOfflineException.invalidResponse()
-                val documents =
-                    JSONObject(layout.plan(id, version.number).readText()).getJSONArray("documents")
+                val stored = JSONObject(layout.plan(id, version.number).readText())
+                val documents = stored.getJSONArray("documents")
+                val optional = stored.optJSONArray("optionalDocuments") ?: JSONArray()
                 OfflineVersionPlan.selfHosted(
                     List(documents.length()) { URI(documents.getString(it)) },
                     content.sources,
                     options.geometry.packRegions(),
                     options.zooms,
+                    List(optional.length()) { URI(optional.getString(it)) }.toSet(),
                 )
             }
         // Plans of versions downloading stay in memory; others are read again when needed.

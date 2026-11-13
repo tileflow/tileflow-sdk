@@ -172,9 +172,21 @@ for (const mixed of [false, true])
     );
     assert.ok(immutableStyleFile && typeof immutableStyleFile.source === 'string');
     const immutableStyle = JSON.parse(immutableStyleFile.source) as {
-      metadata?: {'tileflow:fontFaces'?: Array<{source: string}>};
+      metadata?: {
+        'tileflow:fontFaces'?: Array<{source: string}>;
+        'tileflow:fontLicenses'?: string[];
+      };
     };
     const immutableFaces = immutableStyle.metadata?.['tileflow:fontFaces'] ?? [];
+    const licenses = immutableStyle.metadata?.['tileflow:fontLicenses'] ?? [];
+    const localLicenses = licenses.filter((url) => url.includes('/fonts/licenses/'));
+    assert.ok(localLicenses.length);
+    for (const url of localLicenses) {
+      assert.match(url, /\/generations\/[a-f0-9]{64}\/fonts\/licenses\//u);
+      assert.ok(plan.files.some((file) => url.endsWith('/' + file.fileName)));
+    }
+    if (mixed) assert.ok(licenses.some((url) => url.startsWith('https://api.tileflow.dev/base/')));
+
     if (mixed)
       assertFontFileClosure(
         immutableStyle,

@@ -30,6 +30,7 @@ internal class OfflinePlannedResource(
     val bytes: Long?,
     /** SHA-256 of those bytes, when known before download. */
     val sha256: String?,
+    val mayBeAbsent: Boolean = false,
 ) {
     val url: URI
         get() = key.url
@@ -121,18 +122,19 @@ internal class OfflineVersionPlan(
             sources: List<TileflowOfflineTileSource>,
             regions: List<OfflinePackRegion>,
             zooms: OfflineZooms,
+            optionalDocuments: Set<URI> = emptySet(),
         ): OfflineVersionPlan {
             val resources = ArrayList<OfflinePlannedResource>()
             val seen = HashSet<String>()
             val counts = HashMap<String, Long>()
-            fun add(url: URI): Boolean {
+            fun add(url: URI, mayBeAbsent: Boolean = false): Boolean {
                 if (!seen.add(url.toASCIIString())) return false
                 resources.add(
-                    OfflinePlannedResource(ResourceCacheKey(url, ResourceCacheScope.Shared), null, null)
+                    OfflinePlannedResource(ResourceCacheKey(url, ResourceCacheScope.Shared), null, null, mayBeAbsent)
                 )
                 return true
             }
-            documents.forEach { add(it) }
+            documents.forEach { add(it, it in optionalDocuments) }
             for (source in sources) {
                 counts.putIfAbsent(source.id, 0)
                 val range =
@@ -143,7 +145,7 @@ internal class OfflineVersionPlan(
                     val rows = cover.rows ?: continue
                     for (y in rows) for (xs in cover.row(y)) for (x in xs) {
                         val url = OfflineSelfHosted.tileUrl(source.template, zoom, x, y) ?: continue
-                        if (add(url)) counts[source.id] = counts.getValue(source.id) + 1
+                        if (add(url, true)) counts[source.id] = counts.getValue(source.id) + 1
                     }
                 }
             }
@@ -225,6 +227,7 @@ internal class OfflineDownloader(
     private val now: () -> Long,
     /** Packs transferred at once. */
     private val packConcurrency: Int = 4,
+    private val monotonicNow: () -> Long = android.os.SystemClock::elapsedRealtime,
 ) {
     private sealed class Work {
         abstract val key: String
@@ -384,6 +387,9 @@ internal class OfflineDownloader(
         if (!OfflineStorage.hasRoom(pack.bytes + reserveBytes, availableBytes, cache))
             return Result.Outcome(OfflineDownloadOutcome.Fail(storageError()))
         val download = job.plan.downloads[planned.download]
+        // This worker has acquired its slot; the grant may have expired in the queue.
+        if (download.grantDeadline <= monotonicNow()) return Result.Outcome(
+            OfflineDownloadOutcome.Renew(planned.download, TileflowOfflineException(TileflowOfflineErrorCode.GRANT_REJECTED, TileflowErrorContext(reason = "OFFLINE_PACK_GRANT_EXPIRED"))))
         val headers = HashMap<String, String>()
         headers[GRANT_HEADER] = download.grant.value
         previous?.let { headers["If-None-Match"] = "\"${it.digest}\"" }
@@ -526,7 +532,7 @@ internal class OfflineDownloader(
                         transferred = false,
                     )
                 )
-            (response.status == 204 || response.status == 404) && !job.plan.isHosted ->
+            (response.status == 204 || response.status == 404) && resource.mayBeAbsent ->
                 // An absent self-hosted tile or glyph range stays absent offline, as online.
                 Result.Stored(OfflineStoredEntry(0, transferred = false))
             else -> Result.Outcome(failure(response, null, job))

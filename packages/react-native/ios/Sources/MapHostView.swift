@@ -1,5 +1,5 @@
 import Foundation
-import Tileflow
+@_spi(TileflowReactNative) import Tileflow
 import UIKit
 
 @MainActor
@@ -17,6 +17,7 @@ public final class TFMapHostView: UIView {
   private(set) var instanceID = ""
   private(set) var generation = 0
   private(set) var map: TileflowMapView?
+  private let applicationContent = MapApplicationContent()
   private var source: TileflowMapSource?
   private var pending: [UUID: Pending] = [:]
   private var propsTask: Task<Void, Never>?
@@ -105,6 +106,7 @@ public final class TFMapHostView: UIView {
           self.receive(event)
         }
         insertSubview(created, at: 0)
+        created.installApplicationOverlay(applicationContent)
         for marker in markers { marker.attach(to: self) }
       } else if source != nextSource {
         generation += 1
@@ -385,7 +387,7 @@ public final class TFMapHostView: UIView {
 
   @objc(mountContent:index:)
   public func mountContent(_ content: UIView, index: Int) {
-    insertSubview(content, at: index + (map == nil ? 0 : 1))
+    applicationContent.insertSubview(content, at: index)
   }
 }
 
@@ -426,5 +428,13 @@ private final class MapLocationRelay: TileflowLocationProvider, TileflowLocation
     provider.removeConsumer(self)
     consumers.removeAll()
     onLocation = nil
+  }
+}
+
+@MainActor
+private final class MapApplicationContent: UIView {
+  override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+    let target = super.hitTest(point, with: event)
+    return target === self ? nil : target
   }
 }

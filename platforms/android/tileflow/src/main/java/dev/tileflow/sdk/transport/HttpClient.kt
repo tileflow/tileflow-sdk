@@ -54,6 +54,12 @@ internal interface NativeHTTPTransporting : Closeable {
     fun open(request: Request, timeoutMillis: Long = 30_000): HttpStream =
         HttpStream.complete(send(request, timeoutMillis))
 
+    /** Re-admit credentials after waiting for transport capacity. */
+    fun open(request: Request, timeoutMillis: Long, beforeSend: () -> Pair<Request, Long>): HttpStream {
+        val admitted = beforeSend()
+        return open(admitted.first, admitted.second)
+    }
+
     fun cancelActive()
 }
 
@@ -133,7 +139,10 @@ internal class NativeHTTPTransport(
             ResourcePayload(bytes, stream.status, headers)
         }
 
-    override fun open(request: Request, timeoutMillis: Long): HttpStream {
+    override fun open(request: Request, timeoutMillis: Long): HttpStream =
+        open(request, timeoutMillis) { request to timeoutMillis }
+
+    override fun open(original: Request, timeoutMillis: Long, beforeSend: () -> Pair<Request, Long>): HttpStream {
         check(!retired.get()) { "The resource context is disposed." }
         if (!TileflowHttpClient.networkEnabled) throw NetworkUnavailableException()
         val slots =
@@ -150,12 +159,24 @@ internal class NativeHTTPTransport(
             throw NetworkUnavailableException()
         }
 
+        val admitted = try {
+            beforeSend().also { check(!retired.get()) { "The resource context is disposed." } }
+        } catch (error: Throwable) {
+            slots?.release()
+            throw error
+        }
+        if (!TileflowHttpClient.networkEnabled) {
+            slots?.release()
+            throw NetworkUnavailableException()
+        }
+        val request = admitted.first
+        val admittedTimeout = admitted.second
         val released = AtomicBoolean()
         val release = { if (released.compareAndSet(false, true)) slots?.release() }
-        val call = TileflowHttpClient.client(lane, timeoutMillis).newCall(request)
+        val call = TileflowHttpClient.client(lane, admittedTimeout).newCall(request)
         // Session requests keep a total deadline; resource bodies may stream for longer.
         if (lane == TileflowHttpClient.Lane.SESSIONS)
-            call.timeout().timeout(timeoutMillis.coerceIn(1, 30_000), TimeUnit.MILLISECONDS)
+            call.timeout().timeout(admittedTimeout.coerceIn(1, 30_000), TimeUnit.MILLISECONDS)
         calls.add(call)
         if (retired.get()) call.cancel()
         val finish = {

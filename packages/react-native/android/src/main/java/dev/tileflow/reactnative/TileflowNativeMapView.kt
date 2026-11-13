@@ -38,6 +38,10 @@ internal class TileflowNativeMapView(
     private var applying: Job? = null
     private var disposed = false
     private val reactChildren = mutableListOf<View>()
+    private val applicationContent = object : android.view.ViewGroup(reactContext) {
+        // React Native owns its children's measured frames.
+        override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {}
+    }
 
     init {
         reactContext.addLifecycleEventListener(this)
@@ -99,6 +103,7 @@ internal class TileflowNativeMapView(
     private fun attachMap(map: TileflowMapView) {
         if (map.parent != null) return
         super.addView(map, 0, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        map.installApplicationOverlay(applicationContent)
         map.layout(0, 0, width, height)
     }
 
@@ -107,7 +112,7 @@ internal class TileflowNativeMapView(
         if (child is TileflowNativeMarkerView) {
             child.owner = this
             syncMarker(child)
-        } else super.addView(child)
+        } else applicationContent.addView(child)
     }
 
     fun reactChildCount(): Int = reactChildren.size
@@ -119,7 +124,7 @@ internal class TileflowNativeMapView(
         if (child is TileflowNativeMarkerView) {
             session?.map?.viewAnnotationManager?.removeViewAnnotation(child)
             child.owner = null
-        } else super.removeView(child)
+        } else applicationContent.removeView(child)
     }
 
     fun syncMarker(marker: TileflowNativeMarkerView) {

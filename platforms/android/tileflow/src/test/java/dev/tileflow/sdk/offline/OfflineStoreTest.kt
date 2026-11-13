@@ -78,6 +78,148 @@ class OfflineStoreTest {
     }
 
     @Test
+    fun openingPreservesUnreadableRecordsAndSweepsOnlyOrphanPacks() = runBlocking<Unit> {
+        val legacy = File(directory, "offline-v1")
+        val current = File(directory, "offline-v2")
+        OfflineLayout.write("legacy".toByteArray(), File(legacy, "regions/broken/region.json"))
+        OfflineLayout.write("old pack".toByteArray(), File(legacy, "packs/orphan.tfpack"))
+        OfflineLayout.write("keep".toByteArray(), File(current, "regions/broken/region.json"))
+        OfflineLayout(current, legacy).prepare()
+        assertFalse(legacy.exists())
+        assertEquals("keep", File(current, "regions/broken/region.json").readText())
+
+        val files = layout()
+        val record = files.record("unreadable")
+        val bytes = "unreadable record".toByteArray()
+        OfflineLayout.write(bytes, record)
+        val kept = "a".repeat(64)
+        val orphan = "b".repeat(64)
+        OfflineProgressLog.write(mapOf(kept to OfflineStoredEntry(1, true, 1, kept)), files.progress("unreadable", 1))
+        for (digest in listOf(kept, orphan)) OfflineLayout.write(byteArrayOf(1), File(files.packs.directory, "$digest.tfpack"))
+        store(OfflineServiceStub()).core.open()
+        assertTrue(record.exists())
+        org.junit.Assert.assertArrayEquals(bytes, record.readBytes())
+        assertTrue(File(files.packs.directory, "$kept.tfpack").exists())
+        assertFalse(File(files.packs.directory, "$orphan.tfpack").exists())
+    }
+
+    @Test
+    fun missingRequiredSelfHostedResourcesFailButGlyphRangesMayBeAbsent() = runBlocking<Unit> {
+        for ((index, path) in listOf("fonts/face.woff2", "LICENSE.txt", "style.json", "sprites/base.png", "fonts/Noto%20Sans%20Regular/0-255.pbf").withIndex()) {
+            for (status in listOf(204, 404)) {
+                val service = OfflineServiceStub()
+                service.missingResource = "https://tiles.example.com/$path" to status
+                service.extraLicense = true
+                val store = store(service, root = "missing-$index-$status")
+                val options = TileflowOfflineRegionLoadOptions(
+                    TileflowOfflineGeometry.BoundingBox(TileflowBoundingBox(-3.71, 40.41, -3.69, 40.425)),
+                    TileflowOfflineContent.Manifest("https://tiles.example.com/manifest.json", "streets", emptyList()), minZoom = 0, maxZoom = 0)
+                store.loadRegion("region", options)
+                val done = waitFor(store, "region") { it.state == COMPLETE || it.state == TileflowOfflineRegion.DownloadState.FAILED }
+                assertEquals("$path $status", if (index == 4) COMPLETE else TileflowOfflineRegion.DownloadState.FAILED, done.state)
+                assertEquals(index == 4, done.isAvailable)
+            }
+        }
+    }
+
+    @Test
+    fun replacementRechecksDeviceReservationAfterItsOldTransferSettles() = runBlocking<Unit> {
+        val service = OfflineServiceStub()
+        service.tileLimit = 2
+        service.maximumPackResources = 9
+        val entered = CompletableDeferred<Unit>()
+        val stopped = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val first = java.util.concurrent.atomic.AtomicBoolean(true)
+        val fetcher = object : OfflineResourceFetching {
+            override suspend fun fetch(request: OfflineFetchRequest): OfflineFetchResponse {
+                if (request.destination != null && first.getAndSet(false)) {
+                    entered.complete(Unit)
+                    try { release.await() } catch (error: kotlinx.coroutines.CancellationException) {
+                        stopped.complete(Unit)
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { release.await() }
+                        throw error
+                    }
+                }
+                return service.fetch(request)
+            }
+        }
+        val store = store(service, fetcher = fetcher)
+        store.loadRegion("madrid", madrid())
+        withTimeout(10_000) { entered.await() }
+        service.tileLimit = 7
+        val replacing = async(Dispatchers.Default) { runCatching { store.loadRegion("madrid", madrid(-3.68)) } }
+        withTimeout(10_000) { stopped.await() }
+        try {
+            service.tileLimit = 3
+            val other = TileflowOfflineRegionLoadOptions(
+                TileflowOfflineGeometry.BoundingBox(TileflowBoundingBox(2.15, 41.38, 2.18, 41.4)),
+                TileflowOfflineContent.Hosted(MAP_ID, listOf("light", "dark")), minZoom = 12, maxZoom = 17)
+            store.loadRegion("barcelona", other)
+        } finally { release.complete(Unit) }
+        val failure = replacing.await().exceptionOrNull() as? TileflowOfflineException
+        assertEquals(TileflowOfflineErrorCode.DEVICE_LIMIT_EXCEEDED, failure?.code)
+        val kept = OfflineRegionRecord.read(layout().record("madrid"))
+        assertEquals(1, kept?.pending?.number ?: kept?.active?.number)
+    }
+
+    @Test
+    fun deviceClockSkewDoesNotExpireFreshGrantEstimatesOrExtendOldOnes() = runBlocking<Unit> {
+        val service = OfflineServiceStub(grantLifetimeMillis = 3_600_000)
+        val offset = java.util.concurrent.atomic.AtomicLong(0)
+        val store = store(service, clockOffset = offset)
+        store.estimateRegion(madrid())
+        offset.set(2 * DAY)
+        store.estimateRegion(madrid())
+        assertEquals(1, service.creations.get())
+        offset.set(-2 * DAY)
+        service.clock.addAndGet(3_601_000)
+        store.estimateRegion(madrid())
+        assertEquals(2, service.creations.get())
+    }
+
+    @Test
+    fun newGrantIsNotReusedAfterOneHourEvenIfServerOffersLonger() = runBlocking<Unit> {
+        val service = OfflineServiceStub(grantLifetimeMillis = DAY)
+        val store = store(service)
+        store.estimateRegion(madrid())
+        service.clock.addAndGet(3_601_000)
+        store.estimateRegion(madrid())
+        assertEquals(2, service.creations.get())
+    }
+
+    @Test
+    fun revalidationWithdrawsExpiredRegionsBeforeNetworkAndUsesLocalTime() = runBlocking<Unit> {
+        val service = OfflineServiceStub()
+        val index = OfflineServingIndex()
+        val store = store(service, index = index)
+        store.loadRegion("madrid", madrid())
+        waitFor(store, "madrid") { it.state == COMPLETE }
+        service.clock.addAndGet(38 * DAY)
+        service.revalidationClockOffset = 90 * DAY
+        val entered = CompletableDeferred<Unit>()
+        val release = java.util.concurrent.CountDownLatch(1)
+        service.onRevalidation = { entered.complete(Unit); check(release.await(10, TimeUnit.SECONDS)) }
+        val checking = async(Dispatchers.Default) { store.core.checkForUpdates() }
+        try {
+            withTimeout(10_000) { entered.await() }
+            assertNull(index.resource(service.key(service.styleUrl), cache))
+        } finally { release.countDown(); checking.await() }
+        assertEquals(service.clock.get() + 30 * DAY, store.region("madrid")!!.expiresAtMillis)
+    }
+
+    @Test
+    fun queuedPacksRenewTheGrantBeforeStartingAnotherTransfer() = runBlocking<Unit> {
+        val service = OfflineServiceStub(grantLifetimeMillis = DAY)
+        service.onDownload = { count -> if (count == 4) service.clock.addAndGet(3_601_000) }
+        val store = store(service, concurrency = 1, packConcurrency = 1)
+        store.loadRegion("madrid", madrid())
+        waitFor(store, "madrid") { it.state == COMPLETE }
+        assertTrue(service.creations.get() > 1)
+        assertTrue(service.downloads.mapNotNull { it.headers[GRANT] }.toSet().size > 1)
+    }
+
+    @Test
     fun hostedRegionDownloadsVerifiedPacksAndWorksOffline() = runBlocking<Unit> {
         val service = OfflineServiceStub()
         val store = store(service)
@@ -141,7 +283,7 @@ class OfflineStoreTest {
         val bodies = service.downloads.filter { it.status == 200 }.groupingBy { it.url }.eachCount()
         assertEquals(done.requiredPackCount + 3, bodies.size.toLong())
         assertEquals("Nothing is downloaded twice", 1, bodies.values.max())
-        assertEquals(1, service.creations.get())
+        assertEquals("A reopened process renews its grant before further transfers", 2, service.creations.get())
     }
 
     @Test
@@ -304,10 +446,10 @@ class OfflineStoreTest {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO).also(scopes::add)
         val core = OfflineStoreCore(
             layout(), cache, service,
-            { OfflinePackClient(configuration, { service }, now = { service.clock.get() }) },
+            { OfflinePackClient(configuration, { service }, now = { service.clock.get() }, monotonicNow = { service.clock.get() }) },
             { null }, subscribers, runner = { OfflineScopeRunner(it, scope) },
             now = { service.clock.get() },
-        )
+            monotonicNow = { service.clock.get() },        )
         val store = TileflowOfflineStore(core, subscribers)
         store.loadRegion("default", madrid())
         awaitRegion(store, "default") { it.state == COMPLETE }
@@ -1722,6 +1864,8 @@ class OfflineStoreTest {
         conditions: AtomicReference<OfflineUpdateConditions>? = null,
         profile: OfflinePackProfile = OfflinePackProfile.WEB_VIEW,
         apiOrigin: () -> String = { ORIGIN },
+        clockOffset: java.util.concurrent.atomic.AtomicLong? = null,
+        packConcurrency: Int = 4,
     ): OfflineStoreCore {
         val cache =
             if (root == "offline") cache
@@ -1737,7 +1881,7 @@ class OfflineStoreTest {
                         apiOrigin = URI(apiOrigin()),
                         mapCredential = TileflowCredential("tf_public_" + "a".repeat(48)),
                     )
-                OfflinePackClient(configuration, { service }, now = { service.clock.get() })
+                OfflinePackClient(configuration, { service }, now = { service.clock.get() }, monotonicNow = { service.clock.get() })
             },
             available ?: { space?.get() },
             subscribers,
@@ -1745,7 +1889,9 @@ class OfflineStoreTest {
             runner ?: { OfflineScopeRunner(it, scope) },
             reserveBytes = 4096,
             concurrency = concurrency,
-            now = { service.clock.get() },
+            packConcurrency = packConcurrency,
+            now = { service.clock.get() + (clockOffset?.get() ?: 0) },
+            monotonicNow = { service.clock.get() },
             sleep = { sleeps?.add(it); delay(2) },
             scheduler = scheduler,
             conditions = { conditions?.get() ?: OfflineUpdateConditions.UNAVAILABLE },
@@ -1767,6 +1913,8 @@ class OfflineStoreTest {
         runner: ((OfflineStoreCore) -> OfflineRunner)? = null,
         profile: OfflinePackProfile = OfflinePackProfile.WEB_VIEW,
         apiOrigin: () -> String = { ORIGIN },
+        clockOffset: java.util.concurrent.atomic.AtomicLong? = null,
+        packConcurrency: Int = 4,
     ): TileflowOfflineStore {
         val subscribers = OfflineSubscribers()
         return TileflowOfflineStore(
@@ -1785,6 +1933,8 @@ class OfflineStoreTest {
                 conditions = conditions,
                 profile = profile,
                 apiOrigin = apiOrigin,
+                clockOffset = clockOffset,
+                packConcurrency = packConcurrency,
             ),
             subscribers,
         )

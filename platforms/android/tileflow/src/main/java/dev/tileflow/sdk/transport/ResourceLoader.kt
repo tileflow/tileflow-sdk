@@ -140,7 +140,7 @@ internal class ResourceLoader(
                     policy.validate(target)
                     null
                 }
-            val grant = admission?.grant
+            var grant = admission?.grant
             grant?.let { request.header("X-Tileflow-Native-Grant", it) }
             // Protected entries are read only after the session admitted this request again.
             val key =
@@ -164,7 +164,15 @@ internal class ResourceLoader(
             packed?.metadata?.headers?.get("ETag")?.let { request.header("If-None-Match", it) }
             val stream =
                 try {
-                    transport.open(request.build(), admission?.timeoutMillis ?: 30_000)
+                    if (hosted != null && protected) {
+                        transport.open(request.build(), admission?.timeoutMillis ?: 30_000) {
+                            val fresh = hosted.authorize(target, policy)
+                            grant = fresh.grant
+                            val prepared = request.build().newBuilder().removeHeader("X-Tileflow-Native-Grant")
+                            fresh.grant?.let { prepared.header("X-Tileflow-Native-Grant", it) }
+                            prepared.build() to fresh.timeoutMillis
+                        }
+                    } else transport.open(request.build(), admission?.timeoutMillis ?: 30_000)
                 } catch (error: IOException) {
                     // A closed loader's cancelled requests never fall back to stored responses.
                     if (!onlineOnly && closed.count > 0 && isNetworkFailure(error))
@@ -209,10 +217,11 @@ internal class ResourceLoader(
                     rendererHeaders(stream.headers, method, bytes.size.toLong()),
                     ByteArrayInputStream(bytes),
                 )
-            if (grant == null || hosted == null || deadline == null) return complete
+            val sentGrant = grant
+            if (sentGrant == null || hosted == null || deadline == null) return complete
             var reaction = HostedContract.reaction(stream.status, bytes, target, retried)
             if (reaction == ResourceReaction.REFRESH) {
-                if (!retried && hosted.invalidate(grant)) {
+                if (!retried && hosted.invalidate(sentGrant)) {
                     retried = true
                     continue
                 }

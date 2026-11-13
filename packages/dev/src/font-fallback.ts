@@ -58,6 +58,7 @@ export function prepareFontFallback(
   style: MapLibreStyle,
   fallback: TileflowFontFallback,
   files: readonly FallbackFontFile[],
+  apiBaseUrl?: string,
 ): MapLibreStyle {
   const byName = new Map(files.map((file) => [file.family, file]));
   const official = new Set(
@@ -93,7 +94,7 @@ export function prepareFontFallback(
     const alias = `Tileflow fallback ${identity}`;
     faces[alias] = [
       ...local.map(({source, ranges}) => ({url: source, 'unicode-range': ranges})),
-      ...officialFontFiles({...fallback, fontStack: backup}),
+      ...officialFontFiles({...fallback, fontStack: backup}, apiBaseUrl),
     ];
     return [alias];
   });
@@ -104,12 +105,13 @@ export function prepareFontFallback(
   for (const name of usedOfficial)
     namedFaces.set(name, [
       ...(namedFaces.get(name) ?? []),
-      ...officialFontFiles({...fallback, fontStack: [name]}),
+      ...officialFontFiles({...fallback, fontStack: [name]}, apiBaseUrl),
     ]);
   const allFaces = Object.fromEntries([...namedFaces, ...Object.entries(faces)]);
   const usedUrls = new Set(
     Object.values(allFaces).flatMap((files) => files.map((file) => file.url)),
   );
+  const officialBase = new URL('../', officialFontFiles(fallback, apiBaseUrl)[0]!.url);
   const {glyphs: _glyphs, ...rest} = prepared;
   return {
     ...rest,
@@ -118,21 +120,33 @@ export function prepareFontFallback(
       ...prepared.metadata,
       [tileflowFontFallbackMetadataKey]: 1,
       'tileflow:fontLicenses': [
+        ...((prepared.metadata?.['tileflow:fontLicenses'] as string[] | undefined) ?? []),
         ...new Set(
           tileflowOfficialFontAssetSet.manifest.fontFaces.flatMap((face) =>
             face.files
-              .filter((file) =>
-                usedUrls.has(
-                  `https://api.tileflow.dev/base/${fallback.assetSetSha256}/${file.path}`,
-                ),
-              )
-              .map(
-                (file) =>
-                  `https://api.tileflow.dev/base/${fallback.assetSetSha256}/${file.licensePath}`,
-              ),
+              .filter((file) => usedUrls.has(new URL(file.path, officialBase).href))
+              .map((file) => new URL(file.licensePath, officialBase).href),
           ),
         ),
       ],
+    },
+  };
+}
+
+/** Apply the artifact writer's local/shared policy to declared license URLs as well. */
+export function replaceFontLicenseSources(
+  style: MapLibreStyle,
+  replace: (source: string) => string,
+): MapLibreStyle {
+  const licenses = style.metadata?.['tileflow:fontLicenses'];
+  if (!Array.isArray(licenses)) return style;
+  return {
+    ...style,
+    metadata: {
+      ...style.metadata,
+      'tileflow:fontLicenses': licenses.map((url) =>
+        typeof url === 'string' ? replace(url) : url,
+      ),
     },
   };
 }

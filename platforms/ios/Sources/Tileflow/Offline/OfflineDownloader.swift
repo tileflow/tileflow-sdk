@@ -7,6 +7,7 @@ struct OfflinePlannedResource: Sendable {
   let bytes: Int?
   /// SHA-256 of those bytes, when known before download.
   let sha256: String?
+  var mayBeAbsent = false
 
   var url: URL { key.url }
 }
@@ -70,17 +71,19 @@ struct OfflineVersionPlan: Sendable {
   /// zooms. Sizes are unknown.
   static func selfHosted(
     documents: [URL], sources: [TileflowOfflineTileSource], regions: [OfflinePackRegion],
-    zooms: OfflineZooms
+    zooms: OfflineZooms, optionalDocuments: Set<URL> = []
   ) -> OfflineVersionPlan {
     var plan = OfflineVersionPlan()
     var seen = Set<String>()
-    func add(_ url: URL) -> Bool {
+    func add(_ url: URL, mayBeAbsent: Bool = false) -> Bool {
       guard seen.insert(url.absoluteString).inserted else { return false }
       plan.resources.append(
-        OfflinePlannedResource(key: ResourceCacheKey(url: url, scope: .shared), bytes: nil, sha256: nil))
+        OfflinePlannedResource(
+          key: ResourceCacheKey(url: url, scope: .shared), bytes: nil, sha256: nil,
+          mayBeAbsent: mayBeAbsent))
       return true
     }
-    for url in documents { _ = add(url) }
+    for url in documents { _ = add(url, mayBeAbsent: optionalDocuments.contains(url)) }
     for source in sources {
       plan.tileCounts[source.id] = plan.tileCounts[source.id] ?? 0
       guard
@@ -96,7 +99,7 @@ struct OfflineVersionPlan: Sendable {
               for x in xs {
                 guard let url = OfflineSelfHosted.tileURL(source.template, z: zoom, x: x, y: y)
                 else { continue }
-                if add(url) { plan.tileCounts[source.id, default: 0] += 1 }
+                if add(url, mayBeAbsent: true) { plan.tileCounts[source.id, default: 0] += 1 }
               }
             }
           }
@@ -210,6 +213,7 @@ struct OfflineDownloader: Sendable {
   /// Packs transferred at once.
   var packConcurrency = 4
   let now: @Sendable () -> Date
+  var monotonicNow: @Sendable () -> TimeInterval = { OfflineMonotonicClock.now() }
 
   private enum Work: Sendable {
     case resource(OfflinePlannedResource)
@@ -352,6 +356,14 @@ struct OfflineDownloader: Sendable {
     if let previous { headers["If-None-Match"] = "\"\(previous.digest)\"" }
     // A new grant starts a new transfer: a resumed one would present the old grant again.
     let id = job.prefix + planned.key + "." + download.grant.tag
+    // This worker has acquired its slot; the grant may have expired in the queue.
+    if download.grantDeadline <= monotonicNow(), !(await fetcher.hasCompleted(id: id)) {
+      return .outcome(
+        .renew(
+          download: planned.download,
+          error: TileflowOfflineError(
+            .grantRejected, context: .init(reason: "OFFLINE_PACK_GRANT_EXPIRED"))))
+    }
     let destination = job.packs.incoming(id)
     try? FileManager.default.createDirectory(
       at: job.packs.incoming, withIntermediateDirectories: true)
@@ -469,7 +481,7 @@ struct OfflineDownloader: Sendable {
     case 304 where stored != nil:
       return .stored(
         .init(bytes: Int64(resource.bytes ?? stored!.body.count), transferred: false))
-    case 204 where !job.plan.isHosted, 404 where !job.plan.isHosted:
+    case 204 where resource.mayBeAbsent, 404 where resource.mayBeAbsent:
       // An absent self-hosted tile or glyph range stays absent offline, as online.
       return .stored(.init(bytes: 0, transferred: false))
     default:

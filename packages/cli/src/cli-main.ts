@@ -425,6 +425,7 @@ program
         });
         failureDefaults = {code: 'FONT_COMPILATION_FAILED', phase: 'font-compilation'};
         const {styles} = await prepareTileflowStyleFonts(project, localTilesets.styles, {
+          apiBaseUrl: options.apiBaseUrl,
           assetBaseUrl: '/tileflow',
           baseDirectory,
           cwd: process.cwd(),

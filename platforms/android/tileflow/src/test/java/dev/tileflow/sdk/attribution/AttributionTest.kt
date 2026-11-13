@@ -69,6 +69,16 @@ class AttributionTest {
     // Regional credits
 
     @Test
+    fun encShorteningKeepsTheOfficialQualificationForEveryWidth() {
+        for (text in listOf("NOAA ENC — data, not official", "NOAA ENC 2026 - not official, not for navigation", "NOAA ENC (not official)", "ENC source, not official")) {
+            for (width in 1 until text.length) {
+                val shown = MapAttributionStrip.shorten(text, width.toFloat()) { it.length.toFloat() }
+                assertTrue(shown, !shown.contains("ENC") || shown.lowercase().contains("not official"))
+            }
+        }
+    }
+
+    @Test
     fun aCreditIsVisibleWhileOneOfItsBoxesIntersectsTheView() {
         assertEquals(listOf("es-ign"), visible(listOf(spain, fiji), -3.8, 40.3, -3.6, 40.5))
         assertEquals(listOf("es-ign"), visible(listOf(spain), -16.0, 28.0, -15.0, 29.0))

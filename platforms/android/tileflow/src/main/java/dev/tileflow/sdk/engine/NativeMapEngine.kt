@@ -121,7 +121,7 @@ internal class NativeMapEngine(
     internal val attribution = MapAttributionControl(context)
     private var brandingOrigin = "https://api.tileflow.dev"
     private var brandingMapId: String? = null
-    private val brandingButton = NativeBrandingButton(context)
+    internal val brandingButton = NativeBrandingButton(context)
     private val branding = NativeBranding(
         load = { load(it) },
         offline = {
@@ -134,6 +134,7 @@ internal class NativeMapEngine(
         present = { state ->
             container.visibility = if (state == NativeBranding.State.PENDING) android.view.View.INVISIBLE else android.view.View.VISIBLE
             brandingButton.visibility = if (state == NativeBranding.State.REQUIRED) android.view.View.VISIBLE else android.view.View.GONE
+            brandingButton.parent?.requestLayout()
         },
     )
 
@@ -248,7 +249,6 @@ internal class NativeMapEngine(
                 ViewGroup.LayoutParams.MATCH_PARENT,
             ),
         )
-        container.addView(brandingButton, FrameLayout.LayoutParams((90 * density).toInt(), (44 * density).toInt(), android.view.Gravity.BOTTOM or android.view.Gravity.LEFT))
         brandingButton.setOnClickListener { callbacks.externalLink(URI("https://tileflow.dev/")) }
         attribution.onLink = { url ->
             if (!retired) runCatching { URI(url) }.getOrNull()?.let(callbacks.externalLink)

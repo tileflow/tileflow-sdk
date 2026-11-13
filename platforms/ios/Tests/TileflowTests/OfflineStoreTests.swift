@@ -17,6 +17,149 @@ final class OfflineStoreTests: XCTestCase {
     try? FileManager.default.removeItem(at: directory)
   }
 
+  func testOpeningPreservesUnreadableRecordsAndSweepsOnlyOrphanPacks() async throws {
+    let legacy = directory.appendingPathComponent("offline-v1")
+    let current = directory.appendingPathComponent("offline-v2")
+    try OfflineLayout.write(Data("legacy".utf8), to: legacy.appendingPathComponent("regions/broken/region.json"))
+    try OfflineLayout.write(Data("old pack".utf8), to: legacy.appendingPathComponent("packs/orphan.tfpack"))
+    try OfflineLayout.write(Data("keep".utf8), to: current.appendingPathComponent("regions/broken/region.json"))
+    OfflineLayout(root: current, legacyRoot: legacy).prepare()
+    XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.path))
+    XCTAssertEqual(try Data(contentsOf: current.appendingPathComponent("regions/broken/region.json")), Data("keep".utf8))
+
+    let record = layout.record("unreadable")
+    let bytes = Data("unreadable record".utf8)
+    try OfflineLayout.write(bytes, to: record)
+    let kept = String(repeating: "a", count: 64)
+    let orphan = String(repeating: "b", count: 64)
+    try OfflineProgressLog.write(
+      [kept: OfflineStoredEntry(bytes: 1, transferred: true, resources: 1, pack: kept)],
+      to: layout.progress("unreadable", 1))
+    for digest in [kept, orphan] {
+      try OfflineLayout.write(
+        Data([1]), to: layout.packs.directory.appendingPathComponent(digest + ".tfpack"))
+    }
+    let store = makeStore(OfflineServiceStub())
+    await store.core.open()
+    XCTAssertEqual(try? Data(contentsOf: record), bytes)
+    XCTAssertTrue(
+      FileManager.default.fileExists(
+        atPath: layout.packs.directory.appendingPathComponent(kept + ".tfpack").path))
+    XCTAssertFalse(
+      FileManager.default.fileExists(
+        atPath: layout.packs.directory.appendingPathComponent(orphan + ".tfpack").path))
+  }
+
+  func testMissingRequiredSelfHostedResourcesFailButGlyphRangesMayBeAbsent() async throws {
+    for (index, path) in [
+      "fonts/face.woff2", "LICENSE.txt", "style.json", "sprites/base.png",
+      "fonts/Noto%20Sans%20Regular/0-255.pbf",
+    ].enumerated() {
+      for status in [204, 404] {
+        let service = OfflineServiceStub()
+        service.missingResource.withLock { $0 = ("https://tiles.example.com/" + path, status) }
+        service.extraLicense.withLock { $0 = true }
+        let store = makeStore(service, root: "missing-\(index)-\(status)")
+        let options = TileflowOfflineRegionLoadOptions(
+          geometry: .boundingBox(
+            TileflowBoundingBox(west: -3.71, south: 40.41, east: -3.69, north: 40.425)),
+          content: .manifest(
+            url: URL(string: "https://tiles.example.com/manifest.json")!, map: "streets",
+            sources: []),
+          minZoom: 0, maxZoom: 0)
+        try await store.loadRegion(id: "region", options: options)
+        let done = try await waitFor(store, "region") {
+          $0.state == .complete || $0.state == .failed
+        }
+        XCTAssertEqual(done.state, index == 4 ? .complete : .failed, "\(path) \(status)")
+        XCTAssertEqual(done.isAvailable, index == 4)
+      }
+    }
+  }
+
+  func testReplacementRechecksDeviceReservationAfterItsOldTransferSettles() async throws {
+    let service = OfflineServiceStub()
+    service.tileLimit = 2
+    service.maximumPackResources = 9
+    let fetcher = OfflineFinishingPackFetcher(service)
+    let store = makeStore(service, fetcher: fetcher)
+    try await store.loadRegion(id: "madrid", options: madrid())
+    await fetcher.response.waiting()
+    service.tileLimit = 7
+    let replacementOptions = madrid(east: -3.68)
+    let replacing = Task { () -> TileflowOfflineError? in
+      do { try await store.loadRegion(id: "madrid", options: replacementOptions); return nil } catch
+      { return error as? TileflowOfflineError }
+    }
+    try await waitUntil { fetcher.stopped.withLock { $0 } }
+    service.tileLimit = 3
+    let other = TileflowOfflineRegionLoadOptions(
+      geometry: .boundingBox(
+        TileflowBoundingBox(west: 2.15, south: 41.38, east: 2.18, north: 41.4)),
+      content: .hosted(mapID: OfflineServiceStub.mapID, themes: ["light", "dark"]), minZoom: 12,
+      maxZoom: 17)
+    try await store.loadRegion(id: "barcelona", options: other)
+    await fetcher.response.pass()
+    let failure = await replacing.value
+    XCTAssertEqual(failure?.code, .deviceLimitExceeded)
+    let kept = OfflineRegionRecord.read(layout.record("madrid"))
+    XCTAssertEqual(kept?.pending?.number ?? kept?.active?.number, 1)
+  }
+
+  func testDeviceClockSkewDoesNotExpireFreshGrantEstimatesOrExtendOldOnes() async throws {
+    let service = OfflineServiceStub(grantLifetime: 3600)
+    let offset = LockedValue<TimeInterval>(0)
+    let store = makeStore(service, clockOffset: offset)
+    _ = try await store.estimateRegion(madrid())
+    offset.withLock { $0 = 2 * 86_400 }
+    _ = try await store.estimateRegion(madrid())
+    XCTAssertEqual(service.creationAttempts.withLock { $0.count }, 1)
+    offset.withLock { $0 = -2 * 86_400 }
+    service.clock.withLock { $0 += 3601 }
+    _ = try await store.estimateRegion(madrid())
+    XCTAssertEqual(service.creationAttempts.withLock { $0.count }, 2)
+  }
+
+  func testNewGrantIsNotReusedAfterOneHourEvenIfServerOffersLonger() async throws {
+    let service = OfflineServiceStub(grantLifetime: 86_400)
+    let store = makeStore(service)
+    _ = try await store.estimateRegion(madrid())
+    service.clock.withLock { $0 += 3601 }
+    _ = try await store.estimateRegion(madrid())
+    XCTAssertEqual(service.creationAttempts.withLock { $0.count }, 2)
+  }
+
+  func testRevalidationWithdrawsExpiredRegionsBeforeNetworkAndUsesLocalTime() async throws {
+    let service = OfflineServiceStub()
+    let index = OfflineServingIndex()
+    let store = makeStore(service, index: index)
+    try await store.loadRegion(id: "madrid", options: madrid())
+    _ = try await waitFor(store, "madrid") { $0.state == .complete }
+    service.clock.withLock { $0 += 38 * 86_400 }
+    service.revalidationClockOffset.withLock { $0 = 90 * 86_400 }
+    let gate = OfflineWatchClock()
+    service.beforeRevalidationReply.withLock { $0 = { await gate.period() } }
+    let checking = Task { await store.core.checkForUpdates() }
+    await gate.waiting()
+    let served = await index.resource(service.key(service.styleURL), cache: cache)
+    XCTAssertNil(served)
+    await gate.pass()
+    await checking.value
+    let region = await store.region(id: "madrid")
+    XCTAssertEqual(region?.expiresAt, service.now.addingTimeInterval(30 * 86_400))
+  }
+
+  func testQueuedPacksRenewTheGrantBeforeStartingAnotherTransfer() async throws {
+    let service = OfflineServiceStub(grantLifetime: 86_400)
+    service.onDownload = { count in if count == 4 { service.clock.withLock { $0 += 3601 } } }
+    let store = makeStore(service, concurrency: 1, packConcurrency: 1)
+    try await store.loadRegion(id: "madrid", options: madrid())
+    _ = try await waitFor(store, "madrid") { $0.state == .complete }
+    XCTAssertGreaterThan(service.creationAttempts.withLock { $0.count }, 1)
+    let grants = service.downloads.compactMap { $0.headers[OfflineDownloader.grantHeader] }
+    XCTAssertGreaterThan(Set(grants).count, 1)
+  }
+
   func testNewHostedPlanRequestsTheNativeProfileByDefault() async throws {
     let service = OfflineServiceStub()
     let store = makeStore(service)
@@ -100,7 +243,8 @@ final class OfflineStoreTests: XCTestCase {
     for entry in service.downloads where entry.status == 200 { bodies[entry.url, default: 0] += 1 }
     XCTAssertEqual(bodies.count, done.requiredPackCount + 3)
     XCTAssertEqual(bodies.values.max(), 1, "Nothing is downloaded twice")
-    XCTAssertEqual(service.creations, 1)
+    XCTAssertEqual(
+      service.creations, 2, "A reopened process renews its grant before further transfers")
   }
 
   func testCorruptedPacksAreDownloadedAgainAndNeverStored() async throws {
@@ -1216,7 +1360,8 @@ final class OfflineStoreTests: XCTestCase {
     fetcher: (any OfflineResourceFetching)? = nil, index: OfflineServingIndex? = nil,
     available: (@Sendable () -> Int64?)? = nil, scheduler: OfflineSchedulerStub? = nil,
     conditions: LockedValue<OfflineUpdateConditions>? = nil, profile: OfflinePackProfile? = nil,
-    apiOrigin: @escaping @Sendable () -> String = { OfflineServiceStub.origin }
+    apiOrigin: @escaping @Sendable () -> String = { OfflineServiceStub.origin },
+    clockOffset: LockedValue<TimeInterval>? = nil, packConcurrency: Int = 4
   ) -> TileflowOfflineStore {
     let cache =
       root == "offline"
@@ -1235,16 +1380,22 @@ final class OfflineStoreTests: XCTestCase {
           mapCredential: TileflowCredential("tf_public_" + String(repeating: "a", count: 48)))
         return try OfflinePackClient(
           configuration: configuration, transport: service,
-          now: { Date(timeIntervalSince1970: clock.withLock { $0 }) })
+          now: { Date(timeIntervalSince1970: clock.withLock { $0 }) },
+          monotonicNow: { clock.withLock { $0 } })
       },
       availableBytes: available ?? { space?.withLock { $0 } ?? nil }, index: index,
       reserveBytes: 4096,
-      concurrency: concurrency, now: { Date(timeIntervalSince1970: clock.withLock { $0 }) },
+      concurrency: concurrency,
+      now: {
+        Date(timeIntervalSince1970: clock.withLock { $0 } + (clockOffset?.withLock { $0 } ?? 0))
+      },
+      monotonicNow: { clock.withLock { $0 } },
       sleep: { delay in
         sleeps?.withLock { $0.append(delay) }
         try await Task.sleep(nanoseconds: 2_000_000)
       }, scheduler: scheduler,
       conditions: { conditions?.withLock { $0 } ?? .unavailable })
+    dependencies.packConcurrency = packConcurrency
     if let profile { dependencies.profile = profile }
     return TileflowOfflineStore(dependencies: dependencies)
   }
@@ -1325,7 +1476,10 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
 
   enum RevalidationReply: Sendable { case unavailable, state(String) }
   let revalidationReplies = LockedValue<[RevalidationReply]>([])
+  let revalidationClockOffset = LockedValue<TimeInterval>(0)
   let beforeRevalidationReply = LockedValue<(@Sendable () async -> Void)?>(nil)
+  let missingResource = LockedValue<(String, Int)?>(nil)
+  let extraLicense = LockedValue(false)
   let refusesCreation = LockedValue(false)
   let transientRenewalFailures = LockedValue(0)
   let refusesRevalidation = LockedValue(false)
@@ -1497,6 +1651,11 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
           .utf8)
     }
     if url.hasPrefix("https://tiles.example.com/"), url.hasSuffix("/style.json") {
+      if extraLicense.withLock({ $0 }) {
+        return Data(
+          #"{"version":8,"metadata":{"tileflow:fontLicenses":["./LICENSE.txt"]},"sprite":"./sprites/base","glyphs":"./fonts/{fontstack}/{range}.pbf","sources":{},"layers":[{"id":"l","type":"symbol","layout":{"text-font":["Noto Sans Regular"],"text-field":"x"}}]}"#
+            .utf8)
+      }
       return Data(
         #"{"version":8,"sprite":"https://tiles.example.com/sprites/base","glyphs":"https://tiles.example.com/fonts/{fontstack}/{range}.pbf","sources":{"places":{"type":"geojson","data":"./data/places.json"}},"layers":[{"id":"l","type":"symbol","layout":{"text-font":["Noto Sans Regular"],"text-field":"x"}}]}"#
           .utf8)
@@ -1522,7 +1681,7 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
       let reply = locked { state in
         let result = if case .state(let result)? = scripted { result } else { state.revalidationState }
         state.revalidations += 1
-        let checked = Self.date(clock.withLock { $0 })
+        let checked = Self.date(clock.withLock { $0 } + revalidationClockOffset.withLock { $0 })
         let body =
           result == "not_updatable"
           ? #"{"state":"not_updatable","reason":"credential_revoked","checkedAt":"\#(checked)"}"#
@@ -1707,6 +1866,12 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
   func fetch(_ request: OfflineFetchRequest) async throws -> OfflineFetchResponse {
     try Task.checkCancellation()
     let url = request.url.absoluteString
+    if !request.id.hasPrefix("plan/"), let missing = missingResource.withLock({ $0 }),
+      missing.0 == url
+    {
+      return OfflineFetchResponse(
+        status: missing.1, headers: [:], body: Data(), wireBytes: 0, wireSHA256: nil)
+    }
     enum Action {
       case respond(OfflineFetchResponse)
       case freeze

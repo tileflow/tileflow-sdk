@@ -1147,6 +1147,10 @@ function isPublicationRequestId(value: unknown): value is string {
 }
 
 const deploymentFailureDetails = new Map([
+  [
+    'TF_SHARED_FONTS_UNAVAILABLE',
+    'Shared official fonts are not ready on this API. Ask its operator to prepare the required font set before retrying.',
+  ],
   ['TF_DEPLOYMENT_BODY_INVALID', 'Hosted could not read the deployment request.'],
   ['TF_MAP_FORBIDDEN', 'Check that the credential can publish to this Map.'],
   ['TF_STYLE_STORAGE_UNAVAILABLE', 'Hosted could not store the style. Retry the deployment.'],
@@ -1215,7 +1219,10 @@ function deploymentFailure(
       resumable,
       status: response.status,
       ...(code ? {code} : {}),
-      failure: readHostedFailure(response),
+      failure: {
+        ...readHostedFailure(response),
+        ...(code === 'TF_SHARED_FONTS_UNAVAILABLE' ? {error: detail!} : {}),
+      },
       operation: prefix === 'Deploy failed' ? undefined : prefix.replace(/ failed$/u, ''),
     },
   );

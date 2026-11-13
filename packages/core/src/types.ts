@@ -395,6 +395,7 @@ export type TileflowLabelsModuleConfig = {
   aerodromeCodes?: TileflowAerodromeCodeDetail;
   collisionPriority?: TileflowLabelCollisionPriority;
   junctions?: boolean;
+  /** BCP 47 language (English by default), `auto` for the renderer's locale, or `local` for source names. */
   language?: TileflowLabelLanguage;
   places?: TileflowLabelDetail;
   roadClasses?: readonly TileflowRoadClass[];
@@ -462,6 +463,10 @@ export type TileflowPoiModuleConfig = {
   densityByCategory?: Partial<Record<TileflowPoiCategory, TileflowPoiDensity>>;
   /** Fixed maximum World filter rank per POI type (0–5), independent of zoom detail. */
   maxRankByType?: Readonly<Record<string, 0 | 1 | 2 | 3 | 4 | 5>>;
+  /** Earliest display zoom per World POI type, after the density filter is applied. */
+  minZoomByType?: Readonly<Record<string, number>>;
+  /** Earliest name zoom per World POI type. An eligible pictogram may appear before its name. */
+  labelMinZoomByType?: Readonly<Record<string, number>>;
   /** Zoom for the second extra rank of POI detail. Must exceed 16; defaults to 17. */
   detailZoom?: number;
   icons?: boolean;
@@ -480,6 +485,8 @@ export type TileflowPoiModuleConfig = {
      * Defaults to parking and public toilets.
      */
     iconOnlyTypes?: readonly string[];
+    /** Types allowed to show a pictogram without a name; available names are still drawn. Defaults to none. */
+    unnamedIconTypes?: readonly string[];
     /** Defaults to `importance`. */
     order?: TileflowPoiPlacementOrder;
     /**
@@ -489,6 +496,11 @@ export type TileflowPoiModuleConfig = {
      * way. Unset, every POI is placed at the module's own position.
      */
     prominentRank?: 0 | 1 | 2 | 3 | 4 | 5;
+    /**
+     * Also place POIs at or above this World importance tier before ordinary labels, even if
+     * spatial competition gave them a lower density rank. Does not bypass density or type filters.
+     */
+    prominentImportance?: 1 | 2 | 3 | 4;
     /** Collision margin around the name, in pixels. Defaults to 3. */
     textPadding?: number;
   };

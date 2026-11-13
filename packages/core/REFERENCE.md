@@ -292,7 +292,10 @@ which cannot cluster. See the
 [interactions reference](https://github.com/tileflow/tileflow-sdk/blob/main/packages/interactions/REFERENCE.md)
 for runtime data, click-to-expand, and React Native support.
 
-`bathymetry({vectorLayers: {...}})` declares contour/name layers. `marine: 'nautical'` adds
+`bathymetry({vectorLayers: {...}})` declares contour/name layers. Bathymetry V1 bands use
+negative `depth` values and cumulative deeper-than polygons; the compiler paints shallower
+polygons first. Compatible older sources retain `min_depth` and `sort_key`. Native contour
+lines use `depth`; declare `vectorLayers.contours: true` to avoid outlining polygon tile edges. `marine: 'nautical'` adds
 navigation marks, flashing lights, and a "Not for navigation" notice.
 
 `circular_feature` optionally retains `network` (a normalized road-network string; coverage is
@@ -361,6 +364,10 @@ Applications that need the map's data themselves, such as streets to route over 
 under the camera, read chosen layers of a vector source for an area at a fixed zoom with
 `createTileflowTileReader` from `@tileflow/core/browser`, which also runs in a module worker.
 
+`buildings({mode: 'flat', extrusion: {visible: false}})` retains flat footprints without
+declaring a 3D building scene or requesting building models. Camera pitch limits also apply to
+flat maps through `attachTileflowMap3D`, without loading the 3D renderer.
+
 Browser 3D scenes resolve `camera.adaptivePerspective` from caller override, map default, then
 `false`; Streets enables it. Buildings occlude depth markers. `camera.pitchLimit: {maxZoom, maxPitch}`
 caps inclination through `maxZoom`, respecting stricter application caps. Closer views and disposal
@@ -412,6 +419,21 @@ combines fallback stacks, the first font holding a glyph winning, so there it is
 each font: a `text-font` list of at most 10 declared fonts is accepted without declaring the joined
 stack. A declaration naming more than 10 fonts, or a font a known Tileflow glyph set does not
 publish, is rejected. Other providers must declare every joined stack the styles use.
+
+Labels use English by default. Set `labels({language: 'es'})` for Spanish, another BCP 47 code
+such as `es-MX` for a regional preference, `auto` for the renderer's browser/device locale, or
+`local` for each feature's source name. This policy is shared by geographic labels, roads,
+POIs and landforms. A missing or empty translation falls back to the local name, then available
+Latin/English names; it never translates a name that the source does not supply. `auto` resolves
+at render time, so compiling on a server does not select that server's locale.
+
+POI `minZoomByType` supplies display zoom floors by canonical World type, in addition to density
+and `maxRankByType`. `labelMinZoomByType` delays names independently, allowing an eligible transit
+pictogram to precede its localized name. `placement.prominentImportance` promotes admitted POIs at or above a World
+importance tier to the prominent placement group, independently of their spatial density rank.
+It can be combined with `prominentRank`; neither option bypasses the selection filters.
+`placement.unnamedIconTypes` allows specific pictograms without a source name, while drawing their
+name when available. `iconOnlyTypes` always suppresses the name instead.
 
 ## Reference
 

@@ -46,7 +46,7 @@ another trusted origin, and downloads send no credentials and follow no redirect
 ### Explore without committing a scene
 
 `--map` captures one map at a camera given by flags. In a directory without a config,
-`--map streets`, `--map soundings` and `--map outdoors` open the official map that this CLI ships
+`--map streets`, `--map nautical` and `--map outdoors` open the official map that this CLI ships
 with, so nothing needs installing:
 
 ```sh

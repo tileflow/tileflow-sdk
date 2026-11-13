@@ -199,6 +199,16 @@ async function prepareRuntimeStyle(
                 ? original.tiles.map((tile) => (typeof tile === 'string' ? resolve(tile) : tile))
                 : document.value.tiles.map((tile: string) => resolveResource(tile, document.url)),
             };
+            const credits = [
+              ...new Set(
+                [descriptor.attribution, original.attribution]
+                  .filter((value): value is string => typeof value === 'string')
+                  .map((value) => value.trim())
+                  .filter((value) => value && value !== 'null'),
+              ),
+            ];
+            if (credits.length) source.attribution = credits.join(' | ');
+            else delete source.attribution;
             delete source.url;
           }
         }

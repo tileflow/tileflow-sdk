@@ -43,6 +43,20 @@ class NativeStyleDocumentTest {
     }
 
     @Test
+    fun tileJSONCreditsCannotBeReplacedByStyleAttribution() {
+        for (supplied in listOf("", " ", "Author credit", JSONObject.NULL)) {
+            val style = JSONObject("""{"version":8,"sources":{"world":{"type":"vector","url":"https://api.tileflow.dev/tiles/world/tiles.json"}},"layers":[]}""")
+            style.getJSONObject("sources").getJSONObject("world").put("attribution", supplied)
+            val projected = NativeStyleDocument.project(style, "https://api.tileflow.dev/maps/test/light.json", context, {
+                """{"tiles":["https://api.tileflow.dev/tiles/world/{z}/{x}/{y}.pbf"],"attribution":"© OpenStreetMap contributors"}""".toByteArray()
+            })
+            org.junit.Assert.assertTrue(projected.attributions.any { it.contains("© OpenStreetMap contributors") })
+            assertFalse(projected.attributions.any { it.isBlank() || it == "null" })
+            if (supplied == "Author credit") org.junit.Assert.assertTrue(projected.attributions.any { it.contains("Author credit") })
+        }
+    }
+
+    @Test
     fun aRemoteAddressTheSdkCannotOwnIsRejectedBeforeRendering() {
         for (source in listOf(
             """{"type":"geojson","data":"https://app@blocked.test/points.geojson"}""",

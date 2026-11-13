@@ -33,6 +33,50 @@ class HostedSessionTest {
         ResourcePolicy(setOf("https://api.tileflow.test", "https://public.example"))
 
     @Test
+    fun queuedResourceRenewsItsGrantAfterAcquiringNetworkSlot() {
+        val server = okhttp3.mockwebserver.MockWebServer()
+        server.enqueue(okhttp3.mockwebserver.MockResponse().setBody("tile"))
+        server.start()
+        val origin = server.url("/").toString().removeSuffix("/")
+        val target = URI("$origin/maps/$mapId/mobile/webview-v1/v1/day.json")
+        val time = AtomicLong(0)
+        val sessions = FakeTransport { request, index ->
+            val value = fixture().getJSONObject("response")
+                .put("sessionId", body(request).getString("sessionId"))
+                .put("resourceOrigins", JSONArray(listOf(origin)))
+                .put("grant", if (index == 0) "tf_native_v1.Zmlyc3Q.c2lnbmF0dXJl" else "tf_native_v1.c2Vjb25k.c2lnbmF0dXJl")
+            ResourcePayload(value.toString().toByteArray(), 201, emptyMap())
+        }
+        val session = HostedSession(HostedEndpoint(TileflowConfiguration(apiOrigin = URI(origin), mapCredential = TileflowCredential(mapCredential))), mapId, "mobile-map", time::get, sessions)
+        val resources = dev.tileflow.sdk.transport.NativeHTTPTransport(1024, dev.tileflow.sdk.transport.TileflowHttpClient.Lane.RESOURCES)
+        val loader = ResourceLoader(ResourcePolicy(setOf(origin), allowsLoopbackHttp = true), hosted = session, transport = resources)
+        val slots = dev.tileflow.sdk.transport.TileflowHttpClient.resourceSlots
+        val capacity = dev.tileflow.sdk.transport.TileflowHttpClient.MAXIMUM_CONCURRENT_RESOURCES
+        val executor = Executors.newSingleThreadExecutor()
+        slots.acquire(capacity)
+        try {
+            val queued = executor.submit<ResourcePayload> { loader.load(target) }
+            try {
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+                while (!slots.hasQueuedThreads() && System.nanoTime() < deadline) Thread.sleep(1)
+                assertTrue(slots.hasQueuedThreads())
+                assertEquals(1, sessions.requests.size)
+                time.addAndGet(901_000)
+            } finally { slots.release() }
+            queued.get(10, TimeUnit.SECONDS)
+            assertEquals(2, sessions.requests.size)
+            assertEquals("tf_native_v1.c2Vjb25k.c2lnbmF0dXJl", server.takeRequest(1, TimeUnit.SECONDS)!!.getHeader("X-Tileflow-Native-Grant"))
+        } finally {
+            slots.release(capacity - 1)
+            loader.close()
+            session.close()
+            executor.shutdownNow()
+            server.shutdown()
+            assertEquals(capacity, slots.availablePermits())
+        }
+    }
+
+    @Test
     fun sharedAuthorityAndResourceCases() {
         val fixture = fixture()
         val response = fixture.getJSONObject("response")

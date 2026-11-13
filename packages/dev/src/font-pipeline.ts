@@ -26,7 +26,7 @@ import {
   resolveTileflowAssetDirectories,
   TileflowAssetDirectoryError,
 } from './asset-directories';
-import {mapFontStacks, prepareFontFallback} from './font-fallback';
+import {mapFontStacks, prepareFontFallback, replaceFontLicenseSources} from './font-fallback';
 import type {TileflowBuildAsset} from './icons';
 import {tileflowNativeFontUnicodeRanges} from './native-font-ranges';
 import {isPathWithin} from './path-safety';
@@ -75,6 +75,7 @@ export type CompiledTileflowFontBundle = {
 };
 
 export type PrepareTileflowStyleFontsOptions = {
+  apiBaseUrl?: string;
   assetBaseUrl: string;
   baseDirectory?: string;
   cwd: string;
@@ -406,7 +407,22 @@ export async function prepareTileflowStyleFonts(
         .map((face) => fontFaceByIdentity.get(fontFaceIdentity(face))!);
       if (map.fontFallback) {
         try {
-          const prepared = withFontFaces(style, fontFaces);
+          const prepared = withFontFaces(
+            {
+              ...style,
+              metadata: {
+                ...style.metadata,
+                'tileflow:fontLicenses': [
+                  ...new Set(
+                    bundleFaces.map((face) =>
+                      joinTileflowPublicUrl(options.assetBaseUrl, face.licenseFile),
+                    ),
+                  ),
+                ],
+              },
+            },
+            fontFaces,
+          );
           preparedThemes[themeName] = prepareFontFallback(
             prepared,
             map.fontFallback,
@@ -419,6 +435,7 @@ export async function prepareTileflowStyleFonts(
                 ranges: tileflowNativeFontUnicodeRanges(input.source),
               };
             }),
+            options.apiBaseUrl,
           );
         } catch (error) {
           issues.push({
@@ -426,7 +443,23 @@ export async function prepareTileflowStyleFonts(
             path: `styles.${mapName}.${themeName}.fontFallback`,
           });
         }
-      } else preparedThemes[themeName] = withFontFaces(style, themeFontFaces);
+      } else
+        preparedThemes[themeName] = withFontFaces(
+          {
+            ...style,
+            metadata: {
+              ...style.metadata,
+              'tileflow:fontLicenses': [
+                ...new Set(
+                  bundleFaces
+                    .filter((face) => themeFontIdentities.has(fontFaceIdentity(face)))
+                    .map((face) => joinTileflowPublicUrl(options.assetBaseUrl, face.licenseFile)),
+                ),
+              ],
+            },
+          },
+          themeFontFaces,
+        );
     }
     styles[mapName] = preparedThemes;
     sourceIdentities[mapName] = sortedBundleFaces.map((face) => ({
@@ -496,7 +529,25 @@ export function bindTileflowStyleFontBundle(
   if (resolved.some((face) => face === undefined)) {
     throw new Error('Compiled style font faces do not match their canonical font bundle.');
   }
-  return withFontFaces(style, resolved as TileflowStyleFontFace[]);
+  const licenseNames = new Set(
+    bundle.manifest.files.filter((file) => file.kind === 'license').map((file) => file.name),
+  );
+  const licenses = ((style.metadata?.['tileflow:fontLicenses'] as string[] | undefined) ?? []).map(
+    (url) => {
+      const name = [...licenseNames].find((name) => url === name || url.endsWith(`/${name}`));
+      return name ? joinTileflowPublicUrl(publicBaseUrl, name) : url;
+    },
+  );
+  return withFontFaces(
+    {
+      ...style,
+      metadata: {
+        ...style.metadata,
+        ...(licenses.length ? {'tileflow:fontLicenses': licenses} : {}),
+      },
+    },
+    resolved as TileflowStyleFontFace[],
+  );
 }
 
 export function replaceTileflowStyleFontSources(
@@ -506,7 +557,7 @@ export function replaceTileflowStyleFontSources(
   const fontFaces = getTileflowStyleFontFaces(style);
   if (fontFaces.length === 0) return style;
   return withFontFaces(
-    style,
+    replaceFontLicenseSources(style, replace),
     fontFaces.map((fontFace) => ({...fontFace, source: replace(fontFace.source)})),
   );
 }

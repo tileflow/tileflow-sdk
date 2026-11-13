@@ -12,6 +12,49 @@ final class HostedSessionTests: XCTestCase {
     "https://api.tileflow.test", "https://public.example",
   ])
 
+  func testQueuedResourceRenewsItsGrantAfterAcquiringNetworkSlot() async throws {
+    let fixture = try sessionFixture()
+    let time = SessionTestClock()
+    let sessions = SessionTestTransport { request, index in
+      let response = try sessionResponse(fixture, request: request)
+      var value = try JSONSerialization.jsonObject(with: response.bytes) as! [String: Any]
+      value["grant"] =
+        index == 0 ? "tf_native_v1.Zmlyc3Q.c2lnbmF0dXJl" : "tf_native_v1.c2Vjb25k.c2lnbmF0dXJl"
+      return ResourcePayload(
+        bytes: try JSONSerialization.data(withJSONObject: value), status: 201, headers: [:])
+    }
+    let session = HostedSession(
+      endpoint: try makeEndpoint(), mapID: mapID, surfaceID: "mobile-map", transport: sessions,
+      now: { time.now })
+    let client = TileflowHTTPClient(protocolClasses: [QueuedGrantProtocol.self])
+    let resources = NativeHTTPTransport(maximumBytes: 1024, lane: .resources, client: client)
+    let loader = ResourceLoader(policy: policy, hosted: session, transport: resources)
+    QueuedGrantProtocol.requests.withLock { $0 = [] }
+    let slots = client.resourceSlots
+    for _ in 0..<TileflowHTTPClient.maximumConcurrentResources { try await slots.acquire() }
+    defer {
+      for _ in 1..<TileflowHTTPClient.maximumConcurrentResources { slots.release() }
+      loader.close()
+      session.close()
+    }
+    let request = URLRequest(url: style)
+    let queued = Task { try await loader.load(request) }
+    let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+    while slots.waitingCount == 0 && ContinuousClock.now < deadline {
+      try await Task.sleep(for: .milliseconds(1))
+    }
+    XCTAssertEqual(slots.waitingCount, 1)
+    XCTAssertEqual(sessions.requests.count, 1)
+    time.advance(901)
+    slots.release()
+    _ = try await queued.value
+    XCTAssertEqual(sessions.requests.count, 2)
+    XCTAssertEqual(
+      QueuedGrantProtocol.requests.withLock {
+        $0.last?.value(forHTTPHeaderField: "X-Tileflow-Native-Grant")
+      }, "tf_native_v1.c2Vjb25k.c2lnbmF0dXJl")
+  }
+
   func testSharedAuthorityAndResourceCases() throws {
     let fixture = try sessionFixture()
     let bytes = try JSONEncoder().encode(fixture["response"])
@@ -811,4 +854,21 @@ private actor SessionResponseGate {
     waiting?.resume()
     waiting = nil
   }
+}
+
+private final class QueuedGrantProtocol: URLProtocol, @unchecked Sendable {
+  static let requests = LockedValue<[URLRequest]>([])
+  override class func canInit(with request: URLRequest) -> Bool { true }
+  override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+  override func startLoading() {
+    Self.requests.withLock { $0.append(request) }
+    client?.urlProtocol(
+      self,
+      didReceive: HTTPURLResponse(
+        url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: [:])!,
+      cacheStoragePolicy: .notAllowed)
+    client?.urlProtocol(self, didLoad: Data("tile".utf8))
+    client?.urlProtocolDidFinishLoading(self)
+  }
+  override func stopLoading() {}
 }

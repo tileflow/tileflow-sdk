@@ -1,6 +1,6 @@
 # Third-party notices
 
-Except for the Streets POI pictograms documented below, the official Streets, Soundings, and Outdoors icon and pattern
+Except for the Streets POI pictograms documented below, the official Streets, Nautical, and Outdoors icon and pattern
 artwork published under `assets/` is original Tileflow artwork.
 
 This file is shipped with `@tileflow/maps` so future third-party assets have a stable place for
@@ -70,7 +70,7 @@ lists the producers and the licence statements their terms require.
 
 ## Nautical-chart references
 
-The `soundings` map and its twenty-seven SVG symbols and patterns are original Tileflow code and artwork.
+The `nautical` map (formerly `soundings`) and its twenty-seven SVG symbols and patterns are original Tileflow code and artwork.
 Its visual grammar was informed by NOAA's
 [Historical Map & Chart Collection](https://historicalcharts.noaa.gov/) and the IHO
 [S-4 and INT 1 standards index](https://iho.int/standards-and-specifications) as cartographic
@@ -79,7 +79,7 @@ artwork, official symbol sheets, fonts, hydrographic surveys, or navigation data
 
 The map can visualize broad GEBCO-derived bathymetric bands and `nautical-v1` navigation marks
 exposed by the selected data sources. Neither is packaged here; the bands are not navigation-grade
-soundings, and the marks keep the attribution of their own source. Soundings is a general-purpose
+soundings, and the marks keep the attribution of their own source. Nautical is a general-purpose
 visual map, not a nautical chart for navigation.
 
 ## Official map lettering

@@ -25,6 +25,19 @@ final class AttributionTests: XCTestCase {
 
   // MARK: Regional credits
 
+  func testENCShorteningKeepsTheOfficialQualificationForEveryWidth() {
+    for text in [
+      "NOAA ENC — data, not official", "NOAA ENC 2026 - not official, not for navigation",
+      "NOAA ENC (not official)", "ENC source, not official",
+    ] {
+      for width in 1..<text.count {
+        let shown = MapAttributionStrip.shorten(
+          text, to: CGFloat(width), measure: { CGFloat($0.count) })
+        XCTAssertTrue(!shown.contains("ENC") || shown.lowercased().contains("not official"), shown)
+      }
+    }
+  }
+
   func testACreditIsVisibleWhileOneOfItsBoxesIntersectsTheView() {
     let madrid = TileflowBounds(west: -3.8, south: 40.3, east: -3.6, north: 40.5)
     XCTAssertEqual(visible([spain, fiji], madrid), ["es-ign"])

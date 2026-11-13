@@ -67,7 +67,7 @@ final class NativeMapAnnotations {
         let id = pin.id
         button.addAction(
           UIAction { [weak self] _ in self?.activate(id) }, for: .primaryActionTriggered)
-        engine.container.insertSubview(button, belowSubview: engine.attribution.view)
+        engine.container.addSubview(button)
         buttons[id] = button
       }
       pins[pin.id] = pin

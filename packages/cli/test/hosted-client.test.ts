@@ -552,3 +552,36 @@ test('non-JSON hosted errors retain only safe HTTP metadata', async () => {
   assert.equal(result.failure?.retryable, undefined);
   assert.doesNotMatch(JSON.stringify(result.failure), /private upstream/u);
 });
+
+test('shared-font unavailability explains preparation without treating it as an opaque server failure', async () => {
+  const split = {
+    artifact: {
+      schemaVersion: 5,
+      renderers: {web: {buildManifest: {maps: {}}}, native: {documents: {styles: {}, family: {}}}},
+    },
+    documents: {styles: {}, family: ''},
+  } as unknown as Parameters<typeof publishHostedRendererDeployment>[1]['split'];
+  await assert.rejects(
+    publishHostedRendererDeployment(
+      {apiUrl: 'https://api.tileflow.test', apiKey: 'synthetic-key', mapId: 'map_AbCdEfGhIjKlMnOp'},
+      {body: {artifact: split.artifact}, split},
+      {
+        request: {
+          fetch: async () =>
+            Response.json(
+              {code: 'TF_SHARED_FONTS_UNAVAILABLE', error: 'Shared fonts unavailable'},
+              {status: 503},
+            ),
+        },
+      },
+    ),
+    (error: unknown) => {
+      assert(error instanceof HostedDeploymentError);
+      assert.equal(error.code, 'TF_SHARED_FONTS_UNAVAILABLE');
+      assert.match(error.message, /shared.*font.*(?:available|ready|prepared)/i);
+      assert.doesNotMatch(error.message, /could not process the publication/);
+      assert.match(error.failure!.error, /operator.*prepare/);
+      return true;
+    },
+  );
+});

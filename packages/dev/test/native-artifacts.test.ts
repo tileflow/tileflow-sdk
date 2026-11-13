@@ -161,6 +161,50 @@ test('written native styles bind POI priorities and overlay anchors to lowered l
   }
 });
 
+test('native fallback generations keep shared files and retarget local licenses', async (t) => {
+  const cwd = await fixture(t);
+  await mkdir(join(cwd, 'fonts'));
+  await cp(
+    new URL('./fixtures/fonts/oxanium/Oxanium-Medium.ttf', import.meta.url),
+    join(cwd, 'fonts/face.ttf'),
+  );
+  await cp(
+    new URL('./fixtures/fonts/oxanium/LICENSE.txt', import.meta.url),
+    join(cwd, 'fonts/LICENSE.txt'),
+  );
+  await writeFile(
+    join(cwd, 'tileflow.config.ts'),
+    `import {defineMap, officialFontFallback} from '@tileflow/core';
+import {streets, streetsThemes} from '@tileflow/maps';
+const theme = streetsThemes.light;
+const light = {...theme, tokens: {...theme.tokens, font: Object.fromEntries(Object.keys(theme.tokens.font).map(name => [name, 'Oxanium Medium']))}};
+export default defineMap({id:'main',version:1,extends:streets,themes:{light},fonts:['./fonts'],fontFallback:officialFontFallback});\n`,
+  );
+  const origin = 'https://staging.tileflow.test';
+  const native = await createTileflowBuildArtifacts({
+    cwd,
+    renderer: 'native',
+    apiBaseUrl: origin,
+    assetBaseUrl: '/tileflow',
+    styleBaseUrl: '/tileflow',
+  });
+  t.after(() => disposeTileflowBuildArtifacts(native));
+  const immutable = native.files.find(({fileName}) =>
+    /^generations\/.*\/styles\/main\/light\.json$/u.test(fileName),
+  )!;
+  const style = JSON.parse(String(immutable.source));
+  const licenses: string[] = style.metadata['tileflow:fontLicenses'];
+  assert.ok(licenses.some((url) => url.startsWith(origin + '/base/')));
+  const local = licenses.filter((url) => !url.startsWith(origin + '/base/'));
+  assert.ok(local.length);
+  for (const url of local) {
+    assert.match(url, /\/generations\/[a-f0-9]{64}\/fonts\/licenses\//u);
+    assert.ok(native.files.some((file) => url.endsWith('/' + file.fileName)));
+  }
+  const shared = Object.values(style['font-faces']).flat() as {url: string}[];
+  assert.ok(shared.some((file) => file.url.startsWith(origin + '/base/')));
+});
+
 test('uses independent web/native output inventories and retargets absolute asset roots once', async (t) => {
   const cwd = await fixture(t);
   const common = {

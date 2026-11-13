@@ -41,6 +41,87 @@ final class NativeAttributionIntegrationTests: XCTestCase {
     XCTFail("Timed out waiting for \(description).")
   }
 
+  private func mountCreditMap() async throws -> (TileflowMapView, UIWindow) {
+    try await requireFixture(Self.nativeManifest)
+    let view = TileflowMapView(
+      source: TileflowMapSource(
+        map: "city", manifestURL: Self.nativeManifest, allowsLoopbackHTTP: true))
+    let events = NativeMapEvents()
+    let window = MountedMap.sceneWindow()
+    view.onEvent = events.receive
+    view.frame = window.bounds
+    window.rootViewController?.view.addSubview(view)
+    try await events.waitForLoads(1)
+    return (view, window)
+  }
+
+  func testBrandingSharesTheCreditCornerWithInsetsSafeAreaAndRTL() async throws {
+    let (view, window) = try await mountCreditMap()
+    defer { view.destroy(); window.isHidden = true }
+    func logo(_ root: UIView) -> NativeBrandingButton? {
+      (root as? NativeBrandingButton) ?? root.subviews.lazy.compactMap { logo($0) }.first
+    }
+    let branding = try XCTUnwrap(logo(view))
+    window.rootViewController?.additionalSafeAreaInsets = UIEdgeInsets(
+      top: 0, left: 0, bottom: 44, right: 0)
+    view.contentInsets = UIEdgeInsets(top: 19, left: 23, bottom: 120, right: 41)
+    try await view.setOptions(.init(controls: .init(attributionPosition: .bottomLeading)))
+    let control = try attribution(view)
+    for direction in [UISemanticContentAttribute.forceLeftToRight, .forceRightToLeft] {
+      view.semanticContentAttribute = direction
+      branding.isHidden = false
+      view.setNeedsLayout()
+      view.layoutIfNeeded()
+      try await Task.sleep(for: .milliseconds(100))
+      view.layoutIfNeeded()
+      view.controlsView.layoutIfNeeded()
+      control.view.layoutIfNeeded()
+      let frame = branding.convert(branding.bounds, to: view)
+      let credit = control.view.control.convert(control.view.control.bounds, to: view)
+      XCTAssertLessThanOrEqual(frame.maxY, credit.minY)
+      XCTAssertLessThanOrEqual(frame.maxY, view.bounds.height - view.effectiveContentInsets.bottom)
+      if direction == .forceRightToLeft {
+        XCTAssertEqual(
+          frame.maxX, view.bounds.width - view.effectiveContentInsets.right - 8, accuracy: 1)
+      } else {
+        XCTAssertEqual(frame.minX, view.effectiveContentInsets.left + 8, accuracy: 1)
+      }
+    }
+  }
+
+  func testViewAnnotationsCannotCoverOrInterceptCredits() async throws {
+    let (view, window) = try await mountCreditMap()
+    defer { view.destroy(); window.isHidden = true }
+    let control = try attribution(view)
+    control.view.layoutIfNeeded()
+    let credit = control.view.control.convert(control.view.control.bounds, to: view)
+    let point = CGPoint(x: credit.midX, y: credit.midY)
+    let cover = UIButton(frame: CGRect(x: 0, y: 0, width: 200, height: 120))
+    let annotation = TileflowViewAnnotation(
+      coordinate: try await view.unproject(point), view: cover)
+    annotation.allowOverlap = true
+    view.viewAnnotations.add(annotation)
+    try await waitUntil("the annotation at the credit") { !annotation.isHidden }
+    let target = view.hitTest(point, with: nil)
+    XCTAssertTrue(target?.isDescendant(of: control.view) == true)
+  }
+
+  func testRuntimeTileJSONSourceAddsAndRemovesItsCredits() async throws {
+    let (view, window) = try await mountCreditMap()
+    defer { view.destroy(); window.isHidden = true }
+    let control = try attribution(view)
+    try await view.addSource(
+      TileflowVectorSource(
+        id: "runtime-credit",
+        tiles: .tileJSON(URL(string: "\(FixtureServer.origin)/runtime-style/credited-tiles.json")!))
+    )
+    XCTAssertTrue(control.entries.contains { $0.text == "Runtime TileJSON credit" })
+    try await view.updateSource(id: "runtime-credit", properties: ["attribution": "Author credit"])
+    XCTAssertTrue(control.entries.contains { $0.text.contains("Runtime TileJSON credit") })
+    try await view.removeSource("runtime-credit")
+    XCTAssertFalse(control.entries.contains { $0.text == "Runtime TileJSON credit" })
+  }
+
   /// Content insets keep the attribution in the uncovered view, below the controls that share its
   /// corner, as on the web.
   func testContentInsetsKeepTheAttributionOutOfTheCoveredEdge() async throws {

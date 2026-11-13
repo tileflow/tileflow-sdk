@@ -1270,11 +1270,8 @@ test('Streets Dark recolors POI labels with shared artwork and identical ranked 
         assert.ok(availableIcons.has(name), `${category}: missing themed icon ${name}`);
       }
     }
-    assert.deepEqual(darkLayer.layout?.['symbol-sort-key'], [
-      '+',
-      ['*', ['to-number', ['get', 'filterrank'], 6], 17],
-      ['to-number', ['get', 'sizerank'], 17],
-    ]);
+    assert.deepEqual(darkLayer.layout?.['symbol-sort-key'], lightLayer.layout?.['symbol-sort-key']);
+    assert.deepEqual(darkLayer.filter, lightLayer.filter);
     assert.equal(lightLayer.layout?.['icon-size'], 1);
     assert.deepEqual(lightLayer.layout?.['text-font'], ['DINish Medium', 'Noto Sans Regular']);
     assert.deepEqual(darkLayer.layout?.['text-font'], lightLayer.layout?.['text-font']);
@@ -1598,15 +1595,16 @@ test('Streets places every POI category by World rank and density without anonym
   assert.equal(accepts(ordinary, 15, unnamedPark), false);
   assert.equal(accepts(ordinary, 15, unrankedPark), false);
   assert.equal(accepts(ordinary, 15, {...park, sizerank: 17}), false);
-  // Parks/transport retain rank 3; other categories enter more selectively.
+  // General categories admit rank 3 before z16, rank 4 from z16 and rank 5 from z18.
   const ordinaryLandmark = {class: 'landmark', name: 'Building', filterrank: 3, sizerank: 16};
-  assert.equal(accepts(ordinary, 15, ordinaryLandmark), false);
+  assert.equal(accepts(ordinary, 15, ordinaryLandmark), true);
   assert.equal(accepts(ordinary, 15, {...ordinaryLandmark, filterrank: 2}), true);
   const smallBusiness = {class: 'food-drink', name: 'Cafe', filterrank: 5, sizerank: 16};
   assert.equal(accepts(ordinary, 16, smallBusiness), false);
   assert.equal(accepts(ordinary, 17, smallBusiness), false);
-  assert.equal(accepts(ordinary, 17, {...smallBusiness, filterrank: 4}), false);
+  assert.equal(accepts(ordinary, 17, {...smallBusiness, filterrank: 4}), true);
   assert.equal(accepts(ordinary, 18, {...smallBusiness, filterrank: 4}), true);
+  assert.equal(accepts(ordinary, 18, smallBusiness), true);
   assert.equal(accepts(ordinary, 17, {...smallBusiness, class: 'lodging', filterrank: 4}), false);
   assert.equal(accepts(ordinary, 18, {...smallBusiness, class: 'park-nature'}), true);
   // World's two most important ranks are placed before street and place names.

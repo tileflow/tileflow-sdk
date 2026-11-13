@@ -260,7 +260,7 @@ final class MapBridgeTests: XCTestCase {
     XCTAssertEqual(host.map?.followMode, TileflowFollowMode.none)
   }
 
-  func testMarkerKeepsTheApplicationViewAndRegularChildrenStayAboveTheMap() throws {
+  func testMarkerKeepsTheApplicationViewAndRegularChildrenStayBelowLegalControls() throws {
     let host = TFMapHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
     defer { host.dispose() }
     host.update(reactTag: 45, instanceID: "marker", sourceJSON: "", appearanceJSON: "{}", optionsJSON: "{}")
@@ -277,7 +277,8 @@ final class MapBridgeTests: XCTestCase {
     XCTAssertEqual(map.viewAnnotations.annotations.count, 1)
     XCTAssertTrue(map.viewAnnotations.annotations.first?.view === child)
     XCTAssertTrue(host.subviews.first === map)
-    XCTAssertTrue(host.subviews.last === overlay)
+    XCTAssertTrue(overlay.isDescendant(of: map))
+    XCTAssertFalse(overlay.superview === host)
     binding.reset()
     XCTAssertEqual(map.viewAnnotations.annotations.count, 0)
   }

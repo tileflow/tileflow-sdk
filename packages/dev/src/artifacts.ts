@@ -18,6 +18,7 @@ import {
   compareCodeUnits,
   getTileflowStyleFontFaces,
   type MapLibreStyle,
+  officialFontFallback,
   serializeCanonicalJson,
   tileflowMapIdSchema,
   type TileflowStyleOptions,
@@ -30,11 +31,13 @@ import {
   createStylesFromCatalogWithInspection,
   createTileflowMapBuildManifest,
   createTileflowStyleFamily,
+  officialFontFiles,
   type TileflowBuildCatalog,
   type TileflowBuildStyles,
   tileflowMapBuildManifestFileName,
   type TileflowMapBuildManifestV1,
   type TileflowMapBuildProvenanceV1,
+  tileflowOfficialFontAssetSet,
   type TileflowPreparedMapAssets,
   type TileflowStyleInspection,
 } from '@tileflow/core/build';
@@ -381,6 +384,7 @@ export async function createTileflowArtifactPlan(
   assertNativeDevelopmentOrigin(options);
   const nativeUrls: TileflowNativeArtifactUrlPolicy = {
     developmentOrigin: options.developmentOrigin,
+    apiBaseUrl: options.apiBaseUrl,
   };
   if (renderer === 'native') {
     // Reject local archives before snapshotting or touching a production output directory.
@@ -424,6 +428,7 @@ export async function createTileflowArtifactPlan(
   });
   try {
     const preparedFonts = await prepareTileflowStyleFonts(prepared.project, localTilesets.styles, {
+      apiBaseUrl: options.apiBaseUrl,
       assetBaseUrl: resolveRendererAssetBaseUrl(options),
       baseDirectory: prepared.baseDirectory,
       cwd: prepared.cwd,
@@ -733,6 +738,13 @@ function createGenerationArtifactFiles(
 ): TileflowArtifactFile[] {
   const prefix = `generations/${generation}`;
   const stableFiles = getStableTileflowArtifactFiles(artifacts);
+  const sharedRoot = new URL(
+    '../',
+    officialFontFiles(officialFontFallback, nativeUrls.apiBaseUrl)[0]!.url,
+  );
+  const sharedFiles = new Set(
+    tileflowOfficialFontAssetSet.manifest.files.map((file) => new URL(file.path, sharedRoot).href),
+  );
   const immutableStyles = Object.entries(artifacts.styles).flatMap(([mapName, themes]) =>
     Object.entries(themes).map(([themeName, style]) => {
       const hasLocalSprite = artifacts.assets.some((asset) =>
@@ -759,7 +771,10 @@ function createGenerationArtifactFiles(
           generation,
           artifacts.assets,
         ),
-        (source) => retargetLocalFontAssetUrl(source, artifacts.assets, generation),
+        (source) =>
+          sharedFiles.has(source)
+            ? source
+            : retargetLocalFontAssetUrl(source, artifacts.assets, generation),
       );
       if (artifacts.nativeBuild)
         assertTileflowNativeGeneratedStyle(generationStyle, mapName, themeName, nativeUrls);

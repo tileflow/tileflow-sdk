@@ -81,6 +81,81 @@ test('explicit official fallback keeps local coverage, both renderers and immuta
   );
   assert.equal(JSON.stringify(input), before);
 });
+test('local font licenses survive fallback and Hosted retargeting', async (t) => {
+  const cwd = await fixture(t);
+  await createFontDirectory(cwd, 'fonts', [['Brand.ttf', await readFile(oxaniumMedium)]]);
+  for (const mixed of [false, true]) {
+    const project = fontProject(['./fonts']);
+    if (mixed) project.maps.main = {...project.maps.main!, fontFallback: officialFontFallback};
+    const result = await prepareTileflowStyleFonts(
+      project,
+      {main: {light: fontStyle(['Oxanium Medium'])}},
+      {
+        assetBaseUrl: '/assets',
+        cwd,
+        target: 'local',
+      },
+    );
+    const bundle = result.bundles.main!;
+    const licenses = bundle.manifest.files.filter((file) => file.kind === 'license');
+    assert.ok(licenses.length);
+    const web = result.styles.main!.light!;
+    for (const file of licenses)
+      assert.ok(
+        (web.metadata?.['tileflow:fontLicenses'] as string[] | undefined)?.includes(
+          `/assets/${file.name}`,
+        ),
+        `missing local license (fallback=${mixed})`,
+      );
+    const bound = bindTileflowStyleFontBundle(
+      web,
+      bundle,
+      'https://api.tileflow.test/font-bundles/fnb_fixturefixture01',
+    );
+    for (const file of licenses)
+      assert.ok(
+        (bound.metadata?.['tileflow:fontLicenses'] as string[]).includes(
+          `https://api.tileflow.test/font-bundles/fnb_fixturefixture01/${file.name}`,
+        ),
+      );
+  }
+});
+
+test('official fallback files and licenses use the configured API origin', async (t) => {
+  const cwd = await fixture(t);
+  await createFontDirectory(cwd, 'fonts', [['Brand.ttf', await readFile(oxaniumMedium)]]);
+  const project = fontProject(['./fonts']);
+  project.maps.main = {...project.maps.main!, fontFallback: officialFontFallback};
+  const style = fontStyle(['Oxanium Medium']);
+  style.sources.places = {type: 'geojson', data: {type: 'FeatureCollection', features: []}};
+  style.layers[0]!.source = 'places';
+  const result = await prepareTileflowStyleFonts(
+    project,
+    {main: {light: style}},
+    {
+      apiBaseUrl: 'https://staging.tileflow.test',
+      assetBaseUrl: '/assets',
+      cwd,
+      target: 'local',
+    },
+  );
+  const web = result.styles.main!.light!;
+  const files = Object.values(web['font-faces']!).flat() as {url: string}[];
+  const official = files.filter((file) => file.url.includes('/base/'));
+  assert.ok(official.length);
+  assert.ok(official.every((file) => file.url.startsWith('https://staging.tileflow.test/base/')));
+  assert.ok(
+    (web.metadata?.['tileflow:fontLicenses'] as string[])
+      .filter((url) => url.includes('/base/'))
+      .every((url) => url.startsWith('https://staging.tileflow.test/base/')),
+  );
+  assert.doesNotThrow(() =>
+    prepareTileflowNativeStyles({main: {light: web}}, result.assets, {
+      apiBaseUrl: 'https://staging.tileflow.test',
+    }),
+  );
+});
+
 const nextGeistWoff2 = new URL(
   '../../next/node_modules/next/dist/next-devtools/server/font/geist-latin.woff2',
   import.meta.url,

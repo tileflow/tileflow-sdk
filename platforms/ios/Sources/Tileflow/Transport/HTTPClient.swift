@@ -37,10 +37,20 @@ protocol NativeHTTPTransporting: Sendable {
   func send(_ request: URLRequest) async throws -> ResourcePayload
   /// Returns once the response head arrives; the body follows as it downloads.
   func open(_ request: URLRequest) async throws -> HTTPResponseStream
+  /// Re-admit credentials after waiting for transport capacity.
+  func open(
+    _ request: URLRequest, beforeSend: @escaping @Sendable (URLRequest) async throws -> URLRequest
+  ) async throws -> HTTPResponseStream
   func close()
 }
 
 extension NativeHTTPTransporting {
+  func open(
+    _ request: URLRequest, beforeSend: @escaping @Sendable (URLRequest) async throws -> URLRequest
+  ) async throws -> HTTPResponseStream {
+    try await open(beforeSend(request))
+  }
+
   func open(_ request: URLRequest) async throws -> HTTPResponseStream {
     .complete(try await send(request))
   }
@@ -148,11 +158,25 @@ final class NativeHTTPTransport: NativeHTTPTransporting {
   }
 
   func open(_ request: URLRequest) async throws -> HTTPResponseStream {
+    try await open(request, beforeSend: { $0 })
+  }
+
+  func open(
+    _ original: URLRequest, beforeSend: @escaping @Sendable (URLRequest) async throws -> URLRequest
+  ) async throws -> HTTPResponseStream {
     try Task.checkCancellation()
     guard !active.withLock({ $0.closed }) else { throw ResourceError.disposed }
     guard client.isNetworkEnabled else { throw URLError(.notConnectedToInternet) }
     let slots = lane == .resources ? client.resourceSlots : nil
     try await slots?.acquire()
+    let request: URLRequest
+    do {
+      request = try await beforeSend(original)
+      try Task.checkCancellation()
+    } catch {
+      slots?.release()
+      throw error
+    }
     guard client.isNetworkEnabled else {
       slots?.release()
       throw URLError(.notConnectedToInternet)

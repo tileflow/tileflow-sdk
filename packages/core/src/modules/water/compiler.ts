@@ -38,7 +38,7 @@ const waterwayClasses: Record<TileflowWaterwayClass, readonly string[]> = {
 export function compileWater(
   request: TileflowResolvedModuleConfig<TileflowWaterModuleConfig> | undefined,
   context: TileflowDomainCompileContext,
-  language: TileflowLabelLanguage = 'auto',
+  language: TileflowLabelLanguage = 'en',
 ): TileflowLayerContribution[] {
   const config = mergeTileflowDesign<TileflowResolvedModuleConfig<TileflowWaterModuleConfig>>(
     {
@@ -154,6 +154,14 @@ export function compileWater(
     : usePrimaryBathymetryFallback
       ? fields.bathymetrySortKey
       : undefined;
+  // Bathymetry V1 publishes cumulative `depth` polygons. World and the early
+  // compatible canary use `min_depth`/`sort_key`; keep that fallback explicit.
+  const bathymetryDepth = sidecarBathymetry
+    ? ['to-number', ['coalesce', ['get', 'depth'], ['get', 'min_depth']], 0]
+    : ['to-number', ['get', bathymetryDepthField], 0];
+  const bathymetryHasDepth = sidecarBathymetry
+    ? ['any', ['has', 'depth'], ['has', 'min_depth']]
+    : ['has', bathymetryDepthField];
   if (bathymetryLayer && bathymetryDepthField && bathymetrySortField) {
     const depth = context.colors.hydro.depth;
     const depthStops = bathymetryDepthStops(depth);
@@ -165,12 +173,7 @@ export function compileWater(
     const bathymetry = mergeTileflowDesign(
       {
         antialias: false,
-        color: expression<string>([
-          'interpolate',
-          ['linear'],
-          ['to-number', ['get', bathymetryDepthField], 0],
-          ...depthStops,
-        ]),
+        color: expression<string>(['interpolate', ['linear'], bathymetryDepth, ...depthStops]),
         maxZoom: 10,
         minZoom: 0,
         opacity: zoom.linear([
@@ -193,7 +196,15 @@ export function compileWater(
             source: bathymetrySource,
             'source-layer': bathymetryLayer,
             layout: {
-              'fill-sort-key': ['to-number', ['get', bathymetrySortField], 0],
+              // Paint the ocean mask first, then successively deeper polygons.
+              'fill-sort-key': sidecarBathymetry
+                ? [
+                    'case',
+                    ['has', 'depth'],
+                    ['-', 0, bathymetryDepth],
+                    ['to-number', ['get', 'sort_key'], 0],
+                  ]
+                : ['to-number', ['get', bathymetrySortField], 0],
             },
           },
           bathymetry,
@@ -218,6 +229,10 @@ export function compileWater(
   const contourDepthField = nativeContours
     ? tileflowBathymetryV1Schema.fields.depth
     : bathymetryDepthField;
+  const contourDepth = nativeContours
+    ? ['to-number', ['get', contourDepthField], 0]
+    : bathymetryDepth;
+  const contourHasDepth = nativeContours ? ['has', contourDepthField] : bathymetryHasDepth;
   const contourRequest =
     productContours === false
       ? undefined
@@ -251,8 +266,8 @@ export function compileWater(
             filter: [
               'all',
               ['==', ['geometry-type'], nativeContours ? 'LineString' : 'Polygon'],
-              ['has', contourDepthField],
-              ['<', ['to-number', ['get', contourDepthField], 0], 0],
+              contourHasDepth,
+              ['<', contourDepth, 0],
             ],
           },
           bathymetryContours,
@@ -282,10 +297,7 @@ export function compileWater(
         text: {
           allowOverlap: false,
           color: context.colors.hydro.label,
-          field: expression<string>([
-            'to-string',
-            ['abs', ['to-number', ['get', contourDepthField], 0]],
-          ]),
+          field: expression<string>(['to-string', ['abs', contourDepth]]),
           ...typographyTextStyle(context.typography.water),
           haloColor: context.colors.hydro.water,
           haloWidth: 1,
@@ -309,8 +321,8 @@ export function compileWater(
             filter: [
               'all',
               ['==', ['geometry-type'], nativeContours ? 'LineString' : 'Polygon'],
-              ['has', contourDepthField],
-              ...(nativeContours ? [['<', ['to-number', ['get', contourDepthField], 0], 0]] : []),
+              contourHasDepth,
+              ...(nativeContours ? [['<', contourDepth, 0]] : []),
             ],
           },
           bathymetryLabels,

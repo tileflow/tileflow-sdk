@@ -358,6 +358,10 @@ public class NativeMapEngineIntegrationTest {
             }
             return org.json.JSONObject().apply {
                 put("fontFiles", fontPacks.sumOf { it.third.size })
+                put("localLicenseBytes", files.sumOf { file ->
+                    dev.tileflow.sdk.offline.OfflinePackFormat.index(file).entries.values
+                        .filter { it.name.contains("/fonts/licenses/") }.sumOf { it.length.toLong() }
+                })
                 put("fontBytes", fontPacks.sumOf { it.third.sumOf { entry -> entry.length.toLong() } })
                 put("officialFontBytes", fontPacks.sumOf { it.third.filter { entry -> entry.name.contains("/base/") }.sumOf { entry -> entry.length.toLong() } })
                 put("licenseBytes", fontPacks.sumOf { it.second.filter { entry -> entry.name.endsWith(".txt") }.sumOf { entry -> entry.length.toLong() } })
@@ -378,6 +382,8 @@ public class NativeMapEngineIntegrationTest {
         File(context.filesDir, "offline-font-measurement.json").writeText(report.toString(2))
         println("OFFLINE_FONT_MEASUREMENT $report")
         assertEquals(148, snapshots[0].getInt("fontFiles"))
+        assertTrue(snapshots[0].getLong("localLicenseBytes") > 0)
+        assertEquals(snapshots[0].getLong("localLicenseBytes"), snapshots[1].getLong("localLicenseBytes"))
         assertTrue(snapshots[0].getLong("fontBytes") > 32L * 1024 * 1024)
         assertEquals(snapshots[0].getLong("fontPackBytes"), snapshots[1].getLong("fontPackBytes"))
         assertEquals(snapshots[0].getJSONArray("fontPackDigests").toString(), snapshots[1].getJSONArray("fontPackDigests").toString())

@@ -530,6 +530,17 @@ const server = createServer((request, response) => {
   }
   if (/^\/(?:native|terrain|city)\//u.test(request.url ?? '')) nativeRequests++;
   if (hosted(request, response)) return;
+  if (request.url === '/runtime-style/credited-tiles.json') {
+    response.setHeader('Content-Type', 'application/json');
+    response.setHeader('Cache-Control', 'no-store');
+    response.end(
+      JSON.stringify({
+        tiles: [`${base}/fixture-boundaries/{z}/{x}/{y}.mvt`],
+        attribution: 'Runtime TileJSON credit',
+      }),
+    );
+    return;
+  }
   if (request.url === '/runtime-style/invalid-tiles.json') {
     // Keep the first source in flight while another style edit is submitted.
     response.setHeader('Content-Type', 'application/json');

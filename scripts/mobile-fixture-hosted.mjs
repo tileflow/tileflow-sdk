@@ -64,6 +64,12 @@ export function createHostedFixture({base, tile, center}) {
   );
   const brandHash = createHash('sha256').update(brandBytes).digest('hex');
   const brandUrl = `${base}/font-bundles/fnb_fixturefixture01/fonts/${brandHash}.ttf`;
+  const brandLicenseBytes = readFileSync(
+    resolve(root, 'packages/dev/test/fixtures/fonts/oxanium/LICENSE.txt'),
+  );
+  const brandLicenseHash = createHash('sha256').update(brandLicenseBytes).digest('hex');
+  const brandLicenseUrl = `${base}/font-bundles/fnb_fixturefixture01/fonts/licenses/license-${brandLicenseHash}.txt`;
+
   const mixedAlias = 'Tileflow fixture fallback';
   const sharedPrefix = `${base}/base/${tileflowOfficialFontAssetSet.assetSetSha256}/`;
   const sharedFaces = tileflowOfficialFontAssetSet.manifest.fontFaces[0].files.map((file) => ({
@@ -282,6 +288,14 @@ export function createHostedFixture({base, tile, center}) {
         'tileflow:colorScheme': 'light',
         'tileflow:nativeDegradations': [],
         'tileflow:fontFallback': 1,
+        'tileflow:fontLicenses': [
+          brandLicenseUrl,
+          ...new Set(
+            tileflowOfficialFontAssetSet.manifest.fontFaces[0].files.map(
+              (file) => `${sharedPrefix}${file.licensePath}`,
+            ),
+          ),
+        ],
       },
       'font-faces': {
         [mixedAlias]: [{url: brandUrl, 'unicode-range': ['U+0020-007E']}, ...sharedFaces],
@@ -531,6 +545,7 @@ export function createHostedFixture({base, tile, center}) {
   };
   const body = (url) => {
     if (url === brandUrl) return brandBytes;
+    if (url === brandLicenseUrl) return brandLicenseBytes;
     if (url.startsWith(sharedPrefix))
       return sharedFontBytes.get(url.slice(sharedPrefix.length)) ?? null;
     const font = fontFiles.find((file) => file.url === url);
@@ -793,7 +808,18 @@ export function createHostedFixture({base, tile, center}) {
               body: bytes,
             }))
           : []),
-        ...(fallbackTheme ? [{name: brandUrl, contentType: 'font/ttf', body: brandBytes}] : []),
+        ...(fallbackTheme
+          ? [
+              {name: brandUrl, contentType: 'font/ttf', body: brandBytes},
+              ...nativeStyles.fallback.metadata['tileflow:fontLicenses']
+                .filter((url) => !url.startsWith(sharedPrefix))
+                .map((url) => ({
+                  name: url,
+                  contentType: 'text/plain; charset=utf-8',
+                  body: body(url),
+                })),
+            ]
+          : []),
       ]);
     }
     if (fallbackTheme) {

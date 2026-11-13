@@ -7,6 +7,38 @@ import XCTest
 final class NativeStyleDocumentTests: XCTestCase {
   private let context = MapResourceAddress.newContext()
 
+  func testTileJSONCreditsCannotBeReplacedByStyleAttribution() async throws {
+    for supplied in ["", " ", "Author credit", NSNull()] as [Any] {
+      let projected = try await NativeStyleDocument.project(
+        [
+          "version": 8,
+          "sources": [
+            "world": [
+              "type": "vector", "url": "https://api.tileflow.dev/tiles/world/tiles.json",
+              "attribution": supplied,
+            ]
+          ], "layers": [],
+        ], styleURL: URL(string: "https://api.tileflow.dev/maps/test/light.json")!,
+        context: context,
+        load: { _, _ in
+          [
+            "tiles": ["https://api.tileflow.dev/tiles/world/{z}/{x}/{y}.pbf"],
+            "attribution": "© OpenStreetMap contributors",
+          ]
+        })
+      XCTAssertTrue(
+        projected.attributions.contains { $0.contains("© OpenStreetMap contributors") },
+        "\(projected.attributions)")
+      XCTAssertFalse(
+        projected.attributions.contains {
+          $0.trimmingCharacters(in: .whitespaces).isEmpty || $0 == "null"
+        })
+      if supplied as? String == "Author credit" {
+        XCTAssertTrue(projected.attributions.contains { $0.contains("Author credit") })
+      }
+    }
+  }
+
   func testHostedManifestSelectsThePublicIdentityAndKeepsItsAuthoredName() async throws {
     let entry: [String: Any] = [
       "mapId": "map_requested", "defaultTheme": "day",

@@ -523,3 +523,31 @@ test('style-family resolution preserves the ownership of font files and licenses
   );
   assert.equal(style['font-faces'].Display[0]!.url, '../fonts/display.ttf');
 });
+
+test('TileJSON credits cannot be removed or replaced by authored web attribution', async () => {
+  for (const attribution of ['', ' ', 'Author credit', null]) {
+    const input = {
+      ...emptyStyle(),
+      sources: {
+        world: {
+          type: 'vector',
+          url: 'https://api.tileflow.dev/tiles/world/tiles.json',
+          attribution,
+        },
+      },
+    } as unknown as MapLibreStyle;
+    const {style} = await loadTileflowRuntimeStyle(
+      {style: input},
+      {
+        fetch: async () =>
+          json({
+            tiles: ['https://api.tileflow.dev/tiles/world/{z}/{x}/{y}.pbf'],
+            attribution: '© OpenStreetMap contributors',
+          }),
+      },
+    );
+    assert.match(style.sources.world!.attribution as string, /© OpenStreetMap contributors/);
+    if (attribution === 'Author credit')
+      assert.match(style.sources.world!.attribution as string, /Author credit/);
+  }
+});

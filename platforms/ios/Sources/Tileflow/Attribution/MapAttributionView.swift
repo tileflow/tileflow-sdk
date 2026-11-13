@@ -298,7 +298,13 @@ enum MapAttributionStrip {
   /// clause with the name, or shows only its first word ("NOAA…"): a shortened credit never names
   /// a product without what qualifies it.
   static func shorten(_ text: String, to cap: CGFloat, measure: (String) -> CGFloat) -> String {
-    if measure(text) <= cap { return text }
+    func qualified(_ value: String) -> String {
+      guard !value.lowercased().contains("not official"),
+        let enc = value.range(of: #"\bI?ENC\b"#, options: [.regularExpression, .caseInsensitive])
+      else { return value }
+      return String(value[..<enc.lowerBound]).trimmingCharacters(in: .whitespaces) + ellipsis
+    }
+    if measure(text) <= cap { return qualified(text) }
     let characters = Array(text)
     func candidate(_ length: Int) -> String {
       String(characters[..<length]).trimmingCharacters(in: .whitespaces) + ellipsis
@@ -311,9 +317,9 @@ enum MapAttributionStrip {
         let middle = (low + high + 1) / 2
         if measure(candidate(middle)) <= cap { low = middle } else { high = middle - 1 }
       }
-      return candidate(low)
+      return qualified(candidate(low))
     }
-    return candidate(1)
+    return qualified(candidate(1))
   }
 
   /// The lengths a shortened credit may keep: within its first word, and, when a dash qualifies

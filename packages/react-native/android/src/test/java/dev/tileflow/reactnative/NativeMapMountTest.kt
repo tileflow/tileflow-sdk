@@ -134,6 +134,14 @@ class NativeMapMountTest {
             assertEquals(2, endpoint.properties.size)
             assertEquals(host.optionsJson, endpoint.properties.last().third)
 
+            val overlay = View(context)
+            host.addReactChild(overlay, 0)
+            var owner = overlay.parent
+            while (owner is View && owner !== endpoint.map) owner = owner.parent
+            assertSame("Regular children must stay inside the map below legal controls", endpoint.map, owner)
+            host.removeReactChild(0)
+            assertNull(overlay.parent)
+
             val marker =
                 TileflowNativeMarkerView(context).apply {
                     instanceId = "map"

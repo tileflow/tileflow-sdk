@@ -60,7 +60,8 @@ enum OfflineSelfHosted {
 
   /// The style, the font files and source documents it names, its sprite sheets at 1x and 2x, and
   /// every glyph range of the font stacks its layers name literally, as absolute URLs.
-  static func documents(style url: URL, data: Data) throws -> [URL] {
+  static func documents(style url: URL, data: Data, includeGlyphRanges: Bool = true) throws -> [URL]
+  {
     guard let style = try? JSONDecoder().decode(JSONValue.self, from: data),
       case .object = style
     else { throw TileflowOfflineError(.invalidResponse, context: .init(reason: "invalidStyle")) }
@@ -101,7 +102,7 @@ enum OfflineSelfHosted {
         if let sprite = resolve(base, against: url, suffix: suffix) { documents.append(sprite) }
       }
     }
-    if let template = style["glyphs"]?.string {
+    if includeGlyphRanges, let template = style["glyphs"]?.string {
       for stack in fontStacks(style) {
         let name =
           stack.joined(separator: ",").addingPercentEncoding(

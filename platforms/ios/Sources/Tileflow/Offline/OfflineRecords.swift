@@ -21,12 +21,14 @@ import Foundation
 /// record that is replaced atomically never refers to a half-written version.
 struct OfflineLayout: Sendable {
   let root: URL
+  var legacyRoot: URL? = nil
 
   static let shared: OfflineLayout = {
     let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[
       0]
     return OfflineLayout(
-      root: support.appendingPathComponent("dev.tileflow/offline-v1", isDirectory: true))
+      root: support.appendingPathComponent("dev.tileflow/offline-v2", isDirectory: true),
+      legacyRoot: support.appendingPathComponent("dev.tileflow/offline-v1", isDirectory: true))
   }()
 
   var regions: URL { root.appendingPathComponent("regions", isDirectory: true) }
@@ -71,6 +73,48 @@ struct OfflineLayout: Sendable {
     #else
       try data.write(to: url, options: .atomic)
     #endif
+  }
+
+  /// Preserve unknown records and their journals; collect only packs with no durable owner.
+  func prepare() {
+    let files = FileManager.default
+    if let legacyRoot { try? files.removeItem(at: legacyRoot) }
+    var referenced = Set<String>()
+    if files.fileExists(atPath: regions.path) {
+      guard
+        let directories = try? files.contentsOfDirectory(
+          at: regions, includingPropertiesForKeys: nil)
+      else { return }
+      for directory in directories {
+        guard
+          let versions = try? files.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: nil)
+        else { return }
+        for version in versions where version.lastPathComponent.hasPrefix("v") {
+          let journal = version.appendingPathComponent("progress")
+          guard files.fileExists(atPath: journal.path) else { continue }
+          guard let text = try? String(contentsOf: journal, encoding: .utf8) else { return }
+          for line in text.split(separator: "\n") {
+            if let digest = line.split(separator: " ").last, digest.count == 64,
+              digest.allSatisfy(\.isHexDigit)
+            {
+              referenced.insert(String(digest))
+            }
+          }
+        }
+      }
+    }
+    for pack
+      in (try? files.contentsOfDirectory(at: packs.directory, includingPropertiesForKeys: nil))
+      ?? []
+    {
+      let digest = pack.deletingPathExtension().lastPathComponent
+      if pack.pathExtension == "tfpack", digest.count == 64, digest.allSatisfy(\.isHexDigit),
+        !referenced.contains(digest)
+      {
+        try? files.removeItem(at: pack)
+      }
+    }
   }
 
   func excludeFromBackup() {

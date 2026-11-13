@@ -72,7 +72,7 @@ internal object OfflineSelfHosted {
      * The style, the font files and source documents it names, its sprite sheets at 1x and 2x, and
      * every glyph range of the font stacks its layers name literally, as absolute URLs.
      */
-    fun documents(style: URI, data: ByteArray): List<URI> {
+    fun documents(style: URI, data: ByteArray, includeGlyphRanges: Boolean = true): List<URI> {
         val value =
             runCatching { JSONObject(String(data, Charsets.UTF_8)) }.getOrNull()
                 ?: throw invalid("invalidStyle")
@@ -116,7 +116,7 @@ internal object OfflineSelfHosted {
             for (suffix in listOf(".json", ".png", "@2x.json", "@2x.png"))
                 resolve(base, style, suffix)?.let(documents::add)
         val glyphs = value.opt("glyphs") as? String
-        if (glyphs != null)
+        if (includeGlyphRanges && glyphs != null)
             for (stack in fontStacks(value)) {
                 val name =
                     URLEncoder.encode(stack.joinToString(","), "UTF-8")

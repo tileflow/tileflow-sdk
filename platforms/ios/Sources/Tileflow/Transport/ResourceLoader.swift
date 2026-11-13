@@ -200,7 +200,21 @@ final class ResourceLoader: ResourceLoading, Sendable {
       }
       let response: HTTPResponseStream
       do {
-        response = try await transport.open(native)
+        if let hosted, protected {
+          let admittedGrant = LockedValue(grant)
+          let target = url
+          response = try await transport.open(native) { [policy] request in
+            let admission = try await hosted.authorize(target, publicPolicy: policy)
+            var request = request
+            request.setValue(admission.grant, forHTTPHeaderField: "X-Tileflow-Native-Grant")
+            request.timeoutInterval = admission.timeout
+            admittedGrant.withLock { $0 = admission.grant }
+            return request
+          }
+          grant = admittedGrant.withLock { $0 }
+        } else {
+          response = try await transport.open(native)
+        }
       } catch {
         if !onlineOnly, Self.isNetworkFailure(error),
           let fallback = stored?.afterFailure(at: date())?.resource ?? packed

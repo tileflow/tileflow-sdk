@@ -99,6 +99,79 @@ public class NativeAttributionIntegrationTest {
         assertTrue("Timed out waiting for $description", met == true)
     }
 
+    @Test
+    public fun brandingSharesTheCreditCornerWithInsetsAndRTL() {
+        Fixture.require("${Fixture.ORIGIN}/native/manifest.json")
+        val activity = show(NativeViewHostActivity.CITY)
+        try { runBlocking { withContext(Dispatchers.Main) {
+            val map = activity.map
+            fun logo(root: View): View? = if (root.contentDescription == "Visit Tileflow") root else
+                (root as? android.view.ViewGroup)?.let { group -> (0 until group.childCount).firstNotNullOfOrNull { logo(group.getChildAt(it)) } }
+            val branding = requireNotNull(logo(map))
+            val density = map.resources.displayMetrics.density
+            map.automaticallyAdjustsContentPadding = true
+            map.setOptions(TileflowMapOptions(controls = TileflowMapControls(attributionPosition = TileflowControlPosition.BOTTOM_START)))
+            map.setContentPadding(23 * density, 19 * density, 41 * density, 120 * density)
+            val control = attribution(activity)
+            waitFor("the inset credit") { control.view.control.bottom < map.height - 100 * density }
+            for (direction in listOf(View.LAYOUT_DIRECTION_LTR, View.LAYOUT_DIRECTION_RTL)) {
+                map.layoutDirection = direction
+                branding.visibility = View.VISIBLE
+                map.requestLayout()
+                waitFor("the branding layout in direction $direction") {
+                    val placed = android.graphics.Rect(0, 0, branding.width, branding.height)
+                    map.offsetDescendantRectToMyCoords(branding, placed)
+                    if (direction == View.LAYOUT_DIRECTION_RTL)
+                        abs(placed.right - (map.width - map.effectiveContentPadding.right - 8 * density)) <= 1
+                    else abs(placed.left - (map.effectiveContentPadding.left + 8 * density)) <= 1
+                }
+                val frame = android.graphics.Rect(0, 0, branding.width, branding.height)
+                map.offsetDescendantRectToMyCoords(branding, frame)
+                val credit = android.graphics.Rect(0, 0, control.view.control.width, control.view.control.height)
+                map.offsetDescendantRectToMyCoords(control.view.control, credit)
+                assertTrue("Branding must stack above the credit", frame.bottom <= credit.top)
+                if (direction == View.LAYOUT_DIRECTION_RTL) assertEquals("map=${map.layoutDirection}, controls=${map.controlsView.layoutDirection}", (map.width - map.effectiveContentPadding.right - 8 * density).toDouble(), frame.right.toDouble(), 1.0)
+                else assertEquals((map.effectiveContentPadding.left + 8 * density).toDouble(), frame.left.toDouble(), 1.0)
+            }
+        } } } finally { instrumentation.runOnMainSync { activity.finish() } }
+    }
+
+    @Test
+    public fun viewAnnotationsCannotCoverCredits() {
+        Fixture.require("${Fixture.ORIGIN}/native/manifest.json")
+        val activity = show(NativeViewHostActivity.CITY)
+        try { runBlocking { withContext(Dispatchers.Main) {
+            val map = activity.map
+            val credit = attribution(activity).view
+            val cover = View(activity)
+            map.viewAnnotationManager.addViewAnnotation(cover, TileflowViewAnnotationOptions(
+                map.unproject(TileflowPoint(100f, 100f)), allowOverlap = true, width = 1000f, height = 1000f))
+            waitFor("the annotation view") { cover.parent != null }
+            fun rootChild(view: View): View {
+                var child = view
+                while (child.parent !== map) child = child.parent as View
+                return child
+            }
+            assertTrue("Credits must draw above annotation views", map.indexOfChild(rootChild(credit)) > map.indexOfChild(rootChild(cover)))
+        } } } finally { instrumentation.runOnMainSync { activity.finish() } }
+    }
+
+    @Test
+    public fun runtimeTileJSONSourceAddsAndRemovesItsCredits() {
+        Fixture.require("${Fixture.ORIGIN}/native/manifest.json")
+        val activity = show(NativeViewHostActivity.CITY)
+        try { runBlocking { withContext(Dispatchers.Main) {
+            val map = activity.map
+            val control = attribution(activity)
+            map.addSource(TileflowVectorSource("runtime-credit", TileflowTiles.TileJSON("${Fixture.ORIGIN}/runtime-style/credited-tiles.json")))
+            assertTrue(control.entries.any { it.text == "Runtime TileJSON credit" })
+            map.updateSource("runtime-credit", JSONObject().put("attribution", "Author credit"))
+            assertTrue(control.entries.any { it.text.contains("Runtime TileJSON credit") })
+            map.removeSource("runtime-credit")
+            assertFalse(control.entries.any { it.text == "Runtime TileJSON credit" })
+        } } } finally { instrumentation.runOnMainSync { activity.finish() } }
+    }
+
     /**
      * Content padding keeps the attribution in the uncovered view, below the controls that share
      * its corner, as on the web.

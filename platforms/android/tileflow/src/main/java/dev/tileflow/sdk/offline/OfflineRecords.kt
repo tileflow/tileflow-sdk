@@ -32,7 +32,7 @@ import org.json.JSONObject
  * transport's own keys. A record lists its versions; every other file belongs to one of them, so a
  * record that is replaced atomically never refers to a half-written version.
  */
-internal class OfflineLayout(val root: File) {
+internal class OfflineLayout(val root: File, private val legacyRoot: File? = null) {
     val regions = File(root, "regions")
     val settings = File(root, "settings.json")
     val packs = OfflinePackStore(File(root, "packs"))
@@ -54,6 +54,32 @@ internal class OfflineLayout(val root: File) {
     fun progress(id: String, number: Int) = File(version(id, number), "progress")
 
     fun staging(id: String, number: Int) = File(version(id, number), "staging")
+
+    /** Preserve unknown records and their journals; collect only packs with no durable owner. */
+    fun prepare() {
+        legacyRoot?.deleteRecursively()
+        val referenced = HashSet<String>()
+        if (regions.exists()) {
+            for (directory in regions.listFiles() ?: return) {
+                for (version in directory.listFiles() ?: return) {
+                    if (!version.name.startsWith("v")) continue
+                    val journal = File(version, "progress")
+                    if (!journal.exists()) continue
+                    val text = runCatching {
+                        Charsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(journal.readBytes())).toString()
+                    }.getOrNull() ?: return
+                    for (line in text.lineSequence()) {
+                        val digest = line.substringAfterLast(' ')
+                        if (digest.matches(Regex("[a-fA-F0-9]{64}"))) referenced += digest
+                    }
+                }
+            }
+        }
+        for (pack in packs.directory.listFiles().orEmpty()) {
+            val digest = pack.nameWithoutExtension
+            if (pack.extension == "tfpack" && digest.matches(Regex("[a-fA-F0-9]{64}")) && digest !in referenced) pack.delete()
+        }
+    }
 
     companion object {
         /** Writes a whole file through a temporary file and a rename, so readers see either. */

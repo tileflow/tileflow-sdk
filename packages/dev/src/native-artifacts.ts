@@ -23,6 +23,7 @@ import {
   validateTileflowNativePreparedStyle,
   validateTileflowNativeStyle,
 } from '@tileflow/core/native-profile';
+import {replaceFontLicenseSources} from './font-fallback';
 import {tileflowIconAttributionDirectory} from './icon-attribution';
 import type {TileflowBuildAsset} from './icons';
 import {
@@ -40,6 +41,7 @@ type TileflowNativeStyleTransformation = TileflowNativeBuildRecord['transformati
 export type TileflowNativeArtifactUrlPolicy = Readonly<{
   /** The exact HTTP origin serving a local native preview; it is never inferred. */
   developmentOrigin?: string;
+  apiBaseUrl?: string;
 }>;
 
 /** No delivery URL is inferred: this non-routable base is used only to check relative URL syntax. */
@@ -336,7 +338,10 @@ export function prepareTileflowNativeStyles(
         for (const [name, files] of Object.entries(original['font-faces'])) {
           if (
             !Array.isArray(files) ||
-            files.some((file) => !verifiedFiles.has(file.url) && !isOfficialFontFile(file))
+            files.some(
+              (file) =>
+                !verifiedFiles.has(file.url) && !isOfficialFontFile(file, policy.apiBaseUrl),
+            )
           ) {
             issues.push(
               withContext(
@@ -415,7 +420,7 @@ export function replaceTileflowNativeFontSources(
   )['font-faces'];
   if (!faces) return style;
   return {
-    ...style,
+    ...replaceFontLicenseSources(style, replace),
     'font-faces': Object.fromEntries(
       Object.entries(faces).map(([name, files]) => [
         name,

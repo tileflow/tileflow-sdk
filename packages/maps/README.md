@@ -62,7 +62,8 @@ The CLI owns the interface; compiler and runtime changes require rebuilding thos
 
 - `streets`: contemporary street cartography with Mapbox-inspired time-of-day and color themes,
   ranked POIs, Madrid transit network symbols, generic road-reference shields, and regional hillshade.
-- `soundings`: bathymetric reference cartography with depth bands, continuous relief, and port context.
+- `nautical`: marine reference cartography with depth bands, continuous relief, and port context.
+  `soundings` remains a deprecated alias; the map ID is `nautical`.
 - `outdoors`: contemporary topography with 3D relief, hillshade, contours, trails, peaks and natural
   landcover. It shares Streets' lettering, roads, POIs and four times of day.
 
@@ -238,9 +239,8 @@ Terminal and Super Tile World. Change their imports from `@tileflow/maps` to
 names, including `siegfriedThemes`. Install an exact Git commit and the compatible Core version
 specified by that repository. Their editable source, assets, examples and notices live there.
 
-Soundings is not a navigation product; its depth-band edges are approximate. It draws Nautical
-marks with its chart symbols and a "Not for navigation" notice; other maps opt in with
-`marine: 'nautical'` (see Core's Nautical marks guide).
+Nautical is reference cartography, not for navigation. Its two marine products require qualified
+releases and map-bound access; see [Nautical data and colours](REFERENCE.md#nautical-data-and-colours).
 
 ## Themes and assets
 

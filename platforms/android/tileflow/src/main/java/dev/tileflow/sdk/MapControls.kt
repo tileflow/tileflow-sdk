@@ -174,6 +174,14 @@ internal class MapControlsView(context: Context) : ViewGroup(context) {
             recenter.show(locationShown, value)
         }
 
+    var branding: View? = null
+        set(value) {
+            field?.let { removeView(it) }
+            field = value
+            value?.let { addView(it) }
+            requestLayout()
+        }
+
     var attributionHeight: Int = 0
         set(value) {
             if (field == value) return
@@ -199,7 +207,7 @@ internal class MapControlsView(context: Context) : ViewGroup(context) {
     /** Whether a visible control lies under the point, in this view's pixels. */
     fun hasControlAt(x: Float, y: Float): Boolean {
         val slop = 4 * density
-        return listOf(compass, recenter).any {
+        return listOfNotNull(compass, recenter, branding).any {
             it.visibility == VISIBLE &&
                 x >= it.left - slop &&
                 x <= it.right + slop &&
@@ -211,7 +219,7 @@ internal class MapControlsView(context: Context) : ViewGroup(context) {
     private fun update() {
         val camera = camera
         if (camera == null) {
-            for (index in 0 until childCount) getChildAt(index).visibility = GONE
+            for (control in listOf(compass, recenter, scaleBar)) control.visibility = GONE
             return
         }
         compass.bearing = camera.bearing
@@ -231,9 +239,19 @@ internal class MapControlsView(context: Context) : ViewGroup(context) {
         requestLayout()
     }
 
+    override fun onRtlPropertiesChanged(layoutDirection: Int) {
+        super.onRtlPropertiesChanged(layoutDirection)
+        if (isLaidOut) layoutControls(width, height)
+        requestLayout()
+    }
+
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         for (index in 0 until childCount) {
-            getChildAt(index).measure(
+            val child = getChildAt(index)
+            if (child === branding) child.measure(
+                MeasureSpec.makeMeasureSpec((90 * density).roundToInt(), MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec((44 * density).roundToInt(), MeasureSpec.EXACTLY),
+            ) else child.measure(
                 MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
                 MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
             )
@@ -245,19 +263,28 @@ internal class MapControlsView(context: Context) : ViewGroup(context) {
     }
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+        layoutControls(r - l, b - t)
+    }
+
+    private fun layoutControls(width: Int, height: Int) {
         val rightToLeft = layoutDirection == LAYOUT_DIRECTION_RTL
         val margin = MARGIN_DP * density
         val left = insets.left + margin
         val top = insets.top + margin
-        val right = (r - l) - insets.right - margin
-        val bottom = (b - t) - insets.bottom - margin
+        val right = width - insets.right - margin
+        val bottom = height - insets.bottom - margin
         val offsets =
             mutableMapOf(
                 controls.attributionPosition to
                     max(ATTRIBUTION_SPACE_DP * density, attributionHeight + margin)
             )
+        // The compact strip can span both bottom corners; keep the logo above its row.
+        if (branding?.visibility == VISIBLE && !controls.attributionPosition.isTop) {
+            offsets[TileflowControlPosition.BOTTOM_START] = max(ATTRIBUTION_SPACE_DP * density, attributionHeight + margin)
+        }
         for ((control, position) in
-            listOf(
+            listOfNotNull(
+                branding?.let { it to TileflowControlPosition.BOTTOM_START },
                 compass to controls.compassPosition,
                 recenter to controls.recenterButtonPosition,
                 scaleBar to controls.scaleBarPosition,

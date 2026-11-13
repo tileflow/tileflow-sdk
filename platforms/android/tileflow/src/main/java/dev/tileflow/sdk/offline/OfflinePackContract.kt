@@ -134,6 +134,8 @@ internal class OfflineDownload(
     val grant: OfflinePackGrant,
     val manifest: OfflineDownloadManifest,
     val response: ByteArray,
+    /** Process-local deadline. Restored grants must renew before new transfers. */
+    val grantDeadline: Long = 0,
 )
 
 /** Whether a stored download can still be updated. Access ending never deletes it. */

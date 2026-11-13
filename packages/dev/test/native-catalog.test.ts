@@ -42,8 +42,8 @@ test('prepares every official theme, recording what each native artifact draws d
       incompatibleThemes,
     ]),
     [
+      ['nautical', [], []],
       ['outdoors', ['deviceContours:outdoors-contours'], []],
-      ['soundings', [], []],
       ['streets', [], []],
     ],
   );
@@ -62,7 +62,7 @@ test('prepares every official theme, recording what each native artifact draws d
     'sky:none',
     'trees3d:none',
   ]);
-  assert.deepEqual(degradations('soundings'), [
+  assert.deepEqual(degradations('nautical'), [
     'nauticalLightRhythm:steady',
     'reliefResampling:engine-default',
   ]);

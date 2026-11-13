@@ -121,6 +121,11 @@ internal object NativeStyleDocument {
                     if (id == "tileflow-boundaries" && type == "vector" && !source.has("tiles")) {
                         boundaryLookup = BoundaryLookupDescriptor.fromTileJson(tileJson, resolved)
                     }
+                    // A style may add a credit, but cannot erase the data provider's credit.
+                    val credits = listOf(tileJson.opt("attribution"), source.opt("attribution"))
+                        .mapNotNull { (it as? String)?.trim()?.takeIf { text -> text.isNotEmpty() && text != "null" } }
+                        .distinct()
+                    source.put("attribution", credits.joinToString(" | "))
                     for (key in tileJsonKeys) {
                         if (!source.has(key) && tileJson.has(key))
                             source.put(key, tileJson.get(key))
@@ -161,7 +166,7 @@ internal object NativeStyleDocument {
                         ),
                     )
                 }
-                source.optString("attribution").takeIf { it.isNotEmpty() }?.let {
+                (source.opt("attribution") as? String)?.trim()?.takeIf { it.isNotEmpty() && it != "null" }?.let {
                     if (it !in attributions) attributions += it
                 }
                 if (type == "image") worldImageTile(source)?.let { sources.put(id, it) }

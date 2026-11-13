@@ -30,7 +30,7 @@ export type ResolvedLabelsModuleOptions = {
 const defaults = {
   aerodromeCodes: 'iata',
   collisionPriority: 'balanced',
-  language: 'auto',
+  language: 'en',
   junctions: true,
   places: 'major',
   roadGrouping: 'class',

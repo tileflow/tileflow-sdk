@@ -109,6 +109,7 @@ internal class OfflineServiceStub(
     private val grants = HashMap<String, Pair<Long, Int>>()
     private val packs = HashMap<String, Map<String, ByteArray>>()
     @Volatile var revalidationState = "current"
+    @Volatile var revalidationClockOffset: Long = 0
     @Volatile var onRevalidation: (() -> Unit)? = null
     @Volatile var onReservation: (() -> Unit)? = null
     @Volatile var online = true
@@ -120,6 +121,8 @@ internal class OfflineServiceStub(
     @Volatile var maximumPackResources = 10_000
     /** The next pack responses with bytes carry a damaged byte. */
     @Volatile var corruptPacks = 0
+    @Volatile var missingResource: Pair<String, Int>? = null
+    @Volatile var extraLicense = false
     @Volatile var onDownload: ((Int) -> Unit)? = null
     /** Called with how many answers the store has received, as each arrives. */
     @Volatile var onReceived: ((Int) -> Unit)? = null
@@ -186,6 +189,8 @@ internal class OfflineServiceStub(
         if (url == "https://tiles.example.com/manifest.json")
             return """{"version":1,"maps":{"streets":{"defaultTheme":"day","themes":{"day":{"styleUrl":"./style.json","fontFaces":[{"family":"Face","source":"./fonts/face.woff2"}]}}}}}"""
                 .toByteArray()
+        if (url == "https://tiles.example.com/style.json" && extraLicense)
+            return """{"version":8,"metadata":{"tileflow:fontLicenses":["./LICENSE.txt"]},"sprite":"./sprites/base","glyphs":"./fonts/{fontstack}/{range}.pbf","sources":{},"layers":[{"id":"l","type":"symbol","layout":{"text-font":["Noto Sans Regular"],"text-field":"x"}}]}""".toByteArray()
         if (url == "https://tiles.example.com/style.json")
             return """{"version":8,"sprite":"https://tiles.example.com/sprites/base","glyphs":"https://tiles.example.com/fonts/{fontstack}/{range}.pbf","sources":{"places":{"type":"geojson","data":"./data/places.json"}},"layers":[{"id":"l","type":"symbol","layout":{"text-font":["Noto Sans Regular"],"text-field":"x"}}]}"""
                 .toByteArray()
@@ -202,7 +207,7 @@ internal class OfflineServiceStub(
         if (!online) throw IOException("offline")
         if (request.url.encodedPath.endsWith("/revalidate")) {
             revalidations.incrementAndGet()
-            val checked = date(clock.get())
+            val checked = date(clock.get() + revalidationClockOffset)
             val state = revalidationState
             onRevalidation?.invoke()
             val body =
@@ -453,6 +458,9 @@ internal class OfflineServiceStub(
 
     override suspend fun fetch(request: OfflineFetchRequest): OfflineFetchResponse {
         val url = request.url.toASCIIString()
+        missingResource?.let { (missing, status) ->
+            if (!request.id.startsWith("plan/") && url == missing) return OfflineFetchResponse(status, emptyMap(), ByteArray(0), 0, null)
+        }
         val context = currentCoroutineContext()
         var freeze = false
         val response =

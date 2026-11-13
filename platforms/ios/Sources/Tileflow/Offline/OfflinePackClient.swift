@@ -140,6 +140,7 @@ struct OfflinePackClient: Sendable {
   private let credential: TileflowCredential?
   private let transport: any NativeHTTPTransporting
   private let now: @Sendable () -> Date
+  private let monotonicNow: @Sendable () -> TimeInterval
 
   /// The configuration's API origin and map credential. A configuration without a map
   /// credential can still revalidate downloads.
@@ -147,7 +148,8 @@ struct OfflinePackClient: Sendable {
     configuration: TileflowConfiguration,
     transport: any NativeHTTPTransporting = NativeHTTPTransport(
       maximumBytes: OfflinePackContract.maximumResponseBytes),
-    now: @escaping @Sendable () -> Date = Date.init
+    now: @escaping @Sendable () -> Date = Date.init,
+    monotonicNow: @escaping @Sendable () -> TimeInterval = { OfflineMonotonicClock.now() }
   ) throws {
     guard
       let origin = TileflowConfiguration.normalizedOrigin(configuration.apiOrigin.absoluteString),
@@ -158,18 +160,24 @@ struct OfflinePackClient: Sendable {
     credential = configuration.mapCredential
     self.transport = transport
     self.now = now
+    self.monotonicNow = monotonicNow
   }
 
   func create(_ request: OfflinePackRequest) async throws -> OfflineDownload {
     guard let credential else { throw TileflowOfflineError(.missingCredential) }
+    let startedAt = monotonicNow()
     var urlRequest = post("v1/offline/packs", body: request.body)
     urlRequest.setValue(credential.value, forHTTPHeaderField: "X-Tileflow-Mobile-Client")
     let response = try await send(urlRequest)
     guard response.status == 201 else {
       throw failure(response, operation: .create)
     }
-    return try OfflinePackContract.download(
+    var download = try OfflinePackContract.download(
       response.bytes, request: request, allowsLoopbackHTTP: allowsLoopbackHTTP)
+    let lifetime = download.manifest.downloadExpiresAt.timeIntervalSince(
+      download.manifest.createdAt)
+    download.grantDeadline = startedAt + min(3600, lifetime)
+    return download
   }
 
   func revalidate(_ grant: OfflinePackGrant) async throws -> OfflinePackRevalidation {
@@ -210,5 +218,14 @@ struct OfflinePackClient: Sendable {
     OfflinePackContract.failure(
       status: response.status, body: response.bytes, retryAfter: response.headers["Retry-After"],
       operation: operation, now: now())
+  }
+}
+
+/// Elapsed time includes device sleep and cannot jump with the civil clock.
+enum OfflineMonotonicClock {
+  private static let origin = ContinuousClock.now
+  static func now() -> TimeInterval {
+    let elapsed = origin.duration(to: ContinuousClock.now).components
+    return Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
   }
 }

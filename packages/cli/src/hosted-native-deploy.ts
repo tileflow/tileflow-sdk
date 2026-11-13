@@ -174,6 +174,7 @@ export async function prepareHostedDeploy(
   });
   try {
     const fonts = await prepareTileflowStyleFonts(project, local.styles, {
+      apiBaseUrl: apiUrl,
       assetBaseUrl: `${apiUrl}/font-bundles/preflight`,
       baseDirectory,
       cwd,
@@ -245,6 +246,7 @@ export async function prepareHostedDeploy(
       }
 
       return prepareTileflowHostedNativeDeployment({
+        apiBaseUrl: apiUrl,
         mapId: mapName,
         buildManifest,
         styles: family.styles,

@@ -65,7 +65,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   let attribution = MapAttributionControl()
   private var brandingOrigin = "https://api.tileflow.dev"
   private var brandingMapID: String?
-  private let brandingButton = NativeBrandingButton(frame: .zero)
+  let brandingButton = NativeBrandingButton(frame: .zero)
   private var branding: NativeBranding?
 
   private func installBranding() {
@@ -84,7 +84,8 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
     present: { [weak self] state in
       self?.container.isHidden = state == .pending
       self?.brandingButton.isHidden = state != .required
-    })
+        self?.brandingButton.superview?.setNeedsLayout()
+      })
   }
 
 
@@ -165,13 +166,9 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
       self.container.addSubview(mapView)
       self.attribution.view.frame = self.container.bounds
       self.attribution.onLink = { [weak self] url in self?.onExternalLink?(url) }
-      self.container.addSubview(self.attribution.view)
-      self.brandingButton.frame = CGRect(x: 0, y: self.container.bounds.height - 44, width: 90, height: 44)
-      self.brandingButton.autoresizingMask = [.flexibleTopMargin, .flexibleRightMargin]
       self.brandingButton.addAction(UIAction { [weak self] _ in
         self?.onExternalLink?(URL(string: "https://tileflow.dev/")!)
       }, for: .primaryActionTriggered)
-      self.container.addSubview(self.brandingButton)
       self.mapView = mapView
       self.installBranding()
       self.prepareCamera(mapView)

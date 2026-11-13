@@ -8,36 +8,80 @@ export function labelField(language: TileflowLabelLanguage, context: TileflowDom
   return expression<string>(labelFieldExpression(language, context));
 }
 
-/** The source fields a label can take its name from, in the order the label prefers them. */
-export function labelNameFields(
-  language: TileflowLabelLanguage,
-  context: TileflowDomainCompileContext,
-): string[] {
-  return labelFieldExpression(language, context)
-    .slice(1)
-    .map((entry) => (entry as readonly [string, string])[1]);
-}
-
 /**
- * A label's name in the requested language, then its Latin-script name, then its local name.
- * World publishes fewer languages below z12, where the label falls back to those names.
+ * Prefer the requested translation, then the local name. `auto` resolves the renderer's
+ * locale at evaluation time, so a compiled artifact never captures the build machine's language.
+ * Latin and English names are last resorts when the source has no local name either.
  */
 export function labelFieldExpression(
   language: TileflowLabelLanguage,
   context: TileflowDomainCompileContext,
 ): readonly unknown[] {
   const fields = context.data.schema.fields;
-  const english = fields.nameEn;
+  const fallback = [fields.name, fields.nameLatin, fields.nameEn].map((name) => ['get', name]);
   if (language === 'local') {
-    return ['coalesce', ['get', fields.name], ['get', fields.nameLatin], ['get', english]];
+    return firstNonempty(fallback);
   }
   if (language === 'auto') {
-    return ['coalesce', ['get', fields.nameLatin], ['get', fields.name], ['get', english]];
+    const locale = ['var', 'labelLocale'];
+    const base = ['slice', locale, 0, ['index-of', '-', ['concat', locale, '-']]];
+    const translated = (suffix: unknown) => [
+      'case',
+      ['==', suffix, 'en'],
+      ['get', fields.nameEn],
+      ['get', ['concat', context.data.schema.nameLanguagePrefix, suffix]],
+    ];
+    return [
+      'let',
+      'labelLocale',
+      ['resolved-locale', ['collator', {}]],
+      firstNonempty([
+        translated(locale),
+        // World keeps Chinese script variants; regional browser locales select the script.
+        translated([
+          'case',
+          [
+            'any',
+            ['in', '-Hant', locale],
+            ['in', locale, ['literal', ['zh-TW', 'zh-HK', 'zh-MO']]],
+          ],
+          'zh-Hant',
+          ['any', ['in', '-Hans', locale], ['in', locale, ['literal', ['zh-CN', 'zh-SG']]]],
+          'zh-Hans',
+          base,
+        ]),
+        ['case', ['==', base, 'en'], ['get', fields.nameEn], translated(base)],
+        ...fallback,
+      ]),
+    ];
   }
+  const locale = new Intl.Locale(language).baseName;
+  const parts = locale.split('-');
+  const languages = [locale];
+  if (parts[0] === 'zh' && !parts.includes('Hans') && !parts.includes('Hant')) {
+    if (parts.some((part) => ['TW', 'HK', 'MO'].includes(part))) languages.push('zh-Hant');
+    if (parts.some((part) => ['CN', 'SG'].includes(part))) languages.push('zh-Hans');
+  }
+  while (parts.length > 1) {
+    parts.pop();
+    languages.push(parts.join('-'));
+  }
+  return firstNonempty([
+    ...[...new Set(languages)].map((code) => [
+      'get',
+      code === 'en' ? fields.nameEn : nameField(code),
+    ]),
+    ...fallback,
+  ]);
+}
+
+function firstNonempty(values: readonly unknown[]): readonly unknown[] {
   return [
-    'coalesce',
-    ['get', language === 'en' ? english : nameField(language)],
-    ['get', fields.nameLatin],
-    ['get', fields.name],
+    'case',
+    ...values.flatMap((value) => [
+      ['!=', ['coalesce', value, ''], ''],
+      ['to-string', value],
+    ]),
+    '',
   ];
 }

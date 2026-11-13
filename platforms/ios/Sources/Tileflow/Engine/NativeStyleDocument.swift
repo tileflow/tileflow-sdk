@@ -123,6 +123,13 @@ enum NativeStyleDocument {
             if id == "tileflow-boundaries", type == "vector", source["tiles"] == nil {
               boundaryLookup = BoundaryLookupDescriptor(tileJSON: tileJSON, sourceURL: tileJSONURL)
             }
+            // A style may add a credit, but cannot erase the data provider's credit.
+            let credits = [tileJSON["attribution"], source["attribution"]]
+              .compactMap { ($0 as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) }
+              .filter { !$0.isEmpty && $0 != "null" }
+            source["attribution"] = credits.reduce(into: [String]()) { values, credit in
+              if !values.contains(credit) { values.append(credit) }
+            }.joined(separator: " | ")
             source.removeValue(forKey: "url")
             for key in [
               "tiles", "minzoom", "maxzoom", "bounds", "scheme", "attribution", "encoding",
@@ -149,7 +156,8 @@ enum NativeStyleDocument {
           source["url"] = try address(url, base: base, kind: .image)
           if let tile = worldImageTile(source) { source = tile }
         }
-        if let text = source["attribution"] as? String, !text.isEmpty,
+        if let text = (source["attribution"] as? String)?.trimmingCharacters(
+          in: .whitespacesAndNewlines), !text.isEmpty, text != "null",
           !attributions.contains(text)
         {
           attributions.append(text)

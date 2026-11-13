@@ -88,6 +88,7 @@ public final class TileflowMapView: UIView {
   let animations = AnimationWaiters()
   /// Native view annotations and the accessibility elements of annotations, over the renderer.
   let annotationOverlay = AnnotationOverlay()
+  private var applicationOverlay: UIView?
   /// The map's annotation managers. Each draws its annotations with a source and a layer of the
   /// application's runtime style.
   public internal(set) lazy var annotations = TileflowAnnotationOrchestrator(view: self)
@@ -185,11 +186,31 @@ public final class TileflowMapView: UIView {
     updateVisibility()
   }
 
+  /// Bridge-owned application content stays below the SDK's attribution and controls.
+  @_spi(TileflowReactNative)
+  public func installApplicationOverlay(_ overlay: UIView) {
+    applicationOverlay?.removeFromSuperview()
+    applicationOverlay = overlay
+    insertSubview(overlay, aboveSubview: annotationOverlay)
+    overlay.frame = bounds
+  }
+
   public override func layoutSubviews() {
     super.layoutSubviews()
     engine?.view.frame = bounds
     annotationOverlay.frame = bounds
+    applicationOverlay?.frame = bounds
+    (engine as? NativeMapEngine)?.attribution.view.frame = bounds
     controlsView.frame = bounds
+    let direction: UISemanticContentAttribute = rightToLeft ? .forceRightToLeft : .forceLeftToRight
+    if controlsView.semanticContentAttribute != direction {
+      controlsView.semanticContentAttribute = direction
+      controlsView.setNeedsLayout()
+    }
+    if let attribution = (engine as? NativeMapEngine)?.attribution.view {
+      attribution.semanticContentAttribute = direction
+      attribution.corner = options.controls.attributionPosition.corner(rightToLeft: rightToLeft)
+    }
     updateInsets()
   }
 
@@ -590,6 +611,9 @@ public final class TileflowMapView: UIView {
     self.engine = engine
     annotationOverlay.frame = bounds
     insertSubview(engine.view, belowSubview: annotationOverlay)
+    insertSubview(engine.attribution.view, belowSubview: controlsView)
+    engine.attribution.view.frame = bounds
+    controlsView.branding = engine.brandingButton
     engine.start()
     updateVisibility()
   }
@@ -800,6 +824,8 @@ public final class TileflowMapView: UIView {
     generationReady = false
     rendererVisible = false
     animations.retire(error)
+    (engine as? NativeMapEngine)?.attribution.view.removeFromSuperview()
+    controlsView.branding = nil
     engine?.retire(error)
     engine = nil
     controlsView.isHidden = true

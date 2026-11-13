@@ -177,6 +177,7 @@ internal class OfflinePackClient(
     },
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val now: () -> Long = System::currentTimeMillis,
+    private val monotonicNow: () -> Long = android.os.SystemClock::elapsedRealtime,
 ) {
     val apiOrigin: URI =
         tileflowApiOrigin(configuration.apiOrigin)?.takeIf {
@@ -186,6 +187,7 @@ internal class OfflinePackClient(
     private val credential: TileflowCredential? = configuration.mapCredential
 
     suspend fun create(request: OfflinePackRequest): OfflineDownload {
+        val startedAt = monotonicNow()
         val credential =
             credential
                 ?: throw TileflowOfflineException(TileflowOfflineErrorCode.MISSING_CREDENTIAL)
@@ -196,7 +198,9 @@ internal class OfflinePackClient(
                     .build()
             )
         if (response.status != 201) throw failure(response, OfflinePackContract.Operation.CREATE)
-        return OfflinePackContract.download(response.bytes, request, allowsLoopbackHttp)
+        val download = OfflinePackContract.download(response.bytes, request, allowsLoopbackHttp)
+        val lifetime = download.manifest.downloadExpiresAtMillis - download.manifest.createdAtMillis
+        return OfflineDownload(download.grant, download.manifest, download.response, startedAt + minOf(3_600_000L, lifetime))
     }
 
     suspend fun revalidate(grant: OfflinePackGrant): OfflinePackRevalidation {

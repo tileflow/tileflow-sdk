@@ -1,4 +1,3 @@
-import {isColorProgramMarker, mapColorProgramsThrough} from '../color-program';
 // What a compiled style tells Core's 3D renderers about the map's 3D buildings and street lights:
 // their design from the buildings and roads modules, with the data's references still semantic
 // (the caller binds them with the rest of the style), the buildings' colour as the map's own final
@@ -12,6 +11,7 @@ import {
   tileflowDefaultBuildings3DDesign,
 } from '../buildings-3d-design';
 import {readTileflowBuildingSurfaces} from '../buildings-3d-surfaces';
+import {isColorProgramMarker, mapColorProgramsThrough} from '../color-program';
 import type {TileflowStreetLightsDesign} from '../street-lights';
 import {tileflowDefaultStreetLightsDesign} from '../street-lights';
 import type {TileflowDomainCompileContext} from './context';
@@ -31,7 +31,7 @@ const colourSources: readonly (readonly [string, string])[] = [
   ['tileflow-buildings-fill', 'fill-color'],
 ];
 
-/** The 3D buildings a map describes, or undefined when its buildings module is off. */
+/** The 3D buildings a map describes, unless its module or extrusion is explicitly hidden. */
 export function tileflowBuildings3DDesignOf(
   module: unknown,
   context: TileflowDomainCompileContext,
@@ -43,9 +43,10 @@ export function tileflowBuildings3DDesignOf(
 ): TileflowBuildings3DDesign | undefined {
   const config = (isRecord(module) ? module : {}) as {
     enabled?: boolean;
+    extrusion?: {visible?: boolean};
     threeDimensional?: Record<string, unknown>;
   };
-  if (config.enabled === false) return undefined;
+  if (config.enabled === false || config.extrusion?.visible === false) return undefined;
   const style = config.threeDimensional ?? {};
   const defaults = tileflowDefaultBuildings3DDesign;
   let color: string | readonly unknown[] | undefined;

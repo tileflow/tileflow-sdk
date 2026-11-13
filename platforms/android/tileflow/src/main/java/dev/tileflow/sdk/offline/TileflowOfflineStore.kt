@@ -161,11 +161,12 @@ internal constructor(
                     instance
                         ?: run {
                             val application = context.applicationContext ?: context
-                            val root = File(application.noBackupFilesDir, "dev.tileflow/offline-v1")
+                            val root = File(application.noBackupFilesDir, "dev.tileflow/offline-v2")
+                            val legacyRoot = File(application.noBackupFilesDir, "dev.tileflow/offline-v1")
                             val subscribers = OfflineSubscribers()
                             val core =
                                 OfflineStoreCore(
-                                    OfflineLayout(root),
+                                    OfflineLayout(root, legacyRoot),
                                     TileflowMapCache.get(application).store,
                                     OfflineHttpFetcher(),
                                     {

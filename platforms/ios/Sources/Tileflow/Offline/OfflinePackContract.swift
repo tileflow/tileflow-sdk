@@ -110,6 +110,8 @@ struct OfflineDownload: Sendable {
   let manifest: OfflineDownloadManifest
   /// The service's answer as received, which the store keeps to read the download again.
   let response: Data
+  /// Process-local deadline. Restored grants must be renewed before new transfers.
+  var grantDeadline: TimeInterval = 0
 }
 
 /// Whether a stored download can still be updated. Access ending never deletes it.

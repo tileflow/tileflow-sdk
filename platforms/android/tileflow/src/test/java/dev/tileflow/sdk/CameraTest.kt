@@ -39,6 +39,17 @@ public class CameraTest {
     }
 
     @Test
+    public fun requiredBrandingReceivesTouchesAsANativeControl() {
+        val controls = MapControlsView(RuntimeEnvironment.getApplication())
+        val logo = View(RuntimeEnvironment.getApplication())
+        controls.branding = logo
+        logo.layout(8, 100, 98, 144)
+        assertTrue(controls.hasControlAt(50f, 120f))
+        logo.visibility = View.GONE
+        assertFalse(controls.hasControlAt(50f, 120f))
+    }
+
+    @Test
     public fun updatesAnimationsAndLimitsHaveTheirWireForm() {
         assertEquals(
             """{"center":{"longitude":-3.7,"latitude":40.42},"zoom":14,"pitch":80}""",

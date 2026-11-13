@@ -212,6 +212,7 @@ constructor(
 
     /** Native views over the renderer: view annotations and accessibility targets. */
     internal val annotationOverlay = AnnotationOverlay(context, this)
+    private var applicationOverlay: View? = null
     internal val accessibilitySummary = MapAccessibilitySummary(this)
 
     /**
@@ -482,7 +483,18 @@ constructor(
         updateInsets()
     }
 
+    /** Bridge-owned application content stays below the SDK's attribution and controls. */
+    @androidx.annotation.RestrictTo(androidx.annotation.RestrictTo.Scope.LIBRARY_GROUP_PREFIX)
+    public fun installApplicationOverlay(overlay: View) {
+        applicationOverlay?.let { removeView(it) }
+        (overlay.parent as? android.view.ViewGroup)?.removeView(overlay)
+        applicationOverlay = overlay
+        addView(overlay, indexOfChild(annotationOverlay) + 1, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+    }
+
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        controlsView.layoutDirection = layoutDirection
+        (engine as? NativeMapEngine)?.attribution?.view?.corner = options.controls.attributionPosition.corner(rightToLeft)
         super.onLayout(changed, left, top, right, bottom)
         updateInsets()
     }
@@ -528,8 +540,8 @@ constructor(
         controlsView.insets = insets
         val engine = engine?.takeIf { initialized } ?: return
         if (insetsUpdate != null || rendererInsets == insets) return
-        insetsUpdate =
-            scope.launch {
+        val update =
+            scope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
                 val sent =
                     try {
                         engine.call(MapContract.Method.SET_INSETS, insets.css(density))
@@ -542,6 +554,8 @@ constructor(
                 if (sent) rendererInsets = insets
                 updateInsets()
             }
+        insetsUpdate = update
+        update.start()
     }
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
@@ -1339,6 +1353,9 @@ constructor(
                 )
             val created = NativeMapEngine(context, resourceLoader, loadable, callbacks)
             engine = created
+            (created.attribution.view.parent as? android.view.ViewGroup)?.removeView(created.attribution.view)
+            addView(created.attribution.view, indexOfChild(controlsView), LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+            controlsView.branding = created.brandingButton
             created.attribution.view.onHeightChange = { height ->
                 if (engine === created) controlsView.attributionHeight = height
             }
@@ -1587,6 +1604,8 @@ constructor(
         generationReady = false
         rendererVisible = false
         animations.retire(code)
+        (engine as? NativeMapEngine)?.attribution?.view?.let { removeView(it) }
+        controlsView.branding = null
         engine?.retire(code)
         engine = null
     }

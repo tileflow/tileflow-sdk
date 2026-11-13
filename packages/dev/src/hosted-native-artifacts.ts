@@ -30,6 +30,7 @@ type Input = Readonly<{
    * developer's own machine. Hosted publication itself accepts only HTTPS.
    */
   developmentOrigin?: string;
+  apiBaseUrl?: string;
 }>;
 const digest = (value: unknown) =>
   createHash('sha256').update(serializeCanonicalJson(value)).digest('hex');
@@ -65,7 +66,10 @@ export async function prepareTileflowHostedNativeDeployment(
     }
   }
   // Lowering already rebinds POI priorities and overlay anchors, exactly as for local artifacts.
-  const policy = input.developmentOrigin ? {developmentOrigin: input.developmentOrigin} : {};
+  const policy = {
+    apiBaseUrl: input.apiBaseUrl,
+    ...(input.developmentOrigin ? {developmentOrigin: input.developmentOrigin} : {}),
+  };
   const lowered = lowerTileflowNativeCompiledStyles({[input.mapId]: validationStyles}, policy);
   const projected = prepareTileflowNativeStyles(lowered.styles, input.assets, policy)[input.mapId]!;
   for (const [name, style] of Object.entries(projected)) {

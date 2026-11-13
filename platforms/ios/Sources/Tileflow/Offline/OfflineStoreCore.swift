@@ -46,6 +46,7 @@ actor OfflineStoreCore {
     /// Packs transferred at once.
     var packConcurrency = 4
     var now: @Sendable () -> Date = { Date() }
+    var monotonicNow: @Sendable () -> TimeInterval = { OfflineMonotonicClock.now() }
     var sleep: @Sendable (TimeInterval) async throws -> Void = {
       try await Task.sleep(nanoseconds: UInt64(max(0, $0) * 1_000_000_000))
     }
@@ -114,14 +115,14 @@ actor OfflineStoreCore {
     guard !isOpen else { return }
     isOpen = true
     layout.excludeFromBackup()
+    layout.prepare()
     settings = OfflineSettings.read(layout.settings)
     let files = FileManager.default
     for name in (try? files.contentsOfDirectory(atPath: layout.regions.path)) ?? [] {
       let directory = layout.regions.appendingPathComponent(name, isDirectory: true)
       guard let record = OfflineRegionRecord.read(directory.appendingPathComponent("region.json"))
       else {
-        // A region whose record was never written stored nothing.
-        try? files.removeItem(at: directory)
+        // An unreadable record may still own durable packs and recovery data.
         continue
       }
       records[record.id] = record
@@ -392,14 +393,23 @@ actor OfflineStoreCore {
       try OfflineSelfHosted.validate(sources)
       let documents = try await selfHostedDocuments(url, map: map)
       plan = OfflineVersionPlan.selfHosted(
-        documents: documents, sources: sources, regions: try options.geometry.packRegions(),
-        zooms: try options.zooms)
+        documents: documents.all, sources: sources, regions: try options.geometry.packRegions(),
+        zooms: try options.zooms, optionalDocuments: documents.optional)
       let value: JSONValue = .object([
-        "documents": .array(documents.map { .string($0.absoluteString) })
+        "documents": .array(documents.all.map { .string($0.absoluteString) }),
+        "optionalDocuments": .array(
+          documents.optional.sorted { $0.absoluteString < $1.absoluteString }.map {
+            .string($0.absoluteString)
+          }),
       ])
       try OfflineLayout.write(JSONEncoder().encode(value), to: layout.plan(id, number))
     }
-    if records[id]?.pending != nil { await discardPending(id) }
+    if let pending = records[id]?.pending { await stopRun(id, pending) }
+    // Check and reserve without suspension: another region may have loaded while stopping.
+    do { try checkDeviceLimit(id, plan) } catch { startRun(id); throw error }
+    if var current = records[id], let pending = current.pending {
+      finishPendingDiscard(&current, pending)
+    }
     let now = dependencies.now()
     var record =
       records[id]
@@ -517,6 +527,7 @@ actor OfflineStoreCore {
   /// region. Access ending stops further checks; nothing is removed.
   func checkForUpdates() async {
     open()
+    refreshExpiry()
     defer { refreshExpiry() }
     guard let client = try? dependencies.client() else { return }
     let now = dependencies.now()
@@ -540,17 +551,14 @@ actor OfflineStoreCore {
         state: "current", reason: nil, checkedAt: now.offlineMilliseconds, interval: 86_400)
       for state in states {
         switch state {
-        case .current(let checkedAt, let interval):
-          check.checkedAt = checkedAt.offlineMilliseconds
+        case .current(_, let interval):
           check.interval = min(check.interval, interval)
-        case .updateAvailable(let checkedAt, let interval):
+        case .updateAvailable(_, let interval):
           if check.state == "current" { check.state = "update_available" }
-          check.checkedAt = checkedAt.offlineMilliseconds
           check.interval = min(check.interval, interval)
-        case .notUpdatable(let reason, let checkedAt):
+        case .notUpdatable(let reason, _):
           check.state = "not_updatable"
           check.reason = check.reason ?? reason.rawValue
-          check.checkedAt = checkedAt.offlineMilliseconds
         }
       }
       if check.state == "current", dependencies.profile == .native,
@@ -782,17 +790,17 @@ actor OfflineStoreCore {
   }
 
   private func drive(_ id: String) async {
-    var renewals: [Int: (startedAt: Date, count: Int)] = [:]
+    var renewals: [Int: (startedAt: TimeInterval, count: Int)] = [:]
 
     func renewalCount(_ index: Int, _ plan: OfflineVersionPlan) -> Int {
-      let now = dependencies.now()
-      let expires = plan.downloads[index].manifest.downloadExpiresAt
+      let now = dependencies.monotonicNow()
+      let expires = plan.downloads[index].grantDeadline
       let count: Int
       // A replacement that had time to be used and aged into expiry gets a new retry budget.
       if let previous = renewals[index],
-        expires.timeIntervalSince(previous.startedAt) > Self.renewalMargin,
-        now.timeIntervalSince(previous.startedAt) >= Self.renewalMargin,
-        expires.timeIntervalSince(now) < Self.renewalMargin
+        (expires - previous.startedAt) > Self.renewalMargin,
+        (now - previous.startedAt) >= Self.renewalMargin,
+        (expires - now) < Self.renewalMargin
       {
         count = 1
       } else {
@@ -849,26 +857,26 @@ actor OfflineStoreCore {
           $0.fail(.init(.insufficientStorage, context: .init(limit: Int(clamping: needed))))
         }
       }
-      let now = dependencies.now()
+      let now = dependencies.monotonicNow()
       // Collect bodies already authorized and completed by the background service under their
       // original manifest before changing the grant-tagged transfer identity.
       var completedPacks = Set<String>()
       for planned in remainingPacks {
         let download = plan.downloads[planned.download]
-        if download.manifest.downloadExpiresAt.timeIntervalSince(now) < Self.renewalMargin,
+        if download.grantDeadline - now < Self.renewalMargin,
           await dependencies.fetcher.hasCompleted(
             id: transferPrefix(id, pending.number) + planned.key + "." + download.grant.tag)
         { completedPacks.insert(planned.key) }
       }
       if let expiring = plan.downloads.indices.first(where: { index in
-        plan.downloads[index].manifest.downloadExpiresAt.timeIntervalSince(now)
+        plan.downloads[index].grantDeadline - now
           < Self.renewalMargin && remainingPacks.contains(where: { $0.download == index })
           && !remainingPacks.contains(where: { $0.download == index && completedPacks.contains($0.key) })
       }) {
         let count = renewalCount(expiring, plan)
         switch await renew(id, pending, download: expiring, renewals: count) {
         case .stopped: return
-        case .replaced: renewals[expiring] = (dependencies.now(), count)
+        case .replaced: renewals[expiring] = (dependencies.monotonicNow(), count)
         case .waiting: break
         }
         continue
@@ -884,7 +892,7 @@ actor OfflineStoreCore {
         cache: dependencies.cache, fetcher: dependencies.fetcher,
         availableBytes: dependencies.availableBytes, reserveBytes: dependencies.reserveBytes,
         concurrency: dependencies.concurrency, packConcurrency: dependencies.packConcurrency,
-        now: dependencies.now)
+        now: dependencies.now, monotonicNow: dependencies.monotonicNow)
       let options = TileflowOfflineRegionLoadOptions(json: pending.options)
       let job = OfflineDownloadJob(
         prefix: transferPrefix(id, pending.number), plan: plan, pending: remaining,
@@ -906,7 +914,7 @@ actor OfflineStoreCore {
         let count = renewalCount(download, plan)
         switch await renew(id, pending, download: download, renewals: count, error: error) {
         case .stopped: return
-        case .replaced: renewals[download] = (dependencies.now(), count)
+        case .replaced: renewals[download] = (dependencies.monotonicNow(), count)
         case .waiting: break
         }
       case .wait(let error, let delay):
@@ -1196,10 +1204,10 @@ actor OfflineStoreCore {
       profile: dependencies.profile)
     var downloads: [OfflineDownload] = []
     for request in requests {
-      let now = dependencies.now()
+      let now = dependencies.monotonicNow()
       let key = EstimateKey(apiOrigin: client.apiOrigin, request: request)
       if reuseEstimate, let download = created[key],
-        download.manifest.downloadExpiresAt.timeIntervalSince(now) > Self.reuseWindow
+        download.grantDeadline - now > Self.reuseWindow
       {
         if consuming { created.removeValue(forKey: key) }
         downloads.append(download)
@@ -1213,14 +1221,20 @@ actor OfflineStoreCore {
   }
 
   /// The manifest, then each theme's style and what it references, without duplicates.
-  private func selfHostedDocuments(_ url: URL, map: String) async throws -> [URL] {
+  private func selfHostedDocuments(_ url: URL, map: String) async throws -> (
+    all: [URL], optional: Set<URL>
+  ) {
     let manifest = try OfflineSelfHosted.manifest(url, data: try await document(url), map: map)
     var documents = manifest.documents
+    var required = Set(manifest.documents)
     for style in manifest.styles {
-      documents += try OfflineSelfHosted.documents(style: style, data: try await document(style))
+      let data = try await document(style)
+      documents += try OfflineSelfHosted.documents(style: style, data: data)
+      required.formUnion(
+        try OfflineSelfHosted.documents(style: style, data: data, includeGlyphRanges: false))
     }
-    var seen = Set<String>()
-    return documents.filter { seen.insert($0.absoluteString).inserted }
+    var seen = Set<URL>()
+    return (documents.filter { seen.insert($0).inserted }, Set(documents).subtracting(required))
   }
 
   private func document(_ url: URL) async throws -> Data {
@@ -1273,9 +1287,14 @@ actor OfflineStoreCore {
           JSONValue.self, from: Data(contentsOf: layout.plan(id, version.number))),
         case .array(let items) = value["documents"]
       else { throw TileflowOfflineError(.invalidResponse) }
+      var optional = Set<URL>()
+      if case .array(let values) = value["optionalDocuments"] {
+        optional = Set(values.compactMap { $0.string.flatMap(URL.init(string:)) })
+      }
       plan = .selfHosted(
         documents: items.compactMap { $0.string.flatMap(URL.init(string:)) }, sources: sources,
-        regions: try options.geometry.packRegions(), zooms: try options.zooms)
+        regions: try options.geometry.packRegions(), zooms: try options.zooms,
+        optionalDocuments: optional)
     }
     // Plans of versions downloading stay in memory; others are read again when needed.
     if records[id]?.pending?.number == version.number { plans[key] = plan }

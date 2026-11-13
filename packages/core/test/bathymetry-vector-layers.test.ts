@@ -34,8 +34,14 @@ function candidate(language = 'local') {
   });
 }
 
-function evaluate(value: unknown, properties: Record<string, unknown>, zoom = 12, type = 1) {
-  const compiled = createExpression(value as never);
+function evaluate(
+  value: unknown,
+  properties: Record<string, unknown>,
+  zoom = 12,
+  type = 1,
+  color = false,
+) {
+  const compiled = createExpression(value as never, color ? ({type: 'color'} as never) : undefined);
   assert.equal(compiled.result, 'success', JSON.stringify(compiled.value));
   if (compiled.result !== 'success') throw new Error('Invalid expression');
 
@@ -234,4 +240,27 @@ test('public contour-depth expressions validate and bind to the auxiliary depth 
     primary.sourceLayers.some(({fields}) => fields.some(({name}) => name === 'depth')),
     false,
   );
+});
+
+test('cumulative product bands read depth and paint deeper polygons after the ocean mask', () => {
+  const style = createStyle(candidate());
+  const bands = style.layers.find(({id}) => id === 'tileflow-bathymetry')!;
+  const color = bands.paint?.['fill-color'];
+  const order = bands.layout?.['fill-sort-key'];
+  // These are the exact field shapes emitted by the Bathymetry V1 producer.
+  for (const depth of [0, -10, -50, -200, -1000, -2000, -7000]) {
+    assert.equal(evaluate(order, {depth}, 9, 3), Math.abs(depth));
+    assert.deepEqual(
+      evaluate(color, {depth}, 9, 3, true),
+      evaluate(color, {min_depth: depth, sort_key: 2}, 9, 3, true),
+      `canonical and legacy fields must colour the same depth: ${depth}`,
+    );
+  }
+  assert.notDeepEqual(
+    evaluate(color, {depth: -200}, 9, 3, true),
+    evaluate(color, {depth: -7000}, 9, 3, true),
+  );
+  assert.equal(evaluate(order, {min_depth: -200, sort_key: 1}, 9, 3), 1);
+  assert.equal(evaluate(order, {depth: -200, min_depth: 0, sort_key: 99}, 9, 3), 200);
+  assert.deepEqual(validateStyleMin(style as never), []);
 });

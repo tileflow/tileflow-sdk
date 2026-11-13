@@ -102,6 +102,13 @@ final class MapControlsView: UIView {
   static let attributionSpace: CGFloat = 36
   static let margin: CGFloat = 8
 
+  var branding: UIView? {
+    didSet {
+      oldValue?.removeFromSuperview()
+      if let branding { addSubview(branding) }
+      setNeedsLayout()
+    }
+  }
   let compass = CompassButton()
   let scaleBar = ScaleBarView()
   let recenter = UIButton(type: .system)
@@ -177,7 +184,7 @@ final class MapControlsView: UIView {
 
   private func update() {
     guard let camera else {
-      for control in subviews { control.isHidden = true }
+      for control in [compass, recenter, scaleBar] as [UIView] { control.isHidden = true }
       return
     }
     compass.bearing = camera.bearing
@@ -206,11 +213,18 @@ final class MapControlsView: UIView {
     var offsets = [
       controls.attributionPosition: max(Self.attributionSpace, attributionHeight + Self.margin)
     ]
-    for (control, position, size) in [
+    // The compact strip can span both bottom corners; keep the logo above its row.
+    if branding?.isHidden == false, !controls.attributionPosition.isTop {
+      offsets[.bottomLeading] = max(Self.attributionSpace, attributionHeight + Self.margin)
+    }
+    var items: [(UIView, TileflowControlPosition, CGSize)] = []
+    if let branding { items.append((branding, .bottomLeading, CGSize(width: 90, height: 44))) }
+    items += [
       (compass as UIView, controls.compassPosition, CGSize(width: 44, height: 44)),
       (recenter, controls.recenterButtonPosition, CGSize(width: 44, height: 44)),
       (scaleBar, controls.scaleBarPosition, scaleBar.intrinsicContentSize),
-    ] where !control.isHidden {
+    ]
+    for (control, position, size) in items where !control.isHidden {
       let offset = offsets[position, default: 0]
       let left = position.isLeading != rightToLeft
       control.frame = CGRect(

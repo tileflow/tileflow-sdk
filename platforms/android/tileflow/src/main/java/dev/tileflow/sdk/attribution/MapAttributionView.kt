@@ -413,7 +413,12 @@ internal object MapAttributionStrip {
      * a product without what qualifies it.
      */
     fun shorten(text: String, cap: Float, measure: (String) -> Float): String {
-        if (measure(text) <= cap) return text
+        fun qualified(value: String): String {
+            if (value.contains("not official", ignoreCase = true)) return value
+            val enc = Regex("\\bI?ENC\\b", RegexOption.IGNORE_CASE).find(value) ?: return value
+            return value.substring(0, enc.range.first).trimEnd() + ELLIPSIS
+        }
+        if (measure(text) <= cap) return qualified(text)
         val characters = text.codePoints().toArray()
         fun candidate(length: Int): String =
             String(characters, 0, length).trim { it == ' ' || it == '\t' } + ELLIPSIS
@@ -425,9 +430,9 @@ internal object MapAttributionStrip {
                 val middle = (low + high + 1) / 2
                 if (measure(candidate(middle)) <= cap) low = middle else high = middle - 1
             }
-            return candidate(low)
+            return qualified(candidate(low))
         }
-        return candidate(1)
+        return qualified(candidate(1))
     }
 
     /**

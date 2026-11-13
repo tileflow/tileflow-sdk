@@ -186,12 +186,13 @@ final class NativeMapEngineTests: XCTestCase {
     let store = offlineMapStore(root: root, client: { try OfflinePackClient(configuration: configuration) })
     func snapshot() throws -> [String: Any] {
       let files = try FileManager.default.contentsOfDirectory(at: root.appendingPathComponent("packs"), includingPropertiesForKeys: [.fileSizeKey]).filter { $0.pathExtension == "tfpack" }
-      var fontCount = 0, fontBytes = 0, officialBytes = 0, licenseBytes = 0, fontPackBytes = 0, allPackBytes = 0
+      var fontCount = 0, fontBytes = 0, officialBytes = 0, licenseBytes = 0, localLicenseBytes = 0, fontPackBytes = 0, allPackBytes = 0
       var digests: [String] = []
       for file in files {
         let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
         allPackBytes += size
         let entries = try OfflinePackFormat.index(file).entries.values
+        localLicenseBytes += entries.filter { $0.name.contains("/fonts/licenses/") }.reduce(0) { $0 + $1.length }
         let fonts = entries.filter { $0.contentType.hasPrefix("font/") }
         if fonts.isEmpty { continue }
         digests.append(file.lastPathComponent)
@@ -202,7 +203,7 @@ final class NativeMapEngineTests: XCTestCase {
         fontPackBytes += size
       }
       return ["fontFiles": fontCount, "fontBytes": fontBytes, "officialFontBytes": officialBytes,
-        "licenseBytes": licenseBytes, "fontPackBytes": fontPackBytes, "allPackBytes": allPackBytes, "fontPackDigests": digests.sorted()]
+        "licenseBytes": licenseBytes, "localLicenseBytes": localLicenseBytes, "fontPackBytes": fontPackBytes, "allPackBytes": allPackBytes, "fontPackDigests": digests.sorted()]
     }
     var snapshots: [[String: Any]] = []
     for (index, west) in [-3.705, -3.695].enumerated() {
@@ -214,6 +215,8 @@ final class NativeMapEngineTests: XCTestCase {
     let data = try JSONSerialization.data(withJSONObject: ["platform": "ios", "regions": snapshots], options: [.sortedKeys])
     print("OFFLINE_FONT_MEASUREMENT \(String(decoding: data, as: UTF8.self))")
     XCTAssertEqual(snapshots[0]["fontFiles"] as? Int, 148)
+    XCTAssertGreaterThan(snapshots[0]["localLicenseBytes"] as? Int ?? 0, 0)
+    XCTAssertEqual(snapshots[0]["localLicenseBytes"] as? Int, snapshots[1]["localLicenseBytes"] as? Int)
     XCTAssertGreaterThan(snapshots[0]["fontBytes"] as? Int ?? 0, 32 * 1024 * 1024)
     XCTAssertEqual(snapshots[0]["fontPackBytes"] as? Int, snapshots[1]["fontPackBytes"] as? Int)
     XCTAssertEqual(snapshots[0]["fontPackDigests"] as? [String], snapshots[1]["fontPackDigests"] as? [String])
@@ -388,8 +391,12 @@ final class NativeMapEngineTests: XCTestCase {
       }
       defer { sqlite3_close(database) }
       var statement: OpaquePointer?
+      // The local startup probe contains a fixed empty style, never map data or credentials.
+      let query = table == "resources"
+        ? "SELECT COUNT(*) FROM resources WHERE kind != 1 OR url NOT LIKE 'tileflow-transport-check://tileflow.invalid/%'"
+        : "SELECT COUNT(*) FROM tiles"
       guard
-        sqlite3_prepare_v2(database, "SELECT COUNT(*) FROM \(table)", -1, &statement, nil)
+        sqlite3_prepare_v2(database, query, -1, &statement, nil)
           == SQLITE_OK
       else { continue }
       defer { sqlite3_finalize(statement) }

@@ -2,7 +2,7 @@ import {type TileflowDomainCompileContext, typographyTextStyle} from '../../cart
 import type {TileflowLayerContribution} from '../../cartography/contributions';
 import {labelOrder} from '../../cartography/label-placement';
 import {applyCircleStyle, applySymbolStyle} from '../../cartography/layer-style';
-import {labelField, labelNameFields} from '../../cartography/localization';
+import {labelField, labelFieldExpression} from '../../cartography/localization';
 import {mergeTileflowDesign} from '../../cartography/merge';
 import type {
   TileflowCircleStyle,
@@ -49,7 +49,7 @@ const representationOrder: Readonly<Record<PoiRepresentation, number>> = {
 export function compilePoi(
   request: TileflowResolvedModuleConfig<TileflowPoiModuleConfig> | undefined,
   context: TileflowDomainCompileContext,
-  language: TileflowLabelLanguage = 'auto',
+  language: TileflowLabelLanguage = 'en',
 ): TileflowLayerContribution[] {
   if (request?.enabled === false) return [];
   const semantics = resolvePoi(request);
@@ -75,8 +75,21 @@ export function compilePoi(
     });
   }
 
-  const {prominentRank} = semantics.placement;
+  const {prominentRank, prominentImportance} = semantics.placement;
   const filterRank = numericPoiField(context.data.schema.fields.filterrank, 6);
+  const prominent = [
+    'any',
+    ...(prominentRank === undefined ? [] : [['<=', filterRank, prominentRank]]),
+    ...(prominentImportance === undefined
+      ? []
+      : [
+          [
+            '>=',
+            numericPoiField(context.data.schema.fields.importanceTier, 0),
+            prominentImportance,
+          ],
+        ]),
+  ];
   return (['marker', 'combined', 'icon', 'label'] as const).flatMap((representation) => {
     const entries = parts.filter((part) => part.representation === representation);
     if (entries.length === 0) return [];
@@ -91,15 +104,18 @@ export function compilePoi(
       id: `tileflow-poi${suffix.replace('.', '-')}`,
     });
     // Markers do not collide, so only symbols need a prominent tier.
-    if (prominentRank === undefined || representation === 'marker') {
+    if (
+      (prominentRank === undefined && prominentImportance === undefined) ||
+      representation === 'marker'
+    ) {
       return [poiContribution(suffix.slice(1), representationOrder[representation], layer)];
     }
-    // The most important ranks are placed before road and place labels. Splitting by rank keeps
-    // the one importance order: every prominent POI sorts before every other POI.
+    // Semantic importance is independent of the tile's spatial density rank. Both can nominate
+    // a destination for the prominent tier, without changing which candidates pass selection.
     return [
       poiContribution(suffix.slice(1), representationOrder[representation], {
         ...layer,
-        filter: [...filter, ['>', filterRank, prominentRank]],
+        filter: [...filter, ['!', prominent]],
       }),
       poiContribution(
         `prominent${suffix}`,
@@ -107,7 +123,34 @@ export function compilePoi(
         {
           ...layer,
           id: `tileflow-poi-prominent${suffix.replace('.', '-')}`,
-          filter: [...filter, ['<=', filterRank, prominentRank]],
+          filter: [...filter, prominent],
+          layout: {
+            ...(layer.layout as Record<string, unknown>),
+            ...(prominentImportance === undefined
+              ? {}
+              : {
+                  'symbol-sort-key': [
+                    '+',
+                    [
+                      '*',
+                      [
+                        '-',
+                        4,
+                        [
+                          'min',
+                          4,
+                          ['max', 0, numericPoiField(context.data.schema.fields.importanceTier, 0)],
+                        ],
+                      ],
+                      102,
+                    ],
+                    poiSortKey(
+                      context.data.schema.fields.filterrank,
+                      context.data.schema.fields.sizerank,
+                    ),
+                  ],
+                }),
+          },
         },
       ),
     ];
@@ -246,7 +289,11 @@ function compileCategory(
     parts.push({
       category,
       representation: 'label',
-      layer: applySymbolStyle(base(), {...symbolStyle, icon: undefined}),
+      layer: applySymbolStyle(base(), {
+        ...symbolStyle,
+        icon: undefined,
+        text: {...symbolStyle.text, field: selection.textField(symbolStyle.text.field, showIcon)},
+      }),
     });
   }
   return parts;
@@ -258,13 +305,12 @@ type PoiSelection = {
     representation: PoiRepresentation,
   ) => unknown[];
   register: (category: TileflowPoiCategory, parts: {icon: boolean; text: boolean}) => void;
-  textField: (field: TileflowTextStyle['field']) => TileflowTextStyle['field'];
+  textField: (field: TileflowTextStyle['field'], hasIcon?: boolean) => TileflowTextStyle['field'];
 };
 
 /**
- * Which ranked POIs a layer draws. A POI with a pictogram also needs a name, because an unnamed
- * disc says only its category; the exceptions are the types whose pictogram says everything
- * (`placement.iconOnlyTypes`), which are drawn as a pictogram without their name.
+ * Which ranked POIs a layer draws. Names are required by default. `iconOnlyTypes` always hides
+ * the name; `unnamedIconTypes` also permits a useful pictogram when the source has no name.
  */
 function createPoiSelection(
   semantics: ResolvedPoiModuleOptions,
@@ -275,8 +321,15 @@ function createPoiSelection(
   const typeRankCaps = Object.entries(semantics.maxRankByType).sort(([a], [b]) =>
     a.localeCompare(b),
   );
+  const typeMinZooms = Object.entries(semantics.minZoomByType).sort(([a], [b]) =>
+    a.localeCompare(b),
+  );
+  const labelMinZooms = Object.entries(semantics.labelMinZoomByType).sort(([a], [b]) =>
+    a.localeCompare(b),
+  );
   const shown = new Map<TileflowPoiCategory, {icon: boolean; text: boolean}>();
   const iconOnlyTypes = [...new Set(semantics.placement.iconOnlyTypes)];
+  const unnamedIconTypes = [...new Set(semantics.placement.unnamedIconTypes)];
   const iconOnly = (): unknown[] =>
     iconOnlyTypes.length
       ? ['match', ['get', fields.type], iconOnlyTypes, true, false]
@@ -285,23 +338,39 @@ function createPoiSelection(
     categories.length === 1
       ? ['==', ['get', fields.class], categories[0]]
       : ['match', ['get', fields.class], [...categories], true, false];
-  const named = (): unknown[] => [
-    'any',
-    ...labelNameFields(language, context).map((field) => ['has', field]),
-  ];
+  const named = (): unknown[] => ['!=', labelFieldExpression(language, context), ''];
 
   return {
     register(category, parts) {
       shown.set(category, parts);
     },
-    textField(field) {
-      if (!iconOnlyTypes.length || field === undefined) return field;
+    textField(field, hasIcon = true) {
+      if (field === undefined) return field;
+      if (!labelMinZooms.length && (!hasIcon || !iconOnlyTypes.length)) return field;
+      const namedField =
+        hasIcon && iconOnlyTypes.length
+          ? expression<string>([
+              'match',
+              ['get', fields.type],
+              iconOnlyTypes,
+              '',
+              fieldValue(field),
+            ])
+          : field;
+      if (!labelMinZooms.length) return namedField;
+      const name = fieldValue(namedField);
+      const atZoom = (zoom: number): unknown => {
+        const waiting = labelMinZooms.filter(([, minimum]) => minimum > zoom).map(([type]) => type);
+        return waiting.length ? ['match', ['get', fields.type], waiting, '', name] : name;
+      };
+      // Camera-dependent layout expressions require one top-level zoom step.
       return expression<string>([
-        'match',
-        ['get', fields.type],
-        iconOnlyTypes,
-        '',
-        fieldValue(field),
+        'step',
+        ['zoom'],
+        atZoom(-1),
+        ...[...new Set(labelMinZooms.map(([, zoom]) => zoom))]
+          .sort((a, b) => a - b)
+          .flatMap((zoom) => [zoom, atZoom(zoom)]),
       ]);
     },
     filter(categories, representation) {
@@ -325,6 +394,14 @@ function createPoiSelection(
           true,
         ]);
       }
+      if (typeMinZooms.length) {
+        result.push([
+          'match',
+          ['get', fields.type],
+          ...typeMinZooms.flatMap(([type, minZoom]) => [type, ['>=', ['zoom'], minZoom]]),
+          true,
+        ]);
+      }
       if (!semantics.icons || !semantics.labels) return result;
       const textless = categories.filter((category) => !shown.get(category)?.text);
       const iconless = categories.filter((category) => !shown.get(category)?.icon);
@@ -335,12 +412,22 @@ function createPoiSelection(
         return [...result, iconless.length ? ['any', inCategories(iconless), keep] : keep];
       }
       if (textless.length === categories.length) return result;
+      const withIcon = categories.filter((category) => shown.get(category)?.icon);
       return [
         ...result,
         [
           'any',
           named(),
           ...(iconOnlyTypes.length ? [iconOnly()] : []),
+          ...(unnamedIconTypes.length && withIcon.length
+            ? [
+                [
+                  'all',
+                  inCategories(withIcon),
+                  ['match', ['get', fields.type], unnamedIconTypes, true, false],
+                ],
+              ]
+            : []),
           ...(textless.length ? [inCategories(textless)] : []),
         ],
       ];
@@ -406,8 +493,8 @@ function poiRankThreshold(semantics: ResolvedPoiModuleOptions, categoryField: st
   return ['+', ['step', ['zoom'], 0, 16, 1, semantics.detailZoom, 2], density];
 }
 
-function numericPoiField(field: string, fallback: number): unknown[] {
-  return ['to-number', ['get', field], fallback];
+function numericPoiField(field: string | undefined, fallback: number): unknown[] {
+  return field === undefined ? ['literal', fallback] : ['to-number', ['get', field], fallback];
 }
 
 function poiSortKey(filterRankField: string, sizeRankField: string): unknown[] {

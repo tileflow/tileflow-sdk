@@ -457,33 +457,30 @@ function mapTileBytes(
     }
   ).style;
   const manager = (style?.tileManagers ?? style?.sourceCaches)?.[sourceId];
-  if (!manager) return undefined;
-  const bytesOf = (tile: MapTile | undefined) => {
+  const ids = manager?.getIds?.();
+  const kept = (manager?._outOfViewCache ?? manager?._cache)?.data;
+  const tiles = [
+    ...(Array.isArray(ids) ? ids.map((id) => manager!.getTileByID?.(id)) : []),
+    ...(kept && typeof kept === 'object'
+      ? Object.values(kept)
+          .flat()
+          .map((entry) => (entry as {value?: MapTile} | undefined)?.value)
+      : []),
+  ];
+  for (const tile of tiles) {
     const canonical = tile?.tileID?.canonical;
+    const bytes = tile?.latestRawTileData;
     // An overzoomed tile holds a cut of its parent's bytes, at a deeper zoom than read here.
-    if (canonical?.z !== z || canonical.x !== x || canonical.y !== y) return undefined;
-    const bytes = tile!.latestRawTileData;
-    return bytes instanceof ArrayBuffer && bytes.byteLength > 0 && tile!.latestEncoding !== 'mlt'
-      ? bytes
-      : undefined;
-  };
-  if (typeof manager.getIds === 'function' && typeof manager.getTileByID === 'function') {
-    const ids = manager.getIds();
-    if (Array.isArray(ids))
-      for (const id of ids) {
-        const bytes = bytesOf(manager.getTileByID(id));
-        if (bytes) return bytes;
-      }
+    if (
+      canonical?.z === z &&
+      canonical.x === x &&
+      canonical.y === y &&
+      bytes instanceof ArrayBuffer &&
+      bytes.byteLength > 0 &&
+      tile!.latestEncoding !== 'mlt'
+    )
+      return bytes;
   }
-  const kept = (manager._outOfViewCache ?? manager._cache)?.data;
-  if (kept && typeof kept === 'object')
-    for (const entries of Object.values(kept)) {
-      if (!Array.isArray(entries)) continue;
-      for (const entry of entries) {
-        const bytes = bytesOf((entry as {value?: MapTile} | undefined)?.value);
-        if (bytes) return bytes;
-      }
-    }
   return undefined;
 }
 

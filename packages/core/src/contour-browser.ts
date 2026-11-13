@@ -1,3 +1,4 @@
+import {unwrapTileflowCatalogBridgeUrl} from './fair-use-protocol';
 import {
   isSafeTileflowContourRequestUrl,
   isSafeTileflowDemUrlTemplate,
@@ -80,6 +81,13 @@ export type TileflowContourRequestScope = Readonly<{
 }>;
 
 const contourRequestScopes = new Map<string, TileflowContourRequestTransform>();
+
+/**
+ * Elevation the DEM provider withholds for now (a guard's 429 or 503, or an empty tile): contours
+ * are optional relief, so the tile renders without them instead of reporting a map error.
+ */
+class ContourDemUnavailableError extends Error {}
+const unavailableDemStatuses = new Set([204, 404, 429, 503]);
 let contourScopeSequence = 0;
 
 /**
@@ -179,6 +187,20 @@ function createTileflowContourProtocolHandler(
   const sources = new Map<string, Promise<MaplibreContourSource>>();
 
   return async (request, abortController) => {
+    try {
+      return await loadContourTile(request, abortController);
+    } catch (error) {
+      if (!(error instanceof ContourDemUnavailableError) || abortController.signal.aborted) {
+        throw error;
+      }
+      return {cacheControl: 'private, no-store', data: new ArrayBuffer(0)};
+    }
+  };
+
+  async function loadContourTile(
+    request: TileflowContourProtocolRequest,
+    abortController: AbortController,
+  ): Promise<TileflowContourProtocolResponse> {
     if (abortController.signal.aborted) throw new Error('Tileflow contour request aborted.');
     const {config, scope, x, y, z} = parseTileflowContourProtocolRequest(request.url);
     const transform = scope === undefined ? undefined : contourRequestScopes.get(scope);
@@ -244,7 +266,7 @@ function createTileflowContourProtocolHandler(
       .replace('{x}', String(x))
       .replace('{y}', String(y));
     return contourSource.contourProtocolV4({url: contourUrl}, abortController);
-  };
+  }
 }
 
 function installScopedDemTileLoader(
@@ -269,11 +291,18 @@ async function fetchScopedDemTile(
     ...requestInit(resolved),
     signal: abortController.signal,
   });
+  if (unavailableDemStatuses.has(response.status)) {
+    throw new ContourDemUnavailableError(
+      `Tileflow contour DEM tile is unavailable (${response.status}).`,
+    );
+  }
   if (!response.ok) {
     throw new Error(`Tileflow contour DEM tile request failed with HTTP ${response.status}.`);
   }
+  const data = await response.blob();
+  if (data.size === 0) throw new ContourDemUnavailableError('Tileflow contour DEM tile is empty.');
   return {
-    data: await response.blob(),
+    data,
     cacheControl: response.headers.get('cache-control') ?? undefined,
     expires: response.headers.get('expires') ?? undefined,
   };
@@ -285,7 +314,10 @@ async function resolveScopedRequest(
   url: string,
   resourceType: TileflowContourRequestResourceType,
 ): Promise<TileflowContourRequestParameters> {
-  const resolved = (await transform(url, resourceType)) ?? {url};
+  const transformed = (await transform(url, resourceType)) ?? {url};
+  // The map's transform may route a catalog tile through the fair-use bridge; contours fetch
+  // outside MapLibre, so they request the catalog tile it wraps.
+  const resolved = {...transformed, url: unwrapTileflowCatalogBridgeUrl(transformed.url)};
   if (!isSafeTileflowContourRequestUrl(resolved.url)) {
     throw new Error('Tileflow contour request transform must return a safe HTTP(S) URL.');
   }
@@ -311,6 +343,11 @@ async function resolveContourDem(
 ): Promise<ResolvedContourDem> {
   if (config.demTileJson === undefined) return {maxzoom: config.demMaxzoom, url: config.demUrl};
   const response = await fetchDocument(config.demTileJson);
+  if (response.status === 429 || response.status === 503) {
+    throw new ContourDemUnavailableError(
+      `Tileflow contour DEM TileJSON is unavailable (${response.status}).`,
+    );
+  }
   if (!response.ok) {
     throw new Error(`Tileflow contour DEM TileJSON request failed with HTTP ${response.status}.`);
   }

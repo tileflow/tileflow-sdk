@@ -35,7 +35,6 @@ import {streetsGlyphs, streetsIcons, streetsModels} from '../assets';
 import {mapboxRailTransitStyle} from './mapbox-rail';
 import {withStreetsCartography} from './streets-cartography';
 import {withStreetsConstruction} from './streets-construction';
-import {streetsCreditsAttribution} from './streets-credits';
 import {streetsPoiImage} from './streets-poi';
 import {streetsThemes, streetsVisual} from './streets-themes';
 import {streetsTrees} from './streets-trees';
@@ -1540,15 +1539,11 @@ const streetsBase = bindOfficialMapTheme(
     },
     icons: [streetsIcons],
     models: [streetsModels],
-    // Global regional relief: native resolution is capped independently of visibility.
-    // Higher zooms reuse z12 DEM tiles instead of requesting unavailable local detail.
+    // Regional relief from hosted Tileflow Terrain: its TileJSON declares the tile size, native
+    // zoom and credit, so closer views overzoom its deepest tiles without a separate cap here.
     terrain: {
       mode: 'hillshade',
       encoding: 'terrarium',
-      tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
-      tileSize: 256,
-      maxZoom: 12,
-      attribution: streetsCreditsAttribution,
       hillshade: {
         minZoom: 5,
         maxZoom: 14,

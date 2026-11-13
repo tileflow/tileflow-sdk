@@ -1,9 +1,10 @@
 import {isTileflowWorldReleaseId} from './data/world-release-id-values';
+import {tileflowCatalogBridgeProtocol} from './fair-use-protocol';
 
 /**
  * `GRACE` and `MANAGED_REQUIRED` come from the site's fair-use state. `LIMITED` means Tileflow is
- * temporarily limiting anonymous World delivery for everyone: cached areas keep loading while some
- * uncached areas fail, and a managed map is not affected.
+ * temporarily limiting anonymous catalog delivery (World, Terrain) for everyone: cached areas keep
+ * loading while some uncached areas fail, and a managed map is not affected.
  */
 export type TileflowFairUseNoticeState = 'GRACE' | 'MANAGED_REQUIRED' | 'LIMITED';
 
@@ -41,7 +42,7 @@ export type TileflowFairUseNoticeController = Readonly<{
   update: (notice: TileflowFairUseNotice | null) => void;
 }>;
 
-const protocol = 'tileflow-world';
+const protocol = tileflowCatalogBridgeProtocol;
 const defaultHelpUrl = 'https://tileflow.dev/world/connect';
 const ownerAction = 'Site owner: manage this map with Tileflow.';
 // Degradation is announced only by failing cold tiles, while cached tiles keep succeeding; hold the
@@ -94,7 +95,7 @@ export function registerTileflowWorldRequestBridge(input: {
       registrations.delete(channel);
     },
     rewriteUrl(url: string) {
-      if (disposed || !isCanonicalWorldTileUrl(url)) return url;
+      if (disposed || !catalogTileKind(url)) return url;
       return `${protocol}://request/${channel}?url=${encodeURIComponent(url)}`;
     },
   });
@@ -182,7 +183,8 @@ async function loadTileflowWorldRequest(
   const channel = wrapped.pathname.slice(1);
   const registration = wrapped.hostname === 'request' ? registrations.get(channel) : undefined;
   const original = wrapped.searchParams.get('url') ?? '';
-  if (!registration || !isCanonicalWorldTileUrl(original)) {
+  const kind = registration ? catalogTileKind(original) : null;
+  if (!registration || !kind) {
     throw new Error('Invalid Tileflow World request bridge');
   }
   registration.nextRequestSequence += 1;
@@ -258,7 +260,10 @@ async function loadTileflowWorldRequest(
 
   if (
     response.status === 404 ||
-    (response.status === 429 && (fairUse === 'GRACE' || fairUse === 'MANAGED_REQUIRED'))
+    (response.status === 429 && (fairUse === 'GRACE' || fairUse === 'MANAGED_REQUIRED')) ||
+    // Relief and trails are optional: a guarded tile renders empty instead of failing the map.
+    ((kind === 'terrain' || kind === 'trails') &&
+      (response.status === 429 || response.status === 503))
   ) {
     await cancelResponseBody(response.body);
     return Object.freeze({
@@ -472,40 +477,69 @@ function parseHelpUrl(value: string | null): string {
   }
 }
 
-function isCanonicalWorldTileUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    const exactPath = url.pathname.match(
-      /^\/tiles\/world\/([^/]+)\/(?:0|[1-9]\d*)\/(?:0|[1-9]\d*)\/(?:0|[1-9]\d*)\.pbf$/u,
-    );
-    if (
-      url.protocol !== 'https:' ||
-      (url.hostname !== 'tileflow.dev' && !url.hostname.endsWith('.tileflow.dev')) ||
-      url.port ||
-      url.username ||
-      url.password ||
-      url.hash ||
-      !exactPath ||
-      !isTileflowWorldReleaseId(exactPath[1])
-    ) {
-      return false;
-    }
+type CatalogTileKind = 'terrain' | 'trails' | 'world';
 
-    const allowedQueryKeys = new Set([
-      'grant',
-      'map',
-      'renderExpires',
-      'renderSignature',
-      'session',
-      'styleId',
-      'worldDescriptorSha256',
-    ]);
-    if ([...url.searchParams.keys()].some((key) => !allowedQueryKeys.has(key))) return false;
-    const descriptorDigests = url.searchParams.getAll('worldDescriptorSha256');
-    return descriptorDigests.length === 1 && /^[0-9a-f]{64}$/u.test(descriptorDigests[0] ?? '');
+const sharedCatalogQueryKeys = [
+  'grant',
+  'map',
+  'renderExpires',
+  'renderSignature',
+  'session',
+  'styleId',
+];
+const worldQueryKeys = new Set([...sharedCatalogQueryKeys, 'worldDescriptorSha256']);
+const terrainQueryKeys = new Set([...sharedCatalogQueryKeys, 'terrainDescriptorSha256']);
+const trailsQueryKeys = new Set([...sharedCatalogQueryKeys, 'trailsManifestSha256']);
+const worldTilePath =
+  /^\/tiles\/world\/([^/]+)\/(?:0|[1-9]\d*)\/(?:0|[1-9]\d*)\/(?:0|[1-9]\d*)\.pbf$/u;
+const terrainTilePath =
+  /^\/tiles\/terrain\/([a-z0-9][a-z0-9._-]{0,126}[a-z0-9])\/(?:0|[1-9]\d*)\/(?:0|[1-9]\d*)\/(?:0|[1-9]\d*)\.(?:png|webp)$/u;
+const trailsTilePath =
+  /^\/tiles\/trails\/([a-z0-9][a-z0-9._-]{0,126}[a-z0-9])\/(?:0|[1-9]\d*)\/(?:0|[1-9]\d*)\/(?:0|[1-9]\d*)\.pbf$/u;
+
+/**
+ * Catalog tiles carry fair-use headers. World tiles are recognised on Tileflow hosts with their
+ * exact descriptor digest; Terrain and Trails tiles by their release path alone, so any catalog
+ * host is recognised. Either way, only Tileflow request parameters may appear in the query.
+ */
+function catalogTileKind(value: string): CatalogTileKind | null {
+  let url: URL;
+  try {
+    url = new URL(value);
   } catch {
-    return false;
+    return null;
   }
+  if (url.protocol !== 'https:' || url.port || url.username || url.password || url.hash) {
+    return null;
+  }
+  const keys = [...url.searchParams.keys()];
+  const terrainPath = terrainTilePath.exec(url.pathname);
+  if (terrainPath) {
+    const release = terrainPath[1]!;
+    return !release.includes('..') && keys.every((key) => terrainQueryKeys.has(key))
+      ? 'terrain'
+      : null;
+  }
+  const trailsPath = trailsTilePath.exec(url.pathname);
+  if (trailsPath) {
+    const release = trailsPath[1]!;
+    return !release.includes('..') && keys.every((key) => trailsQueryKeys.has(key))
+      ? 'trails'
+      : null;
+  }
+  const worldPath = worldTilePath.exec(url.pathname);
+  if (
+    !worldPath ||
+    (url.hostname !== 'tileflow.dev' && !url.hostname.endsWith('.tileflow.dev')) ||
+    !isTileflowWorldReleaseId(worldPath[1]) ||
+    keys.some((key) => !worldQueryKeys.has(key))
+  ) {
+    return null;
+  }
+  const descriptorDigests = url.searchParams.getAll('worldDescriptorSha256');
+  return descriptorDigests.length === 1 && /^[0-9a-f]{64}$/u.test(descriptorDigests[0] ?? '')
+    ? 'world'
+    : null;
 }
 
 function createChannel(): string {

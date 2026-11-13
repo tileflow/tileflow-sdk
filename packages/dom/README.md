@@ -5,8 +5,8 @@ the map, loads its manifest and style, keeps its theme, colours, camera, annotat
 interactions current, and takes everything down again. It draws nothing of its own around the map:
 marker, popup and tooltip views, loading and error states belong to your page.
 
-Use it for plain pages and web components. The React, Vue and Svelte packages are the easier way in
-those frameworks.
+Use it for plain pages and web components. The React, Vue and Svelte packages run on it and are the
+easier way in those frameworks.
 
 > Related packages and guides: [documentation index](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/llms.txt).
 
@@ -103,6 +103,46 @@ receives hover, focus and whether its popup is open in `state`.
 settles with `null` once the image has loaded.
 
 See [REFERENCE.md](REFERENCE.md) for every option and controller method.
+
+## Extend the map
+
+The map is a real MapLibre map: `ready` and `onLoad` give it, and `getMap()` returns it while it
+exists. Add your own layers, sources, controls, events and MapLibre libraries to it.
+
+<!-- docs:check -->
+
+```ts
+import {createTileflowMap} from '@tileflow/dom';
+
+const map = createTileflowMap(document.querySelector<HTMLElement>('#map')!, {
+  source: {map: 'madrid'},
+  onLoad(mapLibreMap) {
+    mapLibreMap.on('style.load', () => addRoute(mapLibreMap));
+    addRoute(mapLibreMap);
+  },
+});
+
+function addRoute(mapLibreMap: NonNullable<ReturnType<typeof map.getMap>>) {
+  if (mapLibreMap.getSource('route')) return;
+  mapLibreMap.addSource('route', {
+    type: 'geojson',
+    data: {
+      type: 'LineString',
+      coordinates: [
+        [-3.7038, 40.4168],
+        [-3.6921, 40.4138],
+      ],
+    },
+  });
+  mapLibreMap.addLayer({id: 'route', type: 'line', source: 'route', paint: {'line-width': 4}});
+}
+```
+
+Tileflow owns the style it applied, its protocols, its hosted requests and session, and the
+controls it adds. A theme change may replace the style while keeping the camera, so add your own
+layers and sources again on `style.load`, as above, or pass them as `dataSources` and `dataOverlays`,
+which the map puts back after every theme change. Keep the map's lifetime with the controller:
+`destroy()` takes everything down, and `getMap().remove()` stops the controller too.
 
 ## Next steps
 

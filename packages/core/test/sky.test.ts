@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {tileflowAtmosphereMetadataKey} from '../src/atmosphere';
-import {createTileflowThemeController} from '../src/browser';
+import {createTileflowThemeController} from '../src/browser-bundle';
 import {fixed, token} from '../src/cartography/values';
 import {createStyle, parseTileflowMap} from '../src/map';
 import {defineMap, disable, resolveMap} from '../src/maps';

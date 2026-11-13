@@ -2,7 +2,7 @@ import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {color, createStyle, defineTheme, disable, fixed, land, token} from '../src';
-import {createTileflowThemeController} from '../src/browser';
+import {createTileflowThemeController} from '../src/browser-bundle';
 import {type TileflowColorBindings, tileflowColorMetadataKey} from '../src/color-program';
 import {applyTileflowColorOverrides} from '../src/color-program-runtime';
 import {createTileflowStyleFamily, materializeTileflowStyleFamily} from '../src/style-family';

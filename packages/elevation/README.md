@@ -141,26 +141,31 @@ positions, but a profile samples the whole climb.
 <!-- docs:check -->
 
 ```ts
-import {Map} from 'maplibre-gl';
+import {createTileflowMap} from '@tileflow/dom';
 import {createTileflowElevationProfile} from '@tileflow/elevation/maplibre';
 
-const map = new Map({container: 'map', style: 'https://example.com/style.json'});
 const profile = createTileflowElevationProfile({
   apiKey: 'tf_public_your_publishable_key',
   onSelect: (selection) => console.log(selection?.profile.summary),
 });
-map.addControl(profile, 'bottom-left');
 
-map.on('load', () => {
-  void profile.setData({
-    type: 'LineString',
-    coordinates: [
-      [6.4296, 45.1655],
-      [6.4078, 45.0641],
-    ],
-  });
+createTileflowMap(document.querySelector<HTMLElement>('#map')!, {
+  source: {map: 'outdoors'},
+  onLoad(map) {
+    map.addControl(profile, 'bottom-left');
+    void profile.setData({
+      type: 'LineString',
+      coordinates: [
+        [6.4296, 45.1655],
+        [6.4078, 45.0641],
+      ],
+    });
+  },
 });
 ```
+
+Any Tileflow map works the same way: the React, Vue and Svelte components hand the MapLibre map to
+`onLoad` too.
 
 The control:
 

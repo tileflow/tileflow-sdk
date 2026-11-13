@@ -1,7 +1,7 @@
 import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {createTileflowThemeController} from '../src/browser';
+import {createTileflowThemeController} from '../src/browser-bundle';
 import {createTileflowStyleFamily, materializeTileflowStyleFamily} from '../src/style-family';
 import {prepareTileflowStyleFamilyForRendering} from '../src/style-family-render';
 import {loadTileflowRuntimeAppearance} from '../src/style-family-runtime';

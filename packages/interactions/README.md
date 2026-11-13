@@ -120,8 +120,10 @@ structured diagnostic. Keeping those selector discriminants reserved makes futur
 forward-compatible without pretending that an accepted JSON shape is already functional. Call
 `validateTileflowInteractionBindings` at an untrusted boundary before attaching bindings.
 
-Direct MapLibre consumers can use `createTileflowMapLibreDomRuntime` for annotations and
-`createTileflowMapLibreSemanticDomRuntime` for semantic POIs from the `/maplibre` subpath. Browser
-objects and schedulers are injected at attach time, so both subpath imports remain SSR-safe.
-`createTileflowMapLibreInteractionCoordinator` joins them around one controlled or uncontrolled
-popup state and commits the closing runtime before the opening runtime.
+The `/maplibre` subpath holds the MapLibre runtimes that `@tileflow/dom` and the React, Vue and
+Svelte maps run on: `createTileflowMapLibreDomRuntime` for annotations,
+`createTileflowMapLibreSemanticDomRuntime` for semantic POIs, and
+`createTileflowMapLibreInteractionCoordinator`, which joins them around one controlled or
+uncontrolled popup state and commits the closing runtime before the opening runtime. Applications
+use them through a Tileflow map's `annotations`, `interactions` and views. Browser objects and
+schedulers are injected at attach time, so the subpath imports remain SSR-safe.

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {createTileflowThemeController} from '../src/browser';
+import {createTileflowThemeController} from '../src/browser-bundle';
 import type {MapLibreStyle} from '../src/types';
 
 type Pixels = {width: number; height: number; data: Uint8Array};

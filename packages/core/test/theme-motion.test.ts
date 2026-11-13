@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {createTileflowThemeController} from '../src/browser';
+import {createTileflowThemeController} from '../src/browser-bundle';
 import type {TileflowRuntimeStyle} from '../src/runtime';
 import type {MapLibreStyle} from '../src/types';
 

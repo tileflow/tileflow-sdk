@@ -1012,6 +1012,7 @@ window.__tileflowCaptureLoad = async function(input) {
       .filter(([sourceId, source]) => sourceId !== worldSourceId && isLoopbackSourceUrl(source?.url))
       .map(([sourceId]) => sourceId);
     const map = new window.maplibregl.Map({
+      ...(input.style.metadata?.["tileflow:fontFallback"] === 1 ? {localIdeographFontFamily: false} : {}),
       attributionControl: false,
       // Multisampled like the interactive map, so thin 3D model edges capture without stipple.
       canvasContextAttributes: {antialias: true},

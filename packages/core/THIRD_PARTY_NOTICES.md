@@ -561,3 +561,15 @@ LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
 ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+## Shared map font metadata
+
+The shared font descriptor records character coverage and byte identities from unmodified
+DINish and Noto fonts. Font binaries and their complete licenses are delivered separately.
+
+- DINish: [revision a5f3b2a3](https://github.com/playbeing/dinish/tree/a5f3b2a3b932336225815bf9005e3b72cc3de71c),
+  [SIL Open Font License 1.1](https://github.com/playbeing/dinish/blob/a5f3b2a3b932336225815bf9005e3b72cc3de71c/OFL.txt).
+- Noto: [revision c971829a](https://github.com/notofonts/noto-fonts/tree/c971829a87e7920f960e7277c3dafd9bedd3c601),
+  [SIL Open Font License 1.1](https://github.com/notofonts/noto-fonts/blob/c971829a87e7920f960e7277c3dafd9bedd3c601/LICENSE).
+- Noto Sans CJK: [Sans 2.004](https://github.com/notofonts/noto-cjk/tree/523d033d6cb47f4a80c58a35753646f5c3608a78),
+  [SIL Open Font License 1.1](https://github.com/notofonts/noto-cjk/blob/523d033d6cb47f4a80c58a35753646f5c3608a78/LICENSE).

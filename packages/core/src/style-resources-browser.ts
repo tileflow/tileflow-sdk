@@ -1,5 +1,6 @@
-import {readBoundedTileflowBrowserResource} from './browser-resource';
 import {bindTileflowBrandingSources, rememberTileflowBrandingSources} from './branding';
+import {readBoundedTileflowBrowserResource} from './browser-resource';
+import {assertTileflowFontFallbackWebSupport} from './font-fallback';
 import type {TileflowRuntimeStyle} from './runtime';
 import {
   createTileflowStyleFamily,
@@ -24,6 +25,8 @@ type StyleResourceRequest = {
 };
 
 export type TileflowRuntimeStyleLoadOptions = {
+  /** Renderer version used to check opt-in style capabilities. */
+  mapLibreVersion?: string;
   /** The declaring document URL for an inline style; otherwise defaults to document.baseURI. */
   baseUrl?: string;
   fetch?: typeof globalThis.fetch;
@@ -109,6 +112,7 @@ async function prepareRuntimeStyle(
   // Only copy resource-bearing branches. GeoJSON, expressions and arbitrary metadata may contain
   // strings resembling URLs, but are application data and must keep their meaning and identity.
   const style = {...input, sources: {...input.sources}} as MapLibreStyle;
+  if (options.mapLibreVersion) assertTileflowFontFallbackWebSupport(style, options.mapLibreVersion);
   const branding = rememberTileflowBrandingSources(style, {...options, baseUrl: owner});
   const resolve = (value: string) => resolveResource(value, owner);
   if (typeof style.sprite === 'string' && style.sprite) style.sprite = resolve(style.sprite);
@@ -119,7 +123,11 @@ async function prepareRuntimeStyle(
     style['font-faces'] = Object.fromEntries(
       Object.entries(style['font-faces']).map(([family, face]) => [
         family,
-        typeof face === 'string' ? resolve(face) : {...face, url: resolve(face.url)},
+        typeof face === 'string'
+          ? resolve(face)
+          : Array.isArray(face)
+            ? face.map((file) => ({...file, url: resolve(file.url)}))
+            : {...face, url: resolve(face.url)},
       ]),
     );
   }

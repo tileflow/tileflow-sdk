@@ -300,7 +300,7 @@ internal object HostedContract {
             return@runCatching "glyph" in authority.scopes
         }
         "font" in authority.scopes &&
-            Regex("^/font-bundles/fnb_[A-Za-z0-9_-]{16,64}/[A-Za-z0-9_./-]{1,512}$").matches(path)
+            (Regex("^/font-bundles/fnb_[A-Za-z0-9_-]{16,64}/[A-Za-z0-9_./-]{1,512}$").matches(path) || Regex("^/base/[0-9a-f]{64}/fonts/[A-Za-z0-9-]+\\.(?:ttf|otf|txt)$").matches(path))
     }
         .getOrDefault(false)
 

@@ -12,6 +12,7 @@ import {
   tileflowIconPackageLimits,
   tileflowStyleFontFacesMetadataKey,
 } from '@tileflow/core';
+import {isOfficialFontFile} from '@tileflow/core/build';
 import type {TileflowBuildCatalog, TileflowBuildStyles} from '@tileflow/core/build';
 import {
   createTileflowNativeDiagnostic,
@@ -324,6 +325,31 @@ export function prepareTileflowNativeStyles(
           enumerable: true,
         });
       }
+      let preparedFaces = nativeFaces;
+      if (metadata['tileflow:fontFallback'] === 1 && original['font-faces']) {
+        const verifiedFiles = new Map(
+          Object.values(nativeFaces)
+            .flat()
+            .map((file) => [file.url, file]),
+        );
+        preparedFaces = {};
+        for (const [name, files] of Object.entries(original['font-faces'])) {
+          if (
+            !Array.isArray(files) ||
+            files.some((file) => !verifiedFiles.has(file.url) && !isOfficialFontFile(file))
+          ) {
+            issues.push(
+              withContext(
+                createTileflowNativeDiagnostic('NATIVE_FONT_UNAVAILABLE', '/font-faces'),
+                map,
+                theme,
+              ),
+            );
+            continue;
+          }
+          preparedFaces[name] = files.map((file) => ({...(verifiedFiles.get(file.url) ?? file)}));
+        }
+      }
       delete metadata[tileflowStyleFontFacesMetadataKey];
       // Web bindings address pre-lowering physical layers; Native does not expose this controller.
       delete metadata['tileflow:colors'];
@@ -332,7 +358,7 @@ export function prepareTileflowNativeStyles(
       const style = {
         ...rest,
         metadata,
-        ...(faces.length ? {'font-faces': nativeFaces} : {}),
+        ...(faces.length ? {'font-faces': preparedFaces} : {}),
       } as MapLibreStyle;
       issues.push(
         ...validateTileflowNativePreparedStyle(style, urlOptions(map, theme, policy)).map((issue) =>

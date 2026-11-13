@@ -67,7 +67,7 @@ export const tileflowFontBundleManifestSchema = z
       .min(2)
       .max(tileflowFontBundleLimits.maxFileCount),
     fontFaces: z.array(fontFaceSchema).min(1).max(tileflowFontBundleLimits.maxFaceCount),
-    format: z.literal('tileflow-font-bundle-v1'),
+    format: z.enum(['tileflow-font-bundle-v1', 'tileflow-font-bundle-v2']),
   })
   .strict()
   .superRefine((manifest, context) => {

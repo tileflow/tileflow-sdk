@@ -65,6 +65,9 @@ enum OfflineSelfHosted {
       case .object = style
     else { throw TileflowOfflineError(.invalidResponse, context: .init(reason: "invalidStyle")) }
     var documents = [url]
+    if case .array(let licenses) = style["metadata"]?["tileflow:fontLicenses"] {
+      documents += licenses.compactMap { $0.string.flatMap { resolve($0, against: url) } }
+    }
     documents += fontFiles(style["metadata"]?["tileflow:fontFaces"], against: url)
     if case .object(let faces) = style["font-faces"] {
       for name in faces.keys.sorted() {

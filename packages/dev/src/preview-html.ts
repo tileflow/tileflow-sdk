@@ -13,6 +13,7 @@ export function renderTileflowPreviewHtml(
   fontFaces: readonly TileflowStyleFontFace[] = [],
   fitViewport = false,
   controls?: string,
+  fontFallback = false,
 ): string {
   const styleUrl = preview
     ? `${basePath}/styles/${preview.mapName}/${preview.themeName}.json${controls ? `?${new URLSearchParams({controls})}` : ''}`
@@ -163,6 +164,7 @@ export function renderTileflowPreviewHtml(
       const previewThemes = ${serializeInlineJson(preview?.themeNames ?? [])};
       const isSemanticPreview = ${JSON.stringify(isSemanticPreview)};
       const previewFontFaces = ${serializeInlineJson(fontFaces)};
+      const previewFontFallback = ${serializeInlineJson(fontFallback)};
       const previewSearchParameters = new URL(location.href).searchParams;
       const mapBenchmarkEnabled = previewSearchParameters.get("mapBenchmark") === "1";
       const mapSweepEnabled = previewSearchParameters.get("mapSweep") === "1";
@@ -1603,11 +1605,14 @@ export function renderTileflowPreviewHtml(
         // can still compare up to three workers through the explicit URL override.
         const mapWorkerCount = mapWorkerCountOverride ?? 1;
         maplibregl.setWorkerCount?.(mapWorkerCount);
-        await loadTileflowStyleFonts(styleUrl, {fontFaces: previewFontFaces});
+        if (!previewFontFallback) {
+          await loadTileflowStyleFonts(styleUrl, {fontFaces: previewFontFaces});
+        }
         registerTileflowContourProtocol({addProtocol: maplibregl.addProtocol});
         registerTileflowPathGroundProtocol({addProtocol: maplibregl.addProtocol});
         registerTileflowPmtilesProtocol({addProtocol: maplibregl.addProtocol});
         const map = new maplibregl.Map({
+          ...(previewFontFallback ? {localIdeographFontFamily: false} : {}),
           ...(chromeHidden ? {attributionControl: false} : {}),
           canvasContextAttributes: tileflowCanvasContextAttributes({antialias: mapAntialias}),
           collectResourceTiming: mapBenchmarkEnabled || Boolean(inspectorObserver),

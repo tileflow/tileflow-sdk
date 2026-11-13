@@ -59,3 +59,10 @@ export type TileflowGlyphs = Readonly<{
   kind: 'url';
   url: string;
 }>;
+
+/** Complete official font files used after the map's own fonts, in explicit order. */
+export type TileflowFontFallback = Readonly<{
+  kind: 'official-fonts';
+  assetSetSha256: string;
+  fontStack: readonly string[];
+}>;

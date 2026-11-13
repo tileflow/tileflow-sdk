@@ -13,6 +13,7 @@ export {
   tileflowLocalDirectoryMaximumLength,
   tileflowLocalDirectoryMessage,
   type TileflowFontDirectory,
+  type TileflowFontFallback,
   type TileflowGlyphs,
   type TileflowIconDirectory,
   type TileflowLocalDirectory,

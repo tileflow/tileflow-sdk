@@ -9,6 +9,7 @@ import type {
 } from 'maplibre-gl';
 import type {TileflowGeoJsonSource, TileflowMapLibreOverlay} from '@tileflow/core';
 import {
+  assertTileflowFontFallbackWebSupport,
   attachTileflowAtmosphere,
   attachTileflowAttributionDetails,
   attachTileflowBranding,
@@ -1116,6 +1117,7 @@ export function createTileflowMap<TAnnotation extends TileflowAnnotation = Tilef
       transformRequest: mapOptions?.transformRequest ?? undefined,
     });
     const styleLoadOptions = {
+      mapLibreVersion: undefined as string | undefined,
       signal: resourceLifetime.signal,
       transformRequest: (url: string, type: 'Style' | 'Source') =>
         resourceTransform(
@@ -1132,6 +1134,9 @@ export function createTileflowMap<TAnnotation extends TileflowAnnotation = Tilef
     ])
       .then(([maplibregl, prepared]) => {
         if (cancelled || destroyed) return;
+        const rendererVersion = maplibregl.getVersion?.() ?? '';
+        assertTileflowFontFallbackWebSupport(prepared.style, rendererVersion);
+        styleLoadOptions.mapLibreVersion = rendererVersion;
 
         const setupCleanups: (() => void)[] = [];
         let setupDisposed = false;
@@ -1196,6 +1201,9 @@ export function createTileflowMap<TAnnotation extends TileflowAnnotation = Tilef
 
         const mapLibreMap = new maplibregl.Map({
           ...mapOptions,
+          ...(prepared.style.metadata?.['tileflow:fontFallback'] === 1
+            ? {localIdeographFontFamily: false as const}
+            : {}),
           canvasContextAttributes: tileflowCanvasContextAttributes(
             mapOptions?.canvasContextAttributes,
           ),

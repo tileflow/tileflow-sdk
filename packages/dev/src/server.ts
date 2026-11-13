@@ -281,6 +281,7 @@ export function createTileflowDevRequestHandler(
             fontFaces,
             options.fitViewport,
             controls ?? undefined,
+            previewStyle?.metadata?.['tileflow:fontFallback'] === 1,
           ),
         );
       }

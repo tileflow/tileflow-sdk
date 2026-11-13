@@ -904,10 +904,10 @@ final class OfflineStoreTests: XCTestCase {
     XCTAssertEqual(Set(plan.documents.map(\.absoluteString)), [url.absoluteString, "\(generation)/families/city.json"])
 
     let fonts = Data("""
-      {"font-faces":{"Display":"../../fonts/display.ttf","Text":[{"url":"../../fonts/text.ttf"}]}}
+      {"metadata":{"tileflow:fontLicenses":["../../fonts/LICENSE.txt"]},"font-faces":{"Display":"../../fonts/display.ttf","Text":[{"url":"../../fonts/text.ttf"}]}}
       """.utf8)
     let files = try OfflineSelfHosted.documents(style: style, data: fonts)
-    XCTAssertEqual(Set(files.map(\.absoluteString)), [style.absoluteString, "\(generation)/fonts/display.ttf", "\(generation)/fonts/text.ttf"])
+    XCTAssertEqual(Set(files.map(\.absoluteString)), [style.absoluteString, "\(generation)/fonts/display.ttf", "\(generation)/fonts/text.ttf", "\(generation)/fonts/LICENSE.txt"])
   }
 
   func testSelfHostedRegionDownloadsItsManifestStylesFontsSpritesGlyphsAndTiles() async throws {

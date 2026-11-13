@@ -291,6 +291,7 @@ test('publishes AI-reference constraints that match exact assets and capture aut
     defaultTheme: 'atomic',
     extends: 'lineage',
     fonts: 'text-assets',
+    fontFallback: 'text-assets',
     glyphs: 'text-assets',
     icons: 'icons',
     id: 'identity',

@@ -287,6 +287,7 @@ export type {
   TileflowAuthoringModules,
   TileflowDisableOperation,
   TileflowFontDirectory,
+  TileflowFontFallback,
   TileflowDerivedMap,
   TileflowGlyphs,
   TileflowIconDirectory,
@@ -853,3 +854,5 @@ export type {
   TileflowRuntimeLayerDefinition,
   TileflowRuntimeStyleErrorContext,
 } from './map-controller-browser';
+
+export {officialFontFallback} from './official-fonts';

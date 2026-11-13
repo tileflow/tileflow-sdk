@@ -14,13 +14,18 @@ import type {
   TileflowOverlayCollection,
   TileflowSource,
 } from '../overlays';
-import {tileflowPortableIdSchema} from '../portable-identity';
 import type {TileflowRemoveOperation} from '../overlays';
+import {tileflowPortableIdSchema} from '../portable-identity';
 import type {TileflowSky} from '../sky';
 import type {TileflowTheme, TileflowThemeName} from '../themes';
 import type {TileflowTimeOfDayVariants} from '../time-of-day';
 import type {TileflowProjection, TileflowTerrain, TileflowViewConfig} from '../types';
-import type {TileflowFontDirectory, TileflowGlyphs, TileflowModelDirectory} from './assets';
+import type {
+  TileflowFontDirectory,
+  TileflowFontFallback,
+  TileflowGlyphs,
+  TileflowModelDirectory,
+} from './assets';
 import type {TileflowAuthoringModules} from './operations';
 
 /** Portable, filesystem-safe identity shared by maps and their leaf-owned scenes. */
@@ -55,6 +60,12 @@ type TileflowMapTextAssets =
 
 /** Cartographic fields supported by the V1 semantic compiler. */
 export type TileflowMapDesign = TileflowMapTextAssets & {
+  /**
+   * Explicit official glyph fallback for local fonts. Omission inherits; false removes it.
+   * Declaring fonts or glyphs replaces the inherited text provider and clears its fallback unless
+   * the same definition declares it again. Existing fonts-only and glyphs-only maps are unchanged.
+   */
+  fontFallback?: TileflowFontFallback | false;
   /** Optional atmosphere for globe projection. False disables an inherited atmosphere. */
   atmosphere?: TileflowAtmosphere;
   /**

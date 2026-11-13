@@ -1,0 +1,1263 @@
+{
+  "sources": [
+    {
+      "repository": "https://github.com/notofonts/noto-fonts",
+      "commit": "c971829a87e7920f960e7277c3dafd9bedd3c601"
+    },
+    {
+      "repository": "https://github.com/notofonts/noto-cjk",
+      "commit": "523d033d6cb47f4a80c58a35753646f5c3608a78"
+    },
+    {
+      "repository": "https://github.com/playbeing/dinish",
+      "commit": "a5f3b2a3b932336225815bf9005e3b72cc3de71c"
+    }
+  ],
+  "files": [
+    {
+      "path": "fonts/NotoSans-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSans/NotoSans-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 569208,
+      "sha256": "b85c38ecea8a7cfb39c24e395a4007474fa5a4fc864f6ee33309eb4948d232d5"
+    },
+    {
+      "path": "fonts/NotoSansAdlam-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansAdlam/NotoSansAdlam-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 94472,
+      "sha256": "bcf1e6842ae5c669dbbac6adab220662eecdcda1738dd7bea67b6f63fdf3aefe"
+    },
+    {
+      "path": "fonts/NotoSansAnatolianHieroglyphs-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansAnatolianHieroglyphs/NotoSansAnatolianHieroglyphs-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 228424,
+      "sha256": "20d36b66aba1d71b6c79fffdb537f53f5519262ee989293f8b4bade252a4f791"
+    },
+    {
+      "path": "fonts/NotoSansArabic-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansArabic/NotoSansArabic-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 240456,
+      "sha256": "ceea25b464a656dc3b26849bab9356740401af62aedf1bfa8b7f0d9b75925b1b"
+    },
+    {
+      "path": "fonts/NotoSansArmenian-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansArmenian/NotoSansArmenian-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 30876,
+      "sha256": "c3332abfe298018517d7f5b687a9c0f5c92f163ea9258f23934eaa7a9378f40e"
+    },
+    {
+      "path": "fonts/NotoSansAvestan-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansAvestan/NotoSansAvestan-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 23016,
+      "sha256": "d21ee63985d96de80e89dd7c378dcd13b839aabafd940f56ebd1e051f4a69839"
+    },
+    {
+      "path": "fonts/NotoSansBalinese-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansBalinese/NotoSansBalinese-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 92388,
+      "sha256": "9b82c9de4890d39d9ef09e7b09158ede558ddbaf8c85384461a10f492d489577"
+    },
+    {
+      "path": "fonts/NotoSansBamum-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansBamum/NotoSansBamum-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 228928,
+      "sha256": "7215685b39f19cbd142d73e4f4f81f4a2586cdeed0d6c0de43f84b7ef060fe6c"
+    },
+    {
+      "path": "fonts/NotoSansBassaVah-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansBassaVah/NotoSansBassaVah-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 8396,
+      "sha256": "5c29bf4fd3c424cf72c0b8e25e3ccdd32ef40e9fe0e72e2d23c0ae0f137d6c19"
+    },
+    {
+      "path": "fonts/NotoSansBatak-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansBatak/NotoSansBatak-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 22372,
+      "sha256": "1e944c2d1ae865a3c58abda5d9fd49d259aa5bfa937b9a8f6c0d8200a66ae0cd"
+    },
+    {
+      "path": "fonts/NotoSansBengali-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansBengali/NotoSansBengali-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 200048,
+      "sha256": "6300c5370cd688b0641343de4c786de6d412bb6c578d129dae75e93a0322dcab"
+    },
+    {
+      "path": "fonts/NotoSansBhaiksuki-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansBhaiksuki/NotoSansBhaiksuki-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 242532,
+      "sha256": "aa12f89406eaa3a39f7b810094a19d824a3a5d4ddfe2938d2f1f1916c61a28d9"
+    },
+    {
+      "path": "fonts/NotoSansBrahmi-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansBrahmi/NotoSansBrahmi-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 41780,
+      "sha256": "9c5bb61ef842701ea8e7db9e63ccc0a5585f0b90e14367b81ccd2cdb0a20ae23"
+    },
+    {
+      "path": "fonts/NotoSansBuginese-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansBuginese/NotoSansBuginese-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 7200,
+      "sha256": "6aa800f208a1ccd3c54f9dac8c8877ac9f6997a4d5b84a179aba1e914ad4ae22"
+    },
+    {
+      "path": "fonts/NotoSansBuhid-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansBuhid/NotoSansBuhid-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 11448,
+      "sha256": "73e7491d282f34add3ab552e02252bae789a9400a7cd766f83b8fe3d40c8d72d"
+    },
+    {
+      "path": "fonts/NotoSansCanadianAboriginal-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansCanadianAboriginal/NotoSansCanadianAboriginal-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 113740,
+      "sha256": "70735441641a0a90f9f1baa45c7340deea77f19c5829fc71162bb443acad2ca7"
+    },
+    {
+      "path": "fonts/NotoSansCarian-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansCarian/NotoSansCarian-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 12856,
+      "sha256": "c29f4ddd95be24adff8e5244e1906efad6985ef6c541354e3f94e3c907f56b71"
+    },
+    {
+      "path": "fonts/NotoSansCaucasianAlbanian-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansCaucasianAlbanian/NotoSansCaucasianAlbanian-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 26044,
+      "sha256": "8a0ab14ea96c7fb6411f14248270e05698ecea78aca04a6b478d953ba5094657"
+    },
+    {
+      "path": "fonts/NotoSansChakma-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansChakma/NotoSansChakma-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 81704,
+      "sha256": "1a2d027b3d30b6c0a8ab3892549603f0db3bfaa5d2cf928a5878081c4c1f5df0"
+    },
+    {
+      "path": "fonts/NotoSansCham-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansCham/NotoSansCham-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 31092,
+      "sha256": "eac19ce3bd7fee897717b4ffeaed344abe35e453d2833b6dc5f334a8fdef1c2f"
+    },
+    {
+      "path": "fonts/NotoSansCherokee-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansCherokee/NotoSansCherokee-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 94600,
+      "sha256": "b1fc4e947c0647dc79e88a6583c3b50d81d533732cd9be821d4d4999def842cd"
+    },
+    {
+      "path": "fonts/NotoSansChorasmian-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansChorasmian/NotoSansChorasmian-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 17652,
+      "sha256": "4003b8e27b6025b42c43021c2afee4e76a026609428adea1bc6ea342b80dac5d"
+    },
+    {
+      "path": "fonts/NotoSansCoptic-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansCoptic/NotoSansCoptic-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 50472,
+      "sha256": "7f3e5f77493cdcd27ac58a5a647572e59fd1b62496d7b998b0101846a20b727a"
+    },
+    {
+      "path": "fonts/NotoSansCuneiform-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansCuneiform/NotoSansCuneiform-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 820248,
+      "sha256": "6c9b57503e0dc9e81e30a52011b64764515afc2a77ea7e77dae53c7e04291c18"
+    },
+    {
+      "path": "fonts/NotoSansCypriot-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansCypriot/NotoSansCypriot-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 15088,
+      "sha256": "35f5b9cbc90f435e02ed2aa082416f7fe1faf4f09bdb08e8c59211d746b99d8a"
+    },
+    {
+      "path": "fonts/NotoSansCyproMinoan-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansCyproMinoan/NotoSansCyproMinoan-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 11860,
+      "sha256": "2c6546554478e91df060e61f3e3c6634c0abcfc857523fe4108dc1774ae10862"
+    },
+    {
+      "path": "fonts/NotoSansDeseret-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansDeseret/NotoSansDeseret-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 19936,
+      "sha256": "62a7ba0fe4d060fb9c3d73ca9fceb12dfac5137991cecbdad3ab65606e764264"
+    },
+    {
+      "path": "fonts/NotoSansDevanagari-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansDevanagari/NotoSansDevanagari-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 219212,
+      "sha256": "385e78e6359a9d88a0f243d53b1209d7548361ba2194e2b9ec779bcaa7e8949d"
+    },
+    {
+      "path": "fonts/NotoSansDuployan-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansDuployan/NotoSansDuployan-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 18728,
+      "sha256": "8424e44dd94976ea69f22d33270b56808d000142e77ed726b59084cc407cd557"
+    },
+    {
+      "path": "fonts/NotoSansEgyptianHieroglyphs-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansEgyptianHieroglyphs/NotoSansEgyptianHieroglyphs-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 585400,
+      "sha256": "04108b2f009bcb917df82f6aa59eea4baf02af28cd5f07e7fffb6c162454c87b"
+    },
+    {
+      "path": "fonts/NotoSansElbasan-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansElbasan/NotoSansElbasan-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 19384,
+      "sha256": "8e9c8d9957c0e63645776a27f3024e12c8650f556e0593ed955929cc341e10bf"
+    },
+    {
+      "path": "fonts/NotoSansElymaic-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansElymaic/NotoSansElymaic-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 9024,
+      "sha256": "9339c724ff1ea718b3ab144282fbe8b1abb2d0fb3a760ca1c05092caf3a388e0"
+    },
+    {
+      "path": "fonts/NotoSansEthiopic-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansEthiopic/NotoSansEthiopic-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 344328,
+      "sha256": "e3a81ca66eb6d6b1a50a287c1dba18195541f69e0986f8b49a42658aa592ff0d"
+    },
+    {
+      "path": "fonts/NotoSansGeorgian-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansGeorgian/NotoSansGeorgian-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 53948,
+      "sha256": "b36ab61cbdd820ffd32f957f704f5bf0c53655e820b7a64001091058919a11a6"
+    },
+    {
+      "path": "fonts/NotoSansGlagolitic-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansGlagolitic/NotoSansGlagolitic-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 39764,
+      "sha256": "66c6669a13df1f17429feac6ab286b428a69a8132b677dc4f42df01782466c56"
+    },
+    {
+      "path": "fonts/NotoSansGothic-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansGothic/NotoSansGothic-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 11668,
+      "sha256": "a3ff9d9e48bbd509746439bdabd2528182e81c9690120fad051827cde85da84a"
+    },
+    {
+      "path": "fonts/NotoSansGrantha-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansGrantha/NotoSansGrantha-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 454624,
+      "sha256": "2f20d41cb336beaab6491f402311f259d0a09261cd11e4109063cc551c5fd91b"
+    },
+    {
+      "path": "fonts/NotoSansGujarati-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansGujarati/NotoSansGujarati-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 208452,
+      "sha256": "8d5c22d7b729ef2839e6d1fe2cde77b2d083907be3659bca63676baa76e01fd6"
+    },
+    {
+      "path": "fonts/NotoSansGunjalaGondi-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansGunjalaGondi/NotoSansGunjalaGondi-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 70180,
+      "sha256": "2c5fe49c356c5ec81081e01d62efa63fc486610a5914a9652a988257df71cdaf"
+    },
+    {
+      "path": "fonts/NotoSansGurmukhi-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansGurmukhi/NotoSansGurmukhi-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 53000,
+      "sha256": "bbde4d85fdfb998eff6921cb2c7a9a7924a1c95560a6aa9a06172530e4f596da"
+    },
+    {
+      "path": "fonts/NotoSansHanifiRohingya-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansHanifiRohingya/NotoSansHanifiRohingya-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 27200,
+      "sha256": "d8b2207ec495f9a07a65473e19b8746fe659a7fc51d87c85d6f59882bd669526"
+    },
+    {
+      "path": "fonts/NotoSansHanunoo-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansHanunoo/NotoSansHanunoo-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 7964,
+      "sha256": "b999adabf149b3d82a4710e90b42b1a5edf85580377ce66300d158e92349efe3"
+    },
+    {
+      "path": "fonts/NotoSansHatran-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansHatran/NotoSansHatran-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 5044,
+      "sha256": "72762ed06d6857d1600caaeb343628d430dd0ed8ec81a47c33548e45af02b3ba"
+    },
+    {
+      "path": "fonts/NotoSansHebrew-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansHebrew/NotoSansHebrew-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 26900,
+      "sha256": "a7fa16fffb27bedb060a0866267c29e9859aeb9c21cc33f5b3aaf6eb062eca85"
+    },
+    {
+      "path": "fonts/NotoSansImperialAramaic-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansImperialAramaic/NotoSansImperialAramaic-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 6432,
+      "sha256": "a3b40fd3620c3ee8e813dbf861cfc1d836480493ff83d6c4908596d660ae4203"
+    },
+    {
+      "path": "fonts/NotoSansIndicSiyaqNumbers-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansIndicSiyaqNumbers/NotoSansIndicSiyaqNumbers-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 32668,
+      "sha256": "81f9004177271334b152fc8d793ce6111fead035c2d92493d8fca79525b0d393"
+    },
+    {
+      "path": "fonts/NotoSansInscriptionalPahlavi-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansInscriptionalPahlavi/NotoSansInscriptionalPahlavi-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 5896,
+      "sha256": "4bdf4a500601d41ad983df4c6a96090b8393c1df9b5b91f436c0d0bad74503f0"
+    },
+    {
+      "path": "fonts/NotoSansInscriptionalParthian-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansInscriptionalParthian/NotoSansInscriptionalParthian-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 7728,
+      "sha256": "3d2ef14c38b9d057c43037844ac426e588f9145e1ad7552857278d9ad33c9937"
+    },
+    {
+      "path": "fonts/NotoSansJavanese-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansJavanese/NotoSansJavanese-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 119684,
+      "sha256": "58aea15bea7a0d14752e786927b08cd8598a83dc1308e63f3196dfe9d4814c6a"
+    },
+    {
+      "path": "fonts/NotoSansKaithi-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansKaithi/NotoSansKaithi-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 91284,
+      "sha256": "481b743138f771102969950e287dadf607f6a798c559d48a712777efe4108156"
+    },
+    {
+      "path": "fonts/NotoSansKannada-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansKannada/NotoSansKannada-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 151940,
+      "sha256": "5c804033c57f2c2844b1cd425f45b9a78d81d2f71bf358351b24258ebe168aea"
+    },
+    {
+      "path": "fonts/NotoSansKayahLi-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansKayahLi/NotoSansKayahLi-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 17728,
+      "sha256": "c834f4f207a074881aa1ef7d8ad387c9c7bdb9342b2148ad3952e82a7fe0ccdd"
+    },
+    {
+      "path": "fonts/NotoSansKharoshthi-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansKharoshthi/NotoSansKharoshthi-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 33932,
+      "sha256": "7331ad8d5aab79f6fce24fb9e475cbab01833e3cd6b66fca7684866248bc0d98"
+    },
+    {
+      "path": "fonts/NotoSansKhmer-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansKhmer/NotoSansKhmer-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 114096,
+      "sha256": "5c1ec068352f1e1fe8e7a3218230360d054e104d377ef40c0423b17c34c3c259"
+    },
+    {
+      "path": "fonts/NotoSansKhojki-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansKhojki/NotoSansKhojki-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 68384,
+      "sha256": "d803eaadffc722208ae2fb4f7b0aa1599573f95f70029382317e86f37e7e14bb"
+    },
+    {
+      "path": "fonts/NotoSansKhudawadi-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansKhudawadi/NotoSansKhudawadi-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 18840,
+      "sha256": "e1ab9cd0d0639686a740eacce8717f9ecd4121b1d5c3cb33bc7c922c0849ebcc"
+    },
+    {
+      "path": "fonts/NotoSansLao-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansLao/NotoSansLao-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 31340,
+      "sha256": "4a64d40850990992913d4be44b2e87a93d52f76882c1f0c0755edcb12ec57aa2"
+    },
+    {
+      "path": "fonts/NotoSansLepcha-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansLepcha/NotoSansLepcha-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 24724,
+      "sha256": "14ebb746436c1abdc3b0448b3b783b450b190ef38d99a91c787444a63f486cb3"
+    },
+    {
+      "path": "fonts/NotoSansLimbu-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansLimbu/NotoSansLimbu-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 12980,
+      "sha256": "94595e1545f6ee745405c6cab3d0f9ebe97b8bcad0578dd0f874c29e7cdf86d5"
+    },
+    {
+      "path": "fonts/NotoSansLinearA-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansLinearA/NotoSansLinearA-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 58168,
+      "sha256": "b88a62037e59305be275d8c636de4fb70f4e5bd2bf4f258c0b9173a648e074e6"
+    },
+    {
+      "path": "fonts/NotoSansLinearB-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansLinearB/NotoSansLinearB-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 62892,
+      "sha256": "d3e24611bcaa0e5b5510d4039a0f9ea7c653dd846827e03f72ee5cc06a6affd4"
+    },
+    {
+      "path": "fonts/NotoSansLisu-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansLisu/NotoSansLisu-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 13164,
+      "sha256": "7e06cb8eb69b5b10641eee665e82770ad361aefffa752b1dcae467bb1e661f09"
+    },
+    {
+      "path": "fonts/NotoSansLycian-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansLycian/NotoSansLycian-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 4488,
+      "sha256": "1349acaac56a7eb04a6f75fabc463296fecb20369648de799f7020d8f90985b2"
+    },
+    {
+      "path": "fonts/NotoSansLydian-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansLydian/NotoSansLydian-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 4524,
+      "sha256": "156e6a8171685db3ee57b8995b810f9b2db0d70222e210fd8970fdf4a7d17c32"
+    },
+    {
+      "path": "fonts/NotoSansMahajani-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansMahajani/NotoSansMahajani-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 22816,
+      "sha256": "a78478ca6ef410c7724fd5fb7d0e4e95eed5bd5cfc30377bd943e1891368fe4f"
+    },
+    {
+      "path": "fonts/NotoSansMalayalam-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansMalayalam/NotoSansMalayalam-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 111724,
+      "sha256": "42eb462ff13e820ebbeaaec4e7b426bd1de145d02cef8b634f5a3efd376b513c"
+    },
+    {
+      "path": "fonts/NotoSansMandaic-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansMandaic/NotoSansMandaic-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 29076,
+      "sha256": "b0494a61ee4d5af8782f5cba9f73174634f27abcdc7ef535f4175189ebcad8ba"
+    },
+    {
+      "path": "fonts/NotoSansManichaean-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansManichaean/NotoSansManichaean-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 52216,
+      "sha256": "63f87e861b1f79126552f7770449db4f541d8afc7deec1ac47bfdfebf07b68a7"
+    },
+    {
+      "path": "fonts/NotoSansMarchen-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansMarchen/NotoSansMarchen-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 131648,
+      "sha256": "0b86c65c89c931f353d318f8435a8e5d738f1007835b4eb930ca81b3aa94066b"
+    },
+    {
+      "path": "fonts/NotoSansMasaramGondi-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansMasaramGondi/NotoSansMasaramGondi-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 30504,
+      "sha256": "0aa765a7053d55c54260381c090e3eedd8118288f224457e5fef87e30136feae"
+    },
+    {
+      "path": "fonts/NotoSansMath-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansMath/NotoSansMath-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 590904,
+      "sha256": "80b61fd613d3519197e64fff6f7e71fdc7f3e6526440ea4115b554ef7fd59af7"
+    },
+    {
+      "path": "fonts/NotoSansMayanNumerals-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansMayanNumerals/NotoSansMayanNumerals-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 4716,
+      "sha256": "5c3c0dac5f8cf67dfa65b904f15b977315dd0cafaacb2582c1329727ea2753b3"
+    },
+    {
+      "path": "fonts/NotoSansMedefaidrin-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansMedefaidrin/NotoSansMedefaidrin-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 30736,
+      "sha256": "56831fcf77c8dbdc540ab83522aa4b54586cbab2812ae93d3429b18dab44fb1c"
+    },
+    {
+      "path": "fonts/NotoSansMeeteiMayek-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansMeeteiMayek/NotoSansMeeteiMayek-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 17152,
+      "sha256": "b68597a00e21d3ad873f937f36552d63f1cbad457f251ab1c3654e41d5dc24fa"
+    },
+    {
+      "path": "fonts/NotoSansMendeKikakui-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansMendeKikakui/NotoSansMendeKikakui-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 35456,
+      "sha256": "e651a8208e985bd550e011ce0959b252092336539e7b4f18350760b6c7a52218"
+    },
+    {
+      "path": "fonts/NotoSansMeroitic-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansMeroitic/NotoSansMeroitic-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 33688,
+      "sha256": "f86e213d3a76f9178ebc412d3784f8b4d96f79a6086fad83fd38fa870be6a8a6"
+    },
+    {
+      "path": "fonts/NotoSansMiao-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansMiao/NotoSansMiao-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 36276,
+      "sha256": "11ef13cc9cc00ed188f0174e39eefe4d73f748319563836ac9f81feafd744653"
+    },
+    {
+      "path": "fonts/NotoSansModi-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansModi/NotoSansModi-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 44384,
+      "sha256": "1f0dedb10b7348751eb30b0f2b2b05b47ee60efe843f6189a72133c149d01c4d"
+    },
+    {
+      "path": "fonts/NotoSansMongolian-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansMongolian/NotoSansMongolian-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 183016,
+      "sha256": "f82ad19e5653e710e0c30a031eebac2fc9d108a0406ca8bbc458559ef26136d4"
+    },
+    {
+      "path": "fonts/NotoSansMono-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansMono/NotoSansMono-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 512836,
+      "sha256": "d9e2b23d19f8230be7146f409a52b1d23117e635e28f2e2892cf91b7382f325b"
+    },
+    {
+      "path": "fonts/NotoSansMro-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansMro/NotoSansMro-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 6920,
+      "sha256": "36cc0318ecb39d06dc0ad06b2165b5b48b09deea5232825df4e397a407eaa304"
+    },
+    {
+      "path": "fonts/NotoSansMultani-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansMultani/NotoSansMultani-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 16928,
+      "sha256": "d8d2022c636d18994845cbfae3863c61dadb10fdb25863fc143012caf82c3901"
+    },
+    {
+      "path": "fonts/NotoSansMyanmar-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansMyanmar/NotoSansMyanmar-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 195408,
+      "sha256": "9dd2bc76a822a974efce803a4b07302d14d01d5c1fa9e33a258d15a9cb513a7d"
+    },
+    {
+      "path": "fonts/NotoSansNKo-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansNKo/NotoSansNKo-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 38352,
+      "sha256": "389f4082894bf1833dc5f140a282496114366b410779fbb16b3486f4660e9313"
+    },
+    {
+      "path": "fonts/NotoSansNabataean-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansNabataean/NotoSansNabataean-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 8328,
+      "sha256": "c8ea9c1f3b53d9ecd76eb237554ccfa8d5a6227f166c68fd44f8948332ce997c"
+    },
+    {
+      "path": "fonts/NotoSansNandinagari-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansNandinagari/NotoSansNandinagari-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 212628,
+      "sha256": "c4e29eab0b0ec308ad176d040fa5dd7005b129baabcb13b021f2f8ad51342b5b"
+    },
+    {
+      "path": "fonts/NotoSansNewTaiLue-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansNewTaiLue/NotoSansNewTaiLue-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 17024,
+      "sha256": "22e5e23a4bfade05d8edab913ee48b0213f0b4f787055e52906242e6ea6d7d33"
+    },
+    {
+      "path": "fonts/NotoSansNewa-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansNewa/NotoSansNewa-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 151720,
+      "sha256": "d3642459efc0b3cc92c3274a53daa3de5c22e98d65bd7c45d908d3d18141f459"
+    },
+    {
+      "path": "fonts/NotoSansNushu-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansNushu/NotoSansNushu-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 116564,
+      "sha256": "d4181f1cdf281d518190760155c83d2bb5603fe3762eebe6da0246b5df400708"
+    },
+    {
+      "path": "fonts/NotoSansOgham-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansOgham/NotoSansOgham-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 4684,
+      "sha256": "1da5a359c6771d7cffc30159a787f432d89496122e689b2f07913693fb91d719"
+    },
+    {
+      "path": "fonts/NotoSansOlChiki-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansOlChiki/NotoSansOlChiki-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 15180,
+      "sha256": "8aa3fe0d4cafc878023061ff4db4de90a4334153716d7b69d60e9a2c8e06e18d"
+    },
+    {
+      "path": "fonts/NotoSansOldHungarian-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansOldHungarian/NotoSansOldHungarian-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 53944,
+      "sha256": "6d050e9b5e499d677efeeb73ee6e3f1384403b9cd21a70f1e5585a0fe7dac6cb"
+    },
+    {
+      "path": "fonts/NotoSansOldItalic-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansOldItalic/NotoSansOldItalic-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 7548,
+      "sha256": "56463fbf56606bfaecee13240a28024baca03cf64bfa5c81fc62f810b9e519b1"
+    },
+    {
+      "path": "fonts/NotoSansOldNorthArabian-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansOldNorthArabian/NotoSansOldNorthArabian-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 7228,
+      "sha256": "c82d2860236eb6c8e7004184ce0b5d463187872bd33a12016f5d6e87f32e1fb4"
+    },
+    {
+      "path": "fonts/NotoSansOldPermic-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansOldPermic/NotoSansOldPermic-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 9976,
+      "sha256": "4efd482d1df49fec1732f50c7fcfa0a358df50135360131d59067d518870f9e4"
+    },
+    {
+      "path": "fonts/NotoSansOldPersian-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansOldPersian/NotoSansOldPersian-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 12764,
+      "sha256": "d7fd6043405eed81e3238a2c42469562d57e2b384c071e491d8750cb5cad6438"
+    },
+    {
+      "path": "fonts/NotoSansOldSogdian-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansOldSogdian/NotoSansOldSogdian-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 15540,
+      "sha256": "e08581c6c66d2610ca0bfebd3b93a2da1d820f951eada8a310c98a19e371d53c"
+    },
+    {
+      "path": "fonts/NotoSansOldSouthArabian-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansOldSouthArabian/NotoSansOldSouthArabian-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 5276,
+      "sha256": "0f016ec083239dc1a240bf8959c3c007fb0aa34e20641bf9b976f01d21059ebd"
+    },
+    {
+      "path": "fonts/NotoSansOldTurkic-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansOldTurkic/NotoSansOldTurkic-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 15392,
+      "sha256": "059b6a39feb6c1cb322c2c2fc7b7a4b9f0f92680bcdcb513e7945d36eff4e397"
+    },
+    {
+      "path": "fonts/NotoSansOriya-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansOriya/NotoSansOriya-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 95776,
+      "sha256": "b8d8bd784b9d09c0668233437359913c93a3a83bf37d92ecde859e2bc728a0e0"
+    },
+    {
+      "path": "fonts/NotoSansOsage-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansOsage/NotoSansOsage-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 21044,
+      "sha256": "637cd8de8d81cc50c7bab9f89dcf31d088f4461ad24c4ae7258692e5b06c3d53"
+    },
+    {
+      "path": "fonts/NotoSansOsmanya-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansOsmanya/NotoSansOsmanya-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 17016,
+      "sha256": "7a2fc546845fe675c0615646027f1227b5df85400aa4efe54e0c56d71468bcb9"
+    },
+    {
+      "path": "fonts/NotoSansPahawhHmong-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansPahawhHmong/NotoSansPahawhHmong-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 18248,
+      "sha256": "e65520d47973c5faea9aa6942cfe776f86443518b9202d177ec5521bd5e70f68"
+    },
+    {
+      "path": "fonts/NotoSansPalmyrene-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansPalmyrene/NotoSansPalmyrene-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 15660,
+      "sha256": "30464c8e340fb55863b2ccb8c25eaca4695a9c37fc400615f60f4c79b7c6329b"
+    },
+    {
+      "path": "fonts/NotoSansPauCinHau-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansPauCinHau/NotoSansPauCinHau-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 9840,
+      "sha256": "df1f18a6b8b8eb1b82e43bccda63dcae7642468962210e342d36d0dbf1264e32"
+    },
+    {
+      "path": "fonts/NotoSansPhagsPa-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansPhagsPa/NotoSansPhagsPa-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 39904,
+      "sha256": "5092bab8568225ce9ecc16b6313a36bba298cd76a7e15e4450ae0ff3d69af1a0"
+    },
+    {
+      "path": "fonts/NotoSansPhoenician-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansPhoenician/NotoSansPhoenician-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 6192,
+      "sha256": "ccbc35dbe91011b0f1079c8a46959c8e64d1a4de27e60fea305ce566722d72f5"
+    },
+    {
+      "path": "fonts/NotoSansPsalterPahlavi-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansPsalterPahlavi/NotoSansPsalterPahlavi-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 33308,
+      "sha256": "c4eed0c601667ea1b7369bdaa5a5fd1b8be91a725cdbccfb0a7afe26b1727868"
+    },
+    {
+      "path": "fonts/NotoSansRejang-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansRejang/NotoSansRejang-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 7528,
+      "sha256": "def01dc6639f1e44bfb252192e261efbcd00239a0b799ce2c83f9cf782e2f6ce"
+    },
+    {
+      "path": "fonts/NotoSansRunic-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansRunic/NotoSansRunic-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 9576,
+      "sha256": "c4367d93c081d58c533ab01f4ef34a152fefebdc7a73862990d4c0551638af7d"
+    },
+    {
+      "path": "fonts/NotoSansSamaritan-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansSamaritan/NotoSansSamaritan-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 11068,
+      "sha256": "d1b27cc0f7205a3ba55da79b0071c0b09c957ec95cb3065ea16e7b5706362768"
+    },
+    {
+      "path": "fonts/NotoSansSaurashtra-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansSaurashtra/NotoSansSaurashtra-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 35316,
+      "sha256": "068d85448bbaf2b5685fc17f3f2810aa6078a668a5331464430214a37e0e9802"
+    },
+    {
+      "path": "fonts/NotoSansSharada-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansSharada/NotoSansSharada-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 52132,
+      "sha256": "2ae587b97aa16faa0918c449378b3df82ff7ae118cfbbf273483c2776e3f9aea"
+    },
+    {
+      "path": "fonts/NotoSansShavian-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansShavian/NotoSansShavian-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 13428,
+      "sha256": "3d184fc0b1102f8a07d24a2f3fd947bcaa59a0ee9cffff0d052af8c5321865ae"
+    },
+    {
+      "path": "fonts/NotoSansSiddham-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansSiddham/NotoSansSiddham-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 141744,
+      "sha256": "8eb1fcf004694e0db2e847a6d78def6b11bdc4a2effc34b81b303590850500a3"
+    },
+    {
+      "path": "fonts/NotoSansSignWriting-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansSignWriting/NotoSansSignWriting-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 5216448,
+      "sha256": "1ca2d2efc74bbe80dcfd987ad441c2f226040dff1c3e584946996ae01af5f7f0"
+    },
+    {
+      "path": "fonts/NotoSansSinhala-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansSinhala/NotoSansSinhala-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 310232,
+      "sha256": "a966549310b2d3046ba25bbeef11985428ff9356fa656fd6118bc90fb82df031"
+    },
+    {
+      "path": "fonts/NotoSansSogdian-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansSogdian/NotoSansSogdian-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 101656,
+      "sha256": "0fe39a6cc02feac0306f2535e03d3d18c5fabaf46dd63add6604b74e352736d3"
+    },
+    {
+      "path": "fonts/NotoSansSoraSompeng-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansSoraSompeng/NotoSansSoraSompeng-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 8164,
+      "sha256": "165c44352d9f31b98f1fa234716b577d0b41f0a6aa084951fa2fcc3cbb36a5b7"
+    },
+    {
+      "path": "fonts/NotoSansSoyombo-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansSoyombo/NotoSansSoyombo-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 67080,
+      "sha256": "ce85c79cab6e9146677bb62a94868ec78c1619cc487502a0473a25a2f8aa68ce"
+    },
+    {
+      "path": "fonts/NotoSansSundanese-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansSundanese/NotoSansSundanese-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 22896,
+      "sha256": "9677854a1c823e965c6f9501e5a5e792f50c516e2487c44b1d818676b8c07b78"
+    },
+    {
+      "path": "fonts/NotoSansSylotiNagri-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansSylotiNagri/NotoSansSylotiNagri-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 16600,
+      "sha256": "9f7b7d3a715398f2560bf28cceb2420f8ad8bb3bc0560726933c8f7e374d5481"
+    },
+    {
+      "path": "fonts/NotoSansSymbols-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansSymbols/NotoSansSymbols-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 258156,
+      "sha256": "8f02f31959bbdf6061547a188248e13f84dc5fdd940326ec494675f453f072bb"
+    },
+    {
+      "path": "fonts/NotoSansSymbols2-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansSymbols2/NotoSansSymbols2-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 656852,
+      "sha256": "630846d528dbe4c4981370a4d0a9475a1fd1491a129bb411f8e157cdb5de13c6"
+    },
+    {
+      "path": "fonts/NotoSansSyriac-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansSyriac/NotoSansSyriac-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 233516,
+      "sha256": "7e05622602dd5333006807f61b30452a94cca0a0791047a120edff00cf189082"
+    },
+    {
+      "path": "fonts/NotoSansTagalog-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansTagalog/NotoSansTagalog-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 6564,
+      "sha256": "d4ce7fcbe74ea4b5c8cbe01438203079d6b9a4a35b86db63d380a12eef7ad666"
+    },
+    {
+      "path": "fonts/NotoSansTagbanwa-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansTagbanwa/NotoSansTagbanwa-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 6224,
+      "sha256": "db07c20207d8f5590c47f0d70a6df5f0c9989f3d0a4b8f35fc025ab8f7710d48"
+    },
+    {
+      "path": "fonts/NotoSansTaiLe-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansTaiLe/NotoSansTaiLe-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 19944,
+      "sha256": "2092a21441a2c0045a47b975379efb5dc83aa660cb9221c6bbe35a9d86b27034"
+    },
+    {
+      "path": "fonts/NotoSansTaiTham-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansTaiTham/NotoSansTaiTham-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 95024,
+      "sha256": "b40b1edf8f7898da994ba316acc6eb29f5b701c25ef123677d7ac8897f7caf4c"
+    },
+    {
+      "path": "fonts/NotoSansTaiViet-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansTaiViet/NotoSansTaiViet-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 30456,
+      "sha256": "5021a4483fe2d8900ca4412e76196e70f253fc842ab5bdd32c418cf3fc1ff624"
+    },
+    {
+      "path": "fonts/NotoSansTakri-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansTakri/NotoSansTakri-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 18516,
+      "sha256": "06dc6dfdca48dbc13786f4df43debc9b863204bc1067c946b3f8ae9208da48e3"
+    },
+    {
+      "path": "fonts/NotoSansTamil-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansTamil/NotoSansTamil-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 74248,
+      "sha256": "6532db33b8b264abe3a098a40619feb489b5ddf5ab1d2b46e72b51eeb548001b"
+    },
+    {
+      "path": "fonts/NotoSansTamilSupplement-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansTamilSupplement/NotoSansTamilSupplement-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 15780,
+      "sha256": "e7f5307084847dae76c370f9fcee88a0721924acb5d25ee05c078c0e162656ba"
+    },
+    {
+      "path": "fonts/NotoSansTangsa-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansTangsa/NotoSansTangsa-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 22992,
+      "sha256": "2ecb22a8c22ac54c29630a7321b6f1e496806a48d9a7a3c6298b7f04b130ec83"
+    },
+    {
+      "path": "fonts/NotoSansTelugu-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansTelugu/NotoSansTelugu-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 197228,
+      "sha256": "2c05072e8018a9be1cb0582953d9edf9a0cf129cdfb74e611de763b09c411f7f"
+    },
+    {
+      "path": "fonts/NotoSansThaana-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansThaana/NotoSansThaana-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 18728,
+      "sha256": "bb219bc7cbe681caab69bda873e38d088c723a565adb8c823d5923dade24aa63"
+    },
+    {
+      "path": "fonts/NotoSansThai-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansThai/NotoSansThai-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 37752,
+      "sha256": "404ddfb5ed0aaa6b6ec8a85700d682978992062d67da93903967b56cbd9a4acc"
+    },
+    {
+      "path": "fonts/NotoSansTifinagh-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansTifinagh/NotoSansTifinagh-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 39216,
+      "sha256": "72066fbbf300dc08644b1f1a30fa25b205c9c15c82e1566d1f4aae2ebf00659c"
+    },
+    {
+      "path": "fonts/NotoSansTirhuta-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansTirhuta/NotoSansTirhuta-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 97008,
+      "sha256": "dff6f9b34301681ec4473c7e5243d24422a86290e20ed026eba37a74f261200b"
+    },
+    {
+      "path": "fonts/NotoSansUgaritic-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansUgaritic/NotoSansUgaritic-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 7300,
+      "sha256": "eb52a2bdaae028a81306bfc9b7a92e32f88ed2e17bfc7e4f5a934fb74f673bbf"
+    },
+    {
+      "path": "fonts/NotoSansVai-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansVai/NotoSansVai-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 91692,
+      "sha256": "856da71a5593f62298fac5cdeb3bd8b3332ceebd8cca3cfd590250602dcb706b"
+    },
+    {
+      "path": "fonts/NotoSansVithkuqi-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansVithkuqi/NotoSansVithkuqi-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 18832,
+      "sha256": "f7564c2d96550184e87b263c14442a53c04faf3e9a5906e41cfe144503b2ec95"
+    },
+    {
+      "path": "fonts/NotoSansWancho-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansWancho/NotoSansWancho-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 18940,
+      "sha256": "b0b8a79a5146afcd9ef15de0820d6f94a90b729ecd01c43aa1f79afeb7090605"
+    },
+    {
+      "path": "fonts/NotoSansWarangCiti-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansWarangCiti/NotoSansWarangCiti-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 25328,
+      "sha256": "2ffa7e1bbca775ca206dfb7abf91b50498f272838d740d88ba80e0552a6f97c5"
+    },
+    {
+      "path": "fonts/NotoSansYi-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansYi/NotoSansYi-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 182808,
+      "sha256": "6cf1952d73528dd20f1238184054e0f2c36e039941d46400dc9ca865b73a1cb4"
+    },
+    {
+      "path": "fonts/NotoSansZanabazarSquare-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSansZanabazarSquare/NotoSansZanabazarSquare-Regular.ttf",
+      "licensePath": "fonts/LICENSE-noto.txt",
+      "byteLength": 19896,
+      "sha256": "e78ed9343ad392646092f574f2148b3cd4283428997fb201d3d0f99d9cc031fc"
+    },
+    {
+      "path": "fonts/NotoSansCJKjp-Regular.otf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-cjk/523d033d6cb47f4a80c58a35753646f5c3608a78/Sans/OTF/Japanese/NotoSansCJKjp-Regular.otf",
+      "licensePath": "fonts/LICENSE-cjk.txt",
+      "byteLength": 16467736,
+      "sha256": "68a3fc98800b2a27b371f2fb79991daf3633bd89309d4ffaa6946fd587f375b5"
+    },
+    {
+      "path": "fonts/LICENSE-noto.txt",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/LICENSE",
+      "byteLength": 4377,
+      "sha256": "0dab92d0544f7b233403f14b84a663bdbfa746982eda629e7f4f9ffe1b036feb"
+    },
+    {
+      "path": "fonts/LICENSE-cjk.txt",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-cjk/523d033d6cb47f4a80c58a35753646f5c3608a78/LICENSE",
+      "byteLength": 4301,
+      "sha256": "6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2"
+    },
+    {
+      "path": "fonts/LICENSE-dinish.txt",
+      "url": "https://raw.githubusercontent.com/playbeing/dinish/a5f3b2a3b932336225815bf9005e3b72cc3de71c/OFL.txt",
+      "byteLength": 4384,
+      "sha256": "b3a684e797eb0b99df2017409ceb95771ff7411743e086b0eeeeb48ad84e85e5"
+    },
+    {
+      "path": "fonts/DINish-Medium.ttf",
+      "url": "https://raw.githubusercontent.com/playbeing/dinish/a5f3b2a3b932336225815bf9005e3b72cc3de71c/fonts/ttf/DINish/DINish-Medium.ttf",
+      "byteLength": 70068,
+      "sha256": "38f559a314c89acf900e390a57c653e079b9e50fb0b184aa819c478fd26652dc",
+      "licensePath": "fonts/LICENSE-dinish.txt"
+    },
+    {
+      "path": "fonts/DINish-Bold.ttf",
+      "url": "https://raw.githubusercontent.com/playbeing/dinish/a5f3b2a3b932336225815bf9005e3b72cc3de71c/fonts/ttf/DINish/DINish-Bold.ttf",
+      "byteLength": 71696,
+      "sha256": "7bf267d086d6dfebeca41c3bfbac91a50c29a7d4aded91da8d2ff5905b06f3e8",
+      "licensePath": "fonts/LICENSE-dinish.txt"
+    },
+    {
+      "path": "fonts/NotoSans-Bold.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSans/NotoSans-Bold.ttf",
+      "byteLength": 575740,
+      "sha256": "c976e4b1b99edc88775377fcc21692ca4bfa46b6d6ca6522bfda505b28ff9d6a",
+      "licensePath": "fonts/LICENSE-noto.txt"
+    },
+    {
+      "path": "fonts/NotoSans-Italic.ttf",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSans/NotoSans-Italic.ttf",
+      "byteLength": 552776,
+      "sha256": "36cff144df01309dab648bea71baff9bb074026914afe63aeacc8bc90b67a28b",
+      "licensePath": "fonts/LICENSE-noto.txt"
+    }
+  ],
+  "fontFaces": [
+    {
+      "name": "Noto Sans Regular",
+      "files": [
+        "fonts/NotoSans-Regular.ttf",
+        "fonts/NotoSansAdlam-Regular.ttf",
+        "fonts/NotoSansAnatolianHieroglyphs-Regular.ttf",
+        "fonts/NotoSansArabic-Regular.ttf",
+        "fonts/NotoSansArmenian-Regular.ttf",
+        "fonts/NotoSansAvestan-Regular.ttf",
+        "fonts/NotoSansBalinese-Regular.ttf",
+        "fonts/NotoSansBamum-Regular.ttf",
+        "fonts/NotoSansBassaVah-Regular.ttf",
+        "fonts/NotoSansBatak-Regular.ttf",
+        "fonts/NotoSansBengali-Regular.ttf",
+        "fonts/NotoSansBhaiksuki-Regular.ttf",
+        "fonts/NotoSansBrahmi-Regular.ttf",
+        "fonts/NotoSansBuginese-Regular.ttf",
+        "fonts/NotoSansBuhid-Regular.ttf",
+        "fonts/NotoSansCanadianAboriginal-Regular.ttf",
+        "fonts/NotoSansCarian-Regular.ttf",
+        "fonts/NotoSansCaucasianAlbanian-Regular.ttf",
+        "fonts/NotoSansChakma-Regular.ttf",
+        "fonts/NotoSansCham-Regular.ttf",
+        "fonts/NotoSansCherokee-Regular.ttf",
+        "fonts/NotoSansChorasmian-Regular.ttf",
+        "fonts/NotoSansCoptic-Regular.ttf",
+        "fonts/NotoSansCuneiform-Regular.ttf",
+        "fonts/NotoSansCypriot-Regular.ttf",
+        "fonts/NotoSansCyproMinoan-Regular.ttf",
+        "fonts/NotoSansDeseret-Regular.ttf",
+        "fonts/NotoSansDevanagari-Regular.ttf",
+        "fonts/NotoSansDuployan-Regular.ttf",
+        "fonts/NotoSansEgyptianHieroglyphs-Regular.ttf",
+        "fonts/NotoSansElbasan-Regular.ttf",
+        "fonts/NotoSansElymaic-Regular.ttf",
+        "fonts/NotoSansEthiopic-Regular.ttf",
+        "fonts/NotoSansGeorgian-Regular.ttf",
+        "fonts/NotoSansGlagolitic-Regular.ttf",
+        "fonts/NotoSansGothic-Regular.ttf",
+        "fonts/NotoSansGrantha-Regular.ttf",
+        "fonts/NotoSansGujarati-Regular.ttf",
+        "fonts/NotoSansGunjalaGondi-Regular.ttf",
+        "fonts/NotoSansGurmukhi-Regular.ttf",
+        "fonts/NotoSansHanifiRohingya-Regular.ttf",
+        "fonts/NotoSansHanunoo-Regular.ttf",
+        "fonts/NotoSansHatran-Regular.ttf",
+        "fonts/NotoSansHebrew-Regular.ttf",
+        "fonts/NotoSansImperialAramaic-Regular.ttf",
+        "fonts/NotoSansIndicSiyaqNumbers-Regular.ttf",
+        "fonts/NotoSansInscriptionalPahlavi-Regular.ttf",
+        "fonts/NotoSansInscriptionalParthian-Regular.ttf",
+        "fonts/NotoSansJavanese-Regular.ttf",
+        "fonts/NotoSansKaithi-Regular.ttf",
+        "fonts/NotoSansKannada-Regular.ttf",
+        "fonts/NotoSansKayahLi-Regular.ttf",
+        "fonts/NotoSansKharoshthi-Regular.ttf",
+        "fonts/NotoSansKhmer-Regular.ttf",
+        "fonts/NotoSansKhojki-Regular.ttf",
+        "fonts/NotoSansKhudawadi-Regular.ttf",
+        "fonts/NotoSansLao-Regular.ttf",
+        "fonts/NotoSansLepcha-Regular.ttf",
+        "fonts/NotoSansLimbu-Regular.ttf",
+        "fonts/NotoSansLinearA-Regular.ttf",
+        "fonts/NotoSansLinearB-Regular.ttf",
+        "fonts/NotoSansLisu-Regular.ttf",
+        "fonts/NotoSansLycian-Regular.ttf",
+        "fonts/NotoSansLydian-Regular.ttf",
+        "fonts/NotoSansMahajani-Regular.ttf",
+        "fonts/NotoSansMalayalam-Regular.ttf",
+        "fonts/NotoSansMandaic-Regular.ttf",
+        "fonts/NotoSansManichaean-Regular.ttf",
+        "fonts/NotoSansMarchen-Regular.ttf",
+        "fonts/NotoSansMasaramGondi-Regular.ttf",
+        "fonts/NotoSansMath-Regular.ttf",
+        "fonts/NotoSansMayanNumerals-Regular.ttf",
+        "fonts/NotoSansMedefaidrin-Regular.ttf",
+        "fonts/NotoSansMeeteiMayek-Regular.ttf",
+        "fonts/NotoSansMendeKikakui-Regular.ttf",
+        "fonts/NotoSansMeroitic-Regular.ttf",
+        "fonts/NotoSansMiao-Regular.ttf",
+        "fonts/NotoSansModi-Regular.ttf",
+        "fonts/NotoSansMongolian-Regular.ttf",
+        "fonts/NotoSansMono-Regular.ttf",
+        "fonts/NotoSansMro-Regular.ttf",
+        "fonts/NotoSansMultani-Regular.ttf",
+        "fonts/NotoSansMyanmar-Regular.ttf",
+        "fonts/NotoSansNKo-Regular.ttf",
+        "fonts/NotoSansNabataean-Regular.ttf",
+        "fonts/NotoSansNandinagari-Regular.ttf",
+        "fonts/NotoSansNewTaiLue-Regular.ttf",
+        "fonts/NotoSansNewa-Regular.ttf",
+        "fonts/NotoSansNushu-Regular.ttf",
+        "fonts/NotoSansOgham-Regular.ttf",
+        "fonts/NotoSansOlChiki-Regular.ttf",
+        "fonts/NotoSansOldHungarian-Regular.ttf",
+        "fonts/NotoSansOldItalic-Regular.ttf",
+        "fonts/NotoSansOldNorthArabian-Regular.ttf",
+        "fonts/NotoSansOldPermic-Regular.ttf",
+        "fonts/NotoSansOldPersian-Regular.ttf",
+        "fonts/NotoSansOldSogdian-Regular.ttf",
+        "fonts/NotoSansOldSouthArabian-Regular.ttf",
+        "fonts/NotoSansOldTurkic-Regular.ttf",
+        "fonts/NotoSansOriya-Regular.ttf",
+        "fonts/NotoSansOsage-Regular.ttf",
+        "fonts/NotoSansOsmanya-Regular.ttf",
+        "fonts/NotoSansPahawhHmong-Regular.ttf",
+        "fonts/NotoSansPalmyrene-Regular.ttf",
+        "fonts/NotoSansPauCinHau-Regular.ttf",
+        "fonts/NotoSansPhagsPa-Regular.ttf",
+        "fonts/NotoSansPhoenician-Regular.ttf",
+        "fonts/NotoSansPsalterPahlavi-Regular.ttf",
+        "fonts/NotoSansRejang-Regular.ttf",
+        "fonts/NotoSansRunic-Regular.ttf",
+        "fonts/NotoSansSamaritan-Regular.ttf",
+        "fonts/NotoSansSaurashtra-Regular.ttf",
+        "fonts/NotoSansSharada-Regular.ttf",
+        "fonts/NotoSansShavian-Regular.ttf",
+        "fonts/NotoSansSiddham-Regular.ttf",
+        "fonts/NotoSansSignWriting-Regular.ttf",
+        "fonts/NotoSansSinhala-Regular.ttf",
+        "fonts/NotoSansSogdian-Regular.ttf",
+        "fonts/NotoSansSoraSompeng-Regular.ttf",
+        "fonts/NotoSansSoyombo-Regular.ttf",
+        "fonts/NotoSansSundanese-Regular.ttf",
+        "fonts/NotoSansSylotiNagri-Regular.ttf",
+        "fonts/NotoSansSymbols-Regular.ttf",
+        "fonts/NotoSansSymbols2-Regular.ttf",
+        "fonts/NotoSansSyriac-Regular.ttf",
+        "fonts/NotoSansTagalog-Regular.ttf",
+        "fonts/NotoSansTagbanwa-Regular.ttf",
+        "fonts/NotoSansTaiLe-Regular.ttf",
+        "fonts/NotoSansTaiTham-Regular.ttf",
+        "fonts/NotoSansTaiViet-Regular.ttf",
+        "fonts/NotoSansTakri-Regular.ttf",
+        "fonts/NotoSansTamil-Regular.ttf",
+        "fonts/NotoSansTamilSupplement-Regular.ttf",
+        "fonts/NotoSansTangsa-Regular.ttf",
+        "fonts/NotoSansTelugu-Regular.ttf",
+        "fonts/NotoSansThaana-Regular.ttf",
+        "fonts/NotoSansThai-Regular.ttf",
+        "fonts/NotoSansTifinagh-Regular.ttf",
+        "fonts/NotoSansTirhuta-Regular.ttf",
+        "fonts/NotoSansUgaritic-Regular.ttf",
+        "fonts/NotoSansVai-Regular.ttf",
+        "fonts/NotoSansVithkuqi-Regular.ttf",
+        "fonts/NotoSansWancho-Regular.ttf",
+        "fonts/NotoSansWarangCiti-Regular.ttf",
+        "fonts/NotoSansYi-Regular.ttf",
+        "fonts/NotoSansZanabazarSquare-Regular.ttf",
+        "fonts/NotoSansCJKjp-Regular.otf"
+      ]
+    },
+    {
+      "name": "DINish Medium",
+      "files": ["fonts/DINish-Medium.ttf"]
+    },
+    {
+      "name": "DINish Bold",
+      "files": ["fonts/DINish-Bold.ttf"]
+    },
+    {
+      "name": "Noto Sans Bold",
+      "files": ["fonts/NotoSans-Bold.ttf"]
+    },
+    {
+      "name": "Noto Sans Italic",
+      "files": ["fonts/NotoSans-Italic.ttf"]
+    }
+  ]
+}

@@ -50,6 +50,7 @@ export const tileflowMapMergeStrategies = {
   defaultTheme: 'atomic',
   extends: 'lineage',
   fonts: 'text-assets',
+  fontFallback: 'text-assets',
   glyphs: 'text-assets',
   icons: 'icons',
   id: 'identity',
@@ -155,9 +156,20 @@ export function resolveMap(map: TileflowMap, options: ResolveMapOptions = {}): R
               `Tileflow map "${currentId}" must declare either fonts or glyphs, not both.`,
             );
           }
+          if (current.glyphs !== undefined && current.fontFallback) {
+            throw new Error(`Tileflow map "${currentId}" fontFallback requires local fonts.`);
+          }
+          if (key === 'fontFallback') {
+            if (current.fonts !== undefined || current.glyphs !== undefined) break;
+            if (value === false) delete design.fontFallback;
+            else design.fontFallback = cloneDesign(value);
+            break;
+          }
+          delete design.fontFallback;
           if (key === 'fonts') {
             delete design.glyphs;
             design.fonts = cloneDesign(value);
+            if (current.fontFallback) design.fontFallback = cloneDesign(current.fontFallback);
           } else {
             delete design.fonts;
             design.glyphs = cloneDesign(value);

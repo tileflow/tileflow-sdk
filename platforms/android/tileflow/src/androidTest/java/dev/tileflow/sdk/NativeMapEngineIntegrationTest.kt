@@ -338,6 +338,63 @@ public class NativeMapEngineIntegrationTest {
     }
 
     @Test
+    public fun mixedFontFallbackRendersOnline() = checkMixedFontFallback(false)
+
+    @Test
+    public fun mixedFontFallbackRendersOffline() = checkMixedFontFallback(true)
+
+    private fun checkMixedFontFallback(offline: Boolean) {
+        Fixture.require()
+        val cache = TileflowMapCache.get(context)
+        runBlocking { cache.clear() }
+        if (offline) {
+            download(store { OfflinePackClient(configuration) }, "fallback", TileflowOfflineRegionLoadOptions(
+                TileflowOfflineGeometry.BoundingBox(TileflowBoundingBox(-3.705, 40.416, -3.695, 40.424)),
+                TileflowOfflineContent.Hosted(Fixture.HOSTED_MAP_ID, listOf("fallback")), minZoom = 13, maxZoom = 15,
+            ))
+        }
+        runBlocking { cache.clear() }
+        Fixture.counters(reset = true)
+        NativeMapHostActivity.requested = hosted()
+        NativeMapHostActivity.theme = "fallback"
+        NativeMapHostActivity.camera = madrid
+        TileflowOfflineSwitch.isNetworkEnabled = !offline
+        if (offline) airplaneMode(true)
+        val (requests, activity) = EngineRequests().use { requests ->
+            val activity = show()
+            try {
+                waitFor(10_000) { requests.matching("/font-bundles/").isNotEmpty() && requests.matching("/NotoSansCJKjp-Regular.otf").isNotEmpty() }
+                runBlocking { withContext(Dispatchers.Main) {
+                    for (latitude in listOf(40.4205, 40.4195, 40.42)) {
+                        val point = activity.map.project(TileflowCoordinate(-3.7, latitude))
+                        assertTrue(activity.map.query(point.x, point.y).any { it.layer == "fallback-label" })
+                    }
+                } }
+            } finally {
+                finish(activity)
+                airplaneMode(false)
+                TileflowOfflineSwitch.isNetworkEnabled = true
+            }
+            requests to activity
+        }
+        assertTrue(requests.matching("/font-bundles/").any { it.second == 200 })
+        for (file in listOf("NotoSans-Regular.ttf", "NotoSansCJKjp-Regular.otf", "NotoSansArabic-Regular.ttf")) {
+            assertTrue("${requests.answered}", requests.matching("/$file").any { it.second == 200 })
+        }
+        assertEquals(listOf<String>(), requests.delegated)
+        val counters = Fixture.counters()
+        assertEquals(if (offline) 0 else 1, counters.getInt("sessions"))
+        if (offline) {
+            assertEquals(0, counters.getInt("downloads"))
+            assertEquals(0, counters.getInt("sessionResources"))
+            assertEquals(0, runBlocking { cache.usage() }.entries)
+        }
+        assertEquals(0, mapLibreDatabaseRows(context).values.sum())
+        assertTrue("${activity.failures}", activity.failures.isEmpty())
+        assertTrue("${activity.warnings}", activity.warnings.isEmpty())
+    }
+
+    @Test
     public fun inconsistentFamilyOpensAndSwitchesThemesDirectly() {
         val url = "${Fixture.ORIGIN}/native-inconsistent/manifest.json"
         Fixture.require(url)

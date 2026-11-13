@@ -238,7 +238,7 @@ enum HostedContract {
       return authority.scopes.contains("glyph")
     }
     return authority.scopes.contains("font")
-      && matches(path, #"^/font-bundles/fnb_[A-Za-z0-9_-]{16,64}/[A-Za-z0-9_./-]{1,512}$"#)
+      && (matches(path, #"^/font-bundles/fnb_[A-Za-z0-9_-]{16,64}/[A-Za-z0-9_./-]{1,512}$"#) || matches(path, #"^/base/[0-9a-f]{64}/fonts/[A-Za-z0-9-]+\.(?:ttf|otf|txt)$"#))
   }
 
   /// Landmarks and Team models are public web resources on the API origin: a Map's view already

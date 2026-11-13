@@ -9,6 +9,7 @@ import {
   type TileflowDynamicImageMap,
 } from './dynamic-style-images';
 import type {TileflowWorldRequestBridge} from './fair-use-browser';
+import {assertTileflowFontFallbackWebSupport} from './font-fallback';
 import {
   beginTileflowRuntimeStyleChange,
   prepareTileflowRuntimeStyleApplication,
@@ -83,6 +84,8 @@ import {
   waitForTileflowThemeGeometry,
 } from './theme-preparation-browser';
 import type {MapLibreStyle} from './types';
+
+export {assertTileflowFontFallbackWebSupport} from './font-fallback';
 
 export {
   createTileflowMapControllerBinding,
@@ -769,6 +772,8 @@ export function createTileflowThemeController(options: {
   const loadStyle = async (url: string) => (await prepareStyle({style: url})).style;
   async function prepareTheme(theme: TileflowRuntimeStyle): Promise<MapLibreStyle> {
     const prepared = await prepareStyle(theme);
+    if (styleLoadOptions.mapLibreVersion)
+      assertTileflowFontFallbackWebSupport(prepared.style, styleLoadOptions.mapLibreVersion);
     await loadFonts(prepared);
     return prepared.style;
   }
@@ -2572,6 +2577,7 @@ export async function loadTileflowStyleFonts(
   style: MapLibreStyle | string,
   options: TileflowStyleFontLoadOptions = {},
 ): Promise<void> {
+  if (typeof style !== 'string' && style.metadata?.['tileflow:fontFallback'] === 1) return;
   const fetcher = options.fetch ?? globalThis.fetch;
   const styleUrl = typeof style === 'string' ? resolveTileflowBrowserResourceUrl(style) : undefined;
   const fontFaces =
@@ -2646,6 +2652,7 @@ async function fetchTileflowStyleFontFaces(
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     throw new Error('Tileflow style font metadata is invalid.');
   }
+  if ((input as MapLibreStyle).metadata?.['tileflow:fontFallback'] === 1) return [];
   return getTileflowStyleFontFaces(input as Pick<MapLibreStyle, 'metadata'>);
 }
 

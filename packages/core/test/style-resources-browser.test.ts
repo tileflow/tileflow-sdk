@@ -2,11 +2,40 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {createTileflowThemeController, loadTileflowRuntimeStyle} from '../src/browser';
 import {createTileflowStyleFamily, materializeTileflowStyleFamily} from '../src/style-family';
+import {resolveTileflowStyleResourceUrls} from '../src/style-family-runtime';
 import type {MapLibreStyle} from '../src/types';
 
 const documentUrl = 'https://maps.example/app/generations/123/styles/city/light.json';
 const emptyStyle = (): MapLibreStyle => ({version: 8, name: 'city', sources: {}, layers: []});
 const json = (value: unknown) => new Response(JSON.stringify(value));
+
+test('prepares every ranged font file without mutating its coverage or input', async () => {
+  const input = {
+    ...emptyStyle(),
+    'font-faces': {
+      Brand: [
+        {url: '../../fonts/brand.ttf', 'unicode-range': ['U+0020-007E']},
+        {url: '../../fonts/greek.otf', 'unicode-range': ['U+0370-03FF']},
+      ],
+    },
+  };
+  const before = JSON.stringify(input);
+  const {style} = await loadTileflowRuntimeStyle({style: input as never}, {baseUrl: documentUrl});
+
+  assert.deepEqual(style['font-faces'], {
+    Brand: [
+      {
+        url: 'https://maps.example/app/generations/123/fonts/brand.ttf',
+        'unicode-range': ['U+0020-007E'],
+      },
+      {
+        url: 'https://maps.example/app/generations/123/fonts/greek.otf',
+        'unicode-range': ['U+0370-03FF'],
+      },
+    ],
+  });
+  assert.equal(JSON.stringify(input), before);
+});
 
 test('prepares portable sprites, fonts, sources and models without touching application data', async () => {
   const geojson = {type: 'FeatureCollection', features: [], url: '../not-a-resource'};
@@ -472,3 +501,25 @@ for (const resource of ['style', 'family']) {
     assert.equal((await change).status, 'superseded');
   });
 }
+
+test('style-family resolution preserves the ownership of font files and licenses', () => {
+  const style = {
+    version: 8 as const,
+    sources: {},
+    layers: [],
+    'font-faces': {Display: [{url: '../fonts/display.ttf', 'unicode-range': ['U+0020-007E']}]},
+    metadata: {'tileflow:fontLicenses': ['../fonts/LICENSE.txt']},
+  };
+  const resolved = resolveTileflowStyleResourceUrls(
+    style,
+    'https://maps.example/generation/families/map.json',
+  );
+  assert.deepEqual(resolved.metadata?.['tileflow:fontLicenses'], [
+    'https://maps.example/generation/fonts/LICENSE.txt',
+  ]);
+  assert.equal(
+    (resolved['font-faces']!.Display as {url: string}[])[0]!.url,
+    'https://maps.example/generation/fonts/display.ttf',
+  );
+  assert.equal(style['font-faces'].Display[0]!.url, '../fonts/display.ttf');
+});

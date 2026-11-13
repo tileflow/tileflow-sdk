@@ -365,7 +365,10 @@ function validateNativeStyle(
     if (!support || !supportsBoth(support)) add('NATIVE_FONT_UNAVAILABLE', '/font-faces');
     if (
       !record(faces) ||
-      Object.keys(faces).length > tileflowNativeProfileLimits.maximumFontFaces
+      Object.keys(faces).length >
+        (record(style.metadata) && style.metadata['tileflow:fontFallback'] === 1
+          ? 48
+          : tileflowNativeProfileLimits.maximumFontFaces)
     ) {
       add('NATIVE_FONT_UNAVAILABLE', '/font-faces');
     } else {
@@ -378,7 +381,10 @@ function validateNativeStyle(
         if (
           !Array.isArray(files) ||
           !files.length ||
-          files.length > tileflowNativeProfileLimits.maximumFontFilesPerFace
+          files.length >
+            (record(style.metadata) && style.metadata['tileflow:fontFallback'] === 1
+              ? 192
+              : tileflowNativeProfileLimits.maximumFontFilesPerFace)
         ) {
           add('NATIVE_FONT_UNAVAILABLE', path);
           continue;

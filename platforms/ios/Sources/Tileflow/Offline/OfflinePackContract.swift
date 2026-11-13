@@ -278,7 +278,7 @@ enum OfflinePackContract {
         zooms = range
       case .documents:
         guard item["anchor"] == nil, item["source"] == nil,
-          id == "style" || id == "assets"
+          id == "style" || id == "assets" || id.range(of: #"^assets-[1-9][0-9]{0,2}$"#, options: .regularExpression) != nil
             || HostedContract.matches(id, #"^glyphs/[^/]{1,256}/(0|[1-9][0-9]{0,4})$"#)
         else { throw invalid }
       }

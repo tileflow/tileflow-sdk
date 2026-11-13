@@ -5,6 +5,13 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 import {deflateSync, gunzipSync, gzipSync} from 'node:zlib';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
+const {tileflowOfficialFontAssetSet} = await import(
+  pathToFileURL(resolve(root, 'packages/core/dist/build.js')).href
+);
+const {officialFontFile} = await import('./official-fonts.mjs');
+const sharedFontBytes = new Map();
+for (const file of tileflowOfficialFontAssetSet.manifest.files)
+  sharedFontBytes.set(file.path, await officialFontFile(file.path));
 // The native representation's family document is computed with Core, as a deployment's is.
 const nativeProfile = await import(
   pathToFileURL(resolve(root, 'packages/core/dist/native-profile.js')).href
@@ -52,6 +59,17 @@ export function createHostedFixture({base, tile, center}) {
     const hash = createHash('sha256').update(bytes).digest('hex');
     return {url: `${base}/font-bundles/fnb_fixturefixture01/fonts/${hash}.ttf`, bytes};
   });
+  const brandBytes = readFileSync(
+    resolve(root, 'packages/dev/test/fixtures/fonts/oxanium/Oxanium-Medium.ttf'),
+  );
+  const brandHash = createHash('sha256').update(brandBytes).digest('hex');
+  const brandUrl = `${base}/font-bundles/fnb_fixturefixture01/fonts/${brandHash}.ttf`;
+  const mixedAlias = 'Tileflow fixture fallback';
+  const sharedPrefix = `${base}/base/${tileflowOfficialFontAssetSet.assetSetSha256}/`;
+  const sharedFaces = tileflowOfficialFontAssetSet.manifest.fontFaces[0].files.map((file) => ({
+    url: `${sharedPrefix}${file.path}`,
+    'unicode-range': file['unicode-range'],
+  }));
   const urls = {
     discovery: `${base}${mapPath}/manifest.json`,
     profile: `${base}${mapPath}/webview-v1/manifest.json`,
@@ -258,6 +276,61 @@ export function createHostedFixture({base, tile, center}) {
     ],
   });
   const nativeStyles = {
+    fallback: {
+      version: 8,
+      metadata: {
+        'tileflow:colorScheme': 'light',
+        'tileflow:nativeDegradations': [],
+        'tileflow:fontFallback': 1,
+      },
+      'font-faces': {
+        [mixedAlias]: [{url: brandUrl, 'unicode-range': ['U+0020-007E']}, ...sharedFaces],
+        'Oxanium Medium': [{url: brandUrl, 'unicode-range': ['U+0020-007E']}],
+        'Noto Sans Regular': sharedFaces,
+      },
+      sources: {
+        label: {
+          type: 'geojson',
+          data: {
+            type: 'FeatureCollection',
+            features: [
+              {
+                type: 'Feature',
+                id: 1,
+                properties: {name: 'Madrid'},
+                geometry: {type: 'Point', coordinates: [center[0], center[1] + 0.0005]},
+              },
+              {
+                type: 'Feature',
+                id: 2,
+                properties: {name: 'Ω中'},
+                geometry: {type: 'Point', coordinates: [center[0], center[1] - 0.0005]},
+              },
+              {
+                type: 'Feature',
+                id: 3,
+                properties: {name: 'القاهرة'},
+                geometry: {type: 'Point', coordinates: center},
+              },
+            ],
+          },
+        },
+      },
+      layers: [
+        {id: 'ground', type: 'background', paint: {'background-color': '#ece6da'}},
+        {
+          id: 'fallback-label',
+          type: 'symbol',
+          source: 'label',
+          layout: {
+            'text-field': ['get', 'name'],
+            'text-font': ['Oxanium Medium', 'Noto Sans Regular'],
+            'text-size': 24,
+            'text-allow-overlap': true,
+          },
+        },
+      ],
+    },
     day: nativeDay(false),
     night: nativeDay(true),
     labels: {
@@ -457,6 +530,9 @@ export function createHostedFixture({base, tile, center}) {
     return Buffer.from(field(1, [...field(1, bytes(stack)), ...field(2, bytes(range))]));
   };
   const body = (url) => {
+    if (url === brandUrl) return brandBytes;
+    if (url.startsWith(sharedPrefix))
+      return sharedFontBytes.get(url.slice(sharedPrefix.length)) ?? null;
     const font = fontFiles.find((file) => file.url === url);
     if (font) return font.bytes;
     if (url === urls.discovery) return Buffer.from(JSON.stringify(discovery()));
@@ -675,6 +751,7 @@ export function createHostedFixture({base, tile, center}) {
     const terrainTheme = request.themes.includes('terrain');
     const labelsTheme = request.themes.includes('labels');
     const fontsTheme = request.themes.includes('fonts');
+    const fallbackTheme = request.themes.includes('fallback');
     const marineTheme = request.themes.includes('marine');
     const webStyles = [
       ...(request.themes.includes('day') ? [urls.style] : []),
@@ -700,7 +777,7 @@ export function createHostedFixture({base, tile, center}) {
       ...styles,
       ...tileJson.map((url) => jsonEntry(url, body(url))),
     ]);
-    if (labelsTheme || fontsTheme) {
+    if (labelsTheme || fontsTheme || fallbackTheme) {
       add('assets', 'documents', '/v1/offline/documents/assets.tfpack', [
         ...(labelsTheme
           ? Object.keys(spriteBodies).map((url) => ({
@@ -716,7 +793,42 @@ export function createHostedFixture({base, tile, center}) {
               body: bytes,
             }))
           : []),
+        ...(fallbackTheme ? [{name: brandUrl, contentType: 'font/ttf', body: brandBytes}] : []),
       ]);
+    }
+    if (fallbackTheme) {
+      let index = 1,
+        entries = [],
+        size = 0;
+      const flush = () => {
+        if (entries.length)
+          add(
+            `assets-${index}`,
+            'documents',
+            `/v1/offline/documents/assets-${index++}.tfpack`,
+            entries,
+          );
+        entries = [];
+        size = 0;
+      };
+      const referenced = new Set(
+        tileflowOfficialFontAssetSet.manifest.fontFaces[0].files.flatMap((file) => [
+          file.path,
+          file.licensePath,
+        ]),
+      );
+      for (const file of tileflowOfficialFontAssetSet.manifest.files.filter((file) =>
+        referenced.has(file.path),
+      )) {
+        if (size + file.byteLength > 31 * 1024 * 1024) flush();
+        entries.push({
+          name: `${sharedPrefix}${file.path}`,
+          contentType: file.contentType,
+          body: sharedFontBytes.get(file.path),
+        });
+        size += file.byteLength;
+      }
+      flush();
     }
     if (labelsTheme) {
       const stack = 'Noto Sans Regular';
@@ -1009,6 +1121,7 @@ export function createHostedFixture({base, tile, center}) {
       if (outcome === 'range') count.ranges += 1;
       return true;
     }
+
     const bytes = request.method === 'GET' ? body(url) : null;
     if (!bytes) return false;
     if (!publicUrls.has(url)) {
@@ -1026,13 +1139,17 @@ export function createHostedFixture({base, tile, center}) {
       'Cache-Control': 'private, no-cache',
       'Content-Type': url.endsWith('.ttf')
         ? 'font/ttf'
-        : tile
-          ? 'application/vnd.mapbox-vector-tile'
-          : url.includes('.pbf')
-            ? 'application/x-protobuf'
-            : url.includes('.png')
-              ? 'image/png'
-              : 'application/json',
+        : url.endsWith('.otf')
+          ? 'font/otf'
+          : url.endsWith('.txt')
+            ? 'text/plain; charset=utf-8'
+            : tile
+              ? 'application/vnd.mapbox-vector-tile'
+              : url.includes('.pbf')
+                ? 'application/x-protobuf'
+                : url.includes('.png')
+                  ? 'image/png'
+                  : 'application/json',
       ...(gzip ? {'Content-Encoding': 'gzip'} : {}),
     });
     if (outcome === 'not-modified') count.notModified += 1;

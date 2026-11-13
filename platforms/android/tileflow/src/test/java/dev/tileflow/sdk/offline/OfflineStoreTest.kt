@@ -1386,9 +1386,9 @@ class OfflineStoreTest {
         val style = URI("$generation/styles/city/light.json")
         val manifest = """{"maps":{"city":{"themes":{"light":{"styleUrl":"$style"}}}}}""".toByteArray()
         val (_, documents) = OfflineSelfHosted.manifest(url, manifest, "city")
-        val fonts = """{"font-faces":{"Display":"../../fonts/display.ttf","Text":[{"url":"../../fonts/text.ttf"}]}}""".toByteArray()
+        val fonts = """{"metadata":{"tileflow:fontLicenses":["../../fonts/LICENSE.txt"]},"font-faces":{"Display":"../../fonts/display.ttf","Text":[{"url":"../../fonts/text.ttf"}]}}""".toByteArray()
         assertEquals(
-            setOf(url, URI("$generation/families/city.json"), style, URI("$generation/fonts/display.ttf"), URI("$generation/fonts/text.ttf")),
+            setOf(url, URI("$generation/families/city.json"), style, URI("$generation/fonts/display.ttf"), URI("$generation/fonts/text.ttf"), URI("$generation/fonts/LICENSE.txt")),
             (documents + OfflineSelfHosted.documents(style, fonts)).toSet(),
         )
     }

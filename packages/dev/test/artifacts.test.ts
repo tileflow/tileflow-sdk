@@ -121,116 +121,136 @@ test('resolves and watches local assets from a nested config directory within cw
   assert.ok(plan.files.some((file) => file.fileName.endsWith('/icons/nested/sprite.png')));
 });
 
-test("materializes a map's own fonts and retargets immutable runtime metadata", async (t) => {
-  const cwd = await fixture(t, 'tileflow-artifact-fonts-');
-  await copyStreetsFontFixture(cwd);
-  await writeFile(
-    join(cwd, 'tileflow.config.ts'),
-    "import {defineMap} from '@tileflow/core'; import {streets} from '@tileflow/maps'; export default defineMap({id:'night',name:'Night',version:1,extends:streets,fonts:['./fonts']});\n",
-  );
-
-  const plan = await createTileflowBuildArtifacts({
-    assetBaseUrl: '/tileflow',
-    cwd,
-    styleBaseUrl: '/tileflow',
-  });
-  const stableFontAssets = plan.assets.filter((asset) => asset.fileName.startsWith('fonts/'));
-  assert.deepEqual(
-    stableFontAssets.map((asset) => asset.fileName),
-    [
-      ...streetsFontFixtures.map(({fileName}) => fileName),
-      stableFontAssets.find((asset) => asset.fileName.includes('/licenses/'))?.fileName,
-    ].sort(),
-  );
-  assert.match(
-    stableFontAssets.find((asset) => asset.fileName.includes('/licenses/'))?.fileName ?? '',
-    /^fonts\/licenses\/license-[a-f0-9]{64}\.txt$/u,
-  );
-  const stableFaces = plan.styles.night?.light?.metadata?.['tileflow:fontFaces'] as Array<{
-    family: string;
-    source: string;
-    weight: string;
-  }>;
-  assert.deepEqual(
-    stableFaces.map(({family, weight}) => ({family, weight})),
-    streetsFontFixtures.map(({family, weight}) => ({family, weight})),
-  );
-  assert.ok(stableFaces.every((face) => face.source.startsWith('/tileflow/fonts/')));
-  assert.equal(
-    await readFile(new URL('LICENSE.txt', streetsFontFixtureDirectory), 'utf8'),
-    new TextDecoder().decode(
-      stableFontAssets.find((asset) => asset.fileName.includes('/licenses/'))?.source as Uint8Array,
-    ),
-  );
-
-  const immutableTheme = plan.manifest.maps.night!.themes.light!;
-  const immutableStyleUrl = immutableTheme.styleUrl;
-  const immutableStyleFile = plan.files.find(
-    (file) => `/${file.fileName}` === immutableStyleUrl.replace('/tileflow', ''),
-  );
-  assert.ok(immutableStyleFile && typeof immutableStyleFile.source === 'string');
-  const immutableStyle = JSON.parse(immutableStyleFile.source) as {
-    metadata?: {'tileflow:fontFaces'?: Array<{source: string}>};
-  };
-  const immutableFaces = immutableStyle.metadata?.['tileflow:fontFaces'] ?? [];
-  assert.ok(
-    immutableFaces.every((face) =>
-      /^\/tileflow\/generations\/[a-f0-9]{64}\/fonts\/(?:dinish|noto-sans)-/u.test(face.source),
-    ),
-  );
-  assert.deepEqual(immutableTheme.fontFaces, immutableFaces);
-  for (const face of immutableFaces) {
-    assert.ok(
-      plan.files.some((file) => `/${file.fileName}` === face.source.replace('/tileflow', '')),
+for (const mixed of [false, true])
+  test(`materializes a map's own fonts${mixed ? ' with shared fallback' : ''} and retargets immutable runtime metadata`, async (t) => {
+    const cwd = await fixture(t, 'tileflow-artifact-fonts-');
+    await copyStreetsFontFixture(cwd);
+    await writeFile(
+      join(cwd, 'tileflow.config.ts'),
+      `import {defineMap, officialFontFallback} from '@tileflow/core'; import {streets} from '@tileflow/maps'; export default defineMap({id:'night',name:'Night',version:1,extends:streets,fonts:['./fonts']${mixed ? ',fontFallback:officialFontFallback' : ''}});\n`,
     );
-  }
 
-  const relativePlan = await createTileflowBuildArtifacts({cwd, styleBaseUrl: '.'});
-  const relativeTheme = relativePlan.manifest.maps.night!.themes.light!;
-  const relativeStyleFile = relativePlan.files.find(
-    (file) => file.fileName === relativeTheme.styleUrl.replace(/^\.\//u, ''),
-  );
-  assert.ok(relativeStyleFile && typeof relativeStyleFile.source === 'string');
-  const relativeStyle = JSON.parse(relativeStyleFile.source) as {
-    metadata?: {'tileflow:fontFaces'?: Array<{source: string}>};
-  };
-  const relativeFaces = relativeStyle.metadata?.['tileflow:fontFaces'] ?? [];
-  assert.ok(relativeFaces.every((face) => /^\.\.\/\.\.\/fonts\//u.test(face.source)));
-  const publicManifestUrl = new URL('https://example.test/tileflow/manifest.json');
-  const publicStyleUrl = new URL(relativeTheme.styleUrl, publicManifestUrl);
-  for (const face of relativeFaces) {
-    const publicFontUrl = new URL(face.source, publicStyleUrl);
-    const fontFileName = publicFontUrl.pathname.replace(/^\/tileflow\//u, '');
-    assert.ok(relativePlan.files.some((file) => file.fileName === fontFileName));
-  }
-  const relativeFamilyPath = relativePlan.manifest.maps.night!.familyUrl!;
-  const relativeFamilyFile = relativePlan.files.find(
-    (file) => file.fileName === relativeFamilyPath.replace(/^\.\//u, ''),
-  )!;
-  const familyStyle = materializeTileflowStyleFamily(
-    JSON.parse(String(relativeFamilyFile.source)),
-    'light',
-  );
-  const familyFaces = familyStyle.metadata?.['tileflow:fontFaces'] as Array<{source: string}>;
-  assert.deepEqual(
-    familyFaces.map(
-      (face) => new URL(face.source, new URL(relativeFamilyPath, publicManifestUrl)).href,
-    ),
-    relativeFaces.map((face) => new URL(face.source, publicStyleUrl).href),
-  );
+    const plan = await createTileflowBuildArtifacts({
+      assetBaseUrl: '/tileflow',
+      cwd,
+      styleBaseUrl: '/tileflow',
+    });
+    const stableFontAssets = plan.assets.filter((asset) => asset.fileName.startsWith('fonts/'));
+    assert.deepEqual(
+      stableFontAssets.map((asset) => asset.fileName),
+      [
+        ...streetsFontFixtures.map(({fileName}) => fileName),
+        stableFontAssets.find((asset) => asset.fileName.includes('/licenses/'))?.fileName,
+      ].sort(),
+    );
+    assert.match(
+      stableFontAssets.find((asset) => asset.fileName.includes('/licenses/'))?.fileName ?? '',
+      /^fonts\/licenses\/license-[a-f0-9]{64}\.txt$/u,
+    );
+    const stableFaces = plan.styles.night?.light?.metadata?.['tileflow:fontFaces'] as Array<{
+      family: string;
+      source: string;
+      weight: string;
+    }>;
+    assert.deepEqual(
+      stableFaces.map(({family, weight}) => ({family, weight})),
+      streetsFontFixtures.map(({family, weight}) => ({family, weight})),
+    );
+    assert.ok(stableFaces.every((face) => face.source.startsWith('/tileflow/fonts/')));
+    assert.equal(
+      await readFile(new URL('LICENSE.txt', streetsFontFixtureDirectory), 'utf8'),
+      new TextDecoder().decode(
+        stableFontAssets.find((asset) => asset.fileName.includes('/licenses/'))
+          ?.source as Uint8Array,
+      ),
+    );
 
-  await writeFile(
-    join(cwd, 'tileflow.config.ts'),
-    "import {defineMap} from '@tileflow/core'; import {streets} from '@tileflow/maps'; export default defineMap({id:'night',name:'Night',version:2,extends:streets,glyphs:{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['DINish Bold,Noto Sans Regular', 'DINish Medium,Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic', 'Noto Sans Regular']}});\n",
-  );
-  const remoteGlyphPlan = await createTileflowBuildArtifacts({cwd});
-  assert.equal(
-    remoteGlyphPlan.assets.some((asset) => asset.fileName.startsWith('fonts/')),
-    false,
-  );
-  assert.deepEqual(remoteGlyphPlan.manifest.maps.night?.themes.light?.fontFaces, []);
-  assert.equal(remoteGlyphPlan.styles.night?.light?.metadata?.['tileflow:fontFaces'], undefined);
-});
+    const immutableTheme = plan.manifest.maps.night!.themes.light!;
+    const immutableStyleUrl = immutableTheme.styleUrl;
+    const immutableStyleFile = plan.files.find(
+      (file) => `/${file.fileName}` === immutableStyleUrl.replace('/tileflow', ''),
+    );
+    assert.ok(immutableStyleFile && typeof immutableStyleFile.source === 'string');
+    const immutableStyle = JSON.parse(immutableStyleFile.source) as {
+      metadata?: {'tileflow:fontFaces'?: Array<{source: string}>};
+    };
+    const immutableFaces = immutableStyle.metadata?.['tileflow:fontFaces'] ?? [];
+    if (mixed)
+      assertFontFileClosure(
+        immutableStyle,
+        immutableFaces,
+        new URL(immutableStyleUrl, 'https://example.test').href,
+      );
+    assert.ok(
+      immutableFaces.every((face) =>
+        /^\/tileflow\/generations\/[a-f0-9]{64}\/fonts\/(?:dinish|noto-sans)-/u.test(face.source),
+      ),
+    );
+    assert.deepEqual(immutableTheme.fontFaces, immutableFaces);
+    for (const face of immutableFaces) {
+      assert.ok(
+        plan.files.some((file) => `/${file.fileName}` === face.source.replace('/tileflow', '')),
+      );
+    }
+
+    const relativePlan = await createTileflowBuildArtifacts({cwd, styleBaseUrl: '.'});
+    const relativeTheme = relativePlan.manifest.maps.night!.themes.light!;
+    const relativeStyleFile = relativePlan.files.find(
+      (file) => file.fileName === relativeTheme.styleUrl.replace(/^\.\//u, ''),
+    );
+    assert.ok(relativeStyleFile && typeof relativeStyleFile.source === 'string');
+    const relativeStyle = JSON.parse(relativeStyleFile.source) as {
+      metadata?: {'tileflow:fontFaces'?: Array<{source: string}>};
+    };
+    const relativeFaces = relativeStyle.metadata?.['tileflow:fontFaces'] ?? [];
+    if (mixed)
+      assertFontFileClosure(
+        relativeStyle,
+        relativeFaces,
+        new URL(relativeTheme.styleUrl, 'https://example.test/tileflow/manifest.json').href,
+      );
+    assert.ok(relativeFaces.every((face) => /^\.\.\/\.\.\/fonts\//u.test(face.source)));
+    const publicManifestUrl = new URL('https://example.test/tileflow/manifest.json');
+    const publicStyleUrl = new URL(relativeTheme.styleUrl, publicManifestUrl);
+    for (const face of relativeFaces) {
+      const publicFontUrl = new URL(face.source, publicStyleUrl);
+      const fontFileName = publicFontUrl.pathname.replace(/^\/tileflow\//u, '');
+      assert.ok(relativePlan.files.some((file) => file.fileName === fontFileName));
+    }
+    const relativeFamilyPath = relativePlan.manifest.maps.night!.familyUrl!;
+    const relativeFamilyFile = relativePlan.files.find(
+      (file) => file.fileName === relativeFamilyPath.replace(/^\.\//u, ''),
+    )!;
+    const familyStyle = materializeTileflowStyleFamily(
+      JSON.parse(String(relativeFamilyFile.source)),
+      'light',
+    );
+    const familyFaces = familyStyle.metadata?.['tileflow:fontFaces'] as Array<{source: string}>;
+    if (mixed)
+      assertFontFileClosure(
+        familyStyle,
+        familyFaces,
+        new URL(relativeFamilyPath, publicManifestUrl).href,
+      );
+    assert.deepEqual(
+      familyFaces.map(
+        (face) => new URL(face.source, new URL(relativeFamilyPath, publicManifestUrl)).href,
+      ),
+      relativeFaces.map((face) => new URL(face.source, publicStyleUrl).href),
+    );
+
+    await writeFile(
+      join(cwd, 'tileflow.config.ts'),
+      "import {defineMap} from '@tileflow/core'; import {streets} from '@tileflow/maps'; export default defineMap({id:'night',name:'Night',version:2,extends:streets,glyphs:{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['DINish Bold,Noto Sans Regular', 'DINish Medium,Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic', 'Noto Sans Regular']}});\n",
+    );
+    const remoteGlyphPlan = await createTileflowBuildArtifacts({cwd});
+    assert.equal(
+      remoteGlyphPlan.assets.some((asset) => asset.fileName.startsWith('fonts/')),
+      false,
+    );
+    assert.deepEqual(remoteGlyphPlan.manifest.maps.night?.themes.light?.fontFaces, []);
+    assert.equal(remoteGlyphPlan.styles.night?.light?.metadata?.['tileflow:fontFaces'], undefined);
+  });
 
 test('keeps relative sprites valid inside the default content-addressed build layout', async (t) => {
   const cwd = await fixture(t, 'tileflow-relative-artifact-plan-');
@@ -515,4 +535,16 @@ async function fixture(t: {after(callback: () => Promise<void>): void}, prefix: 
   await linkWorkspacePackages(cwd);
   t.after(() => rm(cwd, {force: true, recursive: true}));
   return cwd;
+}
+
+function assertFontFileClosure(style: object, own: {source: string}[], owner: string) {
+  const faces = (style as {'font-faces': Record<string, {url: string}[]>})['font-faces'];
+  const urls = [...new Set(Object.values(faces).flatMap((files) => files.map((file) => file.url)))];
+  const shared = urls.filter((url) => url.startsWith('https://api.tileflow.dev/base/'));
+  assert.ok(shared.some((url) => url.endsWith('/NotoSansCJKjp-Regular.otf')));
+  const local = urls.filter((url) => !shared.includes(url));
+  assert.deepEqual(
+    new Set(local.map((url) => new URL(url, owner).href)),
+    new Set(own.map((face) => new URL(face.source, owner).href)),
+  );
 }

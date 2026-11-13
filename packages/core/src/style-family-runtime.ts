@@ -27,6 +27,13 @@ export function resolveTileflowStyleResourceUrls(
     if (typeof record[key] === 'string') record[key] = absolute(record[key]);
   };
   property(result, 'glyphs');
+  if (result['font-faces']) {
+    for (const [name, face] of Object.entries(result['font-faces'])) {
+      if (typeof face === 'string') result['font-faces'][name] = absolute(face);
+      else if (Array.isArray(face)) for (const file of face) property(file, 'url');
+      else property(face, 'url');
+    }
+  }
   if (typeof result.sprite === 'string') result.sprite = absolute(result.sprite);
   else if (Array.isArray(result.sprite))
     for (const sprite of result.sprite) property(sprite, 'url');
@@ -43,6 +50,11 @@ export function resolveTileflowStyleResourceUrls(
       );
   }
   const metadata = result.metadata;
+  const licenses = metadata?.['tileflow:fontLicenses'];
+  if (Array.isArray(licenses))
+    metadata!['tileflow:fontLicenses'] = licenses.map((url) =>
+      typeof url === 'string' ? absolute(url) : url,
+    );
   const fonts = metadata?.['tileflow:fontFaces'];
   if (Array.isArray(fonts))
     for (const face of fonts) if (face && typeof face === 'object') property(face, 'source');

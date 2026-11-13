@@ -31,6 +31,7 @@ export function rebaseTileflowFamilyStyle(
   if (record(fontFaces))
     for (const [family, face] of Object.entries(fontFaces)) {
       if (typeof face === 'string') fontFaces[family] = rebase(face);
+      else if (Array.isArray(face)) for (const file of face) property(file, 'url');
       else property(face, 'url');
     }
   for (const source of Object.values(result.sources)) {
@@ -44,6 +45,11 @@ export function rebaseTileflowFamilyStyle(
         );
     }
   }
+  const licenses = result.metadata?.['tileflow:fontLicenses'];
+  if (Array.isArray(licenses))
+    result.metadata!['tileflow:fontLicenses'] = licenses.map((url) =>
+      typeof url === 'string' ? rebase(url) : url,
+    );
   const fonts = result.metadata?.['tileflow:fontFaces'];
   if (Array.isArray(fonts)) for (const face of fonts) property(face, 'source');
   for (const key of ['tileflow:buildings', 'tileflow:vegetation']) {

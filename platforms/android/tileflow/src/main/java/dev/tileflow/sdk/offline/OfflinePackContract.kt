@@ -333,7 +333,7 @@ internal object OfflinePackContract {
                         require(!item.has("anchor") && !item.has("source"))
                         require(
                             id == "style" ||
-                                id == "assets" ||
+                                id == "assets" || Regex("^assets-[1-9][0-9]{0,2}$").matches(id) ||
                                 Regex("^glyphs/[^/]{1,256}/(0|[1-9][0-9]{0,4})$").matches(id)
                         )
                         OfflineDownloadPack(id, kind, url, size, resources.toInt(), billable.toInt())

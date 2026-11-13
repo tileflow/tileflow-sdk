@@ -36,7 +36,11 @@ test('rebases resource-bearing fields and preserves application data', () => {
     version: 8,
     sprite: [{id: 'icons', url: reference}],
     glyphs: reference,
-    'font-faces': {Plain: reference, Detailed: {url: reference, family: 'Detailed'}},
+    'font-faces': {
+      Plain: reference,
+      Detailed: {url: reference, family: 'Detailed'},
+      Ranged: [{url: reference, 'unicode-range': ['U+0020-007E']}],
+    },
     sources: {
       tilejson: {type: 'vector', url: reference},
       tiles: {type: 'raster', tiles: [reference]},
@@ -46,6 +50,7 @@ test('rebases resource-bearing fields and preserves application data', () => {
       inline: {type: 'geojson', data: {type: 'FeatureCollection', features: [], label: reference}},
     },
     metadata: {
+      'tileflow:fontLicenses': [reference],
       'tileflow:fontFaces': [{family: 'Font', source: reference}],
       'tileflow:buildings': {models: [{url: reference}], landmarks: {url: reference}},
       'tileflow:vegetation': {models: [{url: reference}], landmarks: {url: reference}},
@@ -60,6 +65,8 @@ test('rebases resource-bearing fields and preserves application data', () => {
     ['glyphs'],
     ['font-faces', 'Plain'],
     ['font-faces', 'Detailed', 'url'],
+    ['font-faces', 'Ranged', 0, 'url'],
+    ['metadata', 'tileflow:fontLicenses', 0],
     ['sources', 'tilejson', 'url'],
     ['sources', 'tiles', 'tiles', 0],
     ['sources', 'geojson', 'data'],

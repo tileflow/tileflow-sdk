@@ -15,6 +15,7 @@ import {
   tileflowStyleFontFacesMetadataKey,
   tileflowThemeNameSchema,
 } from '@tileflow/core';
+import {tileflowOfficialFontAssetSet} from '@tileflow/core/build';
 import type {
   TileflowBuildCatalog,
   TileflowBuildStyles,
@@ -25,7 +26,9 @@ import {
   resolveTileflowAssetDirectories,
   TileflowAssetDirectoryError,
 } from './asset-directories';
+import {mapFontStacks, prepareFontFallback} from './font-fallback';
 import type {TileflowBuildAsset} from './icons';
+import {tileflowNativeFontUnicodeRanges} from './native-font-ranges';
 import {isPathWithin} from './path-safety';
 import {joinTileflowPublicUrl} from './public-paths';
 
@@ -278,9 +281,27 @@ export async function prepareTileflowStyleFonts(
 
     const requiredNamesByTheme = new Map<string, Set<string>>();
     const requiredNames = new Set<string>();
+    const officialNames = new Set(
+      map.fontFallback
+        ? tileflowOfficialFontAssetSet.manifest.fontFaces.map((face) => face.name)
+        : [],
+    );
     for (const themeName of compiledThemeNames) {
       const style = themeStyles[themeName]!;
-      const themeRequiredNames = collectPrimaryTextFonts(style, `${mapName}.${themeName}`, issues);
+      const themeRequiredNames = map.fontFallback
+        ? new Set<string>()
+        : collectPrimaryTextFonts(style, `${mapName}.${themeName}`, issues);
+      if (map.fontFallback) {
+        try {
+          mapFontStacks(style, (stack) => {
+            for (const name of stack)
+              if (selectedFaces.has(name) || !officialNames.has(name)) themeRequiredNames.add(name);
+            return stack;
+          });
+        } catch (error) {
+          issues.push({message: String(error), path: `styles.${mapName}.${themeName}.text-font`});
+        }
+      }
       requiredNamesByTheme.set(themeName, themeRequiredNames);
       for (const name of themeRequiredNames) requiredNames.add(name);
     }
@@ -301,6 +322,14 @@ export async function prepareTileflowStyleFonts(
             }`,
         path: `styles.${mapName}.*.text-font`,
       });
+    }
+
+    if (map.fontFallback && !requiredFaces.length) {
+      issues.push({
+        message: 'Font fallback requires at least one used local font face',
+        path: `styles.${mapName}.*.text-font`,
+      });
+      continue;
     }
 
     if (requiredFaces.length > tileflowStyleFontFaceLimits.maximumCount) {
@@ -375,7 +404,29 @@ export async function prepareTileflowStyleFonts(
       const themeFontFaces = sortedBundleFaces
         .filter((face) => themeFontIdentities.has(fontFaceIdentity(face)))
         .map((face) => fontFaceByIdentity.get(fontFaceIdentity(face))!);
-      preparedThemes[themeName] = withFontFaces(style, themeFontFaces);
+      if (map.fontFallback) {
+        try {
+          const prepared = withFontFaces(style, fontFaces);
+          preparedThemes[themeName] = prepareFontFallback(
+            prepared,
+            map.fontFallback,
+            fontFaces.map((face) => {
+              const input = selectedFaces.get(face.family)!;
+              return {
+                family: face.family,
+                source: face.source,
+                sha256: sha256(input.source),
+                ranges: tileflowNativeFontUnicodeRanges(input.source),
+              };
+            }),
+          );
+        } catch (error) {
+          issues.push({
+            message: String(error),
+            path: `styles.${mapName}.${themeName}.fontFallback`,
+          });
+        }
+      } else preparedThemes[themeName] = withFontFaces(style, themeFontFaces);
     }
     styles[mapName] = preparedThemes;
     sourceIdentities[mapName] = sortedBundleFaces.map((face) => ({
@@ -398,7 +449,7 @@ export async function prepareTileflowStyleFonts(
           sha256: sha256(toBytes(file.source)),
         })) as TileflowFontBundleManifest['files'],
         fontFaces: sortedBundleFaces,
-        format: 'tileflow-font-bundle-v1',
+        format: map.fontFallback ? 'tileflow-font-bundle-v2' : 'tileflow-font-bundle-v1',
       };
       bundles[mapName] = {
         contentHash: await hashTileflowFontBundleManifest(manifest),
@@ -671,9 +722,30 @@ function readStaticPrimaryFont(value: unknown): string | undefined {
 
 function withFontFaces(style: MapLibreStyle, fontFaces: TileflowStyleFontFace[]): MapLibreStyle {
   const metadata = {...style.metadata};
+  let nativeFaces = style['font-faces'];
+  if (nativeFaces && style.metadata?.['tileflow:fontFallback'] === 1) {
+    const replacements = new Map(
+      getTileflowStyleFontFaces(style).map((face) => [
+        face.source,
+        fontFaces.find((replacement) => fontFaceIdentity(replacement) === fontFaceIdentity(face))
+          ?.source,
+      ]),
+    );
+    const replace = (url: string) => replacements.get(url) ?? url;
+    nativeFaces = Object.fromEntries(
+      Object.entries(nativeFaces).map(([name, value]) => [
+        name,
+        typeof value === 'string'
+          ? replace(value)
+          : Array.isArray(value)
+            ? value.map((file) => ({...file, url: replace(file.url)}))
+            : {...value, url: replace(value.url)},
+      ]),
+    );
+  }
   if (fontFaces.length === 0) delete metadata[tileflowStyleFontFacesMetadataKey];
   else metadata[tileflowStyleFontFacesMetadataKey] = fontFaces;
-  return {...style, metadata};
+  return {...style, metadata, ...(nativeFaces ? {'font-faces': nativeFaces} : {})};
 }
 
 function addAsset(assets: Map<string, TileflowBuildAsset>, asset: TileflowBuildAsset): void {

@@ -11,6 +11,7 @@ import {
   parseTileflowMap,
   type TileflowFontDirectory,
 } from '@tileflow/core';
+import {officialFontFallback} from '@tileflow/core';
 import type {TileflowBuildCatalog} from '@tileflow/core/build';
 import {streetsIcons} from '@tileflow/maps';
 import {
@@ -19,12 +20,67 @@ import {
   prepareTileflowStyleFonts,
   TileflowFontCompilationError,
 } from '../src/fonts';
+import {prepareTileflowNativeStyles} from '../src/native-artifacts';
 import {getTileflowPreviewRuntimeResponse} from '../src/preview-assets';
 import {renderTileflowPreviewHtml} from '../src/preview-html';
 import {copyStreetsFontFixture, streetsFontFixtures} from './streets-font-fixture';
 import {fixtureThemeFields} from './theme-fixture';
 
 const oxaniumMedium = new URL('./fixtures/fonts/oxanium/Oxanium-Medium.ttf', import.meta.url);
+
+test('explicit official fallback keeps local coverage, both renderers and immutable retargeting', async (t) => {
+  const cwd = await fixture(t);
+  await createFontDirectory(cwd, 'fonts', [['Brand.ttf', await readFile(oxaniumMedium)]]);
+  const project = fontProject(['./fonts']);
+  project.maps.main = {
+    ...project.maps.main!,
+    fontFallback: officialFontFallback,
+  };
+  const style = fontStyle(['Oxanium Medium', 'DINish Medium']);
+  style.sources.places = {type: 'geojson', data: {type: 'FeatureCollection', features: []}};
+  style.layers[0]!.source = 'places';
+  const input = {main: {light: style}};
+  const before = JSON.stringify(input);
+  const result = await prepareTileflowStyleFonts(project, input, {
+    assetBaseUrl: 'https://api.tileflow.test/font-bundles/preflight',
+    cwd,
+    target: 'hosted',
+  });
+  const web = result.styles.main!.light!;
+  assert.equal(result.bundles.main!.manifest.format, 'tileflow-font-bundle-v2');
+  const stack = (web.layers[0]!.layout as {'text-font': string[]})['text-font'][0]!;
+  assert.match(stack, /^Tileflow fallback [a-f0-9]{64}$/);
+  assert.equal(web.glyphs, undefined);
+  assert.ok(web['font-faces']!['Oxanium Medium']);
+  assert.ok(web['font-faces']!['DINish Medium']);
+  assert.ok(web['font-faces']!['Noto Sans Regular']);
+  const faces = web['font-faces']![stack] as {url: string; 'unicode-range': string[]}[];
+  assert.equal(faces.length, 149);
+  assert.ok(faces.some((file) => file.url.endsWith('/DINish-Medium.ttf')));
+  assert.ok(faces[0]!['unicode-range'].includes('U+0020-007E'));
+  assert.equal(
+    faces[0]!['unicode-range'].some((range) => {
+      const [a, b] = range
+        .slice(2)
+        .split('-')
+        .map((x) => parseInt(x, 16));
+      return a! <= 0x3a9 && b! >= 0x3a9;
+    }),
+    false,
+  );
+  const bound = bindTileflowStyleFontBundle(
+    web,
+    result.bundles.main!,
+    'https://api.tileflow.test/font-bundles/fnb_fixturefixture01',
+  );
+  const native = prepareTileflowNativeStyles({main: {light: bound}}, result.assets).main!.light!;
+  assert.deepEqual(native['font-faces'], bound['font-faces']);
+  assert.match(
+    (bound['font-faces']![stack] as {url: string}[])[0]!.url,
+    /\/font-bundles\/fnb_fixturefixture01\/fonts\//,
+  );
+  assert.equal(JSON.stringify(input), before);
+});
 const nextGeistWoff2 = new URL(
   '../../next/node_modules/next/dist/next-devtools/server/font/geist-latin.woff2',
   import.meta.url,

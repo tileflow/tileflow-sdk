@@ -37,7 +37,8 @@ Omitted fields inherit, but declaring a field does not imply a recursive merge:
   Spread the parent's list explicitly when composing contributors. Later contributors win for an
   exact icon ID.
 - `fonts` and `glyphs` are mutually exclusive text providers. Declaring either replaces the inherited
-  provider. `atmosphere`, `data`, `projection`, `sky`, `terrain`, and `marine` are also atomic.
+  provider and clears inherited `fontFallback`, unless that fallback is explicitly retained.
+  `fontFallback: false` removes it; omission inherits it with the provider. `atmosphere`, `data`, `projection`, `sky`, `terrain`, and `marine` are also atomic.
 
 Identity (`id`, `name`, `version`) and tooling `scenes` and `shots` belong to the leaf map and do not inherit.
 Module object order does not determine rendering order.
@@ -396,12 +397,22 @@ entrance zooms, without zoom/arrival growth or fading. Equal endpoints such as
 `entrance: {buildings: [14.25, 14.25], models: [14.25, 14.25]}` switch immediately at that zoom.
 
 Text requires exactly one provider. Streets, Outdoors and Soundings use URL glyphs from Tileflow's
-official glyph set, whose URL composites a comma-joined stack of its fonts per code point; Blueprint
-also uses URL glyphs; the community Baedeker, 1777 and Siegfried maps package Cormorant. A map that
-declares `fonts` replaces inherited glyphs: Hosted deploy uploads its used faces and licenses as a
+official glyph set, whose URL composites a comma-joined stack of its fonts per code point. A map
+that declares `fonts` replaces inherited glyphs: Hosted deploy uploads its used faces and licenses as a
 font bundle before publishing the style. With `platforms: ['web', 'native']`, native styles use
 the same TTF/OTF files through `font-faces`; WOFF2 is supported only for web. Tile and font URLs
 do not grant redistribution rights.
+
+To fill missing characters with shared official fonts, import `officialFontFallback` from
+`@tileflow/core` and declare `{fonts: ['./fonts'], fontFallback: officialFontFallback}`.
+Local faces come first; the fallback uses complete, immutable Noto files with verified character
+coverage. No official font binary is embedded in the map's private bundle or the SDK package.
+Existing maps keep their provider and renderer behavior until they opt in.
+
+This mode requires MapLibre GL JS 6.16 or newer and uses the same font files on iOS and Android.
+Native offline downloads include the shared files and licenses. The reviewed set uses Regular Noto
+faces across scripts, including CJK with Japanese default glyph forms; it does not promise coverage
+of every Unicode character. Its deployment requires the corresponding shared set to be available.
 
 `labels.roadPlacement: 'readable'` draws complete street names above the 3D scene, below foreground
 destinations. `attachTileflowLabelPlacement(map)` from `@tileflow/core/browser` adds per-instance

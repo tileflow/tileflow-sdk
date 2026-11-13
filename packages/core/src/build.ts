@@ -14,6 +14,8 @@ import {parseResolvedTileflowMap} from './resolved-map-schema';
 import type {TileflowInspectedStyle} from './style-inspection';
 import type {MapLibreStyle} from './types';
 
+export {tileflowFontFallbackMetadataKey} from './font-fallback';
+
 export {
   expandTileflowFamilyTemplate,
   withTileflowFamilyTemplate,
@@ -320,3 +322,9 @@ export {
   hashHostedPublicationContent,
   hostedPublicationContentParts,
 } from './hosted-publication-identity';
+
+export {
+  tileflowOfficialFontAssetSet,
+  officialFontFiles,
+  isOfficialFontFile,
+} from './official-fonts';

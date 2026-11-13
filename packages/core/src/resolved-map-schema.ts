@@ -1,7 +1,6 @@
 import {Color} from '@maplibre/maplibre-gl-style-spec';
 import {z} from 'zod';
 import {tileflowMaxPitch} from './camera-limits';
-import {tileflowColorKnobNamePattern, validateTileflowColorKnobs} from './color-knobs';
 import {
   type TileflowBandPlacement,
   tileflowBandPlacements,
@@ -23,6 +22,7 @@ import {
   tileflowSemanticLayerNames,
 } from './cartography/semantic-bindings';
 import {tileflowThemeTokenCategories} from './cartography/values';
+import {tileflowColorKnobNamePattern, validateTileflowColorKnobs} from './color-knobs';
 import {
   canonicalOpenMapTilesFields,
   canonicalOpenMapTilesLayers,
@@ -53,6 +53,7 @@ import {tileflowBathymetryNameLayerLimits} from './marine';
 import {isTileflowModelPartName} from './models-3d-model';
 import {tileflowLandformClasses} from './modules/landforms';
 import {tileflowRoadClasses} from './modules/roads/semantics';
+import {officialFontFallback, tileflowOfficialFontAssetSet} from './official-fonts';
 import {
   isSafeLocalPmtilesPath,
   tileflowHostedSourceLimit,
@@ -2375,6 +2376,43 @@ const glyphsSchema = z
       .refine(isSafeGlyphUrl, 'Expected an HTTP(S), root-relative, or path-relative glyph URL'),
   })
   .strict();
+const fontFallbackSchema = z
+  .object({
+    kind: z.literal('official-fonts'),
+    assetSetSha256: z.literal(officialFontFallback.assetSetSha256),
+    fontStack: z
+      .array(
+        z
+          .string()
+          .min(1)
+          .max(100)
+          .refine(
+            (value) =>
+              value === value.trim() &&
+              value === value.normalize('NFC') &&
+              !/[,\p{Cc}\\/]/u.test(value),
+            'Expected an exact NFC font face name without commas, controls or path separators',
+          ),
+      )
+      .min(1)
+      .max(10),
+  })
+  .strict()
+  .superRefine((fallback, context) => {
+    if (
+      new Set(fallback.fontStack).size !== fallback.fontStack.length ||
+      fallback.fontStack.some(
+        (name) =>
+          !tileflowOfficialFontAssetSet.manifest.fontFaces.some((face) => face.name === name),
+      )
+    )
+      context.addIssue({
+        code: 'custom',
+        message: 'Expected a declared official font face',
+        path: ['fontStack'],
+      });
+  });
+
 const terrainLayerRangeShape = {
   maxZoom: zoomNumberSchema.optional(),
   minZoom: zoomNumberSchema.optional(),
@@ -2675,6 +2713,7 @@ export const resolvedTileflowMapSchema: z.ZodType<TileflowCompilerConfig> = z
     data: dataSchema.optional(),
     defaultTheme: tileflowThemeNameSchema,
     fonts: fontDirectoriesSchema.optional(),
+    fontFallback: z.union([fontFallbackSchema, z.literal(false)]).optional(),
     glyphs: glyphsSchema.optional(),
     icons: iconDirectoriesSchema.optional(),
     id: tileflowMapIdSchema,
@@ -2707,6 +2746,13 @@ export const resolvedTileflowMapSchema: z.ZodType<TileflowCompilerConfig> = z
   })
   .strict()
   .superRefine((map, context) => {
+    if (map.fontFallback && (!map.fonts?.length || map.glyphs !== undefined)) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Font fallback requires local fonts and replaces the inherited glyph provider',
+        path: ['fontFallback'],
+      });
+    }
     if (map.fonts !== undefined && map.glyphs !== undefined) {
       context.addIssue({
         code: 'custom',

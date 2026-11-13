@@ -77,6 +77,12 @@ internal object OfflineSelfHosted {
             runCatching { JSONObject(String(data, Charsets.UTF_8)) }.getOrNull()
                 ?: throw invalid("invalidStyle")
         val documents = mutableListOf(style)
+        value.optJSONObject("metadata")?.optJSONArray("tileflow:fontLicenses")?.let { licenses ->
+            for (index in 0 until licenses.length()) {
+                val url = licenses.opt(index) as? String ?: continue
+                resolve(url, style)?.let(documents::add)
+            }
+        }
         documents += fontFiles(value.optJSONObject("metadata")?.opt("tileflow:fontFaces"), style)
         value.optJSONObject("font-faces")?.let { faces ->
             for (name in faces.keys().asSequence().sorted()) {

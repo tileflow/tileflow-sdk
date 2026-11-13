@@ -118,6 +118,15 @@ test('catalog identity follows referenced delivery URLs, never SDK use, source n
   assert.throws(() => readTileflowBrandingSources(style(`${catalog}?map=invalid`)));
 });
 
+test('a style carrying World’s TileJSON keeps its catalog identity through the catalog edge', () => {
+  const edge =
+    'https://world.tileflow.dev/tiles/world/world-v1-a3dea8b5-43fa-425f-ae4b-798be8c166e4/{z}/{x}/{y}.pbf';
+  const inlined = {...style(), sources: {base: {type: 'vector' as const, tiles: [edge]}}};
+  assert.deepEqual(readTileflowBrandingSources(inlined), [{apiUrl: 'https://api.tileflow.dev'}]);
+  // The edge counts only for Tileflow's own API, never a self-hosted one.
+  assert.deepEqual(readTileflowBrandingSources(inlined, {apiUrl: 'https://api.example.test'}), []);
+});
+
 test('contours retain the delivery identity of their DEM without a separate terrain source', () => {
   const contours = (dem: TileflowContourDemSource) => ({
     sources: {

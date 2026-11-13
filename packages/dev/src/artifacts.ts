@@ -71,6 +71,7 @@ import {
   type TileflowSourceCatalog,
 } from './icons';
 import {prepareEmbeddedImageSources} from './image-source-assets';
+import {inlineTileflowExactTileJson} from './inline-tilejson';
 import {
   prepareTileflowLineBackgroundGlyphs,
   type TileflowLineBackgroundGlyphProviders,
@@ -181,6 +182,14 @@ export type TileflowBuildArtifactsOptions = {
   styleBaseUrl?: string;
   /** Local tools may snapshot local PMTiles; production output must resolve them explicitly. */
   target?: 'local' | 'production';
+  /**
+   * Production web output only: write the TileJSON of each source that selects an exact World
+   * release into the styles in place of its `url`, read once at build time, so a map requests its
+   * first tiles right after the style.
+   */
+  inlineTileJson?: boolean;
+  /** The fetch that reads those TileJSON documents; the global fetch by default. */
+  tileJsonFetch?: typeof globalThis.fetch;
 };
 
 export type TileflowBuildStyleInspections = Record<string, Record<string, TileflowStyleInspection>>;
@@ -237,6 +246,8 @@ export type CreateTileflowArtifactPlanOptions = Pick<
   | 'renderer'
   | 'styleBaseUrl'
   | 'target'
+  | 'inlineTileJson'
+  | 'tileJsonFetch'
 > & {
   inputFiles?: readonly string[];
 };
@@ -444,7 +455,11 @@ export async function createTileflowArtifactPlan(
     const styles =
       renderer === 'native'
         ? prepareTileflowNativeStyles(preparedFonts.styles, assets, nativeUrls)
-        : lineBackgroundGlyphs.styles;
+        : options.inlineTileJson && options.target === 'production'
+          ? await inlineTileflowExactTileJson(lineBackgroundGlyphs.styles, {
+              ...(options.tileJsonFetch ? {fetch: options.tileJsonFetch} : {}),
+            })
+          : lineBackgroundGlyphs.styles;
     const provenance = await createTileflowBuildProvenance(prepared.cwd);
     const buildManifest = await createTileflowMapBuildManifest(
       Object.fromEntries(

@@ -532,11 +532,16 @@ program
   )
   .option('--cache-dir <path>', 'verified Icon Set artifact cache root')
   .option('--offline', 'fail a locked Icon Set cache miss instead of hydrating it')
+  .option(
+    '--inline-tilejson',
+    'write the TileJSON of exact World release sources into the styles, read once now',
+  )
   .action(
     async (options: {
       apiBaseUrl: string;
       cacheDir?: string;
       config: string;
+      inlineTilejson?: boolean;
       json?: boolean;
       offline?: boolean;
       out: string;
@@ -545,6 +550,8 @@ program
     }) => {
       const icons = resolveIconOptions(options);
       if (options.renderer !== 'web' || options.target !== 'local' || options.json) {
+        if (options.inlineTilejson)
+          throw new Error('--inline-tilejson applies to web builds with --target local.');
         await runRendererArtifactCommand('build', {...options, icons});
         return;
       }
@@ -556,6 +563,7 @@ program
           styleBaseUrl: '.',
           apiBaseUrl: options.apiBaseUrl,
           ...(icons ? {icons} : {}),
+          ...(options.inlineTilejson ? {inlineTileJson: true} : {}),
         }),
       );
 

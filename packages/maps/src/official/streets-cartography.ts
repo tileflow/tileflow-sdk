@@ -78,15 +78,7 @@ export function withStreetsCartography(base: TileflowMap) {
     modules: {
       ...source.modules,
       roads: withRenderStack(
-        {
-          ...overviewRoads,
-          pathGround: {
-            greenColor: token.color('roads.path.green'),
-            groundColor: token.color('roads.path.ground'),
-            opacity: token.number('roads.path.groundOpacity'),
-            widthScale: 0.92,
-          },
-        },
+        overviewRoads,
         {
           ...roadsStack,
           accessOverview: streetsAccessOverview,

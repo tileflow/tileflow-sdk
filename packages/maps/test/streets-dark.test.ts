@@ -142,7 +142,6 @@ const approvedLightStyleColors = new Set([
   '#C9C9C1',
   '#CCD6D9',
   '#D2DADC',
-  '#D5DAD7',
   '#D6239F',
   '#D6E8D2',
   '#D7D3CE',

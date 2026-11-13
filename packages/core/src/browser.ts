@@ -2485,7 +2485,8 @@ export type TileflowFrameScheduler<TFrame> = {
 export type TileflowMapLifecycleSubscriber<TMap> = (
   map: TMap,
   event: TileflowMapLifecycleEvent,
-  listener: () => void,
+  /** Receives the map's event object, when the map provides one. */
+  listener: (event?: unknown) => void,
 ) => () => void;
 
 export type TileflowSessionSender = (
@@ -2712,6 +2713,26 @@ export function createTileflowSessionStarter(options: {
   };
 }
 
+const withheldReliefStatuses = new Set([429, 503]);
+
+/**
+ * Relief is optional: when a guard withholds an elevation source (its TileJSON or a tile answers
+ * 429 or 503), the map keeps rendering without hillshade or 3D terrain and stays usable.
+ */
+function isWithheldReliefError(event: unknown): boolean {
+  if (!event || typeof event !== 'object') return false;
+  const {error, source} = event as {error?: unknown; source?: unknown};
+  const status =
+    error && typeof error === 'object' ? (error as {status?: unknown}).status : undefined;
+  return (
+    !!source &&
+    typeof source === 'object' &&
+    (source as {type?: unknown}).type === 'raster-dem' &&
+    typeof status === 'number' &&
+    withheldReliefStatuses.has(status)
+  );
+}
+
 export function attachTileflowMapLifecycle<TMap, TFrame>(options: {
   getSession?: () => {analytics: TileflowAnalytics | undefined; styleId?: string};
   map: TMap;
@@ -2791,8 +2812,8 @@ export function attachTileflowMapLifecycle<TMap, TFrame>(options: {
     });
   };
 
-  const handleError = () => {
-    if (!disposed) {
+  const handleError = (event?: unknown) => {
+    if (!disposed && !isWithheldReliefError(event)) {
       invalidate('error');
     }
   };
@@ -2806,7 +2827,7 @@ export function attachTileflowMapLifecycle<TMap, TFrame>(options: {
       ['styledataloading', handleLoading],
       ['idle', handleIdle],
       ['error', handleError],
-    ] satisfies Array<[TileflowMapLifecycleEvent, () => void]>) {
+    ] satisfies Array<[TileflowMapLifecycleEvent, (event?: unknown) => void]>) {
       unsubscribers.push(options.subscribe(options.map, event, listener));
     }
   } catch (error) {

@@ -324,9 +324,11 @@ before loading a style.
 
 ### Catalog branding
 
-The React, Vue, Svelte, React Native and embedded mobile maps manage the Tileflow symbol
-in the lower-left corner automatically. Preview and capture include it too. The symbol links to
-https://tileflow.dev and follows the active catalog sources, independently of data attribution.
+The React, Vue, Svelte, React Native and embedded mobile maps manage the Tileflow logo in the
+lower-left corner automatically. Preview and capture include it too. The logo is the wordmark with
+the symbol, in white with a soft dark halo and no background; browser maps 250 px wide or narrower
+show the symbol alone. It links to https://tileflow.dev and follows the active catalog sources,
+independently of data attribution.
 Own and third-party tiles do not require the Tileflow mark. Public Tileflow catalog delivery shows
 it; catalog delivery bound to a Map ID reads the owner's current branding entitlement. A paid map
 never inserts a provisional mark. While a managed decision is unavailable, the surface remains
@@ -399,10 +401,12 @@ their lighting. Model corners belong to the asset; ordinary buildings use `edgeR
 entrance zooms, without zoom/arrival growth or fading. Equal endpoints such as
 `entrance: {buildings: [14.25, 14.25], models: [14.25, 14.25]}` switch immediately at that zoom.
 
-Text requires exactly one provider. Soundings and Blueprint use URL glyphs; Streets and Terrain package DINish
-and Noto Sans; the community Baedeker, 1777 and Siegfried maps package Cormorant. Hosted
-rejects packaged/local fonts: self-host or replace them with compatible public glyphs. Tile and font
-URLs do not grant redistribution rights.
+Text requires exactly one provider. Streets, Outdoors and Soundings use URL glyphs from Tileflow's
+official glyph set, whose URL composites a comma-joined stack of its fonts per code point; Blueprint
+also uses URL glyphs; the community Baedeker, 1777 and Siegfried maps package Cormorant. A map that
+declares `fonts` replaces inherited glyphs: Hosted deploy uploads its used faces and licenses as a
+font bundle before publishing the style, and `--with-native` deployments still require glyphs. Tile
+and font URLs do not grant redistribution rights.
 
 `labels.roadPlacement: 'readable'` draws complete street names above the 3D scene, below foreground
 destinations. `attachTileflowLabelPlacement(map)` from `@tileflow/core/browser` adds per-instance

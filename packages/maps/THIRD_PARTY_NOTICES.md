@@ -59,21 +59,14 @@ The transport identities remain the marks of their respective owners. Their incl
 the mapped services and does not imply affiliation or endorsement. These asset-specific terms
 are separate from the package's source-code license.
 
-## Streets relief
+## Relief
 
-Streets requests Mapzen Terrain Tiles from the AWS Open Data elevation tiles bucket at runtime.
-No DEM tile is packaged here. The compiled source credit links to the Tileflow map data credits
-page, <https://tileflow.dev/copyright#streets-terrain>, which lists the credits required by the
-upstream data attribution: <https://github.com/tilezen/joerd/blob/master/docs/attribution.md>.
-The dataset is described at <https://registry.opendata.aws/terrain-tiles/>.
-
-The upstream attribution catalog includes ArcticDEM (DigitalGlobe imagery, NSF awards 1043681,
-1559691 and 1542736); © Commonwealth of Australia (Geoscience Australia) 2017;
-© offene Daten Österreichs — Digitales Geländemodell (DGM) Österreich; Canadian information
-licensed under the Open Government Licence – Canada; Copernicus EU-DEM data funded by the
-European Union; ETOPO1 from U.S. NOAA; INEGI Continental relief data; New Zealand Crown/LINZ
-data; © Kartverket; © Environment Agency; and USGS 3DEP, GMTED2010 and SRTM data.
-Consult the linked catalog for each source's complete required attribution and license terms.
+Streets hillshade and the Outdoors 3D surface, hillshade and contours request hosted Tileflow
+Terrain at runtime. No DEM tile is packaged here. Terrain is derived from
+[Mapterhorn](https://mapterhorn.com/attribution/), which combines public elevation data from many
+producers. Each Terrain release declares its credit in its TileJSON, which the map shows as the
+source attribution. The Tileflow map data credits page, <https://tileflow.dev/copyright#terrain>,
+lists the producers and the licence statements their terms require.
 
 ## Nautical-chart references
 
@@ -89,15 +82,14 @@ exposed by the selected data sources. Neither is packaged here; the bands are no
 soundings, and the marks keep the attribution of their own source. Soundings is a general-purpose
 visual map, not a nautical chart for navigation.
 
-## Streets lettering
+## Official map lettering
 
-Streets includes unmodified DINish Medium and Bold TTF files from
+Official maps draw DINish Medium and Bold, from
 [playbeing/dinish](https://github.com/playbeing/dinish/tree/a5f3b2a3b932336225815bf9005e3b72cc3de71c),
-and unmodified Noto Sans Regular, Bold and Italic TTF files from
-[notofonts/noto-fonts](https://github.com/notofonts/noto-fonts/tree/c971829a87e7920f960e7277c3dafd9bedd3c601).
-Both families use the SIL Open Font License 1.1. Complete copyright and license notices are
-included in `assets/streets/fonts/LICENSE-DINish.txt`, `LICENSE-NotoSans.txt`, and the combined
-`LICENSE.txt`. DINish is an independent DIN-inspired font; DIN Pro is not redistributed.
+and Noto Sans Regular, Bold and Italic as glyph ranges served by Tileflow. This package contains no
+font files. Both families use the SIL Open Font License 1.1; each font's complete license is served
+beside its glyphs as `glyphs/<font>/LICENSE.md`. DINish is an independent DIN-inspired font; DIN Pro
+is not used.
 
 ## Historical climate context
 
@@ -109,7 +101,6 @@ The image is historical context, not live vegetation.
 
 ## Outdoors elevation and shared artwork
 
-Outdoors uses Mapterhorn elevation at runtime for its 3D surface, hillshade and contours. No DEM
-tile is packaged here. Its source links to <https://mapterhorn.com/attribution/>. Outdoors shares
-Streets lettering, POI pictograms, transport symbols and climate context, with the notices above.
+Outdoors reads its elevation from hosted Tileflow Terrain, with the notice under Relief above.
+Outdoors shares Streets lettering, POI pictograms, transport symbols and climate context, with the notices above.
 The two summit symbols in `assets/outdoors/icons/` are original Tileflow artwork.

@@ -11,6 +11,7 @@ import {expandTileflowDeploymentArtifact} from '@tileflow/core/build';
 import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {createTileflowIconSetProject} from '../../../test-support/icon-set-project';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
+import {copyStreetsFontFixture} from '../../dev/test/streets-font-fixture';
 import {writeGlb} from '../../dev/test/tree-model-fixtures';
 import {tileflowMapFixture} from './map-fixture';
 
@@ -706,15 +707,58 @@ test('deploy rejects external vector data before any remote write', async (t) =>
   assert.equal(await readFile(fixture.manifestPath, 'utf8'), originalManifest);
 });
 
-test('deploy rejects package-owned fonts before authentication while Hosted font storage is unavailable', async (t) => {
+test("deploy uploads a map's own fonts as a font bundle and binds its returned URL", async (t) => {
   const fixture = await createFixture(t);
+  await copyStreetsFontFixture(fixture.directory);
   await writeFile(
     fixture.configPath,
-    "import {defineMap} from '@tileflow/core'; import {streets} from '@tileflow/maps'; export default defineMap({id:'night',name:'Night',version:1,extends:streets});\n",
+    `import {defineMap, disable} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+export default defineMap({
+  id: 'madrid',
+  version: 1,
+  extends: streets,
+  terrain: 'none',
+  fonts: ['./fonts'],
+  icons: [],
+  modules: {poi: {type: 'poi', icons: false}, roads: disable(), vegetation: disable()}
+});
+`,
   );
-  let requests = 0;
-  const api = await createFakeApi(t, async () => {
-    requests += 1;
+  const bundleId = 'fnb_12345678-1234-1234-1234-123456789abc';
+  const requests: Array<{body: string; method?: string; url?: string}> = [];
+  const api = await createFakeApi(t, async (request) => {
+    const body = (await readRequestBodyBytes(request)).toString('latin1');
+    requests.push({body, method: request.method, url: request.url});
+    if (request.method === 'PUT') {
+      const manifest = fontBundleManifestFromMultipart(body);
+      assert.equal(manifest.format, 'tileflow-font-bundle-v1');
+      for (const file of manifest.files) {
+        assert.match(body, new RegExp(`name="file:${encodeURIComponent(file.name)}"`, 'u'));
+      }
+      return {
+        baseUrl: `${api.url}/font-bundles/${bundleId}`,
+        changed: true,
+        contentHash: request.url?.split('/').pop(),
+        fontFaceCount: manifest.fontFaces.length,
+        id: bundleId,
+        totalBytes: manifest.files.reduce((total, file) => total + file.byteLength, 0),
+      };
+    }
+    const parsed = JSON.parse(body) as {artifact: unknown; fontBundle?: unknown};
+    // The style names the uploaded bundle by its content hash, never by a client-built URL.
+    assert.deepEqual(parsed.fontBundle, {contentHash: requests[0]?.url?.split('/').pop()});
+    const artifact = expandTileflowDeploymentArtifact(parsed.artifact) as {
+      styles?: Record<string, {metadata?: {'tileflow:fontFaces'?: Array<{source: string}>}}>;
+    };
+    for (const style of Object.values(artifact.styles ?? {})) {
+      const faces = style.metadata?.['tileflow:fontFaces'] ?? [];
+      assert.ok(faces.length > 0);
+      for (const face of faces) {
+        assert.ok(face.source.startsWith(`${api.url}/font-bundles/${bundleId}/fonts/`));
+      }
+    }
+    return hostedDeploymentResponse(managedMapId, streetsThemeNames, {changed: true, version: 1});
   });
   const result = await runCli(
     fixture.directory,
@@ -730,10 +774,23 @@ test('deploy rejects package-owned fonts before authentication while Hosted font
     {TILEFLOW_API_KEY: fakeApiKey},
   );
 
-  assert.equal(result.code, 1);
-  assert.equal(requests, 0);
-  assert.match(result.stdout, /Hosted deploy does not yet support package-owned web fonts/u);
-  await assert.rejects(() => readFile(fixture.manifestPath, 'utf8'), {code: 'ENOENT'});
+  assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
+  assert.deepEqual(
+    requests.map((request) => `${request.method} ${request.url?.split('/').slice(0, 3).join('/')}`),
+    ['PUT /v1/font-bundles', 'POST /v1/styles'],
+  );
+  assert.match(result.stdout, /Uploaded font bundle \(\d+ faces?,/u);
+  const manifest = JSON.parse(await readFile(fixture.manifestPath, 'utf8')) as {
+    maps: {madrid: {themes: Record<string, {fontFaces: Array<{source: string}>}>}};
+  };
+  for (const theme of Object.values(manifest.maps.madrid.themes)) {
+    assert.ok(theme.fontFaces.length > 0);
+    assert.ok(
+      theme.fontFaces.every((face) =>
+        face.source.startsWith(`${api.url}/font-bundles/${bundleId}/fonts/`),
+      ),
+    );
+  }
 });
 
 test('deploy uploads generated icon files before posting sanitized style JSON', async (t) => {

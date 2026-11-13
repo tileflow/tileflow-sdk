@@ -35,15 +35,19 @@ export type ResolvedPoiModuleOptions = {
   detailZoom: number;
   densityByCategory: Partial<Record<TileflowPoiCategory, TileflowPoiDensity>>;
   maxRankByType: NonNullable<TileflowPoiModuleConfig['maxRankByType']>;
+  minZoomByType: NonNullable<TileflowPoiModuleConfig['minZoomByType']>;
+  labelMinZoomByType: NonNullable<TileflowPoiModuleConfig['labelMinZoomByType']>;
   icons: boolean;
   labels: boolean;
   minZoom: number;
   placement: {
     coupleIconAndLabel: boolean;
     iconOnlyTypes: readonly string[];
+    unnamedIconTypes: readonly string[];
     iconPadding: number;
     order: TileflowPoiPlacementOrder;
     prominentRank?: number;
+    prominentImportance?: number;
     textPadding: number;
   };
 };
@@ -71,17 +75,23 @@ export function resolvePoi(request: TileflowPoiModuleConfig | undefined): Resolv
     detailZoom: request?.detailZoom ?? 17,
     densityByCategory: {...request?.densityByCategory},
     maxRankByType: {...request?.maxRankByType},
+    minZoomByType: {...request?.minZoomByType},
+    labelMinZoomByType: {...request?.labelMinZoomByType},
     icons: request?.icons ?? true,
     labels: request?.labels ?? true,
     minZoom: request?.minZoom ?? 0,
     placement: {
       coupleIconAndLabel: request?.placement?.coupleIconAndLabel ?? true,
       iconOnlyTypes: [...(request?.placement?.iconOnlyTypes ?? tileflowPoiIconOnlyTypes)],
+      unnamedIconTypes: [...(request?.placement?.unnamedIconTypes ?? [])],
       iconPadding: request?.placement?.iconPadding ?? 2,
       order: request?.placement?.order ?? 'importance',
       ...(request?.placement?.prominentRank === undefined
         ? {}
         : {prominentRank: request.placement.prominentRank}),
+      ...(request?.placement?.prominentImportance === undefined
+        ? {}
+        : {prominentImportance: request.placement.prominentImportance}),
       textPadding: request?.placement?.textPadding ?? 3,
     },
   };

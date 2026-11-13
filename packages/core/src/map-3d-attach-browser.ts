@@ -1,6 +1,8 @@
 import {createBuildingNativeLayers} from './building-native-layers-browser';
 import type {TileflowBuildings3DChange} from './buildings-3d-browser';
 import {tileflowBuildingsMetadataKey} from './buildings-3d-design';
+import {readTileflowCamera} from './camera';
+import {createTileflowPitchLimit} from './camera-browser';
 import type {TileflowMap3D, TileflowMap3DOptions} from './map-3d-browser';
 import {tileflowStreetLightsMetadataKey} from './street-lights';
 import {tileflowVegetationMetadataKey} from './trees-3d';
@@ -107,6 +109,8 @@ export function attachTileflowMap3D(options: AttachTileflowMap3DOptions): Tilefl
   let loading = false;
   let failed = false;
   let disposed = false;
+  // Flat maps still own their camera policy, without loading the 3D renderer.
+  let pitchLimit: ReturnType<typeof createTileflowPitchLimit> | undefined;
   const pendingNativeBuildings = createBuildingNativeLayers(map);
   // While the renderers load, the native extrusion draws the buildings, unless models may stand in
   // for some: it must not draw those, and cannot tell which they are until the scene knows.
@@ -118,6 +122,19 @@ export function attachTileflowMap3D(options: AttachTileflowMap3DOptions): Tilefl
   let declares: boolean | undefined;
   const check = () => {
     if (disposed || loading || !map.isStyleLoaded()) return;
+    if (declares === undefined) {
+      const limit =
+        options.camera?.pitchLimit ??
+        readTileflowCamera((map.getStyle() as {metadata?: unknown} | undefined)?.metadata)
+          .pitchLimit;
+      if (limit) {
+        pitchLimit ??= createTileflowPitchLimit(map);
+        pitchLimit.setLimit(limit);
+      } else {
+        pitchLimit?.dispose();
+        pitchLimit = undefined;
+      }
+    }
     declares ??= tileflowMapDeclares3D({
       map,
       ...(options.controller ? {controller: options.controller} : {}),
@@ -137,6 +154,8 @@ export function attachTileflowMap3D(options: AttachTileflowMap3DOptions): Tilefl
       .then(({createTileflowMap3D}) => {
         if (disposed) return;
         pendingNativeBuildings.restore();
+        // The mounted scene takes over with the application's original maximum.
+        pitchLimit?.dispose();
         scene = createTileflowMap3D({
           ...sceneOptions,
           map,
@@ -169,11 +188,13 @@ export function attachTileflowMap3D(options: AttachTileflowMap3DOptions): Tilefl
     stopWatching();
     map.off('remove', onRemove);
     pendingNativeBuildings.restore();
+    pitchLimit?.dispose();
     scene?.dispose();
     scene = undefined;
   }
   function onRemove() {
     // The mounted scene handles removal itself. Do not restore its lens on a destroyed map.
+    pitchLimit?.dispose(false);
     pendingNativeBuildings.forget();
     scene = undefined;
     dispose();

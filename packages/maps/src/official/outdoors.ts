@@ -22,44 +22,67 @@ import {stackOf, withoutStack} from './streets-cartography';
 import {streetsVisual} from './streets-themes';
 import {bindOfficialMapTheme} from './theme-helpers';
 
-const trailWidth = zoom.exponential(1.5, [
-  [13, 0.5],
-  [14, 1],
-  [15, 1],
-  [18, 4],
-]);
-const trailCasingWidth = zoom.exponential(1.5, [
-  [15, 2],
-  [18, 7],
-]);
+// [zoom, outer width, pale center width]; keep overview paths fine instead of clamping at 2 px.
+const trailWidths = {
+  trail: [
+    [12, 0.85, 0.24],
+    [13, 1.1, 0.3],
+    [14, 1.3, 0.4],
+    [15, 1.5, 0.5],
+    [16, 1.8, 0.65],
+    [18, 2.6, 1],
+    [20, 3.1, 1.2],
+    [22, 3.6, 1.4],
+  ],
+  walkway: [
+    [12, 0.5, 0.12],
+    [13, 0.65, 0.16],
+    [14, 0.8, 0.24],
+    [15, 1, 0.32],
+    [16, 1.3, 0.45],
+    [18, 2, 0.75],
+    [20, 2.4, 0.9],
+    [22, 2.8, 1.1],
+  ],
+} as const;
 
 /** A pale, broken center over a continuous ochre casing keeps paths distinct from contour ink. */
 function trail(
   color: typeof outdoorsVisual.trail,
   minZoom: number,
   dash: readonly number[],
-  opacity = 1,
+  kind: 'trail' | 'walkway' | 'track' = 'trail',
 ): TileflowRoadClassStyle {
+  const widths = trailWidths[kind === 'walkway' ? 'walkway' : 'trail'];
+  const scale = kind === 'track' ? 1.12 : 1;
+  const opacity = kind === 'walkway' ? 0.82 : 0.9;
   const fill = {
     cap: 'butt',
     color: outdoorsVisual.trailHalo,
     dash,
     minZoom,
     opacity,
-    width: trailWidth,
+    width: zoom.exponential(
+      1.3,
+      widths.map(([z, , center]) => [z, center * scale]),
+    ),
   } as const;
   const casing = {
+    cap: 'round',
     color,
     dash: [1, 0],
     gapWidth: 0,
     minZoom,
     opacity,
-    width: trailCasingWidth,
+    width: zoom.exponential(
+      1.3,
+      widths.map(([z, outer]) => [z, outer * scale]),
+    ),
   } as const;
   return {
     bridge: {casing, fill},
     surface: {casing, fill},
-    tunnel: {casing: {visible: false}, fill: {...fill, opacity: 0.45}},
+    tunnel: {casing: {visible: false}, fill: {...fill, opacity: 0.4}},
   };
 }
 
@@ -111,9 +134,11 @@ function serviceRoadsOnly(pass: TileflowRenderStackOperation): TileflowRenderSta
 
 function withOutdoorsStacks(base: TileflowMap) {
   const source = resolveMap(base);
-  const {land, roads} = source.modules ?? {};
-  if (!land || !roads) throw new Error('Outdoors requires the Streets land and road modules');
+  const {land, roads, buildings, vegetation} = source.modules ?? {};
+  if (!land || !roads || !buildings || !vegetation)
+    throw new Error('Outdoors requires the Streets land, road, building and vegetation modules');
   const outdoorsRoads = {...withoutStack(roads), classes: {...roads.classes}};
+  const {threeDimensional: _buildingScene, ...flatBuildings} = withoutStack(buildings);
   // Preserve the surface filters while separating underground roads at overview scales.
   for (const roadClass of ['motorway', 'trunk', 'primary'] as const) {
     const road = outdoorsRoads.classes[roadClass];
@@ -132,10 +157,41 @@ function withOutdoorsStacks(base: TileflowMap) {
       },
     };
   }
+  for (const id of ['primary', 'secondary', 'tertiary', 'minor', 'service'] as const) {
+    const road = outdoorsRoads.classes[id];
+    if (!road) continue;
+    outdoorsRoads.classes[id] = {...road};
+    for (const structure of ['surface', 'bridge'] as const) {
+      const part = road[structure];
+      if (!part?.casing || !part.fill) continue;
+      outdoorsRoads.classes[id][structure] = {
+        ...part,
+        casing: {
+          ...part.casing,
+          minZoom: 12,
+          gapWidth: part.fill.width,
+          width: zoom.linear([
+            [12, 0.35],
+            [15, 0.55],
+            [18, 0.8],
+            [22, 1.1],
+          ]),
+          opacity: 0.65,
+        },
+      };
+    }
+  }
   return defineMap({
-    ...base,
+    ...source,
     modules: {
-      ...base.modules,
+      ...source.modules,
+      buildings: withRenderStack(
+        {...flatBuildings, mode: 'flat', extrusion: {visible: false}},
+        Object.fromEntries(
+          Object.entries(stackOf(buildings)).filter(([name]) => name !== 'extrusion'),
+        ),
+      ),
+      vegetation: {...vegetation, mode: 'flat'},
       land: withRenderStack(withoutStack(land), {
         ...stackOf(land),
         protectedEdge: renderPass({
@@ -194,7 +250,7 @@ export const outdoors = bindOfficialMapTheme(
         terrain: {
           contours: {
             demMaxZoom: 14,
-            index: {color: outdoorsVisual.contour, opacity: 0.5, width: 0.8},
+            index: {color: outdoorsVisual.contour, opacity: 0.46, width: 0.8},
             labels: {
               color: outdoorsVisual.contour,
               font: streetsVisual.font.navigation,
@@ -207,7 +263,7 @@ export const outdoors = bindOfficialMapTheme(
             },
             maxZoom: 14,
             minZoom: 8,
-            minor: {color: outdoorsVisual.contour, opacity: 0.3, width: 0.5},
+            minor: {color: outdoorsVisual.contour, opacity: 0.24, width: 0.5},
             overzoom: 2,
             sourceId: 'outdoors-contours',
             thresholds: {
@@ -223,7 +279,7 @@ export const outdoors = bindOfficialMapTheme(
           encoding: 'terrarium',
           hillshade: {
             accentColor: token.color('terrain.hillshade.accent'),
-            exaggeration: 0.34,
+            exaggeration: 0.25,
             highlightColor: token.color('terrain.hillshade.highlight'),
             illuminationAnchor: 'map',
             illuminationDirection: 315,
@@ -275,8 +331,8 @@ export const outdoors = bindOfficialMapTheme(
             // Businesses give way to what a day outside needs: camps, huts, views, water, shelter.
             categories: ['park-nature', 'landmark', 'lodging', 'visitor-amenity', 'transport'],
             densityByCategory: {
-              landmark: 3,
-              lodging: 3,
+              landmark: 1,
+              lodging: 1,
               'park-nature': 3,
               transport: 1,
               'visitor-amenity': 5,
@@ -333,11 +389,11 @@ export const outdoors = bindOfficialMapTheme(
                   },
                 },
                 cycleway: trail(outdoorsVisual.track, 13, [1, 0]),
-                // Mostly town walkways: they stay behind the mountain paths until close in.
-                footway: trail(outdoorsVisual.trail, 14, [1.75, 0.3], 0.8),
+                // Footways and steps stay finer and quieter than the mountain paths.
+                footway: trail(outdoorsVisual.walkway, 14, [1.75, 0.3], 'walkway'),
                 pathway: trail(outdoorsVisual.trail, 12, [4, 0.5]),
-                steps: trail(outdoorsVisual.trail, 14, [1, 0.75]),
-                track: trail(outdoorsVisual.track, 12, [5, 0.5]),
+                steps: trail(outdoorsVisual.walkway, 14, [1, 0.75], 'walkway'),
+                track: trail(outdoorsVisual.track, 12, [5, 0.5], 'track'),
               },
               // Streets draws unpaved and restricted ways as solid carriageways; a trail stays a trail.
               modifiers: {unpaved: {enabled: false}},

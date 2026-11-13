@@ -1,4 +1,4 @@
-import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
+import {createExpression, validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
@@ -193,12 +193,16 @@ test('ground names retain language, class hierarchy, filters, and authored text 
       const original = foreground.find(({target}) => target === entry.target)!;
       assert.deepEqual(entry.layer.filter, original.layer.filter);
       const layout = entry.layer.layout as Record<string, unknown>;
-      assert.deepEqual(layout['text-field'], [
-        'coalesce',
-        ['get', 'english'],
-        ['get', 'latin'],
-        ['get', 'local'],
-      ]);
+      const name = createExpression(layout['text-field']);
+      assert.equal(name.result, 'success');
+      if (name.result !== 'success') throw new Error('Invalid road name expression');
+      for (const [properties, expected] of [
+        [{english: 'English', local: 'Local', latin: 'Latin'}, 'English'],
+        [{english: '', local: 'Local', latin: 'Latin'}, 'Local'],
+        [{latin: 'Latin'}, 'Latin'],
+      ] as const) {
+        assert.equal(name.value.evaluate({zoom: 16}, {type: 'LineString', properties}), expected);
+      }
       if (entry.target === 'labels.roads.primary') {
         assert.equal(layout['text-pitch-alignment'], 'viewport');
         assert.equal(layout['text-size'], 19);

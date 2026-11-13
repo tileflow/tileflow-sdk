@@ -1,4 +1,4 @@
-import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
+import {createExpression, validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type {TileflowLayerContribution} from '../src/cartography/contributions';
@@ -144,12 +144,17 @@ test('POI and geographic labels share the requested language and bound English f
   const poiField = textField(points, 'tileflow-poi-label');
 
   assert.deepEqual(poiField, cityField);
-  assert.deepEqual(cityField, [
-    'coalesce',
-    ['get', 'name:fr'],
-    ['get', 'latin_label'],
-    ['get', 'local_label'],
-  ]);
+  const parsed = createExpression(cityField);
+  assert.equal(parsed.result, 'success');
+  if (parsed.result !== 'success') throw new Error('Invalid translated name expression');
+  const read = (properties: Record<string, string>) =>
+    parsed.value.evaluate({zoom: 14}, {type: 'Point', properties});
+  assert.equal(
+    read({'name:fr': 'Tour Eiffel', latin_label: 'Eiffel Tower', local_label: 'Local'}),
+    'Tour Eiffel',
+  );
+  assert.equal(read({'name:fr': '', latin_label: 'Latin', local_label: 'Local'}), 'Local');
+  assert.equal(read({latin_label: 'Latin'}), 'Latin');
 
   const english = compilePoi(
     poi({categories: ['food-drink'], icons: false, labels: true}),

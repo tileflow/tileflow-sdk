@@ -235,7 +235,7 @@ export function registerCaptureCommands(
     .option('--format <format>', 'shot output: webm (default) or frames')
     .option(
       '--map <name>',
-      'capture one map with an uncommitted camera; an official map (streets, soundings, outdoors) needs no config',
+      'capture one map with an uncommitted camera; an official map (streets, nautical, outdoors) needs no config',
     )
     .option(
       '--theme <names>',

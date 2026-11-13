@@ -331,6 +331,49 @@ const capped = {
   'tileflow:camera': {version: 1, pitchLimit: {maxZoom: 15, maxPitch: 38}},
 };
 
+test('a flat map caps pitch without loading 3D and releases it for another design', async () => {
+  const flat = {'tileflow:camera': {version: 1, pitchLimit: {maxZoom: 24, maxPitch: 0}}};
+  const map = steerableMap(flat);
+  let loads = 0;
+  const scene = attachTileflowMap3D({
+    map,
+    load: () => {
+      loads++;
+      return load();
+    },
+  });
+  assert.equal(map.camera.maximum, 0);
+  for (const zoom of [1, 14, 20, 24]) {
+    map.jumpTo({zoom, pitch: 60});
+    assert.equal(map.camera.pitch, 0);
+  }
+  assert.equal(loads, 0);
+  map.loadStyle(capped);
+  await mounted();
+  map.jumpTo({zoom: 17, pitch: 60});
+  assert.equal(map.camera.maximum, 85);
+  assert.equal(map.camera.pitch, 60);
+  assert.equal(loads, 1);
+  map.loadStyle(flat);
+  assert.equal(map.camera.maximum, 0);
+  scene.dispose();
+  assert.equal(map.camera.maximum, 85);
+});
+
+test('removing a flat map releases its pitch policy without writing to the destroyed camera', () => {
+  const map = steerableMap({
+    'tileflow:camera': {version: 1, pitchLimit: {maxZoom: 24, maxPitch: 0}},
+  });
+  const jumpTo = map.jumpTo;
+  const scene = attachTileflowMap3D({map, load});
+  map.setMaxPitch = () => {
+    throw new Error('Camera was destroyed');
+  };
+  assert.doesNotThrow(() => map.fire('remove'));
+  scene.dispose();
+  assert.equal(map.jumpTo, jumpTo);
+});
+
 test('a camera change from an overview into a closer view keeps the pitch it asks for', async () => {
   const map = steerableMap(capped);
   const jumpTo = map.jumpTo;

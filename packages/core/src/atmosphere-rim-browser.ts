@@ -1,9 +1,4 @@
-import {
-  atmosphereSpaceOpacity,
-  readTileflowAtmosphere,
-  tileflowAtmosphereMetadataKey,
-  type TileflowResolvedAtmosphere,
-} from './atmosphere';
+import {atmosphereSpaceOpacity, createTileflowAtmosphereReader} from './atmosphere';
 import type {TileflowAtmosphereMap} from './atmosphere-browser';
 import type {TileflowSkyMap} from './sky-browser';
 
@@ -64,7 +59,8 @@ export function attachTileflowAtmosphereRim(map: TileflowAtmosphereMap & Tileflo
   let canvas: HTMLCanvasElement | undefined;
   let context: CanvasRenderingContext2D | null = null;
   let lastDraw = '';
-  let atmosphere: TileflowResolvedAtmosphere | undefined;
+  // Read per frame, so a paint-only theme blend recolours the halo with the map.
+  const atmosphere = createTileflowAtmosphereReader(map);
   function removeCanvas() {
     canvas?.remove();
     canvas = undefined;
@@ -77,7 +73,8 @@ export function attachTileflowAtmosphereRim(map: TileflowAtmosphereMap & Tileflo
     // Keep projection reads out of terrain's offscreen ground textures.
     renderingMode: '3d',
     render(_gl: WebGL2RenderingContext, input: RenderInput) {
-      if (!atmosphere || !canvas || !context) return;
+      const shown = atmosphere.read();
+      if (!shown || !canvas || !context) return;
       const {mainMatrix, projectionTransition} = input.defaultProjectionData;
       const width = container.clientWidth,
         height = container.clientHeight;
@@ -92,7 +89,7 @@ export function attachTileflowAtmosphereRim(map: TileflowAtmosphereMap & Tileflo
         height,
         pixelRatio,
         opacity,
-        atmosphere.horizonColor,
+        shown.horizonColor,
       ]);
       if (key === lastDraw) return;
       lastDraw = key;
@@ -117,7 +114,7 @@ export function attachTileflowAtmosphereRim(map: TileflowAtmosphereMap & Tileflo
       const gradient = context.createRadialGradient(0, 0, 0, 0, 0, extent);
       gradient.addColorStop(0, 'transparent');
       gradient.addColorStop(Math.max(0, 1 - 0.5 / radius) / extent, 'transparent');
-      const colour = Number.parseInt(atmosphere.horizonColor.slice(1), 16);
+      const colour = Number.parseInt(shown.horizonColor.slice(1), 16);
       const outer = [(colour >> 16) * 0.35, ((colour >> 8) & 255) * 0.6, colour & 255];
       const white = [245, 250, 255];
       for (const distance of [0, 1, 2, 3, 5, 8, 12, 18, 26, 36, 50, 70, 96, 120]) {
@@ -144,17 +141,10 @@ export function attachTileflowAtmosphereRim(map: TileflowAtmosphereMap & Tileflo
     // A style replacement can temporarily have no document. Keep the last halo during that gap.
     const style = map.getStyle();
     if (!style) return;
-    atmosphere =
-      style.projection?.type === 'globe'
-        ? readTileflowAtmosphere(
-            (style.metadata as Record<string, unknown> | undefined)?.[
-              tileflowAtmosphereMetadataKey
-            ],
-          )
-        : undefined;
+    atmosphere.refresh(style);
     try {
       const present = Boolean(map.getLayer(layer.id));
-      if (!atmosphere) {
+      if (!atmosphere.read()) {
         if (present) map.removeLayer(layer.id);
         removeCanvas();
         return;

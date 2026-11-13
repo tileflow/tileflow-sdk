@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {createTileflowAtmosphereReader} from '../src/atmosphere';
+import {resolveTileflowAtmosphere} from '../src/atmosphere-compile';
 import {createTileflowThemeController} from '../src/browser-bundle';
 import {createTileflowStyleFamily, materializeTileflowStyleFamily} from '../src/style-family';
 import {createTileflowFamilyAnimator} from '../src/style-family-browser';
@@ -69,6 +71,76 @@ test('all 132 directed appearance changes keep the map style, sources and applic
         assert.deepEqual(metadata.values.at(-1), styles[to]!.metadata!['tileflow:vegetation']);
       }
   controller.dispose();
+});
+
+test('the globe atmosphere follows a paint-only family blend while the style document stays put', async () => {
+  const atmosphere = (night: boolean): MapLibreStyle => ({
+    version: 8,
+    sources: {},
+    layers: [{id: 'water', type: 'background', paint: {'background-color': '#000000'}}],
+    projection: {type: 'globe'},
+    metadata: {
+      'tileflow:atmosphere': {
+        version: 2,
+        ...resolveTileflowAtmosphere(
+          night
+            ? {
+                skyColor: '#0b1a33',
+                horizonColor: '#1f2f4f',
+                spaceColor: '#000000',
+                starIntensity: 1,
+              }
+            : true,
+        ),
+      },
+    },
+  });
+  const family = createTileflowStyleFamily({day: atmosphere(false), night: atmosphere(true)});
+  assert.equal(family.updates.appearanceOnly, true);
+  const runtime = (theme: string) => ({
+    theme,
+    family,
+    style: materializeTileflowStyleFamily(family, theme),
+  });
+  const shown = runtime('day').style;
+  const map = {
+    on() {},
+    off() {},
+    getStyle: () => shown,
+    setStyle: () => assert.fail('appearance changes must not call setStyle'),
+    setPaintProperty() {},
+  };
+  const reader = createTileflowAtmosphereReader(map);
+  reader.refresh();
+  const controller = createTileflowThemeController({
+    initial: runtime('day'),
+    map,
+    loadFonts: async () => assert.fail('same-family colours do not reload fonts'),
+  });
+  const [dayAtmosphere, nightAtmosphere] = (['day', 'night'] as const).map((theme) => {
+    const {version: _version, ...rest} = materializeTileflowStyleFamily(family, theme).metadata![
+      'tileflow:atmosphere'
+    ] as Record<string, unknown>;
+    return rest;
+  });
+  assert.deepEqual(reader.read(), dayAtmosphere);
+  const themes = [runtime('day'), runtime('night')];
+  assert.equal(
+    (await controller.setBlend({themes, position: 0.5}, {transition: {duration: 0}})).status,
+    'applied',
+  );
+  const middle = reader.read()!;
+  assert.notEqual(middle.horizonColor, dayAtmosphere!.horizonColor);
+  assert.notEqual(middle.horizonColor, nightAtmosphere!.horizonColor);
+  assert.equal(
+    middle.starIntensity,
+    ((dayAtmosphere!.starIntensity as number) + (nightAtmosphere!.starIntensity as number)) / 2,
+  );
+  await controller.setBlend({themes, position: 1}, {transition: {duration: 0}});
+  assert.deepEqual(reader.read(), nightAtmosphere);
+  controller.dispose();
+  // Without a controller the style's own atmosphere shows again.
+  assert.deepEqual(reader.read(), dayAtmosphere);
 });
 
 test('a new request starts from the appearance on screen and cancels outstanding work', async () => {

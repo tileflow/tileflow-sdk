@@ -1,4 +1,6 @@
 import type {TileflowThemeColorValue} from './cartography/values';
+import {mixTileflowColours, tileflowColourChannels} from './theme-blend';
+import {tileflowThemeMetadataReaderOf} from './theme-metadata';
 
 /** Optional globe atmosphere. Colors use theme tokens or explicit fixed values and must resolve to opaque colors. */
 export type TileflowAtmosphereOptions = {
@@ -81,6 +83,102 @@ export function readTileflowAtmosphere(value: unknown): TileflowResolvedAtmosphe
     starIntensity: record.starIntensity as number,
     starParallax: record.starParallax as number,
   };
+}
+
+/**
+ * The atmosphere `position` of the way from one theme to the next. Colours and star brightness mix;
+ * the star field's count, size and parallax come from the nearer theme, as does the whole
+ * atmosphere when only one of the two declares one.
+ */
+export function mixTileflowAtmosphere(
+  from: TileflowResolvedAtmosphere | undefined,
+  to: TileflowResolvedAtmosphere | undefined,
+  position: number,
+): TileflowResolvedAtmosphere | undefined {
+  const t = Math.min(1, Math.max(0, position));
+  const near = t < 0.5 ? from : to;
+  if (!from || !to || t === 0 || t === 1) return near;
+  const colour = (a: `#${string}`, b: `#${string}`) =>
+    hexColour(mixTileflowColours(a, b, t)) ?? (t < 0.5 ? a : b);
+  return {
+    ...near!,
+    skyColor: colour(from.skyColor, to.skyColor),
+    horizonColor: colour(from.horizonColor, to.horizonColor),
+    fogColor: colour(from.fogColor, to.fogColor),
+    spaceColor: colour(from.spaceColor, to.spaceColor),
+    starColor: colour(from.starColor, to.starColor),
+    starIntensity: from.starIntensity + (to.starIntensity - from.starIntensity) * t,
+  };
+}
+
+type AtmosphereStyle = {metadata?: unknown; projection?: {type?: unknown}};
+
+/**
+ * Follows the atmosphere a map shows. With a theme controller on the map, that is its themes'
+ * atmospheres mixed where its blend stands, so paint-only theme changes reach it too; otherwise the
+ * style's own. `refresh` reads the style document on style events; `read` is cheap enough for every
+ * frame and returns the same object while nothing changed.
+ */
+export function createTileflowAtmosphereReader(map: {getStyle(): AtmosphereStyle | undefined}) {
+  let globe = false;
+  let own: unknown;
+  let parsed: {values: readonly unknown[]; themes: (TileflowResolvedAtmosphere | undefined)[]} = {
+    values: [],
+    themes: [],
+  };
+  let shown: {position: number; atmosphere: TileflowResolvedAtmosphere | undefined} | undefined;
+  return {
+    refresh(style: AtmosphereStyle | undefined = map.getStyle()) {
+      globe = style?.projection?.type === 'globe';
+      const metadata = style?.metadata;
+      own =
+        metadata && typeof metadata === 'object'
+          ? (metadata as Record<string, unknown>)[tileflowAtmosphereMetadataKey]
+          : undefined;
+    },
+    read(): TileflowResolvedAtmosphere | undefined {
+      if (!globe) return undefined;
+      const read = tileflowThemeMetadataReaderOf(map)?.(tileflowAtmosphereMetadataKey) ?? {
+        values: [own],
+        position: 0,
+      };
+      if (
+        parsed.values.length !== read.values.length ||
+        parsed.values.some((value, index) => value !== read.values[index])
+      ) {
+        parsed = {values: read.values, themes: read.values.map(readTileflowAtmosphere)};
+        shown = undefined;
+      }
+      const count = parsed.themes.length;
+      if (!count) return undefined;
+      const position = Math.min(count - 1, Math.max(0, read.position));
+      if (shown?.position !== position) {
+        const lower = Math.floor(position);
+        shown = {
+          position,
+          atmosphere: mixTileflowAtmosphere(
+            parsed.themes[lower],
+            parsed.themes[Math.min(count - 1, lower + 1)],
+            position - lower,
+          ),
+        };
+      }
+      return shown.atmosphere;
+    },
+  };
+}
+
+function hexColour(colour: string | undefined): `#${string}` | undefined {
+  const channels = colour === undefined ? null : tileflowColourChannels(colour);
+  if (!channels) return undefined;
+  return `#${channels
+    .slice(0, 3)
+    .map((channel) =>
+      Math.round(channel * 255)
+        .toString(16)
+        .padStart(2, '0'),
+    )
+    .join('')}`;
 }
 
 export function atmosphereSpaceOpacity(zoom: number): number {

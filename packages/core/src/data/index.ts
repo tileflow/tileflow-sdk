@@ -446,6 +446,12 @@ export function validateTileflowWorldTilejson(
   zooms(roadOutline, 'roadOutline', 13, 15);
   field(roadOutline, 'roadOutline', ['class', 'type'], ['String']);
 
+  // The stretches of surface paths on green ground, from z12. Releases published before the
+  // layer existed do not have it, and their maps draw paths as usual.
+  const pathGround = optionalTilejsonLayer(layers, l.pathGround, issues);
+  zooms(pathGround, 'pathGround', 12, 15);
+  field(pathGround, 'pathGround', ['class', 'type'], ['String']);
+
   return issues;
 }
 

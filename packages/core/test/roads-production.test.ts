@@ -45,37 +45,34 @@ function compileLowered(config: Parameters<typeof roads>[0], data: typeof contex
   );
 }
 
-test('green path overlays lower to distinct physical layers beside their ground paths', () => {
+test('paths on green ground read path_ground just above their path, with its filter', () => {
   const contributions = compileRoads(
-    roads({
-      detail: 'none',
-      classes: {
-        cycleway: {surface: {shadow: {color: '#888888', width: 2}}},
-        footway: {},
-      },
-    }),
-    context,
+    roads({detail: 'none', classes: {cycleway: {}, footway: {}}}),
+    {...context, data: createSemanticDataView(context.data)},
   );
-  const result = compilePathGroundFamilies(contributions.map(createTileflowLayerFamilyIR), {
-    greenColor: '#98bca0',
-    groundColor: '#f5f3f3',
-    opacity: 1,
-    widthScale: 0.92,
-  });
-  assert.equal(result.active, true);
-  const {layers} = lowerTileflowDomainIR(planTileflowLayerFamilies(result.families), context.data);
-  const overlays = layers.filter((layer) => layer.source === 'tileflow-path-ground');
-  assert.ok(
-    overlays.some((layer) => layer.id === 'tileflow-road-surface-cycleway-shadow-on-green'),
+  const families = contributions.map(createTileflowLayerFamilyIR);
+  const options = {greenColor: '#ffffff', opacity: 1, widthScale: 0.92};
+  const lower = (input: Parameters<typeof planTileflowLayerFamilies>[0]) =>
+    lowerTileflowDomainIR(planTileflowLayerFamilies(input), context.data).layers;
+  const layers = lower(compilePathGroundFamilies(families, options, true));
+  const overlays = layers.filter((layer) => layer['source-layer'] === 'path_ground');
+  assert.deepEqual(
+    overlays.map((layer) => layer.id),
+    ['tileflow-road-surface-footway-fill-on-green'],
   );
-  assert.ok(overlays.some((layer) => layer.id === 'tileflow-road-surface-footway-fill-on-green'));
-  assert.equal(new Set(layers.map((layer) => layer.id)).size, layers.length);
-  for (const overlay of overlays) {
-    const base = layers.find((layer) => layer.id === overlay.id.replace(/-on-green$/, ''));
-    assert.ok(base);
-    assert.equal(base.source, 'tileflow');
-    assert.deepEqual(overlay.filter, base.filter);
-  }
+  const index = layers.findIndex((layer) => layer.id === 'tileflow-road-surface-footway-fill');
+  const base = layers[index]!;
+  assert.equal(layers[index + 1], overlays[0]);
+  assert.equal(overlays[0]!.source, base.source);
+  assert.deepEqual(overlays[0]!.filter, base.filter);
+  assert.equal(base['source-layer'], 'road');
+  // Without the layer in the data, or with the treatment off, paths draw as usual.
+  const plain = lower(families);
+  assert.deepEqual(lower(compilePathGroundFamilies(families, options, false)), plain);
+  assert.deepEqual(
+    lower(compilePathGroundFamilies(families, {...options, opacity: 0}, true)),
+    plain,
+  );
 });
 
 function matchesFilter(

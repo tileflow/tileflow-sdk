@@ -22,7 +22,6 @@ import {
   createTileflowThemeController,
   loadTileflowStyleFonts,
   registerTileflowContourProtocol,
-  registerTileflowPathGroundProtocol,
   registerTileflowPmtilesProtocol,
   registerTileflowWorldRequestBridge,
   tileflowCanvasContextAttributes,
@@ -271,10 +270,6 @@ export function createMobileMapRuntime(input: {
           transformDemUrl: (url) => resourceTemplateAddress(url, input.platform),
           transformTileJsonUrl: (url) => resourceAddress(url, input.platform),
         },
-      );
-      registerTileflowPathGroundProtocol(
-        {addProtocol: maplibregl.addProtocol},
-        {transformUrl: (url) => resourceAddress(url, input.platform)},
       );
       registerTileflowPmtilesProtocol(
         {addProtocol: maplibregl.addProtocol},

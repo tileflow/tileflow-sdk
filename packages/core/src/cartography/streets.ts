@@ -40,11 +40,6 @@ import {
   resolveTileflowHostedSources,
   tileflowHostedSourceLimit,
 } from '../overlays';
-import {
-  pathGroundProtocolUrl,
-  pathGroundSourceConfig,
-  tileflowPathGroundSource,
-} from '../path-ground-protocol';
 import {parseResolvedTileflowMap} from '../resolved-map-schema';
 import {
   resolveTileflowRouteInks,
@@ -332,7 +327,6 @@ function compileSemanticStyleInternal(
   });
   const platformSourceIds = [
     data.sourceId,
-    tileflowPathGroundSource,
     ...terrainSources.map(({sourceId}) => sourceId),
     ...marineSources.map(({sourceId}) => sourceId),
     ...(boundaryAreas ? [boundaryAreas.sourceId] : []),
@@ -428,12 +422,13 @@ function compileSemanticStyleInternal(
       buildingTargetsOfOtherModes(modules.buildings),
     ),
   );
-  const pathGround = compilePathGroundFamilies(
+  const pathGroundFamilies = compilePathGroundFamilies(
     stackedFamilies,
     modules.roads?.enabled === false ? undefined : modules.roads?.pathGround,
+    semanticData.schema.layers.pathGround !== undefined,
   );
   const plannedFamilies = runCompilationPhase('physical-planner', () =>
-    planTileflowLayerFamilies(pathGround.families),
+    planTileflowLayerFamilies(pathGroundFamilies),
   );
   // This is the sole MapLibre emission and semantic-data binding boundary.
   const loweredDomainIR = runCompilationPhase('lowering', () =>
@@ -627,17 +622,6 @@ function compileSemanticStyleInternal(
     [data.sourceId]: primarySource,
     ...(drawsDetail && detail.delivery === 'separate'
       ? {[detail.sourceId]: {type: 'vector', url: detail.url, attribution: data.attribution}}
-      : {}),
-    ...(pathGround.active
-      ? {
-          [tileflowPathGroundSource]: {
-            type: 'vector',
-            // Path ground reads the primary source's tiles, so the browser downloads them once.
-            url: pathGroundProtocolUrl(
-              pathGroundSourceConfig(primaryUrl === undefined ? data : {...data, url: primaryUrl}),
-            ),
-          },
-        }
       : {}),
     ...(underlaySource ? {[tileflowLandcoverUnderlaySourceId]: underlaySource} : {}),
     ...(marine?.bathymetry?.vector

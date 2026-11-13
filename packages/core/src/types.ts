@@ -344,11 +344,13 @@ export type TileflowRoadsModuleConfig = {
   modifiers?: Partial<Record<TileflowRoadModifier, TileflowRoadTreatmentStyle>>;
   mountainBike?: Partial<Record<TileflowMountainBikeScale, TileflowRoadTreatmentStyle>>;
   oneWayMarkers?: boolean;
-  /** Surface paths keep a ground-coloured fallback and white/green-ground clipped strokes. */
+  /**
+   * Surface paths draw `greenColor` where they cross mapped green ground, from World's
+   * `path_ground` layer. Elsewhere, and with data that has no such layer, paths draw as usual.
+   */
   pathGround?: {
     greenColor: TileflowThemeColorValue;
-    groundColor: TileflowThemeColorValue;
-    /** Zero disables derivation in this theme. */
+    /** Zero turns the treatment off in this theme. */
     opacity?: TileflowThemeNumberValue;
     widthScale?: TileflowThemeNumberValue;
   };

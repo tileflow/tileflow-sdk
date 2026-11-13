@@ -21,7 +21,7 @@ test('moving a theme into a family preserves the resource URL and opaque query',
     '//cdn.example.test/sprite',
     'https://cdn.example.test/sprite',
     'data:application/json,%7B%7D',
-    'tileflow-path-ground://source/{z}/{x}/{y}?nested=%7Bz%7D',
+    'tileflow-example://source/{z}/{x}/{y}?nested=%7Bz%7D',
   ]) {
     const style: MapLibreStyle = {version: 8, sources: {}, layers: [], sprite};
     const actual = rebaseTileflowFamilyStyle(style, 'main', 'light');

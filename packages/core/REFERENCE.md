@@ -72,18 +72,14 @@ Importing `iconSet` neither resolves revisions nor makes a Team catalog availabl
 
 ## Style with themes and semantic modules
 
-`roads.pathGround` optionally gives surface paths different colors on mapped green ground and
-elsewhere. It accepts `greenColor`, `groundColor`, optional `widthScale`, and `opacity` (zero
-disables the treatment). The compiler keeps a complete ground-colored path, adds clipped green
-portions from the same HTTP(S) vector source, and places paths below vehicle casings. Grass,
-woods, wetlands, orchards, nurseries, and green recreation polygons supply context; polygon
-holes remain unpainted. Classification follows tile geometry, not imagery or inferred climate.
-
-Tileflow's web maps (`@tileflow/dom` and the React, Vue and Svelte components), CLI preview,
-capture, and the embedded mobile web runtime register the derived-source protocol automatically.
-The `native-v1` build keeps the complete
-ground-colored paths and disables the green overlay, since native renderers cannot run this
-browser protocol. Its build record explicitly reports `pathGround: 'ground-fallback'`.
+`roads.pathGround` optionally draws surface paths in `greenColor` where they cross mapped green
+ground: parks, gardens, grass, woods, scrub, cemeteries, sports grounds, orchards, nurseries and
+wetlands. It accepts `greenColor`, optional `widthScale` (of the path's fill width), and `opacity`
+(zero turns the treatment off). The stretches on green come from World's `path_ground` layer in
+the map's own World source, over the ordinary path, which keeps its casing, filters and
+treatments. Every renderer draws it, browser and native alike. Data without a `path_ground` layer,
+such as OpenMapTiles tiles or a World release published before the layer existed, draws paths as
+usual.
 
 Themes are complete appearance documents, not loose color overrides. Every theme must supply the
 same token schema. Use `token.color(...)`, `token.number(...)`, `token.image(...)`, and typed font

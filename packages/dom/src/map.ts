@@ -53,7 +53,6 @@ import {
   loadTileflowRuntimeStyle,
   loadTileflowStyleFonts,
   registerTileflowContourProtocol,
-  registerTileflowPathGroundProtocol,
   registerTileflowPmtilesProtocol,
   registerTileflowWorldRequestBridge,
   tileflowCanvasContextAttributes,
@@ -1285,7 +1284,6 @@ export function createTileflowMap<TAnnotation extends TileflowAnnotation = Tilef
     // The protocols are shared by every map on the page; each map has its own channel or scope in
     // them, so taking one map down leaves the others' requests working.
     registerTileflowContourProtocol({addProtocol: maplibregl.addProtocol});
-    registerTileflowPathGroundProtocol({addProtocol: maplibregl.addProtocol});
     registerTileflowPmtilesProtocol({addProtocol: maplibregl.addProtocol});
     const worldRequestBridge = registerTileflowWorldRequestBridge({
       addProtocol: maplibregl.addProtocol,

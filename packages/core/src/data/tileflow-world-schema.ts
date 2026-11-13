@@ -27,6 +27,7 @@ export const tileflowWorldLayers = Object.freeze({
   landuse: 'landuse',
   landuseOverlay: 'landuse_overlay',
   naturalLabel: 'natural_label',
+  pathGround: 'path_ground',
   placeLabel: 'place_label',
   poiLabel: 'poi_label',
   road: 'road',
@@ -368,6 +369,20 @@ export const tileflowWorldLayerFields = Object.freeze({
     type: {type: 'String'},
     underground: {type: 'Boolean'},
   }),
+  // The stretches of surface paths that lie on green ground, with the road fields that change how
+  // a path is drawn, so a path's style draws them exactly over it.
+  pathGround: Object.freeze({
+    access: {type: 'String'},
+    bicycle: {type: 'String'},
+    class: {type: 'String', required: true},
+    foot: {type: 'String'},
+    horse: {type: 'String'},
+    indoor: {type: 'Boolean'},
+    mtb_scale: {type: 'String'},
+    structure: {type: 'String'},
+    surface: {type: 'String'},
+    type: {type: 'String'},
+  }),
   roadLabel: Object.freeze({
     class: {type: 'String', required: true},
     indoor: {type: 'Boolean'},
@@ -528,6 +543,7 @@ export const tileflowWorldLayerZooms = Object.freeze({
   canopy: [14, 15],
   circularFeature: [15, 15],
   landcover: [0, 10],
+  pathGround: [12, 15],
   poiLabel: [12, 15],
   roadOutline: [13, 15],
   roadShield: [6, 10],
@@ -539,7 +555,10 @@ export const tileflowWorldLayerZooms = Object.freeze({
   underground: [14, 15],
 } as const satisfies Partial<Record<TileflowWorldLayerName, readonly [number, number]>>);
 
-/** Road classes, shared by `road`, `road_label`, `road_outline` and `circular_feature`. */
+/**
+ * Road classes, shared by `road`, `road_label`, `road_outline`, `path_ground` and
+ * `circular_feature`.
+ */
 const tileflowWorldRoadClasses = [
   'motorway',
   'trunk',
@@ -638,6 +657,12 @@ export const tileflowWorldVocabularies = Object.freeze({
   // A motorway exit on `road_label` is the class of its road with `type: junction`.
   roadLabel: Object.freeze({class: tileflowWorldRoadClasses}),
   roadOutline: Object.freeze({class: tileflowWorldRoadClasses}),
+  pathGround: Object.freeze({
+    class: tileflowWorldRoadClasses,
+    // Bridges and tunnels are never on the ground.
+    structure: ['ford'],
+    surface: ['paved', 'unpaved'],
+  }),
   water: Object.freeze({
     class: ['ocean', 'lake', 'river', 'reservoir', 'pond', 'basin', 'dock', 'swimming_pool'],
   }),

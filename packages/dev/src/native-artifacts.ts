@@ -13,11 +13,7 @@ import {
   tileflowIconPackageLimits,
   tileflowStyleFontFacesMetadataKey,
 } from '@tileflow/core';
-import {
-  prepareTileflowNativePathGround,
-  type TileflowBuildCatalog,
-  type TileflowBuildStyles,
-} from '@tileflow/core/build';
+import {type TileflowBuildCatalog, type TileflowBuildStyles} from '@tileflow/core/build';
 import {
   createTileflowNativeDiagnostic,
   type TileflowNativeBuildRecord,
@@ -81,9 +77,7 @@ export function lowerTileflowNativeCompiledStyles(
     for (const theme of Object.keys(input[map]!).sort()) {
       const web = input[map]![theme]!;
       // Native renderers have no feature state, so Nautical lights show steadily there.
-      const steady = steadyTileflowNauticalLights(web);
-      const original = prepareTileflowNativePathGround(steady);
-      const pathGroundFallback = original !== steady;
+      const original = steadyTileflowNauticalLights(web);
       try {
         const options = {...urlOptions(map, theme, policy), deferFontClosure: true};
         const pending = validateTileflowNativeStyle(original, options);
@@ -166,7 +160,6 @@ export function lowerTileflowNativeCompiledStyles(
           outputLayers: lowered.outputLayers,
           projection: lowered.projection,
           ...(lowered.sky ? {sky: lowered.sky} : {}),
-          ...(pathGroundFallback ? {pathGround: 'ground-fallback' as const} : {}),
           layers: lowered.layers,
           symbolOverlap: lowered.symbolOverlap,
         });

@@ -1,4 +1,9 @@
 import {mergeTileflowDesign} from '../cartography/merge';
+import {
+  isTileflowExpression,
+  isTileflowThemeValueNode,
+  isTileflowZoomValue,
+} from '../cartography/values';
 import {isTileflowRemoveOperation} from '../overlays';
 import {
   isTileflowModuleOperation,
@@ -325,11 +330,22 @@ function applyModulePatch(
     }
     const inherited = result[key];
     result[key] =
-      isPlainRecord(inherited) && isPlainRecord(value)
+      isPatchableRecord(inherited) && isPatchableRecord(value)
         ? applyModulePatch(inherited, value, mapId, childPath)
         : cloneDesign(value);
   }
   return result;
+}
+
+// Theme, expression and zoom values replace atomically, like scalars: a fixed colour replaces an
+// inherited token instead of merging into it.
+function isPatchableRecord(value: unknown): value is Record<string, unknown> {
+  return (
+    isPlainRecord(value) &&
+    !isTileflowThemeValueNode(value) &&
+    !isTileflowExpression(value) &&
+    !isTileflowZoomValue(value)
+  );
 }
 
 function assertNoReset(value: unknown, mapId: string, path: string, allowReset: boolean): void {

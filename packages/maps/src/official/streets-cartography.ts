@@ -77,10 +77,18 @@ export function withStreetsCartography(base: TileflowMap) {
     ...base,
     modules: {
       ...source.modules,
-      roads: withRenderStack(overviewRoads, {
-        ...roadsStack,
-        accessOverview: streetsAccessOverview,
-      }),
+      roads: withRenderStack(
+        {
+          ...overviewRoads,
+          // Footpaths turn white where they cross parks, lawns and woods, from World's
+          // path_ground layer; World releases without it draw paths as usual.
+          pathGround: {greenColor: token.color('roads.path.green')},
+        },
+        {
+          ...roadsStack,
+          accessOverview: streetsAccessOverview,
+        },
+      ),
       land: withRenderStack(
         {
           ...withoutStack(land),

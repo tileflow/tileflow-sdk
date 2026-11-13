@@ -72,7 +72,6 @@ export type {
 } from './map-build-manifest';
 
 export {collectMapLineage};
-export {prepareTileflowNativePathGround} from './path-ground-native';
 export type {TileflowPreparedMapAssets} from './cartography/streets';
 export {createStyleWithInspection, tileflowStyleInspectionSchemaVersion} from './style-inspection';
 export type {

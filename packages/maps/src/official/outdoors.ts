@@ -398,6 +398,8 @@ export const outdoors = bindOfficialMapTheme(
               // Streets draws unpaved and restricted ways as solid carriageways; a trail stays a trail.
               modifiers: {unpaved: {enabled: false}},
               mountainBike: reset(),
+              // Trails keep their own ink on green ground too.
+              pathGround: {opacity: 0},
               restrictions: {access: {enabled: false}},
             },
           ),

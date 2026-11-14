@@ -57,6 +57,7 @@ import {
   type TileflowEmphasisTarget,
   validateTileflowEmphasis,
 } from './theme-emphasis';
+import {tileflowThemeMetadataKey, type TileflowThemeMetadataReader} from './theme-metadata';
 import {
   beginTileflowStyleCrossfade,
   canBlendTileflowThemes,
@@ -438,6 +439,9 @@ export function createTileflowThemeController(options: {
       for (const state of states.values())
         stopStateMotion(state, {status: 'superseded', theme: current.theme});
       stopSunMotion({status: 'superseded', theme: current.theme});
+      const published = options.map as unknown as Record<symbol, unknown>;
+      if (published[tileflowThemeMetadataKey] === publishedMetadata)
+        delete published[tileflowThemeMetadataKey];
     },
     getBlend() {
       if (familyActive) return familyBlend;
@@ -742,6 +746,15 @@ export function createTileflowThemeController(options: {
       );
     },
   };
+
+  // Map parts attached without a controller, such as the globe atmosphere, follow its themes.
+  const publishedMetadata: TileflowThemeMetadataReader = (key) => controller.getThemeMetadata(key);
+  try {
+    (options.map as unknown as Record<symbol, unknown>)[tileflowThemeMetadataKey] =
+      publishedMetadata;
+  } catch {
+    // A frozen map object keeps its style's own metadata for those parts.
+  }
 
   if (options.initial.familyUrl && !options.initial.family) {
     const initial = current;

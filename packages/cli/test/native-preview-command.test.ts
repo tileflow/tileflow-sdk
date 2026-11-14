@@ -369,7 +369,7 @@ test('native preview serves derived line-background ranges through its local gly
   );
   assert.equal(ready.event, 'ready', JSON.stringify(ready));
   const manifest = parseTileflowRuntimeManifest(
-    await (await fetch(`${origin}/native/manifest.json`)).json(),
+    await (await fetchEventually(`${origin}/native/manifest.json`)).json(),
   );
   const style = (await (await fetch(manifest.maps.main!.themes.light!.styleUrl)).json()) as {
     glyphs: string;

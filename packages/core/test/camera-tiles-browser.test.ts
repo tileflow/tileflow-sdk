@@ -259,6 +259,55 @@ test('a tile the map has loaded is built from a copy of its bytes, without a req
   }
 });
 
+test('a tile whose response never changes is not requested again a minute later', async (t) => {
+  const fetched: string[] = [];
+  t.mock.method(globalThis, 'fetch', async (url: string) => {
+    fetched.push(url);
+    const lasting = url.includes('immutable');
+    return new Response(new Uint8Array([1]), {
+      headers: {'cache-control': lasting ? 'public, max-age=31536000, immutable' : 'max-age=60'},
+    });
+  });
+  t.mock.timers.enable({apis: ['Date'], now: 0});
+  const read = async (host: string) => {
+    let built = false;
+    const camera = createCameraTiles({
+      map: {
+        getBearing: () => 0,
+        getCenter: () => ({lat: 0.01, lng: 0.01}),
+        getPitch: () => 0,
+        getZoom: () => 15,
+        getSource: () => ({tiles: [`https://${host}.invalid/{z}/{x}/{y}.pbf`], maxzoom: 15}),
+        on() {},
+        off() {},
+        triggerRepaint() {},
+      },
+      source: 'world',
+      zoom: 15,
+      minzoom: 14,
+      maxTiles: 1,
+      active: () => true,
+      empty: {},
+      build: () => {
+        built = true;
+        return {};
+      },
+      release() {},
+      changed() {},
+    });
+    camera.update();
+    for (let n = 0; n < 100 && !built; n++) await delay(5);
+    camera.dispose();
+  };
+  for (const host of ['camera-immutable', 'camera-mutable']) {
+    await read(host);
+    t.mock.timers.tick(61_000);
+    await read(host);
+  }
+  assert.equal(fetched.filter((url) => url.includes('camera-immutable')).length, 1);
+  assert.equal(fetched.filter((url) => url.includes('camera-mutable')).length, 2);
+});
+
 test('the camera covers its tiles without a source to read and over tiles that hold nothing', async (t) => {
   t.mock.method(globalThis, 'fetch', async () => new Response(null, {status: 404}));
   const base = {

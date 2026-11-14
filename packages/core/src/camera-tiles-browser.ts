@@ -486,12 +486,14 @@ function mapTileBytes(
 
 // --- Shared downloads ---
 
-// Recent tile downloads, by request, so layers reading the same tiles fetch each once. A tile is
-// kept for a minute, and only the latest few dozen. A download stops once every layer waiting for
-// it has stopped waiting.
+// Recent tile downloads, by request, so layers reading the same tiles fetch each once. Only the
+// latest few dozen are kept. A tile is read again after a minute, unless its response says it never
+// changes (`immutable`), as a released World tile does: a layer turned off and on again later reads
+// it from here. A download stops once every layer waiting for it has stopped waiting.
 type SharedDownload = {
   bytes: Promise<{status: number; body: ArrayBuffer}>;
   at: number;
+  immutable: boolean;
   readers: number;
   settled: boolean;
   controller: AbortController;
@@ -504,7 +506,7 @@ async function sharedTileFetch(url: string, init: RequestInit): Promise<Response
   const key = `${url}\u0000${JSON.stringify(init.headers ?? {})}\u0000${init.credentials ?? ''}`;
   const now = Date.now();
   let entry = shared.get(key);
-  if (!entry || now - entry.at > sharedFor) {
+  if (!entry || (!entry.immutable && now - entry.at > sharedFor)) {
     // A source served from a Tileflow PMTiles archive is read through Core's own PMTiles protocol.
     const controller = new AbortController();
     const bytes = (
@@ -515,11 +517,22 @@ async function sharedTileFetch(url: string, init: RequestInit): Promise<Response
             ...(init.credentials ? {credentials: init.credentials} : {}),
             signal: controller.signal,
           })
-    ).then(async (response) => ({
-      status: response.status,
-      body: response.ok ? await response.arrayBuffer() : new ArrayBuffer(0),
-    }));
-    const download: SharedDownload = {bytes, at: now, readers: 0, settled: false, controller};
+    ).then(async (response) => {
+      download.immutable =
+        response.ok && /\bimmutable\b/i.test(response.headers.get('cache-control') ?? '');
+      return {
+        status: response.status,
+        body: response.ok ? await response.arrayBuffer() : new ArrayBuffer(0),
+      };
+    });
+    const download: SharedDownload = {
+      bytes,
+      at: now,
+      immutable: false,
+      readers: 0,
+      settled: false,
+      controller,
+    };
     entry = download;
     shared.delete(key);
     shared.set(key, download);

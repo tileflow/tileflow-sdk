@@ -41,6 +41,14 @@ publication, lock installation, validation, build, preview, capture and icon ins
 Production icon delivery remains trusted by default. A lock or server response cannot add
 another trusted origin, and downloads send no credentials and follow no redirects.
 
+## build
+
+`--inline-tilejson` writes the TileJSON of each source that pins an exact Tileflow World release
+(`tileflowWorld({release})`) into the styles in place of its `url`, read once at build time, so the
+map requests its first tiles right after the style. An exact release never changes, so the copy
+cannot go stale; sources that follow the current World release, a Map or any other TileJSON keep
+their `url`. The build fails if a pinned TileJSON cannot be read or describes another release.
+
 ## capture
 
 ### Explore without committing a scene

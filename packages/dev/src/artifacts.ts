@@ -464,7 +464,7 @@ export async function createTileflowArtifactPlan(
     const styles =
       renderer === 'native'
         ? prepareTileflowNativeStyles(lineBackgroundGlyphs.styles, assets, nativeUrls)
-         : options.inlineTileJson && options.target === 'production'
+        : options.inlineTileJson && options.target === 'production'
           ? await inlineTileflowExactTileJson(lineBackgroundGlyphs.styles, {
               ...(options.tileJsonFetch ? {fetch: options.tileJsonFetch} : {}),
             })

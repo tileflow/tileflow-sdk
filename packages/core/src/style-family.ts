@@ -91,8 +91,17 @@ export function createTileflowStyleFamily(
   return parseTileflowStyleFamily(family);
 }
 
-/** Validate budgets before materializing; malformed or oversized input never reaches a renderer. */
+/** Family documents this module has validated. A family is immutable once read. */
+const validatedFamilies = new WeakSet<object>();
+
+/**
+ * Validate budgets before materializing; malformed or oversized input never reaches a renderer.
+ * Every theme is checked without copying it, and a family that already passed is returned as is,
+ * so loading, preparing and installing one family validate it once.
+ */
 export function parseTileflowStyleFamily(input: unknown): TileflowStyleFamily {
+  if (typeof input === 'object' && input !== null && validatedFamilies.has(input))
+    return input as TileflowStyleFamily;
   assertJsonBudget(input);
   if (
     !record(input) ||
@@ -137,24 +146,37 @@ export function parseTileflowStyleFamily(input: unknown): TileflowStyleFamily {
     )
       fail('Invalid constant reference.');
   });
+  // Count each expanded theme before any copy exists (repeated references can amplify): the
+  // template's literal part is the same for every theme, so only its references are summed per theme.
+  const parameterSizes = family.parameters.map((column) => column.map(measureJson));
+  const constantSizes = family.constants.map(measureJson);
+  const shape = measureTemplate(family.template);
   let total = 0;
-  const sizes = family.parameters.map((column) => column.map(bytes));
-  const constants = family.constants.map(bytes);
   for (let index = 0; index < family.themes.length; index += 1) {
-    // Count the expanded representation before allocating it (repeated references can amplify).
-    const size = expandedBytes(family.template, sizes, constants, index);
+    let size = shape.bytes;
+    let nodes = shape.nodes;
+    let depth = shape.depth;
+    for (const {reference, depth: at} of shape.references) {
+      const value = isReference(reference)
+        ? parameterSizes[reference.$variant]![index]!
+        : constantSizes[reference.$constant]!;
+      size += value.bytes;
+      nodes += value.nodes;
+      depth = Math.max(depth, at + value.depth);
+    }
     total += size;
     if (
       size > tileflowStyleFamilyLimits.expandedStyleBytes ||
       total > tileflowStyleFamilyLimits.expandedFamilyBytes
     )
       fail('Expanded family is too large.');
-    const style = materialize(family.template, family, index);
-    assertJsonBudget(style);
-    assertStyle(style);
+    if (nodes > tileflowStyleFamilyLimits.nodes || depth > tileflowStyleFamilyLimits.depth)
+      fail('Family complexity limit exceeded.');
+    assertThemeStyle(family, index);
   }
-  if (!same(family.updates, planUpdates(expandTileflowFamilyTemplate(family))))
+  if (!same(family.updates, planUpdates(expandSharedConstants(family))))
     fail('Invalid update plan.');
+  validatedFamilies.add(family);
   return family;
 }
 
@@ -282,25 +304,116 @@ function planUpdates(template: Json): TileflowStyleFamily['updates'] {
   return {appearanceOnly, paint: [...paint.values()], roots: [...roots].sort()};
 }
 
-function expandedBytes(node: Json, sizes: number[][], constants: number[], index: number): number {
-  if (isReference(node)) return sizes[node.$variant]![index]!;
-  if (isConstantReference(node)) return constants[node.$constant]!;
-  if (Array.isArray(node))
-    return (
-      2 +
-      Math.max(0, node.length - 1) +
-      node.reduce<number>((n, v) => n + expandedBytes(v, sizes, constants, index), 0)
-    );
-  if (record(node))
-    return (
-      2 +
-      Math.max(0, Object.keys(node).length - 1) +
-      Object.entries(node).reduce(
-        (n, [key, v]) => n + bytes(key) + 1 + expandedBytes(v as Json, sizes, constants, index),
-        0,
-      )
-    );
-  return bytes(node);
+type JsonSize = {bytes: number; nodes: number; depth: number};
+
+/** Serialized UTF-8 bytes, value count and depth below the root of a literal JSON value. */
+function measureJson(value: Json): JsonSize {
+  let nodes = 0;
+  let deepest = 0;
+  const visit = (node: Json, depth: number): void => {
+    nodes += 1;
+    if (depth > deepest) deepest = depth;
+    if (node && typeof node === 'object')
+      for (const child of Object.values(node)) visit(child as Json, depth + 1);
+  };
+  visit(value, 0);
+  return {bytes: bytes(value), nodes, depth: deepest};
+}
+
+/**
+ * The theme-independent part of a template's expansion: bytes, values and depth of its literal
+ * structure, and each reference with the depth where its value lands.
+ */
+function measureTemplate(template: Json): JsonSize & {
+  references: {reference: Reference | ConstantReference; depth: number}[];
+} {
+  const references: {reference: Reference | ConstantReference; depth: number}[] = [];
+  // Keys and string values repeat across layers: count each distinct string once.
+  const keyBytes = new Map<string, number>();
+  let nodes = 0;
+  let deepest = 0;
+  const visit = (node: Json, depth: number): number => {
+    if (isReference(node) || isConstantReference(node)) {
+      references.push({reference: node, depth});
+      return 0;
+    }
+    nodes += 1;
+    if (depth > deepest) deepest = depth;
+    if (Array.isArray(node)) {
+      let size = 2 + Math.max(0, node.length - 1);
+      for (const value of node) size += visit(value, depth + 1);
+      return size;
+    }
+    if (record(node)) {
+      const keys = Object.keys(node);
+      let size = 2 + Math.max(0, keys.length - 1);
+      for (const key of keys) {
+        let keySize = keyBytes.get(key);
+        if (keySize === undefined) keyBytes.set(key, (keySize = bytes(key)));
+        size += keySize + 1 + visit(node[key] as Json, depth + 1);
+      }
+      return size;
+    }
+    if (typeof node !== 'string') return bytes(node);
+    let leafSize = keyBytes.get(node);
+    if (leafSize === undefined) keyBytes.set(node, (leafSize = bytes(node)));
+    return leafSize;
+  };
+  const size = visit(template, 0);
+  return {bytes: size, nodes, depth: deepest, references};
+}
+
+/** The checks of `assertStyle` on one theme, read through its references instead of a copy. */
+function assertThemeStyle(family: TileflowStyleFamily, index: number): void {
+  // A parameter value or constant is literal: references inside it are not resolved again.
+  const resolve = (node: Json | undefined, literal: boolean): [Json | undefined, boolean] =>
+    literal
+      ? [node, true]
+      : isReference(node)
+        ? [family.parameters[node.$variant]![index], true]
+        : isConstantReference(node)
+          ? [family.constants[node.$constant], true]
+          : [node, false];
+  const child = ([node, literal]: [Json | undefined, boolean], key: string) =>
+    resolve(record(node) ? (node[key] as Json | undefined) : undefined, literal);
+  const style = resolve(family.template, false);
+  const layers = child(style, 'layers');
+  if (
+    !record(style[0]) ||
+    child(style, 'version')[0] !== 8 ||
+    !record(child(style, 'sources')[0]) ||
+    !Array.isArray(layers[0]) ||
+    layers[0].length > tileflowStyleFamilyLimits.layers
+  )
+    fail('Invalid expanded MapLibre style.');
+  const ids = new Set<string>();
+  for (const entry of layers[0]) {
+    const layer = resolve(entry, layers[1]);
+    const id = child(layer, 'id')[0];
+    if (
+      !record(layer[0]) ||
+      typeof id !== 'string' ||
+      ids.has(id) ||
+      typeof child(layer, 'type')[0] !== 'string'
+    )
+      fail('Invalid or duplicate layer.');
+    ids.add(id);
+  }
+}
+
+/** The template with constants in place, sharing their values: for reading, never for output. */
+function expandSharedConstants(family: TileflowStyleFamily): Json {
+  const visit = (node: Json): Json => {
+    if (isConstantReference(node)) return family.constants[node.$constant]!;
+    if (isReference(node)) return node;
+    if (Array.isArray(node)) return node.map(visit);
+    if (record(node))
+      return Object.fromEntries(
+        Object.entries(node).map(([key, value]) => [key, visit(value as Json)]),
+      );
+    return node;
+  };
+  return visit(family.template);
 }
 
 function assertStyle(style: unknown): void {
@@ -346,24 +459,35 @@ function assertJsonBudget(input: unknown): void {
       Object.getPrototypeOf(value) !== null
     )
       fail('Expected JSON objects.');
-    for (const [key, item] of Object.entries(value)) {
-      if (['__proto__', 'constructor', 'prototype'].includes(key)) fail('Unsafe object key.');
-      visit(item, depth + 1);
+    for (const key of Object.keys(value)) {
+      if (key === '__proto__' || key === 'constructor' || key === 'prototype')
+        fail('Unsafe object key.');
+      visit((value as Record<string, unknown>)[key], depth + 1);
     }
     stack.delete(value);
   };
   visit(input, 0);
 }
-function walk(
-  node: Json,
-  visit: (node: Json, path: (string | number)[]) => void,
-  path: (string | number)[] = [],
-): void {
-  visit(node, path);
-  if (isReference(node) || isConstantReference(node)) return;
-  if (Array.isArray(node)) node.forEach((value, i) => walk(value, visit, [...path, i]));
-  else if (record(node))
-    Object.entries(node).forEach(([key, value]) => walk(value as Json, visit, [...path, key]));
+function walk(node: Json, visit: (node: Json, path: readonly (string | number)[]) => void): void {
+  // One path array for the whole walk; visitors read it during their call and never keep it.
+  const path: (string | number)[] = [];
+  const step = (value: Json): void => {
+    visit(value, path);
+    if (isReference(value) || isConstantReference(value)) return;
+    if (Array.isArray(value))
+      value.forEach((item, i) => {
+        path.push(i);
+        step(item);
+        path.pop();
+      });
+    else if (record(value))
+      for (const [key, item] of Object.entries(value)) {
+        path.push(key);
+        step(item as Json);
+        path.pop();
+      }
+  };
+  step(node);
 }
 function isReference(node: unknown): node is Reference {
   return record(node) && Object.keys(node).length === 1 && Object.hasOwn(node, '$variant');
@@ -460,8 +584,21 @@ function serializeCanonicalJson(value: unknown): string {
         : node;
   return JSON.stringify(sort(value));
 }
+/** UTF-8 length of a value's JSON, counted without encoding it. */
 function bytes(value: unknown): number {
-  return new TextEncoder().encode(JSON.stringify(value)).length;
+  const text = JSON.stringify(value);
+  let length = text.length;
+  for (let i = 0; i < text.length; i += 1) {
+    const code = text.charCodeAt(i);
+    if (code < 0x80) continue;
+    if (code < 0x800) length += 1;
+    else if (code >= 0xd800 && code <= 0xdbff) {
+      // A surrogate pair: 2 code units, 4 bytes. JSON.stringify escapes lone surrogates.
+      length += 2;
+      i += 1;
+    } else length += 2;
+  }
+  return length;
 }
 function fail(message: string): never {
   throw new TypeError(`Tileflow style family: ${message}`);

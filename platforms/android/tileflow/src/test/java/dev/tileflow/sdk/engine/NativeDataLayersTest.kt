@@ -12,6 +12,21 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [34])
 class NativeDataLayersTest {
+    @Test fun inlineWorldEdgeRetainsCatalogBranding() {
+        val api = "https://api.tileflow.dev"
+        val map = "map_AbCdEfGhIjKlMnOp"
+        fun style(origin: String) = JSONObject("""{"sources":{"world":{"type":"vector","tiles":["$origin/tiles/world/world-v1-11111111-1111-1111-1111-111111111111/{z}/{x}/{y}.pbf?worldDescriptorSha256=${"a".repeat(64)}"]}},"layers":[{"id":"land","source":"world"}]}""")
+        val input = style("https://world.tileflow.dev")
+        assertEquals(setOf(NativeBrandingSource(api, null)), NativeBrandingSource.read(input, api))
+        assertEquals(setOf(NativeBrandingSource(api, map)), NativeBrandingSource.read(input, api, map))
+        assertTrue(NativeBrandingSource.read(input, "https://custom.example").isEmpty())
+        for (origin in listOf("https://world.tileflow.dev.evil.test", "http://world.tileflow.dev", "https://world.tileflow.dev:444")) {
+            assertTrue(origin, NativeBrandingSource.read(style(origin), api).isEmpty())
+        }
+        input.getJSONArray("layers").getJSONObject(0).put("layout", JSONObject("""{"visibility":"none"}"""))
+        assertTrue(NativeBrandingSource.read(input, api).isEmpty())
+    }
+
     @Test fun fillsCompiledDataAndPlacesOverlayWithoutChangingAuthoredSources() {
         val style = JSONObject("""{"version":8,"sources":{"places":{"type":"geojson","data":{"type":"FeatureCollection","features":[]},"cluster":true}},"layers":[{"id":"labels","type":"symbol","source":"places","layout":{"text-font":["Noto Sans"]}}],"metadata":{"tileflow:overlay-placement-manifest":{"anchors":{"below-labels":"labels"}}}}""")
         val input = JSONObject("""{"dataSources":{"places":{"kind":"geojson","data":"https://data.example/places.json","cluster":false}},"dataOverlays":{"dots":{"kind":"maplibre-overlay","source":"places","placement":"below-labels","layers":[{"id":"counts","type":"symbol","metadata":{"tileflow:cluster":{"role":"count"}},"layout":{}}]}}}""")

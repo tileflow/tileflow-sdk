@@ -171,3 +171,65 @@ test('untrusted families reject versions, forged update plans, references and ex
   );
   assert.throws(() => materializeTileflowStyleFamily(family, 'missing'), /Unknown family theme/);
 });
+
+test('each theme is checked through its references, and a checked family is not checked again', () => {
+  const family = createTileflowStyleFamily({day: style('#000000'), night: style('#ffffff')});
+  const layer = (id: unknown) => ({id, type: 'background'});
+  const nested = (depth: number): unknown => (depth === 0 ? 1 : [nested(depth - 1)]);
+  const variant = (template: unknown, values: unknown[]) => ({
+    ...family,
+    template,
+    parameters: [values],
+    updates: {appearanceOnly: false, paint: [], roots: []},
+  });
+  // A rule broken in one theme only, reached through a parameter.
+  assert.throws(
+    () =>
+      parseTileflowStyleFamily(
+        variant({version: 8, sources: {}, layers: [layer('a'), layer({$variant: 0})]}, ['b', 'a']),
+      ),
+    /Invalid or duplicate layer/,
+  );
+  assert.throws(
+    () =>
+      parseTileflowStyleFamily(variant({version: {$variant: 0}, sources: {}, layers: []}, [8, 7])),
+    /Invalid expanded MapLibre style/,
+  );
+  // A parameter value is literal: a marker inside it is not resolved again.
+  assert.throws(
+    () =>
+      parseTileflowStyleFamily(
+        variant({version: 8, sources: {}, layers: [{$variant: 0}]}, [
+          layer({$variant: 0}),
+          layer('a'),
+        ]),
+      ),
+    /Invalid or duplicate layer/,
+  );
+  // Depth and value counts include what references expand to: each value below is within the
+  // document's own limits, and exceeds them only where the template places it.
+  const deep = (at: unknown) =>
+    variant({version: 8, sources: {}, layers: [], metadata: {a: {b: {c: {d: {e: at}}}}}}, [
+      nested(92),
+      1,
+    ]);
+  assert.equal(
+    parseTileflowStyleFamily({...deep(1), updates: {appearanceOnly: true, paint: [], roots: []}})
+      .themes.length,
+    2,
+  );
+  assert.throws(() => parseTileflowStyleFamily(deep({$variant: 0})), /Family complexity limit/);
+  const shared = Array.from({length: 50_000}, (_, index) => index);
+  assert.throws(
+    () =>
+      parseTileflowStyleFamily({
+        ...variant(
+          {version: 8, sources: {}, layers: [], metadata: Array(12).fill({$constant: 0})},
+          [1, 2],
+        ),
+        constants: [shared],
+      }),
+    /Family complexity limit exceeded/,
+  );
+  assert.equal(parseTileflowStyleFamily(family), family);
+});

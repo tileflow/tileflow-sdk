@@ -54,7 +54,7 @@ struct NativeBrandingSource: Hashable, Sendable {
         guard let address = url.url, ["http", "https"].contains(url.scheme),
           ResourcePolicy.origin(address) == apiOrigin
             || (apiOrigin == "https://api.tileflow.dev"
-              && ResourcePolicy.origin(address) == "https://tiles.tileflow.dev")
+              && ["https://tiles.tileflow.dev", "https://world.tileflow.dev"].contains(ResourcePolicy.origin(address)))
         else { continue }
         let parts = url.path.split(separator: "/").map(String.init).filter { $0 != "v1" }
         guard parts.count >= 2, parts[0] == "tiles", products.contains(parts[1]) else { continue }

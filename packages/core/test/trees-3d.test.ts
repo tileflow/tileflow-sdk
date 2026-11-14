@@ -17,7 +17,9 @@ import {
 } from '../src/trees-3d-mesh';
 import {
   decodeTileflowTreeModel,
+  decodeTileflowTreeModelBytes,
   encodeTileflowTreeModel,
+  encodeTileflowTreeModelBytes,
   type TileflowTreeModelMesh,
 } from '../src/trees-3d-model';
 import type {TileflowTileLayer} from '../src/vector-tile-decode';
@@ -602,6 +604,24 @@ test('a tree model encodes compactly and decodes as it was, within its limits', 
   );
 });
 
+test('a tree model file holds the same bytes its base64 text carries', () => {
+  const bytes = encodeTileflowTreeModelBytes(model, 'near');
+  assert.equal(Buffer.from(bytes).toString('base64'), encodeTileflowTreeModel(model, 'near'));
+  assert.deepEqual(
+    decodeTileflowTreeModelBytes(bytes, 'near'),
+    decodeTileflowTreeModel(encodeTileflowTreeModel(model, 'near'), 'near'),
+  );
+  // A file read at an offset inside a larger buffer decodes too.
+  const padded = new Uint8Array(bytes.length + 8);
+  padded.set(bytes, 8);
+  assert.ok(decodeTileflowTreeModelBytes(padded.subarray(8), 'near'));
+  assert.equal(
+    decodeTileflowTreeModelBytes(bytes.subarray(0, bytes.length - 2), 'near'),
+    undefined,
+  );
+  assert.equal(decodeTileflowTreeModelBytes(new Uint8Array(200 * 1024), 'near'), undefined);
+});
+
 test('a model draws as Core’s trees do, each triangle facing the way its normals point', () => {
   const mesh = tileflowTreeModelMeshOf(model);
   assert.equal(mesh.count, 6);
@@ -664,6 +684,28 @@ test('the description reads the models a map draws and drops references to missi
   assert.deepEqual(Object.keys(read.models), ['royal-palm']);
   assert.deepEqual(read.forms.palm?.models, ['royal-palm']);
   assert.equal(read.forms.open?.models, undefined);
+});
+
+test('the description reads models whose levels are files named by URL', () => {
+  const url = (level: string) => `https://api.example/base/set/models/royal-palm-${level}`;
+  const read = readTileflowVegetation3D({
+    [tileflowVegetationMetadataKey]: {
+      version: 1,
+      source: 'tileflow',
+      layers: {tree: 'tree'},
+      fields: {},
+      colors: {bark: '#554433', broadleaf: ['#335533'], conifer: ['#224422']},
+      forms: {palm: {models: ['royal-palm', 'empty']}},
+      models: {
+        'royal-palm': {near: {url: url('near')}, far: {url: url('far')}},
+        empty: {near: {url: ''}},
+      },
+    },
+  })!;
+  assert.deepEqual(read.models, {
+    'royal-palm': {near: {url: url('near')}, far: {url: url('far')}},
+  });
+  assert.deepEqual(read.forms.palm?.models, ['royal-palm']);
 });
 
 test('trees skip hidden GPU work, reuse projection programs and release every cached program', async (t) => {
@@ -768,6 +810,97 @@ test('trees skip hidden GPU work, reuse projection programs and release every ca
   render('mercator');
   trees.dispose();
   assert.deepEqual(deleted, created);
+});
+
+test('model files download once, only while trees are shown at a zoom where they stand', async (t) => {
+  const requested: string[] = [];
+  const file = encodeTileflowTreeModelBytes(model, 'near');
+  t.mock.method(globalThis, 'fetch', async (input: string | URL) => {
+    const url = String(input);
+    if (url.includes('/models/')) {
+      requested.push(url);
+      return new Response(file);
+    }
+    return new Response(new Uint8Array(0));
+  });
+  class TestWebGL2 {}
+  const old = Object.getOwnPropertyDescriptor(globalThis, 'WebGL2RenderingContext');
+  Object.defineProperty(globalThis, 'WebGL2RenderingContext', {
+    configurable: true,
+    value: TestWebGL2,
+  });
+  t.after(() => {
+    if (old) Object.defineProperty(globalThis, 'WebGL2RenderingContext', old);
+    else Reflect.deleteProperty(globalThis, 'WebGL2RenderingContext');
+  });
+  const context = new Proxy(new TestWebGL2(), {
+    get: (_target, key) => (typeof key === 'string' && key === key.toUpperCase() ? 3 : () => ({})),
+  });
+  const url = (id: string, level: string) => `https://api.example/base/set/models/${id}-${level}`;
+  const metadata = {
+    [tileflowVegetationMetadataKey]: {
+      version: 1,
+      source: 'tileflow',
+      layers: {tree: 'tree'},
+      fields: {},
+      colors: {bark: '#554433', broadleaf: ['#335533'], conifer: ['#224422']},
+      forms: {round: {models: ['oak']}, palm: {models: ['palm', 'oak']}},
+      models: {
+        oak: {near: {url: url('oak', 'near')}, far: {url: url('oak', 'far')}},
+        palm: {near: {url: url('palm', 'near')}},
+        unused: {near: {url: url('unused', 'near')}},
+      },
+    },
+  };
+  let layer: any;
+  let zoom = 14;
+  const map = {
+    addLayer(value: any) {
+      layer = value;
+    },
+    getBearing: () => 0,
+    getCenter: () => ({lat: 40.42, lng: -3.7}),
+    getPitch: () => 60,
+    getLayer: () => layer,
+    getSource: () => ({tiles: ['https://model-trees.invalid/{z}/{x}/{y}.pbf'], maxzoom: 15}),
+    getStyle: () => ({layers: [], metadata}),
+    getZoom: () => zoom,
+    isStyleLoaded: () => true,
+    on() {},
+    off() {},
+    triggerRepaint() {},
+    removeLayer() {
+      layer = undefined;
+    },
+  };
+  const trees = createTileflowTrees3D({map});
+  try {
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 10));
+    zoom = 16;
+    layer.prerender(context);
+    await tick();
+    assert.deepEqual(requested, [], 'hidden trees download no models');
+    await trees.show({transition: {duration: 0}});
+    for (zoom of [14.9, 15]) {
+      layer.prerender(context);
+      await tick();
+      assert.deepEqual(requested, [], 'trees not yet fading in download no models');
+    }
+    zoom = 16;
+    layer.prerender(context);
+    layer.prerender(context);
+    assert.ok(trees.pending().tiles >= 3, 'downloading models keep the view pending');
+    await tick();
+    assert.deepEqual(requested.sort(), [
+      url('oak', 'far'),
+      url('oak', 'near'),
+      url('palm', 'near'),
+    ]);
+    layer.prerender(context);
+    assert.equal(requested.length, 3, 'each file downloads once');
+  } finally {
+    trees.dispose();
+  }
 });
 
 test('idle only retries tree attachment and does not schedule another frame', async (t) => {

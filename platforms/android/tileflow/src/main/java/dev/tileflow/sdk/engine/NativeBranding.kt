@@ -58,7 +58,7 @@ internal data class NativeBrandingSource(val origin: String, val mapId: String?)
                     }
                     if (url.scheme !in setOf("http", "https")) continue
                     val origin = ResourcePolicy.origin(url)
-                    if (origin != apiOrigin && !(apiOrigin == "https://api.tileflow.dev" && origin == "https://tiles.tileflow.dev")) continue
+                    if (origin != apiOrigin && !(apiOrigin == "https://api.tileflow.dev" && origin in setOf("https://tiles.tileflow.dev", "https://world.tileflow.dev"))) continue
                     val parts = url.path.split('/').filter { it.isNotEmpty() && it != "v1" }
                     if (parts.size < 2 || parts[0] != "tiles" || parts[1] !in products) continue
                     val mapId = query(url, "map")

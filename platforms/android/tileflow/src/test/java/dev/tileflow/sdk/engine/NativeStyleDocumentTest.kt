@@ -18,6 +18,21 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [34])
 class NativeStyleDocumentTest {
+    @Test fun inlineWorldTilesPreserveCreditsAndTransportWithoutTileJSON() {
+        val template = "https://world.tileflow.dev/tiles/world/world-v1-11111111-1111-1111-1111-111111111111/{z}/{x}/{y}.pbf?worldDescriptorSha256=${"a".repeat(64)}"
+        val document = JSONObject("""{"version":8,"sources":{"world":{"type":"vector","tiles":["$template"],"minzoom":0,"maxzoom":15,"bounds":[-180,-85,180,85],"attribution":"© OpenStreetMap contributors"}},"layers":[]}""")
+        val url = "https://maps.example/style.json"
+        val projected = NativeStyleDocument.project(document, url, context, { error("Inline sources must not fetch TileJSON") })
+        val source = projected.style.getJSONObject("sources").getJSONObject("world")
+        assertFalse(source.has("url"))
+        assertEquals(MapResourceAddress.encode(template, context), source.getJSONArray("tiles").getString(0))
+        assertEquals(15, source.getInt("maxzoom"))
+        assertEquals("[-180,-85,180,85]", source.getJSONArray("bounds").toString())
+        assertEquals(listOf("© OpenStreetMap contributors"), projected.attributions)
+        assertEquals(listOf(URI(url)), dev.tileflow.sdk.offline.OfflineSelfHosted.documents(URI(url), document.toString().toByteArray()))
+        val tile = template.replace("{z}", "14").replace("{x}", "8023").replace("{y}", "6181")
+        org.junit.Assert.assertTrue(dev.tileflow.sdk.attribution.MapFairUseSignal.isWorldTile(URI(tile)))
+    }
     private val context = "BBBBBBBBBBBBBBBBBBBBBB"
     private val api = "https://api.tileflow.test"
     private val styleUrl = "$api/maps/m/mobile/webview-v1/v1/day.json"

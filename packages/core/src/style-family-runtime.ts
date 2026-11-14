@@ -59,9 +59,14 @@ export function resolveTileflowStyleResourceUrls(
   if (Array.isArray(fonts))
     for (const face of fonts) if (face && typeof face === 'object') property(face, 'source');
   for (const key of ['tileflow:buildings', 'tileflow:vegetation']) {
-    const descriptor = metadata?.[key] as {models?: Record<string, unknown>[]} | undefined;
+    const descriptor = metadata?.[key] as {models?: unknown} | undefined;
     if (Array.isArray(descriptor?.models))
-      for (const model of descriptor.models) property(model, 'url');
+      for (const model of descriptor.models as Record<string, unknown>[]) property(model, 'url');
+    // Tree models are keyed by id, each level a file URL or text inside the style.
+    else if (isRecord(descriptor?.models))
+      for (const model of Object.values(descriptor.models))
+        if (isRecord(model))
+          for (const level of [model.near, model.far]) if (isRecord(level)) property(level, 'url');
   }
   return result;
 }
@@ -101,4 +106,8 @@ export async function loadTileflowRuntimeAppearance(
     ),
   );
   return {...style, family, style: materializeTileflowStyleFamily(family, style.theme)};
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

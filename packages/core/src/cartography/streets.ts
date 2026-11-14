@@ -19,6 +19,7 @@ import {
 } from '../data';
 import {inferTileflowSourceRequirements} from '../data/requirements';
 import type {ResolvedTileflowMap} from '../maps';
+import {isTileflowModelSet, tileflowModelSetUrl} from '../maps/assets';
 import {
   servesGlyphFontStack,
   tileflowGlyphSet,
@@ -1021,7 +1022,16 @@ function withPreparedTreeModels(
     ...new Set(Object.values(vegetation.forms).flatMap((form) => form?.models ?? [])),
   ].sort();
   if (referenced.length === 0) return vegetation;
-  const available = prepared?.models ?? {};
+  // A published set names each model's files by URL; a directory's own model of the same id wins.
+  const available: Record<string, TileflowTreeModel> = {};
+  for (const source of config.models ?? [])
+    if (isTileflowModelSet(source))
+      for (const id of source.models)
+        available[id] = {
+          near: {url: tileflowModelSetUrl(source, id, 'near')},
+          far: {url: tileflowModelSetUrl(source, id, 'far')},
+        };
+  Object.assign(available, prepared?.models ?? {});
   const missing = referenced.filter((id) => !Object.hasOwn(available, id));
   if (missing.length > 0) {
     const authoring = config.models?.length

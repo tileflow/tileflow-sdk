@@ -238,6 +238,7 @@ export {
   defineMap,
   disable,
   isTileflowLocalDirectory,
+  isTileflowModelSet,
   refine,
   reset,
   resolveMap,
@@ -246,6 +247,8 @@ export {
   tileflowLocalDirectoryMessage,
   tileflowMapDefaultMaxDepth,
   tileflowMapIdSchema,
+  tileflowModelSetLimit,
+  tileflowModelSetUrl,
 } from './maps';
 export {
   clusterOverlay,
@@ -292,6 +295,8 @@ export type {
   TileflowLocalDirectory,
   TileflowMap,
   TileflowModelDirectory,
+  TileflowModelSet,
+  TileflowModelSource,
   TileflowModuleOperation,
   TileflowModulePatch,
   TileflowMapDesign,
@@ -752,9 +757,14 @@ export {
 export {tileflowTreeParts} from './trees-3d-mesh';
 export {
   decodeTileflowTreeModel,
+  decodeTileflowTreeModelBytes,
   encodeTileflowTreeModel,
+  encodeTileflowTreeModelBytes,
+  tileflowTreeModelContentType,
   tileflowTreeModelLimits,
+  tileflowTreeModelMaxBytes,
   type TileflowTreeModel,
+  type TileflowTreeModelLevel,
   type TileflowTreeModelMesh,
 } from './trees-3d-model';
 export {

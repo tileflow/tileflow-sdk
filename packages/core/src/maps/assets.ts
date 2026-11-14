@@ -49,6 +49,39 @@ export type TileflowFontDirectory = TileflowLocalDirectory | TileflowPackageDire
 export type TileflowModelDirectory = TileflowLocalDirectory | TileflowPackageDirectory;
 
 /**
+ * Tree models published as files, such as Tileflow's official tree models. `url` names each
+ * model's file with `{model}` for its id and `{level}` for `near` or `far`; every model listed has
+ * both. The style carries only these URLs, and the renderer downloads each file the first time
+ * trees that draw it come into view, so a view without trees downloads none.
+ */
+export type TileflowModelSet = Readonly<{
+  kind: 'url';
+  url: string;
+  models: readonly string[];
+}>;
+
+/** One entry of a map's models: a directory of its own models, or a set published as files. */
+export type TileflowModelSource = TileflowModelDirectory | TileflowModelSet;
+
+/** The most models one model set lists. */
+export const tileflowModelSetLimit = 16;
+
+/** A model set's file URL for one model and level. */
+export function tileflowModelSetUrl(set: TileflowModelSet, model: string, level: 'near' | 'far') {
+  return set.url.replaceAll('{model}', model).replaceAll('{level}', level);
+}
+
+/** Whether an entry of a map's models is a published model set rather than a directory. */
+export function isTileflowModelSet(value: unknown): value is TileflowModelSet {
+  return Boolean(
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    (value as {kind?: unknown}).kind === 'url',
+  );
+}
+
+/**
  * An explicit MapLibre glyph provider. `fontStacks` lists the exact comma-joined request keys
  * produced by each compiled `text-font` array. A Tileflow glyph set URL also combines any list of at
  * most 10 declared fonts, so there each font is enough. The map owns the URL; World never supplies

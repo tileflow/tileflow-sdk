@@ -51,6 +51,10 @@ export function rebaseTileflowFamilyStyle(
     if (!record(descriptor)) continue;
     if (Array.isArray(descriptor.models))
       for (const model of descriptor.models) property(model, 'url');
+    // Tree models are keyed by id, each level a file URL or text inside the style.
+    else if (record(descriptor.models))
+      for (const model of Object.values(descriptor.models))
+        if (record(model)) for (const level of ['near', 'far']) property(model[level], 'url');
     property(descriptor.landmarks, 'url');
   }
   return result;

@@ -30,7 +30,7 @@ import {
   withRenderStack,
   zoom,
 } from '@tileflow/core';
-import {streetsGlyphs, streetsIcons, streetsModels} from '../assets';
+import {streetsGlyphs, streetsIcons, streetsTreeModels} from '../assets';
 import {mapboxRailTransitStyle} from './mapbox-rail';
 import {withStreetsCartography} from './streets-cartography';
 import {streetsColorKnobs} from './streets-color-knobs';
@@ -1538,7 +1538,7 @@ const streetsBase = bindOfficialMapTheme(
       type: 'tileflow-world',
     },
     icons: [streetsIcons],
-    models: [streetsModels],
+    models: [streetsTreeModels],
     // Regional relief from hosted Tileflow Terrain: its TileJSON declares the tile size, native
     // zoom and credit, so closer views overzoom its deepest tiles without a separate cap here.
     terrain: {

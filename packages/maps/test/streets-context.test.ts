@@ -10,7 +10,7 @@ import {
   tileflowWorldAttribution,
 } from '@tileflow/core';
 import {streets} from '../src';
-import {streetsModels} from '../src/assets';
+import {streetsTreeModels} from '../src/assets';
 import {streetsPreparedModels} from './streets-assets';
 
 const preparedAssets = {
@@ -80,5 +80,5 @@ test('land visibility removes its context resource and geometry together', () =>
 
 test('composed Streets retains its packaged tree resources for consumers adding landmarks', () => {
   const composed = defineMap({id: 'composed-streets', version: 1, extends: streets});
-  assert.deepEqual(resolveMap(composed).models, [streetsModels]);
+  assert.deepEqual(resolveMap(composed).models, [streetsTreeModels]);
 });

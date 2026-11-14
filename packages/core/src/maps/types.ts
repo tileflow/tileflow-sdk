@@ -14,13 +14,13 @@ import type {
   TileflowOverlayCollection,
   TileflowSource,
 } from '../overlays';
-import {tileflowPortableIdSchema} from '../portable-identity';
 import type {TileflowRemoveOperation} from '../overlays';
+import {tileflowPortableIdSchema} from '../portable-identity';
 import type {TileflowSky} from '../sky';
 import type {TileflowTheme, TileflowThemeName} from '../themes';
 import type {TileflowTimeOfDayVariants} from '../time-of-day';
 import type {TileflowProjection, TileflowTerrain, TileflowViewConfig} from '../types';
-import type {TileflowFontDirectory, TileflowGlyphs, TileflowModelDirectory} from './assets';
+import type {TileflowFontDirectory, TileflowGlyphs, TileflowModelSource} from './assets';
 import type {TileflowAuthoringModules} from './operations';
 
 /** Portable, filesystem-safe identity shared by maps and their leaf-owned scenes. */
@@ -77,9 +77,10 @@ export type TileflowMapDesign = TileflowMapTextAssets & {
   marine?: TileflowMarine;
   /**
    * Directories of the map's own 3D models, glTF binaries (`.glb`) named by id, such as the trees a
-   * vegetation form draws. Omission inherits; declaration replaces; [] means no models.
+   * vegetation form draws, and sets of tree models published as files. A directory's model wins
+   * over a set's model of the same id. Omission inherits; declaration replaces; [] means no models.
    */
-  models?: readonly TileflowModelDirectory[];
+  models?: readonly TileflowModelSource[];
   /** Semantic domains, expressed directly or with explicit refine/disable operations. */
   modules?: TileflowAuthoringModules;
   /** Keyed MapLibre overlay units. Omission inherits; entries replace atomically. */

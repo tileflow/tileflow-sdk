@@ -197,7 +197,12 @@ test('prepares family resources with the request policy and reuses them for appe
     glyphs: './fonts/{fontstack}/{range}.pbf',
     'font-faces': {Sans: './fonts/sans.woff2'},
     sources: {world: {type: 'vector', url: './data/world.json'}},
-    metadata: {'tileflow:vegetation': {models: [{url: './models/tree.glb'}]}},
+    metadata: {
+      'tileflow:buildings': {models: [{url: './models/tree.glb'}]},
+      'tileflow:vegetation': {
+        models: {oak: {near: {url: './models/oak-near'}, far: 'VEZUTQ=='}},
+      },
+    },
     layers: [{id: 'background', type: 'background', paint: {'background-color': color}}],
   });
   const family = createTileflowStyleFamily({light: variant('#ffffff'), dark: variant('#000000')});
@@ -230,8 +235,12 @@ test('prepares family resources with the request policy and reuses them for appe
   assert.deepEqual(prepared.style['font-faces'], {
     Sans: 'https://cdn.example/published/fonts/sans.woff2',
   });
-  assert.deepEqual(prepared.style.metadata!['tileflow:vegetation'], {
+  assert.deepEqual(prepared.style.metadata!['tileflow:buildings'], {
     models: [{url: 'https://cdn.example/published/models/tree.glb'}],
+  });
+  // Tree model files resolve against the family; a level carried as text is kept as it is.
+  assert.deepEqual(prepared.style.metadata!['tileflow:vegetation'], {
+    models: {oak: {near: {url: 'https://cdn.example/published/models/oak-near'}, far: 'VEZUTQ=='}},
   });
   assert.equal(JSON.stringify(family), before);
   const listeners = new Map<string, Set<() => void>>();

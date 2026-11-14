@@ -96,7 +96,9 @@
     "https://api.tileflow.test/landmarks/releases/000000000000000000000000000000000000000000000000000000000000000a/NOTICE.md",
     "https://api.tileflow.test/landmarks/tiles/000000000000000000000000000000000000000000000000000000000000000a.glb",
     "https://api.tileflow.test/team-models/tmd_0123456789abcdef/current.glb",
-    "https://api.tileflow.test/team-models/tmd_0123456789abcdef/versions/tmv_0123456789abcdef.glb"
+    "https://api.tileflow.test/team-models/tmd_0123456789abcdef/versions/tmv_0123456789abcdef.glb",
+    "https://api.tileflow.test/base/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/models/streets-tree-round-near",
+    "https://api.tileflow.test/base/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/models/streets-tree-round-far"
   ],
   "nonPublicResources": [
     "https://api.tileflow.test/landmarks/tiles.json?map=map_0123456789abcdef",
@@ -105,7 +107,12 @@
     "https://api.tileflow.test/landmarks/tiles/abc.glb",
     "https://api.tileflow.test/team-models/tmd_short/current.glb",
     "https://api.tileflow.test/team-models/tmd_0123456789abcdef/versions/tmv_0123456789abcdef.gltf",
-    "https://api.tileflow.test/v1/team-models"
+    "https://api.tileflow.test/v1/team-models",
+    "https://api.tileflow.test/base/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/models/../private",
+    "https://api.tileflow.test/base/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/models/%2fprivate",
+    "https://api.tileflow.test/base/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/models/tree?credential=x",
+    "https://api.tileflow.test/base/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/models/tree#fragment",
+    "https://api.tileflow.test/base/short/models/tree"
   ],
   "redirects": [
     {

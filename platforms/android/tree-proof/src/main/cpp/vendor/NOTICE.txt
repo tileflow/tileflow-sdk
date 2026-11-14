@@ -1,0 +1,3 @@
+MapLibre Native android-v13.7.1 headers, unchanged.
+Source: https://github.com/maplibre/maplibre-native/tree/android-v13.7.1/include/mln/style/layers
+License: BSD 2-Clause; see LICENSE.md.

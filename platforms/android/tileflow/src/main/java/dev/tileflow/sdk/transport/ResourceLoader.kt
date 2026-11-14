@@ -107,7 +107,7 @@ internal class ResourceLoader(
         // A fresh public entry needs neither the network nor a Hosted session.
         if (cacheable) freshPublicEntry(url, includePinned = !onlineOnly)?.let { return response(it) }
         if (
-            !onlineOnly && protected && cacheable &&
+            !onlineOnly && (protected || isPublicApiResource(url)) && cacheable &&
                 OfflineServingRule.hostedUsesPacks(networkEnabled = true, reachable = reachable())
         )
             packEntry(url)?.let { return response(it) }
@@ -257,7 +257,7 @@ internal class ResourceLoader(
         }
     }
 
-    /** Landmarks and Team models are public on the API origin and never carry a grant. */
+    /** Base models, landmarks and Team models are public on the API origin and never carry a grant. */
     /**
      * Answers from stored entries alone, never the network: a downloaded region's pack for a
      * protected resource, else a pinned or ambient entry of the shared scope whatever its
@@ -271,6 +271,8 @@ internal class ResourceLoader(
                 }
             } else {
                 policy.validate(url)
+                // Public base assets still belong to the available region's map-scoped pack.
+                if (isPublicApiResource(url)) packEntry(url)?.let { return response(it) }
                 storedEntries(ResourceCacheKey(url, ResourceCacheScope.Shared))?.let { stored ->
                     (stored.pinned ?: stored.ambient)?.let {
                         return response(it)

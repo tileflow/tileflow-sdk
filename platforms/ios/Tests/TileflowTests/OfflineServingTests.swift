@@ -47,6 +47,31 @@ final class OfflineServingTests: XCTestCase {
     XCTAssertTrue(resources.requests.isEmpty)
   }
 
+  func testPublicTreeModelsReadTheMapsPackWithoutNetworkOrSharedCache() async throws {
+    let url = URL(string: "https://api.tileflow.test/base/\(String(repeating: "a", count: 64))/models/streets-tree-round-near")!
+    let body = Data("TFTM fixture".utf8)
+    let data = OfflinePackBuilder.build(.documents, [
+      .init(name: url.absoluteString, contentType: "application/vnd.tileflow.tree-model", encoding: nil, body: body),
+    ])
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let file = directory.appendingPathComponent("trees.tfpack")
+    try data.write(to: file)
+    let index = try OfflinePackFormat.verify(file, bytes: data.count, kind: .documents).index
+    var packs = OfflineServedPacks()
+    packs.documents[url.absoluteString] = (file, index.entries[url.absoluteString]!)
+    for networkEnabled in [false, true] {
+      let (loader, sessions, resources) = try makeLoader(packs: packs, reachable: false, networkEnabled: networkEnabled)
+      let response = try await loader.load(URLRequest(url: url))
+      XCTAssertEqual(response.status, 200)
+      XCTAssertEqual(response.bytes, body)
+      XCTAssertTrue(sessions.requests.isEmpty)
+      XCTAssertTrue(resources.requests.isEmpty)
+    }
+    let (missing, _, _) = try makeLoader(packs: .init(), reachable: false, networkEnabled: false)
+    let response = try await missing.load(URLRequest(url: url))
+    XCTAssertEqual(response.status, 504, "No other map or shared cache supplies the model")
+  }
+
   func testWithANetworkAHostedMapStartsItsSessionAndRevalidatesItsPack() async throws {
     let packs = try storedPacks()
     let (loader, sessions, resources) = try makeLoader(packs: packs, reachable: true)

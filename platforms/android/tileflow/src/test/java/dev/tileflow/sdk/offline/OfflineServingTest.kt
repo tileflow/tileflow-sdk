@@ -83,6 +83,28 @@ class OfflineServingTest {
     }
 
     @Test
+    fun publicTreeModelsReadTheMapsPackWithoutNetworkOrSharedCache() {
+        val url = URI("https://api.tileflow.test/base/${"a".repeat(64)}/models/streets-tree-round-near")
+        val body = "TFTM fixture".toByteArray()
+        val data = OfflinePackBuilder.build(OfflinePackKind.DOCUMENTS, listOf(
+            OfflinePackBuilder.Entry(url.toString(), "application/vnd.tileflow.tree-model", null, body),
+        ))
+        val file = File(directory, "trees.tfpack").apply { writeBytes(data) }
+        val entry = OfflinePackFormat.verify(file, data.size.toLong(), OfflinePackKind.DOCUMENTS).second.entries.getValue(url.toString())
+        val packs = OfflineServedPacks(mapOf(url.toString() to (file to entry)), emptyMap())
+        for (enabled in listOf(false, true)) {
+            val (loader, sessions, resources) = loader(packs, reachable = false, networkEnabled = enabled)
+            val response = loader.load(url)
+            assertEquals(200, response.status)
+            assertArrayEquals(body, response.bytes)
+            assertTrue(sessions.requests.isEmpty())
+            assertTrue(resources.requests.isEmpty())
+        }
+        val (missing, _, _) = loader(OfflineServedPacks(emptyMap(), emptyMap()), reachable = false, networkEnabled = false)
+        assertEquals(504, missing.load(url).status)
+    }
+
+    @Test
     fun withANetworkAHostedMapStartsItsSessionAndRevalidatesItsPack() {
         val (loader, sessions, resources) = loader(storedPacks(), reachable = true)
         val response = loader.load(tile)

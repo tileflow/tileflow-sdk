@@ -23,3 +23,5 @@ packages/react-native/example/node_modules/
 packages/react-native/example/pnpm-lock.yaml
 packages/react-native/android/build/
 packages/react-native/example/.expo/
+platforms/android/tree-proof/.cxx/
+platforms/android/tree-proof/src/main/cpp/vendor/

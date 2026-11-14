@@ -25,3 +25,5 @@ include(":tileflow-services")
 include(":example")
 
 if (providers.gradleProperty("tileflowBenchmark").isPresent) include(":benchmark")
+
+if (providers.gradleProperty("tileflowTreeProof").isPresent) include(":tree-proof")

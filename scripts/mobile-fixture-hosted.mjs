@@ -4,6 +4,7 @@ import {resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {deflateSync, gunzipSync, gzipSync} from 'node:zlib';
 import {createLineBackgroundFixture} from './mobile-fixture-line-backgrounds.mjs';
+import {createTreeProofFixture} from './mobile-fixture-trees.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const {tileflowOfficialFontAssetSet} = await import(
@@ -54,6 +55,7 @@ const marineCredits = JSON.parse(
 export const hostedMapId = 'map_offlinefixture01';
 
 export function createHostedFixture({base, tile, center}) {
+  const trees = createTreeProofFixture(base);
   const lines = createLineBackgroundFixture({
     base,
     center,
@@ -424,6 +426,7 @@ export function createHostedFixture({base, tile, center}) {
     },
   };
   Object.assign(nativeStyles, lines?.styles);
+  Object.assign(nativeStyles, trees?.styles);
   const nativeThemes = Object.keys(nativeStyles);
   // The family names the map by its key in the one-map manifest.
   const nativeFamily = nativeProfile.createTileflowNativeFamily({
@@ -483,6 +486,7 @@ export function createHostedFixture({base, tile, center}) {
     packResources: 0,
     packNotModified: 0,
     ranges: 0,
+    treeModels: 0,
   });
   let count = counters();
 
@@ -552,6 +556,8 @@ export function createHostedFixture({base, tile, center}) {
     return Buffer.from(field(1, [...field(1, bytes(stack)), ...field(2, bytes(range))]));
   };
   const body = (url) => {
+    const treeBody = trees?.body(url);
+    if (treeBody) return treeBody;
     const lineBody = lines?.body(url);
     if (lineBody) return lineBody;
     if (url === brandUrl) return brandBytes;
@@ -779,6 +785,7 @@ export function createHostedFixture({base, tile, center}) {
     const fallbackTheme = request.themes.includes('fallback');
     const marineTheme = request.themes.includes('marine');
     const lineThemes = request.themes.filter((name) => lines?.styles[name]);
+    const treeTheme = request.themes.includes('tree-proof');
     const webStyles = [
       ...(request.themes.includes('day') ? [urls.style] : []),
       ...(labelsTheme ? [urls.labelsStyle] : []),
@@ -803,8 +810,9 @@ export function createHostedFixture({base, tile, center}) {
       ...styles,
       ...tileJson.map((url) => jsonEntry(url, body(url))),
     ]);
-    if (labelsTheme || fontsTheme || fallbackTheme || lineThemes.length) {
+    if (labelsTheme || fontsTheme || fallbackTheme || lineThemes.length || treeTheme) {
       add('assets', 'documents', '/v1/offline/documents/assets.tfpack', [
+        ...(treeTheme ? trees.entries : []),
         ...(lineThemes.length
           ? lines.entries(lineThemes).filter((entry) => entry.name.endsWith('/LICENSE.md'))
           : []),
@@ -1200,7 +1208,14 @@ export function createHostedFixture({base, tile, center}) {
 
     const bytes = request.method === 'GET' ? body(url) : null;
     if (!bytes) return false;
-    if (!publicUrls.has(url) && !lines?.body(url)) {
+    if (trees?.body(url)) {
+      if (request.headers.authorization || request.headers['x-tileflow-native-grant']) {
+        json(response, 400, {error: 'Public tree models must receive no credential'});
+        return true;
+      }
+      count.treeModels += 1;
+    }
+    if (!publicUrls.has(url) && !lines?.body(url) && !trees?.body(url)) {
       const session = request.headers['x-tileflow-native-grant'];
       if (sessions.has(session)) count.sessionResources += 1;
       else {
@@ -1213,19 +1228,21 @@ export function createHostedFixture({base, tile, center}) {
     const gzip = tile && /\bgzip\b/u.test(request.headers['accept-encoding'] ?? '');
     const outcome = serve(request, response, tile && !gzip ? gunzipSync(bytes) : bytes, {
       'Cache-Control': 'private, no-cache',
-      'Content-Type': url.endsWith('.ttf')
-        ? 'font/ttf'
-        : url.endsWith('.otf')
-          ? 'font/otf'
-          : url.endsWith('.txt')
-            ? 'text/plain; charset=utf-8'
-            : tile
-              ? 'application/vnd.mapbox-vector-tile'
-              : url.includes('.pbf')
-                ? 'application/x-protobuf'
-                : url.includes('.png')
-                  ? 'image/png'
-                  : 'application/json',
+      'Content-Type': trees?.body(url)
+        ? 'application/vnd.tileflow.tree-model'
+        : url.endsWith('.ttf')
+          ? 'font/ttf'
+          : url.endsWith('.otf')
+            ? 'font/otf'
+            : url.endsWith('.txt')
+              ? 'text/plain; charset=utf-8'
+              : tile
+                ? 'application/vnd.mapbox-vector-tile'
+                : url.includes('.pbf')
+                  ? 'application/x-protobuf'
+                  : url.includes('.png')
+                    ? 'image/png'
+                    : 'application/json',
       ...(gzip ? {'Content-Encoding': 'gzip'} : {}),
     });
     if (outcome === 'not-modified') count.notModified += 1;

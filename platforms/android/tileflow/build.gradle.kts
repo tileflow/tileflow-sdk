@@ -41,12 +41,18 @@ android {
     androidResources.ignoreAssetsPatterns += "<dir>tileflow"
     sourceSets["androidTest"].assets.srcDir("../../ios/Tests/TileflowTests/Fixtures/Offline")
     sourceSets["androidTest"].assets.srcDir("../../ios/Tests/TileflowTests/Fixtures/Marine")
+    if (providers.gradleProperty("tileflowTreeProof").isPresent) {
+        sourceSets["androidTest"].java.srcDir("../tree-proof/tests")
+    }
     publishing { singleVariant("release") { withSourcesJar() } }
 }
 
 kotlin { jvmToolchain(17) }
 
 dependencies {
+    if (providers.gradleProperty("tileflowTreeProof").isPresent) {
+        androidTestImplementation(project(":tree-proof"))
+    }
     api(project(":tileflow-foundation"))
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     // MapLibre Native with OpenGL ES, pinned exactly: every upgrade is a reviewed change.

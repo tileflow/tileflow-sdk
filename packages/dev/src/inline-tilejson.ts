@@ -86,9 +86,14 @@ export async function inlineTileflowExactTileJson<T extends Record<string, MapLi
               .map((field) => [field, tileJson[field]]),
           ),
           ...rest,
-          ...(rest.attribution === undefined && typeof tileJson.attribution === 'string'
-            ? {attribution: tileJson.attribution}
-            : {}),
+          attribution: [
+            ...new Set(
+              [tileJson.attribution, rest.attribution]
+                .filter((credit): credit is string => typeof credit === 'string')
+                .map((credit) => credit.trim())
+                .filter((credit) => credit.length > 0 && credit !== 'null'),
+            ),
+          ].join(' | '),
           tiles: tileJson.tiles,
         } as MapLibreStyle['sources'][string];
       }

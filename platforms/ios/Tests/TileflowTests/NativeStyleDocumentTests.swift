@@ -7,6 +7,26 @@ import XCTest
 final class NativeStyleDocumentTests: XCTestCase {
   private let context = MapResourceAddress.newContext()
 
+  func testInlineWorldTilesPreserveCreditsAndTransportWithoutTileJSON() async throws {
+    let template = "https://world.tileflow.dev/tiles/world/world-v1-11111111-1111-1111-1111-111111111111/{z}/{x}/{y}.pbf?worldDescriptorSha256=\(String(repeating: "a", count: 64))"
+    let source: [String: Any] = ["type": "vector", "tiles": [template], "minzoom": 0,
+      "maxzoom": 15, "bounds": [-180, -85, 180, 85], "attribution": "© OpenStreetMap contributors"]
+    let document: [String: Any] = ["version": 8, "sources": ["world": source], "layers": []]
+    let url = URL(string: "https://maps.example/style.json")!
+    let projected = try await NativeStyleDocument.project(document, styleURL: url, context: context,
+      load: { _, _ in XCTFail("Inline sources must not fetch TileJSON"); return [:] })
+    let style = try JSONDecoder().decode(JSONValue.self, from: Data(projected.json.utf8))
+    XCTAssertNil(style["sources"]?["world"]?["url"])
+    XCTAssertEqual(style["sources"]?["world"]?["tiles"]?.array?.first?.string, MapResourceAddress.encode(template, context: context))
+    XCTAssertEqual(style["sources"]?["world"]?["maxzoom"], .number(15))
+    XCTAssertEqual(style["sources"]?["world"]?["bounds"], JSONValue(foundation: source["bounds"]!))
+    XCTAssertEqual(projected.attributions, ["© OpenStreetMap contributors"])
+    let documents = try OfflineSelfHosted.documents(style: url, data: JSONSerialization.data(withJSONObject: document))
+    XCTAssertEqual(documents, [url])
+    let tile = template.replacingOccurrences(of: "{z}", with: "14").replacingOccurrences(of: "{x}", with: "8023").replacingOccurrences(of: "{y}", with: "6181")
+    XCTAssertTrue(MapFairUseSignal.isWorldTile(URL(string: tile)!))
+  }
+
   func testTileJSONCreditsCannotBeReplacedByStyleAttribution() async throws {
     for supplied in ["", " ", "Author credit", NSNull()] as [Any] {
       let projected = try await NativeStyleDocument.project(

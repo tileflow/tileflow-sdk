@@ -374,6 +374,12 @@ public class NativeMapViewIntegrationTest {
                     assertEquals(-3.70, initial.longitude, 0.01)
                     assertEquals(16.0, initial.zoom, 0.01)
                     assertBuildings(map)
+                    val screenshot = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
+                    val capture = java.io.File(activity.getExternalFilesDir(null), "native-compat.png")
+                    capture.outputStream().use { screenshot.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                    screenshot.recycle()
+                    println("NATIVE_COMPAT_CAPTURE ${capture.absolutePath}")
+
                     val coordinate = map.unproject(map.project(center))
                     assertEquals(-3.70, coordinate.longitude, 0.0001)
                     assertEquals(40.42, coordinate.latitude, 0.0001)

@@ -1008,6 +1008,14 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     XCTAssertEqual(initial.longitude, -3.70, accuracy: 0.01)
     XCTAssertEqual(initial.zoom, 16, accuracy: 0.01)
     try await assertBuildings(view)
+    let image = UIGraphicsImageRenderer(bounds: view.bounds).image { _ in
+      _ = view.drawHierarchy(in: view.bounds, afterScreenUpdates: false)
+    }
+    let capture = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+      .appendingPathComponent("native-compat.png")
+    try image.pngData()?.write(to: capture)
+    print("NATIVE_COMPAT_CAPTURE \(capture.path)")
+
     let point = try await view.project(Self.center)
     let coordinate = try await view.unproject(point)
     XCTAssertEqual(coordinate.longitude, -3.70, accuracy: 0.0001)

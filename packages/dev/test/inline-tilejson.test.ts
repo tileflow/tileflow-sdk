@@ -66,7 +66,7 @@ test('exact-release sources carry their TileJSON in place of url, read once for 
       bounds: [-180, -85.0511287, 180, 85.0511287],
       scheme: 'xyz',
       type: 'vector',
-      attribution: 'Own credit',
+      attribution: `${tileJson.attribution} | Own credit`,
     });
     // Other sources keep their own TileJSON reference.
     assert.deepEqual(sources.terrain, input.streets.light.sources.terrain);
@@ -103,4 +103,20 @@ test('an unreadable or mismatched TileJSON fails the build instead of publishing
       inlineTileflowExactTileJson({map: {light: style(exact)}}, {fetch}),
       TileflowTileJsonInlineError,
     );
+});
+
+test('inlining never drops the provider credit when the authored credit is blank or different', async () => {
+  for (const credit of ['', '  ', 'Own credit']) {
+    const input = style(exact);
+    (input.sources.tileflow as {attribution?: string}).attribution = credit;
+    const output = await inlineTileflowExactTileJson(
+      {map: {light: input}},
+      {
+        fetch: (async () => new Response(JSON.stringify(tileJson))) as typeof globalThis.fetch,
+      },
+    );
+    const actual = (output.map!.light!.sources.tileflow as {attribution?: string}).attribution;
+    assert.ok(actual?.includes(tileJson.attribution), JSON.stringify({credit, actual}));
+    if (credit.trim()) assert.ok(actual?.includes(credit));
+  }
 });

@@ -4,6 +4,25 @@ import XCTest
 @testable import Tileflow
 
 final class NativeDataLayersTests: XCTestCase {
+  func testInlineWorldEdgeRetainsCatalogBranding() {
+    let api = "https://api.tileflow.dev"
+    let map = "map_AbCdEfGhIjKlMnOp"
+    func style(_ origin: String) -> [String: Any] {
+      ["sources": ["world": ["type": "vector", "tiles": [
+        "\(origin)/tiles/world/world-v1-11111111-1111-1111-1111-111111111111/{z}/{x}/{y}.pbf?worldDescriptorSha256=\(String(repeating: "a", count: 64))"
+      ]]], "layers": [["id": "land", "source": "world"]]]
+    }
+    var input = style("https://world.tileflow.dev")
+    XCTAssertEqual(NativeBrandingSource.read(input, apiOrigin: api), [.init(origin: api, mapID: nil)])
+    XCTAssertEqual(NativeBrandingSource.read(input, apiOrigin: api, hostedMapID: map), [.init(origin: api, mapID: map)])
+    XCTAssertTrue(NativeBrandingSource.read(input, apiOrigin: "https://custom.example").isEmpty)
+    for origin in ["https://world.tileflow.dev.evil.test", "http://world.tileflow.dev", "https://world.tileflow.dev:444"] {
+      XCTAssertTrue(NativeBrandingSource.read(style(origin), apiOrigin: api).isEmpty, origin)
+    }
+    input["layers"] = [["id": "land", "source": "world", "layout": ["visibility": "none"]]]
+    XCTAssertTrue(NativeBrandingSource.read(input, apiOrigin: api).isEmpty)
+  }
+
   func testFillsCompiledDataAndPlacesOverlayWithoutChangingAuthoredSources() throws {
     let style: [String: Any] = [
       "version": 8,

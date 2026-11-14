@@ -404,6 +404,7 @@ internal object HostedContract {
         Regex("^/team-models/(tmd_[A-Za-z0-9_-]{16,76})/versions/tmv_[A-Za-z0-9_-]{16,76}\\.glb$")
     private val publicApiPaths =
         listOf(
+            Regex("^/base/[0-9a-f]{64}/models/[A-Za-z0-9_-]{1,128}$"),
             Regex("^/maps/map_[A-Za-z0-9_-]{16}/mobile/branding$"),
             Regex("^/landmarks/tiles\\.json$"),
             Regex(

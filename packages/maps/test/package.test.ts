@@ -4,7 +4,7 @@ import {readdir, readFile} from 'node:fs/promises';
 import test from 'node:test';
 import {promisify} from 'node:util';
 import {streetsPoiDiscColors, streetsPoiPictograms} from '../src/official/streets-poi';
-import {streetsPreparedModels, streetsTreeIconIds} from './streets-assets';
+import {streetsPreparedModels, streetsTreeForms, streetsTreeIconIds} from './streets-assets';
 import {streetsPoiImageIds} from './streets-poi-fixture';
 
 const execFileAsync = promisify(execFile);
@@ -18,10 +18,17 @@ test('publishes official maps and their assets as one package', async () => {
     peerDependencies: Record<string, string>;
   };
 
-  // Streets reads its climate image from Tileflow's servers; the package keeps only its recipe.
+  // Shared climate and prepared tree models come from Tileflow's servers.
   assert.deepEqual(manifest.files, [
     'assets',
     '!assets/streets/climate/streets-climate-v1.png',
+    ...streetsTreeForms
+      .flatMap((form) =>
+        ['far', 'near'].map(
+          (level) => `!assets/streets/tree-models/models/streets-tree-${form}-${level}`,
+        ),
+      )
+      .sort(),
     'dist',
     'THIRD_PARTY_NOTICES.md',
     'LICENSE',

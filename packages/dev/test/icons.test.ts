@@ -8,10 +8,11 @@ import {
   defineMap,
   diffTileflowIconPackageManifests,
   parseTileflowMap,
+  readTileflowVegetation3D,
   type TileflowMap,
 } from '@tileflow/core';
 import {createStyleFromCatalog, type TileflowBuildCatalog} from '@tileflow/core/build';
-import {outdoors, soundings, streets} from '@tileflow/maps';
+import {officialTreeModelsUrl, outdoors, soundings, streets} from '@tileflow/maps';
 import {
   compileTileflowIconPackages,
   prepareTileflowCatalogIcons,
@@ -83,7 +84,14 @@ test('prepares inherited Streets directories without mutating the authored map',
       ids: streetsIconIds,
       sprite: '/tileflow/icons/main/sprite',
     });
-    assert.deepEqual(Object.keys(prepared.mapAssets.main?.models ?? {}), [
+    assert.deepEqual(Object.keys(prepared.mapAssets.main?.models ?? {}), []);
+
+    const style = createStyleFromCatalog(prepared.project, 'main', {
+      preparedAssets: prepared.mapAssets.main,
+    });
+    const models = readTileflowVegetation3D(style.metadata)?.models;
+    assert.ok(models);
+    assert.deepEqual(Object.keys(models).sort(), [
       'streets-tree-columnar',
       'streets-tree-conifer',
       'streets-tree-open',
@@ -93,9 +101,12 @@ test('prepares inherited Streets directories without mutating the authored map',
       'streets-tree-tall',
     ]);
 
-    const style = createStyleFromCatalog(prepared.project, 'main', {
-      preparedAssets: prepared.mapAssets.main,
-    });
+    for (const [id, model] of Object.entries(models)) {
+      assert.deepEqual(model, {
+        near: {url: officialTreeModelsUrl.replace('{model}', id).replace('{level}', 'near')},
+        far: {url: officialTreeModelsUrl.replace('{model}', id).replace('{level}', 'far')},
+      });
+    }
     assert.equal(style.sprite, '/tileflow/icons/main/sprite');
     assert.ok(style.layers.some((layer) => layer.id === 'tileflow-road-oneway'));
   });

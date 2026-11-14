@@ -144,7 +144,7 @@ final class ResourceLoader: ResourceLoading, Sendable {
     }
     // A fresh public entry needs neither the network nor a Hosted session.
     if cacheable, let stored = freshPublicEntry(url, ambientOnly: onlineOnly) { return Self.response(stored) }
-    if !onlineOnly, protected, cacheable,
+    if !onlineOnly, protected || isPublicAPIResource(url), cacheable,
       OfflineServingRule.hostedUsesPacks(networkEnabled: true, reachable: reachable()),
       let packed = await packEntry(url)
     {
@@ -303,6 +303,8 @@ final class ResourceLoader: ResourceLoading, Sendable {
         if let packed = await packEntry(url) { return Self.response(packed) }
       } else {
         try policy.validate(url)
+        // Public base assets still belong to the available region's map-scoped pack.
+        if isPublicAPIResource(url), let packed = await packEntry(url) { return Self.response(packed) }
         let key = ResourceCacheKey(url: url, scope: .shared)
         if let stored = storedEntries(key), let entry = stored.pinned ?? stored.ambient {
           return Self.response(entry)
@@ -321,7 +323,7 @@ final class ResourceLoader: ResourceLoading, Sendable {
     return await offline.resource(ResourceCacheKey(url: url, scope: grantScope), cache: cache)
   }
 
-  /// Landmarks and Team models are public on the API origin and never carry a grant.
+  /// Base models, landmarks and Team models are public on the API origin and never carry a grant.
   private func isPublicAPIResource(_ url: URL) -> Bool {
     guard let apiOrigin else { return false }
     return ResourcePolicy.origin(url) == ResourcePolicy.origin(apiOrigin)

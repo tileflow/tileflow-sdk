@@ -241,7 +241,7 @@ enum HostedContract {
       && (matches(path, #"^/font-bundles/fnb_[A-Za-z0-9_-]{16,64}/[A-Za-z0-9_./-]{1,512}$"#) || matches(path, #"^/base/[0-9a-f]{64}/fonts/[A-Za-z0-9-]+\.(?:ttf|otf|txt)$"#))
   }
 
-  /// Landmarks and Team models are public web resources on the API origin: a Map's view already
+  /// Base models, landmarks and Team models are public web resources on the API origin: a Map's view already
   /// counts its session, so they never carry a grant and are admitted by exact path only.
   static func isPublicAPIResource(_ url: URL) -> Bool {
     guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
@@ -310,6 +310,7 @@ enum HostedContract {
   }
 
   private static let publicAPIPaths = [
+    #"^/base/[0-9a-f]{64}/models/[A-Za-z0-9_-]{1,128}$"#,
     #"^/maps/map_[A-Za-z0-9_-]{16}/mobile/branding$"#,
     #"^/landmarks/tiles\.json$"#,
     #"^/landmarks/releases/[0-9a-f]{64}/regions/6/(?:0|[1-9][0-9]{0,4})/(?:0|[1-9][0-9]{0,4})\.json$"#,

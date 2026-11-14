@@ -3,6 +3,7 @@ import test from 'node:test';
 import {attachTileflowAtmosphere, type TileflowAtmosphereMap} from '../src/atmosphere-browser';
 import {resolveTileflowAtmosphere} from '../src/atmosphere-compile';
 import {tileflowSkyHazeLayerId} from '../src/sky-haze-browser';
+import {tileflowThemeMetadataKey} from '../src/theme-metadata';
 
 function fixture(enabled = true) {
   const frames = new Map<number, FrameRequestCallback>();
@@ -342,4 +343,28 @@ test('map appearance controls density, radius and color across style replacement
   assert.equal(f.canvases[0]!.style.opacity, '1', 'hiding stars preserves the background');
   assert.equal(f.frames.size, 0);
   dispose();
+});
+
+test('the stars follow a theme controller on the map without a style event', () => {
+  const f = fixture();
+  const dispose = attachTileflowAtmosphere(f.map);
+  f.flush();
+  const starFills = () => new Set(f.fills.map((fill) => fill.replace(/, [\d.]+\)$/, ')')));
+  assert.ok(starFills().has('rgba(224, 235, 255)'));
+  const day = f.state.style.metadata['tileflow:atmosphere'];
+  const night = {...day, starColor: '#ff0000', horizonColor: '#00ff00'};
+  let position = 0;
+  (f.map as unknown as Record<symbol, unknown>)[tileflowThemeMetadataKey] = (key: string) => ({
+    values: key === 'tileflow:atmosphere' ? [day, night] : [undefined, undefined],
+    position,
+  });
+  position = 1;
+  f.emit('render');
+  f.flush();
+  assert.deepEqual(starFills(), new Set(['rgba(0, 255, 0)', 'rgba(255, 0, 0)']));
+  // An unchanged blend schedules no extra star frame.
+  f.emit('render');
+  assert.equal(f.frames.size, 0);
+  dispose();
+  assert.equal(f.events.get('render')?.size ?? 0, 0);
 });

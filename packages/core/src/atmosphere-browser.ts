@@ -2,8 +2,7 @@ import {
   atmosphereAngleDelta,
   atmosphereSpaceOpacity,
   createAtmosphereStars,
-  readTileflowAtmosphere,
-  tileflowAtmosphereMetadataKey,
+  createTileflowAtmosphereReader,
   type TileflowResolvedAtmosphere,
   wrapAtmosphereStar,
 } from './atmosphere';
@@ -20,8 +19,8 @@ export type TileflowAtmosphereMap = {
   getPitch(): number;
   getZoom(): number;
   getStyle(): {metadata?: unknown; projection?: {type?: unknown}} | undefined;
-  on(event: 'move' | 'resize' | 'style.load' | 'remove', listener: () => void): unknown;
-  off(event: 'move' | 'resize' | 'style.load' | 'remove', listener: () => void): unknown;
+  on(event: 'move' | 'render' | 'resize' | 'style.load' | 'remove', listener: () => void): unknown;
+  off(event: 'move' | 'render' | 'resize' | 'style.load' | 'remove', listener: () => void): unknown;
 } & Partial<TileflowSkyMap> &
   Partial<TileflowSkyHazeMap>;
 
@@ -32,8 +31,9 @@ export type TileflowAtmosphereRuntimeOptions = {
 
 /**
  * Render compiled globe atmosphere metadata, and the stars and distance haze of a sky. Call after
- * constructing a browser map. Follows style replacements and releases its canvas, layer,
- * listeners, and pending frame on disposal.
+ * constructing a browser map. Follows style replacements and the themes of a theme controller on
+ * the map, including paint-only blends, and releases its canvas, layer, listeners, and pending
+ * frame on disposal.
  */
 export function attachTileflowAtmosphere(
   map: TileflowAtmosphereMap,
@@ -53,6 +53,7 @@ export function attachTileflowAtmosphere(
     ? attachTileflowAtmosphereRim(map as TileflowSkyMap & TileflowAtmosphereMap)
     : () => {};
   const reducedMotion = browser.matchMedia('(prefers-reduced-motion: reduce)');
+  const atmosphere = createTileflowAtmosphereReader(map);
   let stars: ReturnType<typeof createAtmosphereStars> = [];
   let options: TileflowResolvedAtmosphere | undefined;
   let canvas: HTMLCanvasElement | undefined;
@@ -76,14 +77,19 @@ export function attachTileflowAtmosphere(
 
   function syncStyle() {
     if (disposed) return;
-    const style = map.getStyle();
-    const metadata = style?.metadata;
-    options =
-      style?.projection?.type === 'globe' && metadata && typeof metadata === 'object'
-        ? readTileflowAtmosphere(
-            (metadata as Record<string, unknown>)[tileflowAtmosphereMetadataKey],
-          )
-        : undefined;
+    atmosphere.refresh();
+    show(atmosphere.read());
+  }
+
+  /** A theme change can repaint the map without a style event; follow it frame by frame. */
+  function follow() {
+    if (disposed) return;
+    const next = atmosphere.read();
+    if (next !== options) show(next);
+  }
+
+  function show(next: TileflowResolvedAtmosphere | undefined) {
+    options = next;
     if (!options) {
       if (frame !== undefined) browser!.cancelAnimationFrame(frame);
       frame = undefined;
@@ -187,6 +193,7 @@ export function attachTileflowAtmosphere(
     if (frame !== undefined) browser!.cancelAnimationFrame(frame);
     map.off('move', schedule);
     map.off('resize', schedule);
+    map.off('render', follow);
     map.off('style.load', syncStyle);
     map.off('remove', dispose);
     reducedMotion.removeEventListener('change', schedule);
@@ -195,6 +202,7 @@ export function attachTileflowAtmosphere(
 
   map.on('move', schedule);
   map.on('resize', schedule);
+  map.on('render', follow);
   map.on('style.load', syncStyle);
   map.on('remove', dispose);
   reducedMotion.addEventListener('change', schedule);

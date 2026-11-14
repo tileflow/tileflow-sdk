@@ -233,7 +233,23 @@ function planUpdates(template: Json): TileflowStyleFamily['updates'] {
         ['color', 'modelColors', 'modelLighting', 'floodLight'].includes(String(path[2]))
       )
         return;
-      if (key === 'tileflow:vegetation' && path[2] === 'colors') return;
+      // Runtime layers read these per theme through the controller and mix them during a blend.
+      if (key === 'tileflow:vegetation' && ['colors', 'edgeColor'].includes(String(path[2])))
+        return;
+      if (key === 'tileflow:street-lights' && ['color', 'intensity'].includes(String(path[2])))
+        return;
+      if (
+        key === 'tileflow:atmosphere' &&
+        [
+          'skyColor',
+          'horizonColor',
+          'fogColor',
+          'spaceColor',
+          'starColor',
+          'starIntensity',
+        ].includes(String(path[2]))
+      )
+        return;
       appearanceOnly = false;
       return;
     }

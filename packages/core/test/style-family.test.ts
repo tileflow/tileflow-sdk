@@ -99,6 +99,62 @@ test('structurally different author maps remain supported and cannot take the ap
   assert.deepEqual(expandTileflowStyleFamily(family), {day, night});
 });
 
+test('themes differing only in street lights, tree outlines and atmosphere colours stay appearance-only', () => {
+  const lights = {
+    version: 1,
+    source: 'tileflow',
+    layers: {streetFurniture: 'a', transportation: 'b'},
+  };
+  const atmosphere = {
+    version: 2,
+    skyColor: '#88aadd',
+    horizonColor: '#ccddee',
+    fogColor: '#eeeeee',
+    spaceColor: '#000814',
+    starColor: '#e0ebff',
+    starCount: 1100,
+    starSize: 1,
+    starIntensity: 0.6,
+    starParallax: 0.4,
+  };
+  const themed = (
+    color: string,
+    intensity: number,
+    edgeColor: string,
+    sky: Partial<typeof atmosphere>,
+  ): MapLibreStyle => ({
+    ...style('#000000'),
+    metadata: {
+      'tileflow:street-lights': {...lights, estimate: 'lit', color, intensity},
+      'tileflow:vegetation': {flatLayers: ['trees'], edgeColor},
+      'tileflow:atmosphere': {...atmosphere, ...sky},
+    },
+  });
+  const day = themed('#ffcf8f', 1, '#203020', {});
+  const night = themed('#ffb347', 1.8, '#101810', {
+    skyColor: '#0b1a33',
+    horizonColor: '#1f2f4f',
+    fogColor: '#101828',
+    spaceColor: '#000000',
+    starColor: '#fff4dd',
+    starIntensity: 1,
+  });
+  const family = createTileflowStyleFamily({day, night});
+  assert.deepEqual(family.updates, {appearanceOnly: true, paint: [], roots: []});
+  // A different star field, or street lights read from other data, still needs a style change.
+  for (const other of [
+    themed('#ffcf8f', 1, '#203020', {starCount: 2000}),
+    {
+      ...day,
+      metadata: {
+        ...day.metadata,
+        'tileflow:street-lights': {...lights, estimate: 'streets', color: '#ffcf8f', intensity: 1},
+      },
+    },
+  ])
+    assert.equal(createTileflowStyleFamily({day, other}).updates.appearanceOnly, false);
+});
+
 test('shared literals reduce repeated expressions, round-trip reserved keys and bound expansion', () => {
   const repeated = [
     'match',

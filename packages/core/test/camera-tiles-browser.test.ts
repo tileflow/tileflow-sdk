@@ -200,6 +200,65 @@ test('async tile builds keep the old value, ignore stale refreshes and release l
   }
 });
 
+test('a tile the map has loaded is built from a copy of its bytes, without a request', async (t) => {
+  const fetched: string[] = [];
+  t.mock.method(globalThis, 'fetch', async (url: string) => {
+    fetched.push(url);
+    return new Response(new Uint8Array([9]));
+  });
+  const [x, y] = cameraTileAt(0.01, 0.01, 15).map(Math.floor) as [number, number];
+  const held = new Uint8Array([1, 2, 3]).buffer;
+  const tile = (z: number, bytes: ArrayBuffer) => ({
+    tileID: {canonical: {z, x, y}},
+    latestRawTileData: bytes,
+  });
+  // A loaded tile in view, and a cut of a deeper zoom at the same column and row that is not it.
+  const inView = new Map([
+    ['a', tile(16, new Uint8Array([7]).buffer)],
+    ['b', tile(15, held)],
+  ]);
+  const map = {
+    getBearing: () => 0,
+    getCenter: () => ({lat: 0.01, lng: 0.01}),
+    getPitch: () => 0,
+    getZoom: () => 18,
+    getSource: () => ({tiles: ['https://camera-test.invalid/{z}/{x}/{y}.pbf'], maxzoom: 15}),
+    on() {},
+    off() {},
+    triggerRepaint() {},
+    style: {
+      tileManagers: {
+        world: {getIds: () => [...inView.keys()], getTileByID: (id: string) => inView.get(id)},
+      },
+    },
+  };
+  const built: Uint8Array[] = [];
+  const camera = createCameraTiles({
+    map,
+    source: 'world',
+    zoom: 15,
+    minzoom: 14,
+    maxTiles: 1,
+    active: () => true,
+    empty: {},
+    build: (read) => {
+      built.push(read.bytes);
+      return {};
+    },
+    release() {},
+    changed() {},
+  });
+  try {
+    camera.update();
+    for (let n = 0; n < 100 && !built.length; n++) await delay(5);
+    assert.deepEqual([...built[0]!], [1, 2, 3]);
+    assert.notEqual(built[0]!.buffer, held);
+    assert.deepEqual(fetched, []);
+  } finally {
+    camera.dispose();
+  }
+});
+
 test('the camera covers its tiles without a source to read and over tiles that hold nothing', async (t) => {
   t.mock.method(globalThis, 'fetch', async () => new Response(null, {status: 404}));
   const base = {

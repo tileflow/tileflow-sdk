@@ -145,6 +145,7 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
         ...(options.transformRequest ? {transformRequest: options.transformRequest} : {}),
       },
       (bytes, address, url) => ({...address, url, bytes}),
+      (address) => mapTileBytes(map, options.source, address),
     );
     return reader;
   }
@@ -418,6 +419,69 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
       reader?.clear();
     },
   };
+}
+
+// --- The map's own tiles ---
+
+type MapTile = {
+  tileID?: {canonical?: {z?: unknown; x?: unknown; y?: unknown}};
+  latestRawTileData?: unknown;
+  latestEncoding?: unknown;
+};
+type MapTileManager = {
+  getIds?(): unknown;
+  getTileByID?(id: unknown): MapTile | undefined;
+  /** Tiles that left the view, kept to show again; `_cache` in older GL JS versions. */
+  _outOfViewCache?: {data?: unknown};
+  _cache?: {data?: unknown};
+};
+
+/**
+ * The bytes of a tile the map itself has loaded from the source, in view or kept after leaving
+ * it, so the layers draw from the map's download instead of requesting the tile again. GL JS keeps
+ * each vector tile's bytes on the tile for feature queries. This reaches into renderer-private
+ * tile managers (`tileManagers`, or `sourceCaches` before them): a renderer without them, a tile
+ * still loading and an MLT tile are read with a request as before.
+ */
+function mapTileBytes(
+  map: CameraTilesMap,
+  sourceId: string,
+  {z, x, y}: Readonly<{z: number; x: number; y: number}>,
+): ArrayBuffer | undefined {
+  const style = (
+    map as CameraTilesMap & {
+      style?: {
+        tileManagers?: Record<string, MapTileManager>;
+        sourceCaches?: Record<string, MapTileManager>;
+      };
+    }
+  ).style;
+  const manager = (style?.tileManagers ?? style?.sourceCaches)?.[sourceId];
+  const ids = manager?.getIds?.();
+  const kept = (manager?._outOfViewCache ?? manager?._cache)?.data;
+  const tiles = [
+    ...(Array.isArray(ids) ? ids.map((id) => manager!.getTileByID?.(id)) : []),
+    ...(kept && typeof kept === 'object'
+      ? Object.values(kept)
+          .flat()
+          .map((entry) => (entry as {value?: MapTile} | undefined)?.value)
+      : []),
+  ];
+  for (const tile of tiles) {
+    const canonical = tile?.tileID?.canonical;
+    const bytes = tile?.latestRawTileData;
+    // An overzoomed tile holds a cut of its parent's bytes, at a deeper zoom than read here.
+    if (
+      canonical?.z === z &&
+      canonical.x === x &&
+      canonical.y === y &&
+      bytes instanceof ArrayBuffer &&
+      bytes.byteLength > 0 &&
+      tile!.latestEncoding !== 'mlt'
+    )
+      return bytes;
+  }
+  return undefined;
 }
 
 // --- Shared downloads ---

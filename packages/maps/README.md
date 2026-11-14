@@ -251,12 +251,10 @@ and optional `timeOfDay` mappings. `system` belongs to browser selection; captur
 
 The package exports `streetsIcons`, `soundingsIcons` and `outdoorsIcons`. These are installed
 resource directories, not sprite URLs. Outdoors composes Streets' artwork with its own summit
-symbols. Streets and Outdoors share `streetsTreeModels` and `streetsGlyphs`. `streetsTreeModels`
-is Tileflow's immutable official tree-model set: the style names each tree's near and far file by
-URL, and the renderer downloads a file the first time trees that draw it come into view, so a view
-without trees downloads none. `streetsModels` is the same trees' glTF artwork, for a map that
-carries them in its own style. `streetsGlyphs` is Tileflow's immutable official glyph set of those
-five fonts; it composites a comma-joined stack of them per code point. Soundings uses the same set.
+symbols. Streets and Outdoors share `streetsTreeModels`, Tileflow's immutable official tree-model
+set, downloaded only when trees come into view, and `streetsGlyphs`, its immutable official glyph
+set of those five fonts; it composites a comma-joined stack of them per code point. Soundings uses
+the same set.
 The CLI and build integrations prepare the selected directories into runtime assets.
 
 Omitting `icons` inherits the parent's directory list. Declaring a list replaces it; `[]` removes

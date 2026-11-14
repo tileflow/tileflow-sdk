@@ -268,7 +268,6 @@ export {
 export * from './theme-appearance-browser';
 export {createTileflowAppearanceController} from './appearance-browser';
 export type {TileflowAppearanceSelection} from './appearance';
-export {type TileflowPathGroundRegistry} from './path-ground-browser';
 export * from './navigation-control-browser';
 export * from './camera-fit-browser';
 export {

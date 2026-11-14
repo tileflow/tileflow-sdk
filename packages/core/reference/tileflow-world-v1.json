@@ -266,6 +266,48 @@
         ]
       }
     },
+    "path_ground": {
+      "tileset": "world",
+      "minzoom": 12,
+      "maxzoom": 15,
+      "fields": {
+        "access": {"type": "String"},
+        "bicycle": {"type": "String"},
+        "class": {"type": "String", "required": true},
+        "foot": {"type": "String"},
+        "horse": {"type": "String"},
+        "indoor": {"type": "Boolean"},
+        "mtb_scale": {"type": "String"},
+        "structure": {"type": "String"},
+        "surface": {"type": "String"},
+        "type": {"type": "String"}
+      },
+      "values": {
+        "class": [
+          "motorway",
+          "trunk",
+          "primary",
+          "secondary",
+          "tertiary",
+          "street",
+          "service",
+          "track",
+          "path",
+          "pedestrian",
+          "busway",
+          "raceway",
+          "construction",
+          "rail",
+          "transit",
+          "aerialway",
+          "ferry",
+          "bridge",
+          "pier"
+        ],
+        "structure": ["ford"],
+        "surface": ["paved", "unpaved"]
+      }
+    },
     "place_label": {
       "tileset": "world",
       "fields": {

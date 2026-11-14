@@ -9,10 +9,10 @@ import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {tileflowMapFixture} from './map-fixture';
 
-// Image extraction and path-ground lowering are generic native capabilities. Declare
+// Image extraction and paths on green ground are generic native capabilities. Declare
 // them explicitly rather than depending on Streets' current cartographic choices.
 const completeStreetsConfig = `
-import {defineMap, fixed, land, refine, token} from '@tileflow/core';
+import {defineMap, fixed, land, refine} from '@tileflow/core';
 import {streets} from '@tileflow/maps';
 export default defineMap({
   id: 'main', version: 1, extends: streets,
@@ -21,10 +21,8 @@ export default defineMap({
     coordinates: [[-180, 85], [180, 85], [180, -85], [-180, -85]],
     attribution: 'Native image fixture',
   }}), roads: refine({pathGround: {
-    greenColor: fixed('#FFFFFF', {reason: 'Native path-ground fallback fixture.'}),
-    groundColor: token.color('roads.path'),
+    greenColor: fixed('#FFFFFF', {reason: 'Native paths on green ground fixture.'}),
     opacity: 1,
-    widthScale: 0.92,
   }})},
 });
 `;
@@ -153,11 +151,12 @@ test('native build writes a separate strict v1 manifest and renderer record', as
   assert.equal(record.validation, 'static-artifacts');
   assert.equal(record.schemaVersion, 2);
   assert.equal(record.preparationVersion, 'native-lowering-v1');
-  assert.equal(
-    record.transformations.find(({theme}: {theme: string}) => theme === 'light').pathGround,
-    'ground-fallback',
+  // Paths on green ground read an ordinary World layer, so native draws them as the browser does.
+  const onGreen = style.layers.filter(
+    (layer: {'source-layer'?: string}) => layer['source-layer'] === 'path_ground',
   );
-  assert.ok(!JSON.stringify(style.sources).includes('tileflow-path-ground:'));
+  assert.ok(onGreen.length > 0);
+  assert.ok(onGreen.every((layer: {source?: string}) => layer.source === 'tileflow'));
   assert.ok(
     record.transformations.every(
       ({projection}: {projection: string}) => projection === 'globe-to-mercator',

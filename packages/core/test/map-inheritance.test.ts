@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {renderPass, withRenderStack} from '../src/cartography/render-stack';
-import {zoom} from '../src/cartography/values';
+import {fixed, token, zoom} from '../src/cartography/values';
 import {tileflowWorld} from '../src/data';
 import {createStyleResult, parseTileflowMap} from '../src/map';
 import {
@@ -272,6 +272,35 @@ test('supports canonical replace, refine, reset, and disable module operations',
   assert.equal(resolved.modules?.roads?.classes?.secondary?.surface?.fill?.color, '#222222');
   assert.equal(resolved.modules?.roads?.classes?.tertiary?.surface?.fill?.color, '#333333');
   assert.deepEqual(resolveMap(replaced).modules?.roads, roads({hierarchy: 'strong'}));
+});
+
+test('refine replaces an inherited theme, zoom or expression value instead of merging into it', () => {
+  const root = defineMap({
+    id: 'value-root',
+    version: 1,
+    defaultTheme: 'light',
+    themes: {light: testLightTheme},
+    modules: {
+      roads: roads({
+        pathGround: {
+          greenColor: token.color('roads.path'),
+          opacity: zoom.linear([
+            [12, 0],
+            [15, 1],
+          ]),
+        },
+      }),
+    },
+  });
+  const green = fixed('#FFFFFF', {reason: 'Paths on green ground stay white.'});
+  const refined = defineMap({
+    id: 'value-refined',
+    version: 1,
+    extends: root,
+    modules: {roads: refine({pathGround: {greenColor: green, opacity: 1}})},
+  });
+
+  assert.deepEqual(resolveMap(refined).modules?.roads?.pathGround, {greenColor: green, opacity: 1});
 });
 
 test('resetting every inherited render operation removes the render stack', () => {

@@ -13,7 +13,6 @@ import {
   serializeCanonicalJson,
   steadyTileflowNauticalLights,
 } from '@tileflow/core';
-import {prepareTileflowNativePathGround} from '@tileflow/core/build';
 import {
   createTileflowNativeBuildRecord,
   tileflowNativeBuildRecordSchema,
@@ -301,9 +300,7 @@ test('Streets themes retain identity and audited native transformation spans', a
     assert.equal(item.sky, 'removed');
     assert.equal(Object.hasOwn(native.styles.streets![item.theme]!, 'sky'), false);
     assert.ok(item.layers.length > 0);
-    const original = prepareTileflowNativePathGround(
-      steadyTileflowNauticalLights(web.styles.streets![item.theme]!),
-    );
+    const original = steadyTileflowNauticalLights(web.styles.streets![item.theme]!);
     const output = native.styles.streets![item.theme]!;
     assert.notEqual(
       native.buildManifest.maps.streets!.themes[item.theme]!.styleSha256,

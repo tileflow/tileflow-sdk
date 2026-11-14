@@ -28,8 +28,31 @@ test('Streets consumers use ordinary road sources for paths in every appearance'
   const consumer = defineMap({id: 'consumer', version: 1, extends: streets});
   for (const theme of Object.keys(streetsThemes)) {
     const style = createStyle(consumer, {theme, preparedAssets});
-    assert.equal(style.sources['tileflow-path-ground'], undefined, theme);
-    assert.doesNotMatch(JSON.stringify(style.sources), /tileflow-path-ground:/u, theme);
+    assert.deepEqual(
+      Object.keys(style.sources).filter((id) => id.includes('path')),
+      [],
+      theme,
+    );
+    // Stretches on green ground come from the World source's path_ground layer, right above the
+    // fill of their path, with its filter. Cycleways keep their colour.
+    for (const roadClass of pathClasses) {
+      const index = style.layers.findIndex(
+        (layer) => layer.id === `tileflow-road-surface-${roadClass}-fill`,
+      );
+      const base = style.layers[index] as {filter?: unknown};
+      const onGreen = style.layers.find(
+        (layer) => layer.id === `tileflow-road-surface-${roadClass}-fill-on-green`,
+      );
+      if (roadClass === 'cycleway') {
+        assert.equal(onGreen, undefined, theme);
+        continue;
+      }
+      assert.equal(style.layers[index + 1], onGreen, `${theme}: ${roadClass}`);
+      assert.ok(onGreen?.type === 'line');
+      assert.equal(onGreen.source, 'tileflow');
+      assert.equal(onGreen['source-layer'], 'path_ground');
+      assert.deepEqual(onGreen.filter, base.filter);
+    }
     for (const structure of ['surface', 'bridge', 'tunnel']) {
       for (const roadClass of pathClasses) {
         for (const phase of ['fill', 'casing']) {
@@ -71,7 +94,6 @@ test('derived Streets maps can disable cycleways or omit their tunnel casing', (
       modules: {roads: refine({classes: {cycleway}})},
     });
     const style = createStyle(map, {theme: 'light', preparedAssets});
-    assert.equal(style.sources['tileflow-path-ground'], undefined);
     const fill = style.layers.find((layer) => layer.id === 'tileflow-road-tunnel-cycleway-fill');
     const casing = style.layers.find(
       (layer) => layer.id === 'tileflow-road-tunnel-cycleway-casing',
@@ -82,7 +104,7 @@ test('derived Streets maps can disable cycleways or omit their tunnel casing', (
   }
 });
 
-test('adding World detail to a derived Streets map does not create a path protocol', () => {
+test('adding World detail to a derived Streets map keeps paths on the World source', () => {
   const transitLines = withRenderStack(transit(), {
     lines: renderPass({
       placement: 'above-roads',
@@ -96,11 +118,14 @@ test('adding World detail to a derived Streets map does not create a path protoc
       theme: 'light',
       preparedAssets,
     });
-    assert.equal(style.sources['tileflow-path-ground'], undefined);
-    assert.doesNotMatch(JSON.stringify(style.sources), /tileflow-path-ground:/u);
-    const fill = style.layers.find((layer) => layer.id === 'tileflow-road-surface-footway-fill');
-    assert.ok(fill?.type === 'line');
-    assert.equal(fill.source, 'tileflow');
-    assert.match((style.sources[fill.source] as {url: string}).url, /^https?:/u);
+    for (const id of [
+      'tileflow-road-surface-footway-fill',
+      'tileflow-road-surface-footway-fill-on-green',
+    ]) {
+      const fill = style.layers.find((layer) => layer.id === id);
+      assert.ok(fill?.type === 'line', id);
+      assert.equal(fill.source, 'tileflow');
+      assert.match((style.sources[fill.source] as {url: string}).url, /^https?:/u);
+    }
   }
 });

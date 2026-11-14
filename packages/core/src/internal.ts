@@ -21,7 +21,6 @@ export {attachTileflowSky} from './sky-browser';
 export {attachTileflowSkyHaze} from './sky-haze-browser';
 export {tileflowCanvasContextAttributes} from './canvas-context-browser';
 export {registerTileflowContourProtocol} from './contour-browser';
-export {registerTileflowPathGroundProtocol} from './path-ground-browser';
 export {registerTileflowPmtilesProtocol} from './pmtiles-browser';
 export {loadTileflowRuntimeStyle} from './style-resources-browser';
 export {loadTileflowRuntimeAppearance} from './style-family-runtime';

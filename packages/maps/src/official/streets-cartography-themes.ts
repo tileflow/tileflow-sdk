@@ -56,6 +56,7 @@ export function streetsCartographyThemes(base: Record<string, TileflowTheme>) {
             ...colors(name),
             ...(name === 'light' ? streetsDayColors : {}),
             'roads.accessOverview': colors(name)['buildings.flat.neutral'],
+            'roads.path.green': '#FFFFFF',
             'surface.background.transition': token.color(
               name === 'light' ? 'surface.background' : 'surface.background.overview',
             ),

@@ -25,7 +25,8 @@ test('Outdoors compiles every appearance with one elevation source for relief an
   for (const theme of Object.keys(outdoors.themes ?? {})) {
     const style = createStyle(outdoors, {theme, preparedAssets: assets});
     assert.deepEqual(validateStyleMin(style as never), [], theme);
-    assert.equal(style.sources['tileflow-path-ground'], undefined, theme);
+    // Trails keep their own ink on green ground.
+    assert.ok(!style.layers.some((layer) => layer['source-layer'] === 'path_ground'), theme);
     for (const kind of ['peak', 'volcano']) {
       const index = style.layers.findIndex((layer) => layer.id === `tileflow-landform-${kind}`);
       const summit = style.layers[index];

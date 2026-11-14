@@ -6510,9 +6510,6 @@
                 "greenColor": {
                   "$ref": "#/$defs/__schema8"
                 },
-                "groundColor": {
-                  "$ref": "#/$defs/__schema8"
-                },
                 "opacity": {
                   "$ref": "#/$defs/__schema10"
                 },
@@ -6520,7 +6517,7 @@
                   "$ref": "#/$defs/__schema10"
                 }
               },
-              "required": ["greenColor", "groundColor"],
+              "required": ["greenColor"],
               "additionalProperties": false
             },
             "outline": {
@@ -7334,6 +7331,7 @@
                     "landuse",
                     "landuseOverlay",
                     "naturalLabel",
+                    "pathGround",
                     "placeLabel",
                     "poiLabel",
                     "road",
@@ -7393,6 +7391,7 @@
                     "landuse",
                     "landuseOverlay",
                     "naturalLabel",
+                    "pathGround",
                     "placeLabel",
                     "poiLabel",
                     "road",
@@ -7452,6 +7451,7 @@
                     "landuse",
                     "landuseOverlay",
                     "naturalLabel",
+                    "pathGround",
                     "placeLabel",
                     "poiLabel",
                     "road",
@@ -7511,6 +7511,7 @@
                     "landuse",
                     "landuseOverlay",
                     "naturalLabel",
+                    "pathGround",
                     "placeLabel",
                     "poiLabel",
                     "road",
@@ -7570,6 +7571,7 @@
                     "landuse",
                     "landuseOverlay",
                     "naturalLabel",
+                    "pathGround",
                     "placeLabel",
                     "poiLabel",
                     "road",
@@ -25259,6 +25261,7 @@
                         "landuse",
                         "landuseOverlay",
                         "naturalLabel",
+                        "pathGround",
                         "placeLabel",
                         "poiLabel",
                         "road",
@@ -25366,6 +25369,7 @@
                         "landuse",
                         "landuseOverlay",
                         "naturalLabel",
+                        "pathGround",
                         "placeLabel",
                         "poiLabel",
                         "road",
@@ -25473,6 +25477,7 @@
                         "landuse",
                         "landuseOverlay",
                         "naturalLabel",
+                        "pathGround",
                         "placeLabel",
                         "poiLabel",
                         "road",
@@ -25580,6 +25585,7 @@
                         "landuse",
                         "landuseOverlay",
                         "naturalLabel",
+                        "pathGround",
                         "placeLabel",
                         "poiLabel",
                         "road",
@@ -25687,6 +25693,7 @@
                         "landuse",
                         "landuseOverlay",
                         "naturalLabel",
+                        "pathGround",
                         "placeLabel",
                         "poiLabel",
                         "road",
@@ -37213,9 +37220,6 @@
             "greenColor": {
               "$ref": "#/$defs/__schema8"
             },
-            "groundColor": {
-              "$ref": "#/$defs/__schema8"
-            },
             "opacity": {
               "$ref": "#/$defs/__schema10"
             },
@@ -37223,7 +37227,7 @@
               "$ref": "#/$defs/__schema10"
             }
           },
-          "required": ["greenColor", "groundColor"],
+          "required": ["greenColor"],
           "additionalProperties": false
         },
         "outline": {
@@ -37599,9 +37603,6 @@
             "greenColor": {
               "$ref": "#/$defs/__schema8"
             },
-            "groundColor": {
-              "$ref": "#/$defs/__schema8"
-            },
             "opacity": {
               "$ref": "#/$defs/__schema10"
             },
@@ -37609,7 +37610,7 @@
               "$ref": "#/$defs/__schema10"
             }
           },
-          "required": ["greenColor", "groundColor"],
+          "required": ["greenColor"],
           "additionalProperties": false
         },
         "outline": {
@@ -38387,16 +38388,6 @@
               "type": "object",
               "properties": {
                 "greenColor": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/$defs/TileflowReset"
-                    },
-                    {
-                      "$ref": "#/$defs/TileflowModulePatchRef28"
-                    }
-                  ]
-                },
-                "groundColor": {
                   "oneOf": [
                     {
                       "$ref": "#/$defs/TileflowReset"

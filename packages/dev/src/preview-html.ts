@@ -135,7 +135,7 @@ export function renderTileflowPreviewHtml(
       import {createPreviewObserver} from "${basePath}/__runtime/inspector-observer.js";
       import {loadTileflowStyleFonts} from "${basePath}/__runtime/tileflow-browser.js";
       import {attachTileflowHorizonQueries, attachTileflowLabelPlacement} from "${basePath}/__runtime/tileflow-browser.js";
-      import {registerTileflowContourProtocol, registerTileflowPathGroundProtocol} from "${basePath}/__runtime/tileflow-browser.js";
+      import {registerTileflowContourProtocol} from "${basePath}/__runtime/tileflow-browser.js";
       import {registerTileflowPmtilesProtocol} from "${basePath}/__runtime/tileflow-browser.js";
       import {attachTileflowBranding, attachTileflowNauticalLights, attachTileflowNotices} from "${basePath}/__runtime/tileflow-browser.js";
       import {attachTileflowAtmosphere, tileflowMaxPitch} from "${basePath}/__runtime/tileflow-browser.js";
@@ -1605,7 +1605,6 @@ export function renderTileflowPreviewHtml(
         maplibregl.setWorkerCount?.(mapWorkerCount);
         await loadTileflowStyleFonts(styleUrl, {fontFaces: previewFontFaces});
         registerTileflowContourProtocol({addProtocol: maplibregl.addProtocol});
-        registerTileflowPathGroundProtocol({addProtocol: maplibregl.addProtocol});
         registerTileflowPmtilesProtocol({addProtocol: maplibregl.addProtocol});
         const map = new maplibregl.Map({
           ...(chromeHidden ? {attributionControl: false} : {}),

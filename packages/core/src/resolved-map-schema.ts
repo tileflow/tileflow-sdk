@@ -1527,7 +1527,6 @@ const roadsModuleSchema = z
     pathGround: z
       .object({
         greenColor: themeColorValueSchema,
-        groundColor: themeColorValueSchema,
         opacity: themeNumberValueSchema.optional(),
         widthScale: themeNumberValueSchema.optional(),
       })

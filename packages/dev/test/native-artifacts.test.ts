@@ -586,6 +586,52 @@ test('accepts locally built sprites served over HTTP only from the explicit prev
   }
 });
 
+test('native previews derive line backgrounds at the explicit device-reachable origin', async (t) => {
+  const cwd = await fixture(t);
+  await writeFile(
+    join(cwd, 'tileflow.config.ts'),
+    `import {defineMap, fixed, poi} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+export default defineMap({id:'main',version:1,extends:streets,modules:{poi:poi({
+  categories:['arts-entertainment'],icons:false,labels:true,styles:{'arts-entertainment':{text:{
+    background:{color:fixed('#080E11',{reason:'Caption strip'}),fit:'lines'},
+    font:fixed('Noto Sans Bold',{reason:'Strip font'})
+  }}}
+})}});`,
+  );
+  const origin = 'http://10.0.2.2:18645';
+  const artifacts = await createTileflowBuildArtifacts({
+    cwd,
+    renderer: 'native',
+    assetBaseUrl: origin,
+    styleBaseUrl: origin,
+    developmentOrigin: origin,
+  });
+  t.after(() => disposeTileflowBuildArtifacts(artifacts));
+
+  assert.ok(artifacts.lineBackgroundGlyphs?.main);
+  for (const style of Object.values(artifacts.styles.main!)) {
+    assert.equal(style.glyphs, `${origin}/native/__glyphs/main/{fontstack}/{range}.pbf`);
+    assert.deepEqual(
+      validateTileflowNativePreparedStyle(style, {
+        documentUrl: `${origin}/native/styles/main/light.json`,
+        developmentOrigin: origin,
+      }),
+      [],
+    );
+  }
+
+  const production = await createTileflowBuildArtifacts({
+    cwd,
+    renderer: 'native',
+    target: 'production',
+  });
+  t.after(() => disposeTileflowBuildArtifacts(production));
+  assert.equal(production.lineBackgroundGlyphs, undefined);
+  for (const style of Object.values(production.styles.main!))
+    assert.equal(style.glyphs, artifacts.lineBackgroundGlyphs!.main);
+});
+
 test('keeps other origins, web and written output outside the native preview HTTP exception', async (t) => {
   const cwd = await fixture(t);
   const origin = 'http://127.0.0.1:3333';

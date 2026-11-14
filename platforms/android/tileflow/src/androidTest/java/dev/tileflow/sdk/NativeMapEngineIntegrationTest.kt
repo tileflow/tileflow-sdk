@@ -343,6 +343,133 @@ public class NativeMapEngineIntegrationTest {
     @Test
     public fun mixedFontFallbackRendersOffline() = checkMixedFontFallback(true)
 
+    @Test
+    public fun lineBackgroundRenderingAndFrameMeasurements() {
+        Fixture.require("${Fixture.ORIGIN}/__fixture/line-backgrounds")
+        val output = File(context.getExternalFilesDir(null), "line-background-proof").apply { mkdirs() }
+        val measurements = org.json.JSONArray()
+        for (theme in listOf("line-empty", "line-plain-light", "line-backed-light", "line-plain-dark", "line-backed-dark")) {
+            NativeMapHostActivity.requested = hosted()
+            NativeMapHostActivity.theme = theme
+            NativeMapHostActivity.camera = TileflowCamera(-3.7, 40.42, 14.0)
+            val activity = show()
+            try {
+                val engine = requireNotNull(activity.engine)
+                val samples = CopyOnWriteArrayList<org.json.JSONObject>()
+                val listener = MapView.OnDidFinishRenderingFrameWithStatsListener { fullyRendered, stats ->
+                    samples += org.json.JSONObject().apply {
+                        put("encoding", stats.encodingTime)
+                        put("rendering", stats.renderingTime)
+                        put("textureBytes", stats.memTextures)
+                        put("textures", stats.numActiveTextures)
+                        put("textureUpdateBytes", stats.textureUpdateBytes)
+                        put("fullyRendered", fullyRendered)
+                    }
+                }
+                instrumentation.runOnMainSync { engine.mapView.addOnDidFinishRenderingFrameListener(listener) }
+                runBlocking {
+                    repeat(100) { frame ->
+                        withContext(Dispatchers.Main) {
+                            activity.map.setCamera(TileflowCamera(-3.7, 40.42, 14.0, bearing = (frame % 20) / 10.0))
+                        }
+                        delay(20)
+                    }
+                }
+                instrumentation.runOnMainSync { engine.mapView.removeOnDidFinishRenderingFrameListener(listener) }
+                assertTrue("No frame statistics for $theme", samples.size > 30)
+                measurements.put(org.json.JSONObject().put("theme", theme).put("samples", org.json.JSONArray(samples.drop(20))))
+                if (theme != "line-empty") {
+                    for (zoom in listOf(12.0, 14.0, 16.0)) for (pitch in listOf(0.0, 45.0)) {
+                        runBlocking { withContext(Dispatchers.Main) {
+                            activity.map.setCamera(TileflowCamera(-3.7, 40.42, zoom, pitch = pitch))
+                        } }
+                        Thread.sleep(300)
+                        assertLineLabels(activity)
+                        saveLineScreenshot(output, "$theme-z${zoom.toInt()}-p${pitch.toInt()}")
+                    }
+                }
+            } finally {
+                finish(activity)
+            }
+        }
+        File(output, "frames.json").writeText(org.json.JSONObject().apply {
+            put("platform", "android")
+            put("environment", "emulator")
+            put("screenScale", context.resources.displayMetrics.density)
+            put("measurements", measurements)
+            put("timingUnit", "seconds")
+            put("memoryUnit", "bytes")
+        }.toString(2))
+        println("LINE_BACKGROUND_OUTPUT ${output.absolutePath}")
+    }
+
+    @Test
+    public fun lineBackgroundPackRendersWithoutNetwork() {
+        Fixture.require("${Fixture.ORIGIN}/__fixture/line-backgrounds")
+        val store = store { OfflinePackClient(configuration) }
+        download(store, "lines", TileflowOfflineRegionLoadOptions(
+            TileflowOfflineGeometry.BoundingBox(TileflowBoundingBox(-3.705, 40.416, -3.695, 40.424)),
+            TileflowOfflineContent.Hosted(Fixture.HOSTED_MAP_ID, listOf("line-backed-light", "line-backed-dark")),
+            minZoom = 13, maxZoom = 15,
+        ))
+        val entries = File(root, "store-0/packs").listFiles().orEmpty().filter { it.extension == "tfpack" }
+            .flatMap { dev.tileflow.sdk.offline.OfflinePackFormat.index(it).entries.values }
+        val derived = entries.filter { it.name.contains("lines-v1-") }
+        assertEquals(5, derived.size)
+        assertTrue(entries.any { it.name.endsWith("/Noto%20Sans%20Bold/LICENSE.md") && it.length == 4300 })
+        runBlocking { TileflowMapCache.get(context).clear() }
+        Fixture.counters(reset = true)
+        val output = File(context.getExternalFilesDir(null), "line-background-proof").apply { mkdirs() }
+        EngineRequests().use { requests ->
+            TileflowOfflineSwitch.isNetworkEnabled = false
+            airplaneMode(true)
+            try {
+                for (theme in listOf("line-backed-light", "line-backed-dark")) {
+                    NativeMapHostActivity.requested = hosted()
+                    NativeMapHostActivity.theme = theme
+                    NativeMapHostActivity.camera = TileflowCamera(-3.7, 40.42, 14.0)
+                    val activity = show()
+                    try {
+                        Thread.sleep(500)
+                        assertLineLabels(activity)
+                        saveLineScreenshot(output, "offline-$theme")
+                    } finally { finish(activity) }
+                }
+                val glyphs = requests.matching("lines-v1-")
+                assertTrue("Derived ranges must be read from packs", glyphs.isNotEmpty())
+                assertTrue(glyphs.all { it.second == 200 })
+                assertTrue("MapLibre reached the network", requests.delegated.isEmpty())
+            } finally {
+                airplaneMode(false)
+                TileflowOfflineSwitch.isNetworkEnabled = true
+            }
+        }
+        val counters = Fixture.counters()
+        assertEquals(0, counters.getInt("sessions"))
+        assertEquals(0, counters.getInt("downloads"))
+        assertEquals(0, counters.getInt("sessionResources"))
+        File(output, "offline-ranges.json").writeText(org.json.JSONArray(derived.map {
+            org.json.JSONObject().put("url", it.name).put("bytes", it.length)
+        }).toString(2))
+        println("LINE_BACKGROUND_OUTPUT ${output.absolutePath}")
+    }
+
+    private fun assertLineLabels(activity: NativeMapHostActivity) {
+        instrumentation.runOnMainSync {
+            val engine = requireNotNull(activity.engine)
+            val features = requireNotNull(engine.map).queryRenderedFeatures(
+                android.graphics.RectF(0f, 0f, activity.map.width.toFloat(), activity.map.height.toFloat()), "line-labels")
+            assertEquals("Latin, Arabic and Hebrew labels must render", 3, features.map { it.id() }.toSet().size)
+        }
+    }
+
+    private fun saveLineScreenshot(output: File, name: String) {
+        val bitmap = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
+        try {
+            File(output, "$name.png").outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        } finally { bitmap.recycle() }
+    }
+
     /** Actual pack files in one app store, after two neighbouring Madrid regions. */
     @Test
     public fun sharedFontStorageAcrossTwoRegions() {

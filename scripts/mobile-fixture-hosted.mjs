@@ -3,6 +3,7 @@ import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {deflateSync, gunzipSync, gzipSync} from 'node:zlib';
+import {createLineBackgroundFixture} from './mobile-fixture-line-backgrounds.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const {tileflowOfficialFontAssetSet} = await import(
@@ -53,6 +54,12 @@ const marineCredits = JSON.parse(
 export const hostedMapId = 'map_offlinefixture01';
 
 export function createHostedFixture({base, tile, center}) {
+  const lines = createLineBackgroundFixture({
+    base,
+    center,
+    directory: process.env.TILEFLOW_LINE_GLYPH_ROOT,
+  });
+  const lineControl = new Map();
   const mapPath = `/maps/${hostedMapId}/mobile`;
   const fontFiles = ['DINish-Medium.ttf', 'NotoSans-Regular.ttf'].map((name) => {
     const bytes = readFileSync(resolve(root, 'packages/dev/test/fixtures/fonts/streets', name));
@@ -416,6 +423,7 @@ export function createHostedFixture({base, tile, center}) {
       ],
     },
   };
+  Object.assign(nativeStyles, lines?.styles);
   const nativeThemes = Object.keys(nativeStyles);
   // The family names the map by its key in the one-map manifest.
   const nativeFamily = nativeProfile.createTileflowNativeFamily({
@@ -544,6 +552,8 @@ export function createHostedFixture({base, tile, center}) {
     return Buffer.from(field(1, [...field(1, bytes(stack)), ...field(2, bytes(range))]));
   };
   const body = (url) => {
+    const lineBody = lines?.body(url);
+    if (lineBody) return lineBody;
     if (url === brandUrl) return brandBytes;
     if (url === brandLicenseUrl) return brandLicenseBytes;
     if (url.startsWith(sharedPrefix))
@@ -768,6 +778,7 @@ export function createHostedFixture({base, tile, center}) {
     const fontsTheme = request.themes.includes('fonts');
     const fallbackTheme = request.themes.includes('fallback');
     const marineTheme = request.themes.includes('marine');
+    const lineThemes = request.themes.filter((name) => lines?.styles[name]);
     const webStyles = [
       ...(request.themes.includes('day') ? [urls.style] : []),
       ...(labelsTheme ? [urls.labelsStyle] : []),
@@ -792,8 +803,11 @@ export function createHostedFixture({base, tile, center}) {
       ...styles,
       ...tileJson.map((url) => jsonEntry(url, body(url))),
     ]);
-    if (labelsTheme || fontsTheme || fallbackTheme) {
+    if (labelsTheme || fontsTheme || fallbackTheme || lineThemes.length) {
       add('assets', 'documents', '/v1/offline/documents/assets.tfpack', [
+        ...(lineThemes.length
+          ? lines.entries(lineThemes).filter((entry) => entry.name.endsWith('/LICENSE.md'))
+          : []),
         ...(labelsTheme
           ? Object.keys(spriteBodies).map((url) => ({
               name: url,
@@ -870,6 +884,19 @@ export function createHostedFixture({base, tile, center}) {
           body: body(glyphUrl(range)),
         })),
       );
+    }
+    if (lineThemes.length) {
+      const glyphEntries = lines.entries(lineThemes).filter((entry) => entry.name.endsWith('.pbf'));
+      const stacks = new Set(
+        glyphEntries.map((entry) => new URL(entry.name).pathname.split('/').at(-2)),
+      );
+      for (const stack of stacks)
+        add(
+          `glyphs/${decodeURIComponent(stack)}/0`,
+          'documents',
+          `/v1/offline/documents/glyphs/${stack}/0.tfpack`,
+          glyphEntries.filter((entry) => new URL(entry.name).pathname.split('/').at(-2) === stack),
+        );
     }
     const tileSources = [
       {
@@ -995,6 +1022,29 @@ export function createHostedFixture({base, tile, center}) {
   return function handle(request, response) {
     const url = `${base}${request.url}`;
     const path = request.url.split('?')[0];
+    if (lines && path === '/__fixture/line-control') {
+      const platform = new URL(url).searchParams.get('platform');
+      if (!['ios', 'android'].includes(platform)) {
+        json(response, 400, {error: 'Unknown platform'});
+        return true;
+      }
+      if (request.method === 'POST') {
+        readBody(request).then((text) => {
+          lineControl.set(platform, {...lineControl.get(platform), ...JSON.parse(text)});
+          json(response, 200, lineControl.get(platform));
+        });
+      } else json(response, 200, lineControl.get(platform) ?? {});
+      return true;
+    }
+    if (lines && path === '/__fixture/line-backgrounds' && request.method === 'GET') {
+      json(response, 200, {
+        styles: lines.styles,
+        entries: lines
+          .entries(['line-plain-light', 'line-backed-light'])
+          .map(({name, body}) => ({name, bytes: body.length, sha256: sha(body)})),
+      });
+      return true;
+    }
     if (path === '/__fixture/hosted') {
       if (request.method === 'POST') {
         count = counters();
@@ -1150,7 +1200,7 @@ export function createHostedFixture({base, tile, center}) {
 
     const bytes = request.method === 'GET' ? body(url) : null;
     if (!bytes) return false;
-    if (!publicUrls.has(url)) {
+    if (!publicUrls.has(url) && !lines?.body(url)) {
       const session = request.headers['x-tileflow-native-grant'];
       if (sessions.has(session)) count.sessionResources += 1;
       else {

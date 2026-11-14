@@ -445,14 +445,14 @@ export async function createTileflowArtifactPlan(
     // Local previews and captures derive line-background glyphs themselves; production output
     // keeps the declared provider, which must serve derived stacks.
     const lineBackgroundGlyphs =
-      renderer === 'native' || options.target === 'production'
+      options.target === 'production'
         ? {providers: {}, styles: preparedFonts.styles}
         : prepareTileflowLineBackgroundGlyphs(preparedFonts.styles, {
             assetBaseUrl: resolveRendererAssetBaseUrl(options),
           });
     const styles =
       renderer === 'native'
-        ? prepareTileflowNativeStyles(preparedFonts.styles, assets, nativeUrls)
+        ? prepareTileflowNativeStyles(lineBackgroundGlyphs.styles, assets, nativeUrls)
         : lineBackgroundGlyphs.styles;
     // Blend plans, emphasis tables and appearance per theme, from the final native styles.
     const nativeFamilies =

@@ -175,6 +175,106 @@ final class NativeMapEngineTests: XCTestCase {
     try await checkMixedFontFallback(offline: false)
   }
 
+  func testLineBackgroundRenderingAndFrameMeasurements() async throws {
+    try await requireMapFixture(URL(string: "\(FixtureServer.origin)/__fixture/line-backgrounds")!)
+    let output = try lineProofDirectory()
+    var measurements: [[String: Any]] = []
+    for theme in ["line-empty", "line-plain-light", "line-backed-light", "line-plain-dark", "line-backed-dark"] {
+      let mounted = try await mountMap(.hosted(mapID: Self.hostedFixtureMapID,
+        configuration: try fixtureConfiguration()), theme: theme,
+        camera: .init(longitude: -3.7, latitude: 40.42, zoom: 14))
+      let engine = try XCTUnwrap(mounted.view.engine as? NativeMapEngine)
+      let map = try XCTUnwrap(engine.mapView)
+      let probe = LineFrameProbe(original: map.delegate)
+      map.delegate = probe
+      for frame in 0..<100 {
+        try await mounted.view.setCamera(.init(longitude: -3.7, latitude: 40.42,
+          zoom: 14, bearing: Double(frame % 20) / 10))
+        try await Task.sleep(nanoseconds: 20_000_000)
+      }
+      map.delegate = engine
+      XCTAssertGreaterThan(probe.samples.count, 30)
+      measurements.append(["theme": theme, "samples": Array(probe.samples.dropFirst(20))])
+      if theme != "line-empty" {
+        for zoom in [12.0, 14.0, 16.0] {
+          for pitch in [0.0, 45.0] {
+            try await mounted.view.setCamera(.init(longitude: -3.7, latitude: 40.42,
+              zoom: zoom, bearing: 0, pitch: pitch))
+            try await Task.sleep(nanoseconds: 300_000_000)
+            let features = map.visibleFeatures(in: map.bounds, styleLayerIdentifiers: ["line-labels"])
+            XCTAssertEqual(Set(features.compactMap { $0.identifier.map { String(describing: $0) } }).count, 3,
+              "\(theme), zoom \(zoom), pitch \(pitch)")
+            let image = UIGraphicsImageRenderer(bounds: mounted.view.bounds).image { _ in
+              _ = mounted.view.drawHierarchy(in: mounted.view.bounds, afterScreenUpdates: false)
+            }
+            try XCTUnwrap(image.pngData()).write(to: output.appendingPathComponent("\(theme)-z\(Int(zoom))-p\(Int(pitch)).png"))
+          }
+        }
+      }
+      mounted.close()
+    }
+    let report: [String: Any] = ["platform": "ios", "environment": "simulator",
+      "screenScale": UIScreen.main.scale, "measurements": measurements,
+      "timingUnit": "seconds", "memoryUnit": "bytes"]
+    try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+      .write(to: output.appendingPathComponent("frames.json"))
+    print("LINE_BACKGROUND_OUTPUT \(output.path)")
+    XCTAssertEqual(foreign.withLock { $0 }, [])
+  }
+
+  func testLineBackgroundPackRendersWithoutNetwork() async throws {
+    try await requireMapFixture(URL(string: "\(FixtureServer.origin)/__fixture/line-backgrounds")!)
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("line-offline-\(UUID().uuidString)")
+    let configuration = try fixtureConfiguration()
+    let store = offlineMapStore(root: root, client: { try OfflinePackClient(configuration: configuration) })
+    try await downloadRegion(store, id: "lines", options: .init(
+      geometry: .boundingBox(.init(west: -3.705, south: 40.416, east: -3.695, north: 40.424)),
+      content: .hosted(mapID: Self.hostedFixtureMapID, themes: ["line-backed-light", "line-backed-dark"]),
+      minZoom: 13, maxZoom: 15))
+    let files = try FileManager.default.contentsOfDirectory(at: root.appendingPathComponent("packs"), includingPropertiesForKeys: nil)
+      .filter { $0.pathExtension == "tfpack" }
+    let entries = try files.flatMap { Array(try OfflinePackFormat.index($0).entries.values) }
+    let derived = entries.filter { $0.name.contains("lines-v1-") }
+    XCTAssertEqual(derived.count, 5)
+    XCTAssertTrue(entries.contains { $0.name.hasSuffix("/Noto%20Sans%20Bold/LICENSE.md") && $0.length == 4300 })
+    await TileflowMapCache.clear()
+    _ = try await fixtureCounters(reset: true)
+    answers.withLock { $0 = [] }
+    TileflowOfflineSwitch.shared.isNetworkEnabled = false
+    let output = try lineProofDirectory()
+    for theme in ["line-backed-light", "line-backed-dark"] {
+      let mounted = try await mountMap(.hosted(mapID: Self.hostedFixtureMapID, configuration: configuration),
+        theme: theme, camera: .init(longitude: -3.7, latitude: 40.42, zoom: 14))
+      try await Task.sleep(nanoseconds: 500_000_000)
+      let map = try XCTUnwrap((mounted.view.engine as? NativeMapEngine)?.mapView)
+      XCTAssertEqual(Set(map.visibleFeatures(in: map.bounds, styleLayerIdentifiers: ["line-labels"])
+        .compactMap { $0.identifier.map { String(describing: $0) } }).count, 3)
+      let image = UIGraphicsImageRenderer(bounds: mounted.view.bounds).image { _ in
+        _ = mounted.view.drawHierarchy(in: mounted.view.bounds, afterScreenUpdates: false)
+      }
+      try XCTUnwrap(image.pngData()).write(to: output.appendingPathComponent("offline-\(theme).png"))
+      mounted.close()
+    }
+    let requests = answers.withLock { $0.filter { $0.remote.contains("lines-v1-") } }
+    XCTAssertFalse(requests.isEmpty)
+    XCTAssertTrue(requests.allSatisfy { $0.status == 200 })
+    let counters = try await fixtureCounters()
+    XCTAssertEqual(counters["sessions"], 0)
+    XCTAssertEqual(counters["downloads"], 0)
+    XCTAssertEqual(counters["sessionResources"], 0)
+    XCTAssertEqual(foreign.withLock { $0 }, [])
+    try JSONSerialization.data(withJSONObject: derived.map { ["url": $0.name, "bytes": $0.length] }, options: [.prettyPrinted, .sortedKeys])
+      .write(to: output.appendingPathComponent("offline-ranges.json"))
+    print("LINE_BACKGROUND_OUTPUT \(output.path)")
+  }
+
+  private func lineProofDirectory() throws -> URL {
+    let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+      .appendingPathComponent("line-background-proof")
+    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    return url
+  }
+
   func testMixedFontFallbackRendersOffline() async throws {
     try await checkMixedFontFallback(offline: true)
   }
@@ -403,6 +503,38 @@ final class NativeMapEngineTests: XCTestCase {
       if sqlite3_step(statement) == SQLITE_ROW { total += Int(sqlite3_column_int64(statement, 0)) }
     }
     return total
+  }
+}
+
+@MainActor
+private final class LineFrameProbe: NSObject, MLNMapViewDelegate {
+  nonisolated(unsafe) weak var original: (any MLNMapViewDelegate)?
+  var samples: [[String: Any]] = []
+
+  init(original: (any MLNMapViewDelegate)?) { self.original = original }
+
+  override func responds(to selector: Selector!) -> Bool {
+    if super.responds(to: selector) { return true }
+    return original?.responds(to: selector) ?? false
+  }
+
+  override func forwardingTarget(for selector: Selector!) -> Any? {
+    original
+  }
+
+  nonisolated func mapViewDidFinishRenderingFrame(_ mapView: MLNMapView, fullyRendered: Bool,
+    renderingStats: MLNRenderingStats) {
+    let encoding = renderingStats.encodingTime
+    let rendering = renderingStats.renderingTime
+    let textureBytes = renderingStats.memTextures
+    let textures = renderingStats.numActiveTextures
+    let textureUpdateBytes = renderingStats.textureUpdateBytes
+    MainActor.assumeIsolated {
+      samples.append(["encoding": encoding, "rendering": rendering,
+        "textureBytes": textureBytes, "textures": textures,
+        "textureUpdateBytes": textureUpdateBytes, "fullyRendered": fullyRendered])
+      original?.mapViewDidFinishRenderingFrame?(mapView, fullyRendered: fullyRendered)
+    }
   }
 }
 

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {once} from 'node:events';
-import {mkdtemp, rm, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -319,3 +320,70 @@ async function firstWebPreviewReady(
     await running.stop();
   }
 }
+
+test('native preview serves derived line-background ranges through its local glyph route', async (t) => {
+  const cwd = await fixture('tileflow-native-preview-lines-');
+  await writeFile(
+    join(cwd, 'tileflow.config.ts'),
+    tileflowMapFixture({
+      id: 'main',
+      imports: `import {fixed, poi} from '@tileflow/core';`,
+      modules: `{poi:poi({categories:['arts-entertainment'],icons:false,labels:true,
+      styles:{'arts-entertainment':{text:{font:fixed('Noto Sans Bold',{reason:'Qualification'}),
+        background:{fit:'lines',color:fixed('#123456',{reason:'Qualification'})}}}}})}`,
+    }),
+  );
+  const upstream = 'https://fixtures.tileflow.test/fonts/{fontstack}/{range}.pbf';
+  const hash = (value: string) => createHash('sha256').update(value).digest('hex').slice(0, 32);
+  const cache = join(cwd, '.tileflow/cache/glyphs/v1', hash(upstream));
+  await mkdir(cache, {recursive: true});
+  const name = Buffer.from('Noto Sans Bold'),
+    range = Buffer.from('0-255');
+  const stack = Buffer.concat([
+    Buffer.from([10, name.length]),
+    name,
+    Buffer.from([18, range.length]),
+    range,
+  ]);
+  await writeFile(
+    join(cache, `${hash('Noto Sans Bold')}-0-255.pbf`),
+    Buffer.concat([Buffer.from([10, stack.length]), stack]),
+  );
+  const port = await reservePort();
+  const origin = `http://127.0.0.1:${port}`;
+  const running = startCli(t, cwd, [
+    'preview',
+    '--renderer',
+    'native',
+    '--json',
+    '--port',
+    String(port),
+  ]);
+  t.after(async () => {
+    await running.stop();
+    await rm(cwd, {recursive: true, force: true});
+  });
+  const ready = await running.waitFor(
+    (event) => event.event === 'ready' || event.event === 'invalid',
+    30_000,
+  );
+  assert.equal(ready.event, 'ready', JSON.stringify(ready));
+  const manifest = parseTileflowRuntimeManifest(
+    await (await fetch(`${origin}/native/manifest.json`)).json(),
+  );
+  const style = (await (await fetch(manifest.maps.main!.themes.light!.styleUrl)).json()) as {
+    glyphs: string;
+    layers: {layout?: Record<string, unknown>}[];
+  };
+  assert.equal(style.glyphs, `${origin}/native/__glyphs/main/{fontstack}/{range}.pbf`);
+  const font = style.layers
+    .flatMap((layer) => (layer.layout?.['text-font'] as string[]) ?? [])
+    .find((font) => font.includes(' lines-v1-'));
+  assert.ok(font);
+  const response = await fetch(
+    style.glyphs.replace('{fontstack}', encodeURIComponent(font)).replace('{range}', '0-255'),
+  );
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'application/x-protobuf');
+  assert.ok((await response.arrayBuffer()).byteLength > 0);
+});
